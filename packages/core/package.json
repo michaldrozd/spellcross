@@ -1,0 +1,28 @@
+{
+  "name": "@spellcross/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --dts --format esm --clean",
+    "dev": "tsup src/index.ts --dts --format esm --watch",
+    "lint": "eslint src --ext .ts",
+    "test": "vitest"
+  },
+  "dependencies": {
+    "effect": "^2.3.4",
+    "nanoid": "^5.0.7"
+  },
+  "devDependencies": {
+    "tsup": "^7.2.0",
+    "vitest": "^1.4.0"
+  }
+}
