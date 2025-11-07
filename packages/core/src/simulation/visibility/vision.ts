@@ -2,16 +2,18 @@ import type { BattlefieldMap, FactionId, HexCoordinate, TacticalBattleState } fr
 import { getTile, hexLine, hexWithinRange, isWithinBounds, tileIndex } from '../utils/grid.js';
 
 export interface VisionOptions {
-  rangeModifier?: (params: { unitVision: number; tileProvidesBoost: boolean }) => number;
+  rangeModifier?: (params: { unitVision: number; tileProvidesBoost: boolean; elevation: number }) => number;
 }
 
 const DEFAULT_RANGE_MODIFIER = ({
   unitVision,
-  tileProvidesBoost
+  tileProvidesBoost,
+  elevation
 }: {
   unitVision: number;
   tileProvidesBoost: boolean;
-}) => unitVision + (tileProvidesBoost ? 1 : 0);
+  elevation: number;
+}) => unitVision + (tileProvidesBoost ? 1 : 0) + (elevation >= 1 ? 1 : 0);
 
 const MAX_VISION_RANGE = 10;
 
@@ -24,6 +26,17 @@ function tileBlocksVision(map: BattlefieldMap, coordinate: HexCoordinate): boole
     return true;
   }
   return tile.cover >= 3;
+}
+
+export function hasLineOfSight(map: BattlefieldMap, from: HexCoordinate, to: HexCoordinate): boolean {
+  if (!isWithinBounds(map, to)) return false;
+  const line = hexLine(from, to);
+  for (let i = 1; i < line.length - 1; i++) {
+    if (tileBlocksVision(map, line[i])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function computeVisibleTilesForUnit(
@@ -85,7 +98,8 @@ export function updateFactionVision(
     const providesBoost = unitTile?.providesVisionBoost ?? false;
     const range = rangeModifier({
       unitVision: unit.stats.vision,
-      tileProvidesBoost: providesBoost
+      tileProvidesBoost: providesBoost,
+      elevation: unitTile?.elevation ?? 0
     });
     const unitVisibleTiles = computeVisibleTilesForUnit(state, unit.coordinate, range);
     for (const tile of unitVisibleTiles) {

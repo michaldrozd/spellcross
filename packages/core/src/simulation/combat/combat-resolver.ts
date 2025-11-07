@@ -39,6 +39,12 @@ export function calculateAttackRange(attacker: UnitInstance, weaponId: string): 
   return attacker.stats.weaponRanges[weaponId] ?? 0;
 }
 
+export function canWeaponTarget(attacker: UnitInstance, weaponId: string, defender: UnitInstance): boolean {
+  const targets = attacker.stats.weaponTargets?.[weaponId];
+  if (!targets || targets.length === 0) return true; // unrestricted by default
+  return targets.includes(defender.unitType);
+}
+
 export function calculateHitChance(input: {
   attacker: UnitInstance;
   defender: UnitInstance;
@@ -63,12 +69,17 @@ export function calculateHitChance(input: {
   const rangePenalty = normalizedDistance * RANGE_ACCURACY_PENALTY;
 
   const defenderTile = getTile(map, defender.coordinate);
-  const cover = defenderTile?.cover ?? 0;
+  const cover = (defenderTile?.cover ?? 0) + (defender.entrench ?? 0);
   const coverPenalty = cover * COVER_ACCURACY_PENALTY;
+
+  // elevation advantage: higher ground yields small accuracy bonus, lower ground penalized
+  const attackerTile = getTile(map, attacker.coordinate);
+  const elevationDiff = (attackerTile?.elevation ?? 0) - (defenderTile?.elevation ?? 0);
+  const elevationAdjust = elevationDiff > 0 ? 0.06 : elevationDiff < 0 ? -0.06 : 0;
 
   const hitChance = Math.min(
     MAX_HIT_CHANCE,
-    Math.max(MIN_HIT_CHANCE, baseAccuracy - rangePenalty - coverPenalty)
+    Math.max(MIN_HIT_CHANCE, (baseAccuracy + elevationAdjust) - rangePenalty - coverPenalty)
   );
 
   return hitChance;
@@ -83,7 +94,7 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
   const weaponPower = attacker.stats.weaponPower[weaponId] ?? 0;
   const defenderArmor = defender.stats.armor;
   const defenderTile = getTile(map, defender.coordinate);
-  const defenderCover = defenderTile?.cover ?? 0;
+  const defenderCover = (defenderTile?.cover ?? 0) + (defender.entrench ?? 0);
 
   const inRange = distance <= maxRange && maxRange > 0;
   const hitChance = inRange && weaponPower > 0 && defender.stance !== 'destroyed'
@@ -109,9 +120,16 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
     const newMorale = Math.min(MAX_MORALE, Math.max(MIN_MORALE, defender.currentMorale - moraleDamage));
     defender.currentMorale = newMorale;
 
+    // entrenchment is reduced when taking a hit
+    if (defender.entrench && defender.entrench > 0) {
+      defender.entrench = Math.max(0, defender.entrench - 1);
+    }
+
     if (defender.currentHealth === 0) {
       defender.stance = 'destroyed';
-      defender.actionPoints = 0;
+    } else {
+      // Update stance from morale thresholds
+      defender.stance = defender.currentMorale <= 20 ? 'routed' : defender.currentMorale <= 40 ? 'suppressed' : 'ready';
     }
   }
 
@@ -135,6 +153,22 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
       unitId: defender.id,
       by: attacker.id
     });
+  }
+
+  // XP awards: +5 on hit, +20 extra on kill
+  if (hit) {
+    attacker.experience += 5;
+    events.push({ kind: 'unit:xp', unitId: attacker.id, amount: 5, reason: 'hit' });
+    if (defender.currentHealth === 0) {
+      attacker.experience += 20;
+      events.push({ kind: 'unit:xp', unitId: attacker.id, amount: 20, reason: 'kill' });
+    }
+  }
+
+  // Leveling: +1 level per 100 XP threshold crossed
+  while (attacker.level != null && attacker.experience >= attacker.level * 100) {
+    attacker.level += 1;
+    events.push({ kind: 'unit:level', unitId: attacker.id, level: attacker.level });
   }
 
   return {

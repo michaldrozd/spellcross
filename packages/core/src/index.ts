@@ -5,3 +5,4 @@ export * from './simulation/pathfinding/hex-pathfinder.js';
 export * from './simulation/combat/combat-resolver.js';
 export { axialDistance } from './simulation/utils/grid.js';
 export * from './simulation/visibility/vision.js';
+export { decideNextAIAction } from './simulation/ai/baseline-ai.js';

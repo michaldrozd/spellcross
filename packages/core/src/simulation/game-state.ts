@@ -33,6 +33,7 @@ export function createBattleState(options: CreateBattleStateOptions): TacticalBa
       units.set(id, {
         id,
         definitionId: unitSpec.definition.id,
+        unitType: unitSpec.definition.type,
         faction: side.faction,
         coordinate: unitSpec.coordinate,
         orientation: 0,
@@ -43,7 +44,10 @@ export function createBattleState(options: CreateBattleStateOptions): TacticalBa
         stats: unitSpec.definition.stats,
         stance: 'ready',
         experience: 0,
-        statusEffects: new Set()
+        level: 1,
+        statusEffects: new Set(),
+        entrench: 0,
+        movedThisRound: false
       });
     }
 

@@ -22,6 +22,9 @@ export interface MapTile {
   movementCostModifier: number;
   passable: boolean;
   providesVisionBoost: boolean;
+  // Optional destructible terrain support
+  destructible?: boolean;
+  hp?: number; // hit points when destructible
 }
 
 export interface BattlefieldMap {
@@ -40,6 +43,8 @@ export interface UnitStats {
   weaponRanges: Record<string, number>;
   weaponPower: Record<string, number>;
   weaponAccuracy: Record<string, number>;
+  // Optional per-weapon target restrictions (e.g., AA vs air only)
+  weaponTargets?: Record<string, Array<UnitDefinition['type']>>;
   armor: number;
   morale: number;
 }
@@ -55,6 +60,7 @@ export interface UnitDefinition {
 export interface UnitInstance {
   id: string;
   definitionId: UnitDefinition['id'];
+  unitType: UnitDefinition['type'];
   faction: FactionId;
   coordinate: HexCoordinate;
   orientation: number;
@@ -65,7 +71,11 @@ export interface UnitInstance {
   stats: UnitStats;
   stance: UnitStance;
   experience: number;
+  level: number;
   statusEffects: Set<string>;
+  // Tactical state
+  entrench?: number; // 0..3, increases when stationary, reduces on hit
+  movedThisRound?: boolean; // set to true when unit moves during its own turn
 }
 
 export interface SideState {
@@ -120,6 +130,21 @@ export type BattleEvent =
       kind: 'unit:defeated';
       unitId: string;
       by: string;
+    }
+  | {
+      kind: 'unit:xp';
+      unitId: string;
+      amount: number;
+      reason: 'hit' | 'kill';
+    }
+  | {
+      kind: 'tile:destroyed';
+      at: HexCoordinate;
+    }
+  | {
+      kind: 'unit:level';
+      unitId: string;
+      level: number;
     };
 
 export interface ResolveAttackInput {
