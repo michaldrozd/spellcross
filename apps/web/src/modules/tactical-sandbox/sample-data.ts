@@ -1,6 +1,7 @@
 import type {
   BattlefieldMap,
   CreateBattleStateOptions,
+  TerrainType,
   UnitDefinition
 } from '@spellcross/core';
 
@@ -97,6 +98,42 @@ function autoBakeSlopes(map: BattlefieldMap) {
   markEdge(1, 8, 'S', 'slope');
   markEdge(3, 7, 'E', 'slope');
   markEdge(3, 8, 'E', 'slope');
+
+  // --- Multi-tier spiral mound near center for renderer QA ---
+  const setRect = (q0: number, q1: number, r0: number, r1: number, elev: number, terrain: TerrainType) => {
+    for (let qq = q0; qq <= q1; qq++) {
+      for (let rr = r0; rr <= r1; rr++) {
+        setTile(qq, rr, { terrain, elevation: elev, cover: 1, providesVisionBoost: elev >= 2 });
+      }
+    }
+  };
+  // outer apron (gentle level 1 slope)
+  setRect(4, 9, 5, 8, 1, 'hill');
+  // inner ring elev=2 (creates 1-step slopes all around)
+  setRect(5, 8, 6, 7, 2, 'hill');
+  // core plateau elev=3 (single tile)
+  setTile(6, 6, { terrain: 'hill', elevation: 3, cover: 1, providesVisionBoost: true });
+  // force western edge of middle ring to remain a cliff for contrast
+  for (let rr = 6; rr <= 7; rr++) markEdge(5, rr, 'W', 'wall');
+  // carve two gentle ramps (south & east)
+  for (let qq = 6; qq <= 7; qq++) markEdge(qq, 7, 'S', 'slope');
+  for (let rr = 6; rr <= 7; rr++) markEdge(8, rr, 'E', 'slope');
+
+  // Zig-zag ridge (0→1→2) south-west of spawn to test blended transitions
+  const ridgeCoords: Array<{ q: number; r: number; elev: number }> = [
+    { q: 0, r: 2, elev: 0 }, { q: 1, r: 2, elev: 1 }, { q: 2, r: 2, elev: 1 }, { q: 3, r: 2, elev: 2 },
+    { q: 3, r: 3, elev: 2 }, { q: 2, r: 3, elev: 1 }, { q: 1, r: 3, elev: 0 }
+  ];
+  ridgeCoords.forEach(({ q, r, elev }) => {
+    setTile(q, r, { terrain: elev >= 1 ? 'hill' : 'plain', elevation: elev, providesVisionBoost: elev >= 2 });
+  });
+  markEdge(3, 2, 'E', 'wall'); // sheer drop on ridge tip
+
+  // Scatter a few isolated bumps (single-hex, double-step) for regression checks
+  setTile(10, 1, { terrain: 'hill', elevation: 1 });
+  setTile(10, 0, { terrain: 'hill', elevation: 2 });
+  markEdge(10, 0, 'N', 'wall');
+  markEdge(10, 0, 'E', 'wall');
 
   // Ostatné hrany zostávajú implicitne "cliff" (renderer nakreslí stenu, pathfinding ich nepovolí).
 })();
@@ -627,4 +664,3 @@ export function makeLargeSandboxSpec(opts: { width?: number; height?: number } =
 
   return spec;
 }
-

@@ -82,6 +82,72 @@ function hexToRgb(hex: number) {
   return { r: (hex >> 16) & 0xff, g: (hex >> 8) & 0xff, b: hex & 0xff };
 }
 
+function mixColor(source: number, target: number, t: number) {
+  const sr = (source >> 16) & 0xff;
+  const sg = (source >> 8) & 0xff;
+  const sb = source & 0xff;
+  const tr = (target >> 16) & 0xff;
+  const tg = (target >> 8) & 0xff;
+  const tb = target & 0xff;
+  const lerp = (a: number, b: number) => Math.round(a + (b - a) * t);
+  return (lerp(sr, tr) << 16) | (lerp(sg, tg) << 8) | lerp(sb, tb);
+}
+
+const lightenColor = (color: number, amount: number) => mixColor(color, 0xffffff, amount);
+const darkenColor = (color: number, amount: number) => mixColor(color, 0x000000, amount);
+const dist2 = (a: { x: number; y: number }, b: { x: number; y: number }) => {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return dx * dx + dy * dy;
+};
+
+type CornerKey = 'NW' | 'NE' | 'SE' | 'SW';
+type EdgeKey = 'N' | 'E' | 'S' | 'W';
+
+const CORNER_KEYS: CornerKey[] = ['NW', 'NE', 'SE', 'SW'];
+const CORNER_OFFSETS: Record<CornerKey, { x: number; y: number }> = {
+  NW: { x: 0, y: -(ISO_TILE_H / 2) },
+  NE: { x: ISO_TILE_W / 2, y: 0 },
+  SE: { x: 0, y: ISO_TILE_H / 2 },
+  SW: { x: -(ISO_TILE_W / 2), y: 0 }
+};
+
+const EDGE_TO_CORNERS: Record<EdgeKey, [CornerKey, CornerKey]> = {
+  N: ['NW', 'NE'],
+  E: ['NE', 'SE'],
+  S: ['SE', 'SW'],
+  W: ['SW', 'NW']
+};
+
+const OPP_EDGE: Record<EdgeKey, EdgeKey> = { N: 'S', E: 'W', S: 'N', W: 'E' };
+
+const averageCornerHeight = (c: { hNW: number; hNE: number; hSE: number; hSW: number }) =>
+  (c.hNW + c.hNE + c.hSE + c.hSW) / 4;
+
+const makeCornerPoints = (
+  corners: { hNW: number; hNE: number; hSE: number; hSW: number },
+  avg: number
+): Record<CornerKey, { x: number; y: number }> => ({
+  NW: { x: CORNER_OFFSETS.NW.x, y: CORNER_OFFSETS.NW.y - (corners.hNW - avg) * ELEV_Y_OFFSET },
+  NE: { x: CORNER_OFFSETS.NE.x, y: CORNER_OFFSETS.NE.y - (corners.hNE - avg) * ELEV_Y_OFFSET },
+  SE: { x: CORNER_OFFSETS.SE.x, y: CORNER_OFFSETS.SE.y - (corners.hSE - avg) * ELEV_Y_OFFSET },
+  SW: { x: CORNER_OFFSETS.SW.x, y: CORNER_OFFSETS.SW.y - (corners.hSW - avg) * ELEV_Y_OFFSET }
+});
+
+const topTrianglesFor = (c: { hNW: number; hNE: number; hSE: number; hSW: number }): Array<[CornerKey, CornerKey, CornerKey]> => {
+  const d1 = c.hNW + c.hSE;
+  const d2 = c.hNE + c.hSW;
+  if (d1 <= d2) {
+    return [
+      ['NW', 'NE', 'SE'],
+      ['NW', 'SE', 'SW']
+    ] as Array<[CornerKey, CornerKey, CornerKey]>;
+  }
+  return [
+    ['NE', 'SE', 'SW'],
+    ['NE', 'SW', 'NW']
+  ] as Array<[CornerKey, CornerKey, CornerKey]>;
+};
 
 
 function shade(c: number, f: number) {
@@ -597,7 +663,12 @@ export function BattlefieldStage({
       return markHere || markNei;
     };
     const rawCorners = (qq: number, rr: number) => {
-      const t = tileAt(qq, rr); const e = t ? (t.elevation ?? 0) : 0;
+      const t = tileAt(qq, rr);
+      if (t?.cornerHeights) {
+        const h = t.cornerHeights as Record<CornerKey, number>;
+        return { hNW: h.NW, hNE: h.NE, hSE: h.SE, hSW: h.SW };
+      }
+      const e = t ? (t.elevation ?? 0) : 0;
       let hNW = e, hNE = e, hSE = e, hSW = e;
       if (hasSlopeEdgeFromHigher(qq, rr, 'N')) { hNW = e - 1; hNE = e - 1; }
       if (hasSlopeEdgeFromHigher(qq, rr, 'E')) { hNE = e - 1; hSE = e - 1; }
@@ -626,22 +697,50 @@ export function BattlefieldStage({
     } as const;
   }, [map.tiles, map.width, map.height]);
 
+
   const tileGraphics = useMemo(() => {
+    const EDGE_KEYS: EdgeKey[] = ['N', 'E', 'S', 'W'];
+    const EDGE_VECTORS: Record<EdgeKey, { dq: number; dr: number }> = {
+      N: { dq: 0, dr: -1 },
+      E: { dq: +1, dr: 0 },
+      S: { dq: 0, dr: +1 },
+      W: { dq: -1, dr: 0 }
+    };
+    const idxAt = (qq: number, rr: number) => rr * map.width + qq;
+    const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
     return map.tiles.map((tile: any, index: number) => {
       const q = index % map.width;
       const r = Math.floor(index / map.width);
       const pos = toScreen({ q, r });
-      const elev = (tile as any).elevation ?? 0;
-      const posY = pos.y - elev * ELEV_Y_OFFSET;
+      const corners = snappedCorners.getCorners(q, r);
+      const cornerHeights: Record<CornerKey, number> = {
+        NW: corners.hNW,
+        NE: corners.hNE,
+        SE: corners.hSE,
+        SW: corners.hSW
+      };
+      const avgHeight = averageCornerHeight(corners);
+      const cornerPoints = makeCornerPoints(corners, avgHeight);
+      const tris = topTrianglesFor(corners);
       const isVisible = visibleTiles.has(index);
       const isExplored = exploredTiles.has(index);
+      const baseColor = (terrainPalette as any)[tile.terrain] ?? terrainPalette.plain;
+      const tex = (externalTerrainTextures?.[tile.terrain] ?? externalTerrainTextures?.plain)
+        ?? ((terrainTextures as any)[tile.terrain] ?? (terrainTextures as any).plain);
+      const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
+      const overlayAlpha = coloredTex ? (isVisible ? 1.0 : 0.75) : (isVisible ? 0.28 : 0.16);
+      const texMatrix = new Matrix();
+      texMatrix.translate((q * 13 + r * 7) % 32, (q * 5 + r * 11) % 32);
+      const center = {
+        x: (cornerPoints.NW.x + cornerPoints.NE.x + cornerPoints.SE.x + cornerPoints.SW.x) / 4,
+        y: (cornerPoints.NW.y + cornerPoints.NE.y + cornerPoints.SE.y + cornerPoints.SW.y) / 4
+      };
 
       return (
         <Graphics
           key={`tile-${index}`}
-
           x={pos.x}
-          y={posY}
+          y={pos.y - avgHeight * ELEV_Y_OFFSET}
           interactive={isExplored}
           cursor={isExplored ? 'pointer' : 'not-allowed'}
           pointerdown={() => {
@@ -656,186 +755,102 @@ export function BattlefieldStage({
           }}
           draw={(g) => {
             g.clear();
-            const size = tileSize / 2;
-            const hw = hexWidth / 2;
-            const points = ISO_MODE
-              ? [
-                  { x: 0, y: -(ISO_TILE_H / 2) }, // N
-                  { x: ISO_TILE_W / 2, y: 0 },    // E
-                  { x: 0, y: ISO_TILE_H / 2 },    // S
-                  { x: -ISO_TILE_W / 2, y: 0 }    // W
-                ]
-              : [
-                  { x: 0, y: -size },
-                  { x: hw, y: -size / 2 },
-                  { x: hw, y: size / 2 },
-                  { x: 0, y: size },
-                  { x: -hw, y: size / 2 },
-                  { x: -hw, y: -size / 2 }
-                ];
-
             if (!isExplored) {
-              // unexplored = dark
               g.beginFill(0x030509, 0.95);
-              g.moveTo(points[0].x, points[0].y);
-              for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+              g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
+              g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
+              g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
+              g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
               g.closePath();
               g.endFill();
-            } else {
-              // Colored vs. grayscale textures: if colored sheet is used, skip base fill and use full-opacity texture
-              const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
-              if (!coloredTex) {
-                // 1) solid base color (palette-driven)
-                const baseColor = (terrainPalette as any)[tile.terrain] ?? terrainPalette.plain;
-                g.beginFill(baseColor, isVisible ? 1.0 : 0.6);
-                g.moveTo(points[0].x, points[0].y);
-                for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+              return;
+            }
+            for (const tri of tris) {
+              const [a, b, c] = tri;
+              g.beginFill(baseColor, isVisible ? 1.0 : 0.6);
+              g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
+              g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
+              g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
+              g.closePath();
+              g.endFill();
+            }
+            for (const tri of tris) {
+              const [a, b, c] = tri;
+              g.beginTextureFill({ texture: tex, matrix: texMatrix, alpha: overlayAlpha });
+              g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
+              g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
+              g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
+              g.closePath();
+              g.endFill();
+            }
+
+            EDGE_KEYS.forEach((edge) => {
+              const [cornerA, cornerB] = EDGE_TO_CORNERS[edge];
+              const myEdgeHeight = (cornerHeights[cornerA] + cornerHeights[cornerB]) / 2;
+              const vec = EDGE_VECTORS[edge];
+              const nq = q + vec.dq;
+              const nr = r + vec.dr;
+              if (!inb(nq, nr)) return;
+              const neighborIdx = idxAt(nq, nr);
+              if (!exploredTiles.has(neighborIdx)) return;
+              const neighborTile = map.tiles[neighborIdx] as any;
+              const neighborCorners = snappedCorners.getCorners(nq, nr);
+              const neighborHeights: Record<CornerKey, number> = {
+                NW: neighborCorners.hNW,
+                NE: neighborCorners.hNE,
+                SE: neighborCorners.hSE,
+                SW: neighborCorners.hSW
+              };
+              const oppEdge = OPP_EDGE[edge];
+              const [oppA, oppB] = EDGE_TO_CORNERS[oppEdge];
+              const neighborHeight = (neighborHeights[oppA] + neighborHeights[oppB]) / 2;
+              const delta = neighborHeight - myEdgeHeight;
+              if (delta > 0 && delta <= 1.05) {
+                const tint = mixColor(baseColor, (terrainPalette as any)[neighborTile.terrain] ?? baseColor, 0.45);
+                const alpha = (isVisible ? 0.55 : 0.4) * Math.min(1, delta);
+                g.beginFill(tint, alpha);
+                g.moveTo(center.x, center.y);
+                g.lineTo(cornerPoints[cornerA].x, cornerPoints[cornerA].y);
+                g.lineTo(cornerPoints[cornerB].x, cornerPoints[cornerB].y);
+                g.closePath();
+                g.endFill();
+              } else if (delta < 0) {
+                const depth = Math.min(1, Math.abs(delta));
+                const tint = darkenColor(baseColor, 0.25);
+                const alpha = (isVisible ? 0.35 : 0.2) * depth;
+                g.beginFill(tint, alpha);
+                g.moveTo(center.x, center.y);
+                g.lineTo(cornerPoints[cornerB].x, cornerPoints[cornerB].y);
+                g.lineTo(cornerPoints[cornerA].x, cornerPoints[cornerA].y);
                 g.closePath();
                 g.endFill();
               }
-
-              // 2) textured overlay (external PNGs override procedural textures if present)
-              const tex = (externalTerrainTextures?.[tile.terrain] ?? externalTerrainTextures?.plain)
-                ?? ((terrainTextures as any)[tile.terrain] ?? (terrainTextures as any).plain);
-              const m = new Matrix();
-              const ox = (q * 13 + r * 7) % 32; // small per-tile offset to break tiling
-              const oy = (q * 5 + r * 11) % 32;
-              m.translate(ox, oy);
-              const overlayAlpha = coloredTex ? (isVisible ? 1.0 : 0.75) : (isVisible ? 0.28 : 0.16);
-              g.beginTextureFill({ texture: tex, matrix: m, alpha: overlayAlpha });
-              g.moveTo(points[0].x, points[0].y);
-              for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
-              g.closePath();
-              g.endFill();
-
-	              // 2.5) elevation-based light/shade wedges + edge blending (Spellcross-like)
-	              {
-	                const elev = (tile as any).elevation ?? 0;
-	                const idxAt = (qq: number, rr: number) => rr * map.width + qq;
-	                const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
-	                const getElev = (qq: number, rr: number) => (inb(qq, rr) ? ((map.tiles[idxAt(qq, rr)] as any).elevation ?? 0) : elev);
-	                const terr = (tile as any).terrain ?? 'plain';
-	                // Terrain factor to keep water/roads flatter visually
-	                const terrShadeFactor = terr === 'water' ? 0.3 : terr === 'road' ? 0.5 : terr === 'urban' ? 0.6 : terr === 'forest' ? 0.7 : 1.0;
-
-
-                        // 2.5.a) (moved) Vertical faces/walls will be drawn in a later pass above UI overlays.
-                        // Intentionally no walls here to keep ground pass clean.
-
-                        // 2.5.b) Removed per-hex wedges; rely on walls + top shading for readability.
-
-	                // Directional top shading based on elevation gradient (reduces per-hex wedges)
-	                const eR = getElev(q + 1, r);
-	                const eL = getElev(q - 1, r);
-	                const eB = getElev(q, r + 1);
-	                const eT = getElev(q, r - 1);
-	                const gx = eR - eL;
-	                const gy = eB - eT;
-	                const dot = gx * 0.7 + gy * 1.0; // >0 = slopes away from light (darken)
-	                const aTop = (isVisible ? 0.12 : 0.06) * terrShadeFactor * Math.min(1, Math.abs(dot) * 0.5 + 0.15);
-	                g.beginFill(dot > 0 ? 0x000000 : 0xffffff, aTop);
-	                g.moveTo(points[0].x, points[0].y);
-	                for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
-	                g.closePath();
-	                g.endFill();
-
-                        // Slope surface gradient (per-corner model derived from elevEdges)
-                        if (ISO_MODE) {
-                          // no need for slope-edge helper here; top shading uses only per-corner heights
-                          const c = snappedCorners.getCorners(q, r);
-                          const vals = [c.hNW, c.hNE, c.hSE, c.hSW];
-                          const maxv = Math.max(...vals); const minv = Math.min(...vals);
-                          if (maxv - minv === 1) {
-                            // classify orientation by which two adjacent corners are lower
-                            let ori: 'N'|'E'|'S'|'W'|null = null;
-                            if (c.hSW === minv && c.hSE === minv) ori = 'S';
-                            else if (c.hNE === minv && c.hSE === minv) ori = 'E';
-                            else if (c.hNW === minv && c.hNE === minv) ori = 'N';
-                            else if (c.hNW === minv && c.hSW === minv) ori = 'W';
-                            if (ori) {
-                              const lightA = (isVisible ? 0.07 : 0.04) * terrShadeFactor;
-                              const darkA  = (isVisible ? 0.09 : 0.06) * terrShadeFactor;
-                              // Triangles over the diamond
-                              const tri = (a: number, b: number, c: number, color: number, alpha: number) => {
-                                g.beginFill(color, alpha);
-                                g.moveTo(points[a].x, points[a].y);
-                                g.lineTo(points[b].x, points[b].y);
-                                g.lineTo(points[c].x, points[c].y);
-                                g.closePath();
-                                g.endFill();
-                              };
-                              if (ori === 'S') { tri(0,1,3, 0xffffff, lightA); tri(2,1,3, 0x000000, darkA); }
-                              else if (ori === 'E') { tri(3,0,2, 0xffffff, lightA); tri(1,0,2, 0x000000, darkA); }
-                              else if (ori === 'N') { tri(2,1,3, 0xffffff, lightA); tri(0,1,3, 0x000000, darkA); }
-                              else /* W */         { tri(1,0,2, 0xffffff, lightA); tri(3,0,2, 0x000000, darkA); }
-                            }
-                          }
-                        }
-
-
-	                // Edge blending between different terrains / elevation steps
-	                const neighbors = [
-	                  { dq: 0, dr: -1 }, // N
-	                  { dq: +1, dr: 0 }, // E
-	                  { dq: 0, dr: +1 }, // S
-	                  { dq: -1, dr: 0 }  // W
-	                ];
-	                for (let ei = 0; ei < (ISO_MODE ? 4 : 6); ei++) {
-	                  const nq = q + neighbors[ei].dq; const nr = r + neighbors[ei].dr;
-	                  if (!inb(nq, nr)) continue;
-	                  const nIdx = idxAt(nq, nr);
-	                  if (nIdx <= index) continue; // draw once to avoid double-rendering
-	                  const nTile = map.tiles[nIdx] as any;
-	                  const terrDiff = (nTile.terrain ?? terr) !== terr;
-	                  const elevDiff = (nTile.elevation ?? 0) !== elev;
-				                  let p0: any; let p1: any;
-
-				                  p0 = points[ei]; p1 = points[(ei + 1) % points.length];
-
-				                  if (!p0 || !p1) { continue; }
-
-                  // Skip edge lines for pure elevation steps — terrain change only
-                  if (!terrDiff) continue;
-
-	                  if (!terrDiff && !elevDiff) continue;
-			                  /*
-
-	                  const p0 = points[ei]; const p1 = points[(ei + 1) % points.length];
-			                  */
-			                  p0 = points[ei]; p1 = points[(ei + 1) % points.length];
-
-	                  const w = elevDiff ? 2 : 1;
-	                  const alpha = ((isVisible ? 0.18 : 0.10) + (elevDiff ? 0.06 : 0)) * terrShadeFactor;
-	                  g.lineStyle(w, 0x000000, Math.min(0.26, alpha));
-	                  g.moveTo(p0.x, p0.y);
-	                  g.lineTo(p1.x, p1.y);
-	                  g.lineStyle();
-	                }
-	              }
-
-            }
+            });
 
             if (isExplored && !isVisible) {
               g.lineStyle(1, 0x0a1a2c, 0.22);
-              g.moveTo(points[0].x, points[0].y);
-              for (let i = 1; i < points.length; i++) {
-                g.lineTo(points[i].x, points[i].y);
-              }
+              g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
+              g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
+              g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
+              g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
               g.closePath();
-            }
-
-            // debug: tile center marker
-            if (DEBUG_ALIGN) {
-              g.lineStyle(0);
-              g.beginFill(0xff00ff, 0.9);
-              g.drawCircle(0, 0, 1.6);
-              g.endFill();
             }
           }}
         />
       );
     });
-  }, [exploredTiles, map, onSelectTile, visibleTiles]);
+  }, [
+    externalTerrainTextures,
+    externalTexturesAreColored,
+    exploredTiles,
+    friendlyByCoord,
+    map.tiles,
+    map.width,
+    onSelectTile,
+    snappedCorners,
+    terrainTextures,
+    visibleTiles
+  ]);
 
   const tileOverlays = useMemo(() => {
     return map.tiles
@@ -843,8 +858,9 @@ export function BattlefieldStage({
         const q = index % map.width;
         const r = Math.floor(index / map.width);
         const pos = toScreen({ q, r });
-        const elev = ((map.tiles[index] as any).elevation ?? 0);
-        const posY = pos.y - elev * ELEV_Y_OFFSET;
+        const corners = snappedCorners.getCorners(q, r);
+        const avgHeight = averageCornerHeight(corners);
+        const cornerPoints = makeCornerPoints(corners, avgHeight);
         const isVisible = visibleTiles.has(index);
         const isExplored = exploredTiles.has(index);
         if (!isExplored) return null;
@@ -852,60 +868,22 @@ export function BattlefieldStage({
           <Graphics
             key={`overlay-${index}`}
             x={pos.x}
-            y={posY}
+            y={pos.y - avgHeight * ELEV_Y_OFFSET}
             draw={(g) => {
               g.clear();
-              const s = tileSize / 2;
-              const hw = hexWidth / 2;
-              const pts = ISO_MODE
-                ? [
-                    { x: 0, y: -(s * 0.5) },
-                    { x: hw, y: 0 },
-                    { x: 0, y: (s * 0.5) },
-                    { x: -hw, y: 0 }
-                  ]
-                : [
-                    { x: 0, y: -s },
-                    { x: hw, y: -s / 2 },
-                    { x: hw, y: s / 2 },
-                    { x: 0, y: s },
-                    { x: -hw, y: s / 2 },
-                    { x: -hw, y: -s / 2 }
-                  ];
-              // subtle border (softer)
               g.lineStyle(1, 0x0d1b24, isVisible ? 0.14 : 0.10);
-              g.moveTo(pts[0].x, pts[0].y);
-              for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+              g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
+              g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
+              g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
+              g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
               g.closePath();
-
-              // subtle inner shading only for HEX mode; ISO keeps clean tiles
-              if (!ISO_MODE) {
-                // ensure no stroke on shading triangles
-                g.lineStyle();
-                const varf = (((q * 31 + r * 57) % 7) - 3) * 0.01;
-                // top-left light
-                g.beginFill(0xffffff, (isVisible ? 0.06 : 0.03) + varf * 0.3);
-                g.moveTo(0, 0);
-                g.lineTo(-hw, -s / 2);
-                g.lineTo(0, -s);
-                g.closePath();
-                g.endFill();
-
-                // bottom-right shade
-                g.beginFill(0x000000, isVisible ? 0.07 : 0.04);
-                g.moveTo(0, 0);
-                g.lineTo(hw, s / 2);
-                g.lineTo(0, s);
-                g.closePath();
-                g.endFill();
-              }
+              g.lineStyle();
             }}
           />
         );
       })
-        .filter(Boolean) as JSX.Element[];
-    }, [map.tiles, map.width, visibleTiles, exploredTiles]);
-
+      .filter(Boolean) as JSX.Element[];
+  }, [exploredTiles, map.tiles, map.width, snappedCorners, visibleTiles]);
   // Local helper to keep UI overlays consistent with core movement rules
   const uiCanEnter = (unitType: any, tile: { terrain: string; passable: boolean }) => {
     if (!tile || !tile.passable) return false;
@@ -1248,173 +1226,91 @@ export function BattlefieldStage({
 
   // Elevation walls drawn above overlays for correct occlusion
   const tileWalls = useMemo(() => {
-    return map.tiles.map((tile: any, index: number) => {
-      const q = index % map.width;
-      const r = Math.floor(index / map.width);
-      const pos = toScreen({ q, r });
-      const elev = (tile as any).elevation ?? 0;
-      const posY = pos.y - elev * ELEV_Y_OFFSET;
-      const isVisible = visibleTiles.has(index);
-      const isExplored = exploredTiles.has(index);
-      if (!isExplored || !isVisible) return null; // walls only on currently visible tiles
+    if (!ISO_MODE) return null;
+    const EDGE_KEYS: EdgeKey[] = ['N', 'E', 'S', 'W'];
+    const EDGE_VECTORS: Record<EdgeKey, { dq: number; dr: number }> = {
+      N: { dq: 0, dr: -1 },
+      E: { dq: +1, dr: 0 },
+      S: { dq: 0, dr: +1 },
+      W: { dq: -1, dr: 0 }
+    };
+    const idxAt = (qq: number, rr: number) => rr * map.width + qq;
+    const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
 
-      return (
-        <Graphics
-          key={`walls-${index}`}
-          x={pos.x}
-          y={posY}
-          draw={(g) => {
-            g.clear();
-            if (!ISO_MODE) return; // walls only for ISO mode
+    return map.tiles
+      .map((tile: any, index: number) => {
+        const q = index % map.width;
+        const r = Math.floor(index / map.width);
+        const pos = toScreen({ q, r });
+        const isVisible = visibleTiles.has(index);
+        const isExplored = exploredTiles.has(index);
+        if (!isExplored || !isVisible) return null;
+        const corners = snappedCorners.getCorners(q, r);
+        const avgHeight = averageCornerHeight(corners);
+        const cornerPoints = makeCornerPoints(corners, avgHeight);
+        const cornerHeights: Record<CornerKey, number> = {
+          NW: corners.hNW,
+          NE: corners.hNE,
+          SE: corners.hSE,
+          SW: corners.hSW
+        };
+        const baseColor = (terrainPalette as any)[tile.terrain] ?? terrainPalette.plain;
 
-            const points = [
-              { x: 0, y: -(ISO_TILE_H / 2) }, // N(0)
-              { x: ISO_TILE_W / 2, y: 0 },    // E(1)
-              { x: 0, y: ISO_TILE_H / 2 },    // S(2)
-              { x: -ISO_TILE_W / 2, y: 0 }    // W(3)
-            ];
-
-            const idxAt = (qq: number, rr: number) => rr * map.width + qq;
-            const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
-
-            // Draw only E and S faces with corner-aware rules (no wall under slopes)
-            const neighbors = [
-              { dq: 0, dr: -1 }, // N(0)
-              { dq: +1, dr: 0 }, // E(1)
-              { dq: 0, dr: +1 }, // S(2)
-              { dq: -1, dr: 0 }  // W(3)
-            ];
-            const faceEdges = [1, 2]; // E and S
-            const opp: Record<'N'|'E'|'S'|'W','N'|'E'|'S'|'W'> = { N: 'S', E: 'W', S: 'N', W: 'E' };
-            const tileAt = (qq: number, rr: number) => inb(qq, rr) ? (map.tiles[idxAt(qq, rr)] as any) : undefined;
-            const hasSlopeEdgeFromHigher = (qq: number, rr: number, dir: 'N'|'E'|'S'|'W') => {
-              const t = tileAt(qq, rr); if (!t) return false;
-              const nQ = qq + neighbors[{ N:0,E:1,S:2,W:3 }[dir]].dq;
-              const nR = rr + neighbors[{ N:0,E:1,S:2,W:3 }[dir]].dr;
-              const nt = tileAt(nQ, nR); if (!nt) return false;
-              const eHere = (t.elevation ?? 0), eNei = (nt.elevation ?? 0);
-              if (eHere - eNei !== 1) return false; // only when current tile is exactly one higher
-              const markHere = (t.elevEdges?.[dir] === 'slope');
-              const markNei = (nt.elevEdges?.[opp[dir]] === 'slope');
-              return markHere || markNei;
-            };
-            const cornersOf = (qq: number, rr: number) => snappedCorners.getCorners(qq, rr);
-            const edgePair = (c: {hNW:number;hNE:number;hSE:number;hSW:number}, edgeIndex: number): [number,number] => {
-              if (edgeIndex === 0) return [c.hNW, c.hNE]; // N
-              if (edgeIndex === 1) return [c.hNE, c.hSE]; // E
-              if (edgeIndex === 2) return [c.hSW, c.hSE]; // S
-              return [c.hNW, c.hSW]; // W
-            };
-
-            for (const ei of faceEdges) {
-              const nq = q + neighbors[ei].dq; const nr = r + neighbors[ei].dr;
-              if (!inb(nq, nr)) continue;
-              const p0 = points[ei]; const p1 = points[(ei + 1) % 4];
-              if (!p0 || !p1) continue;
-
-              const mul = (hex: number, f: number) => {
-                const r = Math.min(255, Math.max(0, Math.round(((hex >> 16) & 255) * f)));
-                const g = Math.min(255, Math.max(0, Math.round(((hex >> 8) & 255) * f)));
-                const b = Math.min(255, Math.max(0, Math.round(((hex) & 255) * f)));
-                return (r << 16) | (g << 8) | b;
-              };
-
-
-              // Base terrain color (used for wall tint and slope wedges)
-              const baseTop = (terrainPalette as any)[tile.terrain] ?? terrainPalette.plain;
-              const r0 = (baseTop >> 16) & 0xff;
-              const g0 = (baseTop >> 8) & 0xff;
-              const b0 = baseTop & 0xff;
-
-              const dir: 'E'|'S' = (ei === 1 ? 'E' : 'S');
-              const color = dir === 'E' ? mul(baseTop, 0.52) : mul(baseTop, 0.62);
-              const wallAlpha = 0.88;
-
-              const aC = cornersOf(q, r);
-              const bC = cornersOf(nq, nr);
-              const aEdge = edgePair(aC, ei);
-              const bOpp = edgePair(bC, ei === 1 ? 3 : 0); // neighbor's W or N edge
-              const delta = Math.min(aEdge[0], aEdge[1]) - Math.max(bOpp[0], bOpp[1]);
-              const edgeIsSlope = Math.abs(aEdge[0] - aEdge[1]) === 1; // ramp runs along this edge
-
-              // If this edge is a slope from the higher tile, draw wedge and skip wall
-              const slopeHere = hasSlopeEdgeFromHigher(q, r, dir);
-              if (slopeHere) {
-                const mid = { x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2 };
-                const toCenter = { x: -mid.x, y: -mid.y };
-                const len = Math.hypot(toCenter.x, toCenter.y) || 1;
-                const k = ei === 1 ? 0.22 : 0.19; // thinner wedge; S slightly subtler
-                const nx = (toCenter.x / len) * ISO_TILE_W * k * (ei === 1 ? 1.0 : 0.85);
-                const ny = (toCenter.y / len) * ISO_TILE_H * k * (ei === 1 ? 1.0 : 0.85);
-                const p0i = { x: p0.x + nx, y: p0.y + ny };
-                const p1i = { x: p1.x + nx, y: p1.y + ny };
-
-                const rS = Math.max(0, Math.min(255, Math.round(r0 * 0.55)));
-                const gS = Math.max(0, Math.min(255, Math.round(g0 * 0.55)));
-                const bS = Math.max(0, Math.min(255, Math.round(b0 * 0.55)));
-                const slopeColor = (rS << 16) | (gS << 8) | bS;
-                const alpha = ei === 1 ? 0.26 : 0.20; // E a bit darker than S (light from NW)
-
-                g.beginFill(slopeColor, alpha);
-                g.moveTo(p0.x, p0.y); g.lineTo(p1.x, p1.y); g.lineTo(p1i.x, p1i.y); g.lineTo(p0i.x, p0i.y); g.closePath();
+        return (
+          <Graphics
+            key={`walls-${index}`}
+            x={pos.x}
+            y={pos.y - avgHeight * ELEV_Y_OFFSET}
+            draw={(g) => {
+              g.clear();
+              EDGE_KEYS.forEach((edge) => {
+                const vec = EDGE_VECTORS[edge];
+                const nq = q + vec.dq;
+                const nr = r + vec.dr;
+                const neighborIdx = inb(nq, nr) ? idxAt(nq, nr) : -1;
+                const neighbor = neighborIdx >= 0 ? (map.tiles[neighborIdx] as any) : null;
+                const neighborCorners = neighbor ? snappedCorners.getCorners(nq, nr) : null;
+                const neighborHeights: Record<CornerKey, number> | null = neighborCorners
+                  ? {
+                      NW: neighborCorners.hNW,
+                      NE: neighborCorners.hNE,
+                      SE: neighborCorners.hSE,
+                      SW: neighborCorners.hSW
+                    }
+                  : null;
+                const oppEdge = OPP_EDGE[edge];
+                const [myA, myB] = EDGE_TO_CORNERS[edge];
+                const [oppA, oppB] = EDGE_TO_CORNERS[oppEdge];
+                const myAvg = (cornerHeights[myA] + cornerHeights[myB]) / 2;
+                const neighborAvg = neighborHeights
+                  ? (neighborHeights[oppA] + neighborHeights[oppB]) / 2
+                  : 0;
+                const delta = myAvg - neighborAvg;
+                if (delta < 2) return;
+                const topA = cornerPoints[myA];
+                const topB = cornerPoints[myB];
+                const depth = delta * CLIFF_DEPTH;
+                const bottomA = { x: topA.x, y: topA.y + depth };
+                const bottomB = { x: topB.x, y: topB.y + depth };
+                const wallColor = darkenColor(baseColor, edge === 'E' ? 0.35 : edge === 'S' ? 0.45 : 0.4);
+                g.beginFill(wallColor, 0.92);
+                g.moveTo(topA.x, topA.y);
+                g.lineTo(topB.x, topB.y);
+                g.lineTo(bottomB.x, bottomB.y);
+                g.lineTo(bottomA.x, bottomA.y);
+                g.closePath();
                 g.endFill();
-
-                // inner rim
-                g.lineStyle(1, 0xffffff, 0.06);
-                g.moveTo(p0i.x, p0i.y); g.lineTo(p1i.x, p1i.y); g.lineStyle();
-
-                // shoulders
-                const s = 0.38, e = 0.18;
-                const t0 = { x: p0.x + (p0i.x - p0.x) * s, y: p0.y + (p0i.y - p0.y) * s };
-                const t1 = { x: p1.x + (p1i.x - p1.x) * s, y: p1.y + (p1i.y - p1.y) * s };
-                const ex = p1.x - p0.x, ey = p1.y - p0.y;
-                const s0 = { x: p0.x + ex * e, y: p0.y + ey * e };
-                const s1 = { x: p1.x - ex * e, y: p1.y - ey * e };
-                g.beginFill(slopeColor, alpha * 0.92);
-                g.moveTo(p0.x, p0.y); g.lineTo(t0.x, t0.y); g.lineTo(s0.x, s0.y); g.closePath();
-                g.moveTo(p1.x, p1.y); g.lineTo(t1.x, t1.y); g.lineTo(s1.x, s1.y); g.closePath();
-                g.endFill();
-                g.lineStyle(1, 0xffffff, 0.05);
-                g.moveTo(p0.x, p0.y); g.lineTo(s0.x, s0.y);
-                g.moveTo(p1.x, p1.y); g.lineTo(s1.x, s1.y);
+                g.lineStyle(1, 0x000000, 0.25);
+                g.moveTo(bottomA.x, bottomA.y);
+                g.lineTo(bottomB.x, bottomB.y);
                 g.lineStyle();
-                continue;
-              }
-
-              // Never draw a vertical wall along a ramp edge (robust even if elevEdges missing)
-              if (edgeIsSlope) continue;
-
-              // No wall if corners meet (slope/flat transition)
-              if (delta <= 0) continue;
-
-              // Vertical wall for a sheer cliff; height from corner delta
-              const depth = delta * CLIFF_DEPTH;
-
-              g.beginFill(color, wallAlpha);
-              g.moveTo(p0.x, p0.y);
-              g.lineTo(p1.x, p1.y);
-              g.lineTo(p1.x, p1.y + depth);
-              g.lineTo(p0.x, p0.y + depth);
-              g.closePath();
-              g.endFill();
-
-              // top rim highlight for readability
-              g.lineStyle(1, 0xffffff, 0.16);
-              g.moveTo(p0.x, p0.y);
-              g.lineTo(p1.x, p1.y);
-              g.lineStyle();
-
-              // base shadow to anchor the wall
-              g.lineStyle(1, 0x000000, 0.20);
-              g.moveTo(p0.x, p0.y + depth);
-              g.lineTo(p1.x, p1.y + depth);
-              g.lineStyle();
-            }
-          }}
-        />
-      );
-    }).filter(Boolean) as JSX.Element[];
-  }, [map.tiles, map.width, visibleTiles, exploredTiles]);
+              });
+            }}
+          />
+        );
+      })
+      .filter(Boolean) as JSX.Element[];
+  }, [ISO_MODE, exploredTiles, map.tiles, map.width, snappedCorners, visibleTiles]);
 
 
   const units = useMemo(() => {
@@ -1815,74 +1711,75 @@ export function BattlefieldStage({
               ref={overlayMaskRef}
               draw={(g) => {
                 g.clear();
-                // Fill whole world, then subtract wall quads as holes
                 g.beginFill(0xffffff, 1);
                 g.drawRect(-10000, -10000, 20000, 20000);
-
+                const EDGE_KEYS: EdgeKey[] = ['N', 'E', 'S', 'W'];
+                const EDGE_VECTORS: Record<EdgeKey, { dq: number; dr: number }> = {
+                  N: { dq: 0, dr: -1 },
+                  E: { dq: +1, dr: 0 },
+                  S: { dq: 0, dr: +1 },
+                  W: { dq: -1, dr: 0 }
+                };
                 const idxAt = (qq: number, rr: number) => rr * map.width + qq;
                 const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
-                const neighbors = [
-                  { dq: 0, dr: -1 }, // N(0)
-                  { dq: +1, dr: 0 }, // E(1)
-                  { dq: 0, dr: +1 }, // S(2)
-                  { dq: -1, dr: 0 }  // W(3)
-                ];
-                const faceEdges = [1, 2]; // E and S
-                const cornersOf = (qq: number, rr: number) => snappedCorners.getCorners(qq, rr);
-                const edgePair = (c: {hNW:number;hNE:number;hSE:number;hSW:number}, edgeIndex: number): [number,number] => {
-                  if (edgeIndex === 0) return [c.hNW, c.hNE]; // N
-                  if (edgeIndex === 1) return [c.hNE, c.hSE]; // E
-                  if (edgeIndex === 2) return [c.hSW, c.hSE]; // S
-                  return [c.hNW, c.hSW]; // W
-                };
-
                 for (let rr = 0; rr < map.height; rr++) {
                   for (let qq = 0; qq < map.width; qq++) {
                     const index = idxAt(qq, rr);
-                    if (!visibleTiles.has(index)) continue; // mask only where walls can appear (visible)
-
-                    const aC = cornersOf(qq, rr);
-                    const pos = toScreen({ q: qq, r: rr });
-                    const elev = ((map.tiles[index] as any).elevation ?? 0);
-                    const posY = pos.y - elev * ELEV_Y_OFFSET;
-                    const points = [
-                      { x: pos.x + 0, y: posY - ISO_TILE_H / 2 },    // N
-                      { x: pos.x + ISO_TILE_W / 2, y: posY },        // E
-                      { x: pos.x + 0, y: posY + ISO_TILE_H / 2 },    // S
-                      { x: pos.x - ISO_TILE_W / 2, y: posY }         // W
-                    ];
-
-                    for (const ei of faceEdges) {
-                      const nq = qq + neighbors[ei].dq; const nr = rr + neighbors[ei].dr;
-                      if (!inb(nq, nr)) continue;
-                      const bC = cornersOf(nq, nr);
-
-                      const aEdge = edgePair(aC, ei);
-                      const bOpp  = edgePair(bC, ei === 1 ? 3 : 0);
-                      // Skip if the edge is a ramp (no vertical face to mask)
-                      const edgeIsSlope = Math.abs(aEdge[0] - aEdge[1]) === 1;
-                      if (edgeIsSlope) continue;
-
-                      const delta = Math.min(aEdge[0], aEdge[1]) - Math.max(bOpp[0], bOpp[1]);
-                      if (delta <= 0) continue; // no vertical wall
+                    if (!visibleTiles.has(index)) continue;
+                    const tileCorners = snappedCorners.getCorners(qq, rr);
+                    const avgHeight = averageCornerHeight(tileCorners);
+                    const localPoints = makeCornerPoints(tileCorners, avgHeight);
+                    const worldPos = toScreen({ q: qq, r: rr });
+                    const offsetY = worldPos.y - avgHeight * ELEV_Y_OFFSET;
+                    const worldPoints: Record<CornerKey, { x: number; y: number }> = {
+                      NW: { x: worldPos.x + localPoints.NW.x, y: offsetY + localPoints.NW.y },
+                      NE: { x: worldPos.x + localPoints.NE.x, y: offsetY + localPoints.NE.y },
+                      SE: { x: worldPos.x + localPoints.SE.x, y: offsetY + localPoints.SE.y },
+                      SW: { x: worldPos.x + localPoints.SW.x, y: offsetY + localPoints.SW.y }
+                    };
+                    const myHeights: Record<CornerKey, number> = {
+                      NW: tileCorners.hNW,
+                      NE: tileCorners.hNE,
+                      SE: tileCorners.hSE,
+                      SW: tileCorners.hSW
+                    };
+                    EDGE_KEYS.forEach((edge) => {
+                      const vec = EDGE_VECTORS[edge];
+                      const nq = qq + vec.dq;
+                      const nr = rr + vec.dr;
+                      const neighborIdx = inb(nq, nr) ? idxAt(nq, nr) : -1;
+                      const neighborCorners = neighborIdx >= 0 ? snappedCorners.getCorners(nq, nr) : null;
+                      const neighborHeights: Record<CornerKey, number> | null = neighborCorners
+                        ? {
+                            NW: neighborCorners.hNW,
+                            NE: neighborCorners.hNE,
+                            SE: neighborCorners.hSE,
+                            SW: neighborCorners.hSW
+                          }
+                        : null;
+                      const [myA, myB] = EDGE_TO_CORNERS[edge];
+                      const [oppA, oppB] = EDGE_TO_CORNERS[OPP_EDGE[edge]];
+                      const myAvg = (myHeights[myA] + myHeights[myB]) / 2;
+                      const neighborAvg = neighborHeights
+                        ? (neighborHeights[oppA] + neighborHeights[oppB]) / 2
+                        : 0;
+                      const delta = myAvg - neighborAvg;
+                      if (delta < 2) return;
+                      const topA = worldPoints[myA];
+                      const topB = worldPoints[myB];
                       const depth = delta * CLIFF_DEPTH;
-
-                      const p0 = points[ei];
-                      const p1 = points[(ei + 1) % points.length];
-                      const b0 = { x: p0.x, y: p0.y + depth };
-                      const b1 = { x: p1.x, y: p1.y + depth };
-
+                      const bottomA = { x: topA.x, y: topA.y + depth };
+                      const bottomB = { x: topB.x, y: topB.y + depth };
                       g.beginHole();
-                      g.moveTo(p0.x, p0.y);
-                      g.lineTo(p1.x, p1.y);
-                      g.lineTo(b1.x, b1.y);
-                      g.lineTo(b0.x, b0.y);
+                      g.moveTo(topA.x, topA.y);
+                      g.lineTo(topB.x, topB.y);
+                      g.lineTo(bottomB.x, bottomB.y);
+                      g.lineTo(bottomA.x, bottomA.y);
                       g.closePath();
                       g.endHole();
-                    }
+                    });
                   }
                 }
-
                 g.endFill();
               }}
             />
@@ -1981,3 +1878,13 @@ export function BattlefieldStage({
     </div>
   );
 }
+  const isoPointsFor = (q: number, r: number, elev: number) => {
+    const pos = toScreen({ q, r });
+    const posY = pos.y - elev * ELEV_Y_OFFSET;
+    return [
+      { x: pos.x + 0, y: posY - ISO_TILE_H / 2 }, // N
+      { x: pos.x + ISO_TILE_W / 2, y: posY },     // E
+      { x: pos.x + 0, y: posY + ISO_TILE_H / 2 }, // S
+      { x: pos.x - ISO_TILE_W / 2, y: posY }      // W
+    ];
+  };
