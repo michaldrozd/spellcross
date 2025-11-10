@@ -131,7 +131,8 @@ export function useBattleSimulation() {
         occupied,
         ignoreCoordinates: new Set([`${unit.coordinate.q},${unit.coordinate.r}`]),
         movementMultiplier,
-        maxCost: Number.POSITIVE_INFINITY
+        maxCost: Number.POSITIVE_INFINITY,
+        unitType: unit.unitType
       });
     },
     [battleState]

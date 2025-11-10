@@ -1,8 +1,12 @@
 export * from './simulation/game-state.js';
 export * from './simulation/systems/turn-processor.js';
 export * from './simulation/types.js';
+export * from './simulation/pathfinding/types.js';
+export { movementMultiplierForStance } from './simulation/pathfinding/movement.js';
 export * from './simulation/pathfinding/hex-pathfinder.js';
+export * from './simulation/pathfinding/iso-pathfinder.js';
 export * from './simulation/combat/combat-resolver.js';
 export { axialDistance } from './simulation/utils/grid.js';
+export { isoDistance, isoNeighbors, isoWithinRange, isoLine } from './simulation/utils/grid-iso.js';
 export * from './simulation/visibility/vision.js';
 export { decideNextAIAction } from './simulation/ai/baseline-ai.js';

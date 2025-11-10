@@ -399,16 +399,21 @@ export function TacticalSandboxPage() {
       if (e.key === 'f' || e.key === 'F') {
         setAttackKeyHeld(false);
         if (canAttack) {
-
           handleAttack();
         }
       }
     };
+    const onBlur = () => setAttackKeyHeld(false);
+    const onVisibility = () => { if (document.visibilityState !== 'visible') setAttackKeyHeld(false); };
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+      document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [canAttack, endTurn, plannedCost, plannedDestination, plannedPath, selectedUnit]);
   const [fireHover, setFireHover] = useState(false);

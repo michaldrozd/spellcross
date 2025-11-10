@@ -1,11 +1,6 @@
-import type {
-  BattlefieldMap,
-  HexCoordinate,
-  TacticalBattleState,
-  UnitInstance,
-  UnitStance
-} from '../types.js';
-import { axialDistance, coordinateKey, getNeighbors, getTile } from '../utils/grid.js';
+import type { BattlefieldMap, HexCoordinate, TacticalBattleState, UnitInstance, UnitStance } from '../types.js';
+import { getTile, coordinateKey as hexKey } from '../utils/grid.js';
+import { isoDistance, isoNeighbors } from '../utils/grid-iso.js';
 import type { PathfindingOptions, PathResult } from './types.js';
 
 interface NodeRecord {
@@ -16,7 +11,6 @@ interface NodeRecord {
 }
 
 import { movementMultiplierForStance } from './movement.js';
-export { movementMultiplierForStance };
 
 function canUnitEnterTerrain(unitType: UnitInstance['unitType'] | undefined, tile: { terrain: string; passable: boolean }): boolean {
   if (!tile || !tile.passable) return false;
@@ -35,7 +29,7 @@ function canUnitEnterTerrain(unitType: UnitInstance['unitType'] | undefined, til
   }
 }
 
-export function findPathOnMap(
+export function findPathOnMapIso(
   map: BattlefieldMap,
   start: HexCoordinate,
   goal: HexCoordinate,
@@ -50,31 +44,25 @@ export function findPathOnMap(
   const movementMultiplier = options.movementMultiplier ?? 1;
 
   const openSet: NodeRecord[] = [
-    {
-      coordinate: start,
-      costFromStart: 0,
-      estimatedTotalCost: axialDistance(start, goal)
-    }
+    { coordinate: start, costFromStart: 0, estimatedTotalCost: isoDistance(start, goal) }
   ];
   const closedSet = new Set<string>();
   const nodeLookup = new Map<string, NodeRecord>();
-  nodeLookup.set(coordinateKey(start), openSet[0]);
+  nodeLookup.set(hexKey(start), openSet[0]);
 
   const maxCost = options.maxCost ?? Number.POSITIVE_INFINITY;
 
   const popLowest = () => {
-    let lowestIndex = 0;
+    let idx = 0;
     for (let i = 1; i < openSet.length; i++) {
-      if (openSet[i].estimatedTotalCost < openSet[lowestIndex].estimatedTotalCost) {
-        lowestIndex = i;
-      }
+      if (openSet[i].estimatedTotalCost < openSet[idx].estimatedTotalCost) idx = i;
     }
-    return openSet.splice(lowestIndex, 1)[0];
+    return openSet.splice(idx, 1)[0];
   };
 
   while (openSet.length > 0) {
     const current = popLowest();
-    const currentKey = coordinateKey(current.coordinate);
+    const currentKey = hexKey(current.coordinate);
 
     if (current.coordinate.q === goal.q && current.coordinate.r === goal.r) {
       const path: HexCoordinate[] = [];
@@ -88,46 +76,54 @@ export function findPathOnMap(
 
     closedSet.add(currentKey);
 
-    for (const neighbor of getNeighbors(map, current.coordinate)) {
-      const neighborKey = coordinateKey(neighbor);
-      if (closedSet.has(neighborKey)) {
-        continue;
-      }
-      if (!ignore.has(neighborKey) && occupied.has(neighborKey)) {
-        continue;
+    for (const neighbor of isoNeighbors(map, current.coordinate)) {
+      const neighborKey = hexKey(neighbor);
+      if (closedSet.has(neighborKey)) continue;
+      if (!ignore.has(neighborKey) && occupied.has(neighborKey)) continue;
+
+      const tileB = getTile(map, neighbor);
+      if (!tileB || !tileB.passable) continue;
+      if (!canUnitEnterTerrain(options.unitType, tileB)) continue;
+
+      // Elevation-aware movement across edges (slopes vs. cliffs)
+      const tileA = getTile(map, current.coordinate);
+      const elevA = tileA?.elevation ?? 0;
+      const elevB = tileB?.elevation ?? 0;
+      const dq = neighbor.q - current.coordinate.q;
+      const dr = neighbor.r - current.coordinate.r;
+      const isDiagonal = dq !== 0 && dr !== 0;
+
+      let edgePenalty = 0;
+      if (elevA !== elevB) {
+        // Only allow orthogonal steps across elevation if the higher tile marks that edge as a slope
+        if (isDiagonal) continue;
+        const dir: 'N' | 'E' | 'S' | 'W' = dq === 1 && dr === 0 ? 'E' : dq === -1 && dr === 0 ? 'W' : dq === 0 && dr === 1 ? 'S' : 'N';
+        const higherIsB = elevB > elevA;
+        const higherTile: any = higherIsB ? tileB : tileA;
+        const edgeOnHigher: 'N' | 'E' | 'S' | 'W' = higherIsB ? (dir === 'N' ? 'S' : dir === 'S' ? 'N' : dir === 'E' ? 'W' : 'E') : dir;
+        const style = higherTile?.elevEdges?.[edgeOnHigher];
+        if (style !== 'slope') continue; // sheer cliff
+        edgePenalty = higherIsB ? 0.6 : 0.3; // uphill costs more than downhill
       }
 
-      const tile = getTile(map, neighbor);
-      if (!tile || !tile.passable) {
-        continue;
-      }
-      if (!canUnitEnterTerrain(options.unitType, tile)) {
-        continue;
-      }
-
-      const movementCost = tile.movementCostModifier * movementMultiplier;
+      const movementCost = (tileB.movementCostModifier + edgePenalty) * movementMultiplier;
       const tentativeCost = current.costFromStart + movementCost;
+      if (tentativeCost > maxCost) continue;
 
-      if (tentativeCost > maxCost) {
-        continue;
-      }
-
-      const heuristic = axialDistance(neighbor, goal);
+      const heuristic = isoDistance(neighbor, goal);
       const existing = nodeLookup.get(neighborKey);
 
       if (!existing || tentativeCost < existing.costFromStart) {
         const estimatedTotalCost = tentativeCost + heuristic;
-        const record: NodeRecord = {
+        const rec: NodeRecord = {
           coordinate: neighbor,
           costFromStart: tentativeCost,
           estimatedTotalCost,
           parent: current
         };
-        nodeLookup.set(neighborKey, record);
-
-        if (!existing) {
-          openSet.push(record);
-        } else {
+        nodeLookup.set(neighborKey, rec);
+        if (!existing) openSet.push(rec);
+        else {
           existing.costFromStart = tentativeCost;
           existing.estimatedTotalCost = estimatedTotalCost;
           existing.parent = current;
@@ -139,7 +135,7 @@ export function findPathOnMap(
   return { success: false, path: [], cost: Number.POSITIVE_INFINITY, reason: 'unreachable' };
 }
 
-export function planPathForUnit(
+export function planPathForUnitIso(
   state: TacticalBattleState,
   unitId: string,
   destination: HexCoordinate
@@ -157,26 +153,21 @@ export function planPathForUnit(
   const occupation = new Set<string>();
   for (const side of Object.values(state.sides)) {
     for (const other of side.units.values()) {
-      if (other.id === unit.id || other.stance === 'destroyed') {
-        continue;
-      }
-      occupation.add(coordinateKey(other.coordinate));
+      if (other.id === unit.id || other.stance === 'destroyed') continue;
+      occupation.add(hexKey(other.coordinate));
     }
   }
 
   const movementMultiplier = movementMultiplierForStance(unit.stance);
 
-  const pathResult = findPathOnMap(state.map, start, destination, {
+  const pathResult = findPathOnMapIso(state.map, start, destination, {
     occupied: occupation,
-    ignoreCoordinates: new Set([coordinateKey(start)]),
+    ignoreCoordinates: new Set([hexKey(start)]),
     maxCost: unit.actionPoints,
     movementMultiplier,
     unitType: unit.unitType
   });
 
-  if (!pathResult.success) {
-    return pathResult;
-  }
-
   return pathResult;
 }
+

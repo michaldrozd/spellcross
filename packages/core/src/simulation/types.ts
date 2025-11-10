@@ -15,6 +15,9 @@ export interface HexCoordinate {
   r: number;
 }
 
+export type EdgeDir = 'N' | 'E' | 'S' | 'W';
+export type ElevEdgeStyle = 'wall' | 'slope' | 'none';
+
 export interface MapTile {
   terrain: TerrainType;
   elevation: number;
@@ -22,6 +25,8 @@ export interface MapTile {
   movementCostModifier: number;
   passable: boolean;
   providesVisionBoost: boolean;
+  // Optional: per-edge elevation style (used by renderer/pathfinding for slopes vs. cliffs)
+  elevEdges?: Partial<Record<EdgeDir, ElevEdgeStyle>>;
   // Optional destructible terrain support
   destructible?: boolean;
   hp?: number; // hit points when destructible

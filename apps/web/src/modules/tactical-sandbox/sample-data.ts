@@ -23,6 +23,89 @@ export const sandboxMap: BattlefieldMap = {
   tiles: Array.from({ length: mapWidth * mapHeight }, () => ({ ...plainTile }))
 };
 
+
+// Auto-bake slopes for all 1-level elevation differences unless explicitly marked as wall
+function autoBakeSlopes(map: BattlefieldMap) {
+  const W = map.width, H = map.height;
+  const idx = (q:number,r:number)=> r*W+q;
+  const inb = (q:number,r:number)=> q>=0 && r>=0 && q<W && r<H;
+  const opp = {N:'S',E:'W',S:'N',W:'E'} as const;
+  const dvec = {N:[0,-1],E:[1,0],S:[0,1],W:[-1,0]} as const;
+  for (let r=0;r<H;r++) for (let q=0;q<W;q++) {
+    const A:any = map.tiles[idx(q,r)];
+    for (const dir of ['N','E','S','W'] as const) {
+      const [dq,dr] = dvec[dir]; const q2=q+dq, r2=r+dr;
+      if (!inb(q2,r2)) continue;
+      const B:any = map.tiles[idx(q2,r2)];
+      const d = (A.elevation??0) - (B.elevation??0);
+      if (d===1) {
+        // prefer slope unless someone explicitne oznacil wall
+        if (A.elevEdges?.[dir] !== 'wall' && B.elevEdges?.[opp[dir]] !== 'wall') {
+          A.elevEdges = { ...(A.elevEdges??{}), [dir]:'slope' };
+        }
+      }
+    }
+  }
+}
+
+// --- Elevation testbed near spawn: mix of cliffs and a small ramp (slope) ---
+(function setupSandboxElevation() {
+  const idx = (q: number, r: number) => r * mapWidth + q;
+  const inb = (q: number, r: number) => q >= 0 && r >= 0 && q < mapWidth && r < mapHeight;
+  const setTile = (q: number, r: number, t: Partial<(typeof sandboxMap)["tiles"][number]>) => {
+    if (!inb(q, r)) return;
+    Object.assign(sandboxMap.tiles[idx(q, r)], t);
+  };
+  const markEdge = (q: number, r: number, dir: 'N'|'E'|'S'|'W', style: 'wall'|'slope'|'none') => {
+    if (!inb(q, r)) return;
+    const t: any = sandboxMap.tiles[idx(q, r)];
+    t.elevEdges = { ...(t.elevEdges ?? {}), [dir]: style };
+  };
+
+  // Rozšírené testy prevýšení pri spawne:
+  // Veľká plošina 6x3 (elev=1)
+  for (let q = 4; q <= 9; q++) {
+    for (let r = 2; r <= 4; r++) {
+      setTile(q, r, { terrain: 'hill', elevation: 1, cover: 1, providesVisionBoost: true });
+    }
+  }
+  // Rampy (S) na južnej hrane plošiny – 4 dlaždice uprostred
+  for (let q = 5; q <= 8; q++) markEdge(q, 4, 'S', 'slope');
+  // Rampy (E) na východnej hrane plošiny – 2 dlaždice
+  markEdge(9, 3, 'E', 'slope');
+
+
+  markEdge(9, 4, 'E', 'slope');
+
+  // Vnútorná terasa (elev=2) 2x1 na hornej hrane plošiny
+  for (let q = 6; q <= 7; q++) {
+    setTile(q, 3, { terrain: 'hill', elevation: 2, cover: 1, providesVisionBoost: true });
+  }
+  // Z terasy zjazd (S) a (E)
+  markEdge(6, 3, 'S', 'slope');
+  markEdge(7, 3, 'S', 'slope');
+  markEdge(7, 3, 'E', 'slope');
+
+  // Druhá, samostatná kopa 3x3 (elev=1) dolu-vľavo s rôznymi rampami
+  for (let q = 1; q <= 3; q++) {
+    for (let r = 6; r <= 8; r++) {
+      setTile(q, r, { terrain: 'hill', elevation: 1, cover: 1, providesVisionBoost: true });
+    }
+  }
+  // Rampy pre túto kopu: dve na juh (S) a dve na východ (E)
+  markEdge(2, 8, 'S', 'slope');
+  markEdge(1, 8, 'S', 'slope');
+  markEdge(3, 7, 'E', 'slope');
+  markEdge(3, 8, 'E', 'slope');
+
+  // Ostatné hrany zostávajú implicitne "cliff" (renderer nakreslí stenu, pathfinding ich nepovolí).
+})();
+
+
+
+// Bake default slopes along 1-step elevation differences (makes 1-level edges ramps by default)
+autoBakeSlopes(sandboxMap);
+
 const lightInfantry: UnitDefinition = {
   id: 'light-infantry',
   faction: 'alliance',
@@ -308,12 +391,18 @@ export function makeMegaSandboxSpec(opts: { width?: number; height?: number } = 
   enemies.push({ definition: enemyAA, coordinate: clamp(Math.floor(width * 0.82), Math.floor(height * 0.48)) });
   enemies.push({ definition: enemyAir, coordinate: clamp(Math.floor(width * 0.85), Math.floor(height * 0.40)) });
 
+
+  // Auto-bake 1-step slopes across the stamped terrain for Spellcross-like bevels
+  autoBakeSlopes(map);
+
   const spec: CreateBattleStateOptions = {
     map,
     sides: [
       { faction: 'alliance', units: allies },
       { faction: 'otherSide', units: enemies }
     ],
+
+
     startingFaction: 'alliance'
   };
 
@@ -340,6 +429,70 @@ export function makeLargeSandboxSpec(opts: { width?: number; height?: number } =
     if (!inb(q, r)) return;
     Object.assign(map.tiles[idx(q, r)], t);
   };
+
+
+	  // Elevation testbed near start: small plateau with a 2-tile ramp (slopes) and cliffs elsewhere
+	  (function stampStartPlateau() {
+	    const idx = (q: number, r: number) => r * width + q;
+	    const inb = (q: number, r: number) => q >= 0 && r >= 0 && q < width && r < height;
+	    const setT = (q: number, r: number, t: Partial<(typeof map)["tiles"][number]>) => { if (!inb(q,r)) return; Object.assign(map.tiles[idx(q,r)], t); };
+	    const markEdge = (q: number, r: number, dir: 'N'|'E'|'S'|'W', style: 'wall'|'slope'|'none') => {
+	      if (!inb(q,r)) return; const t: any = map.tiles[idx(q,r)]; t.elevEdges = { ...(t.elevEdges ?? {}), [dir]: style };
+	    };
+	    const baseQ = Math.max(3, Math.floor(width * 0.18));
+	    const baseR = Math.max(3, Math.floor(height * 0.55) - 2);
+	    for (let q = baseQ + 1; q <= baseQ + 4; q++) {
+	      for (let r = baseR; r <= baseR + 1; r++) {
+	        setT(q, r, { terrain: 'hill', elevation: 1, cover: 1, providesVisionBoost: true });
+	      }
+	    }
+	    // add a 2-tile ramp on the south edge of the plateau
+	    markEdge(baseQ + 2, baseR + 1, 'S', 'slope');
+	    markEdge(baseQ + 3, baseR + 1, 'S', 'slope');
+	  })();
+
+		  // --- Extend start area with larger plateaus/ramps for broader testing ---
+		  (function extendStartElevation() {
+		    const idx = (q: number, r: number) => r * width + q;
+		    const inb = (q: number, r: number) => q >= 0 && r >= 0 && q < width && r < height;
+		    const setT = (q: number, r: number, t: Partial<(typeof map)["tiles"][number]>) => { if (!inb(q,r)) return; Object.assign(map.tiles[idx(q,r)], t); };
+		    const markEdge = (q: number, r: number, dir: 'N'|'E'|'S'|'W', style: 'wall'|'slope'|'none') => { if (!inb(q,r)) return; const t: any = map.tiles[idx(q,r)]; t.elevEdges = { ...(t.elevEdges ?? {}), [dir]: style }; };
+		    const baseQ = Math.max(3, Math.floor(width * 0.18));
+		    const baseR = Math.max(3, Math.floor(height * 0.55) - 2);
+
+		    // Bigger plateau 6x3 (elev=1) overlapping/expanding the small one
+		    for (let q = baseQ + 1; q <= baseQ + 6; q++) {
+		      for (let r = baseR; r <= baseR + 2; r++) {
+		        setT(q, r, { terrain: 'hill', elevation: 1, cover: 1, providesVisionBoost: true });
+		      }
+		    }
+		    // South-edge ramps across middle (S)
+		    for (let q = baseQ + 2; q <= baseQ + 5; q++) markEdge(q, baseR + 2, 'S', 'slope');
+		    // East-edge ramps (E) on the plateau's east face
+		    for (let r = baseR; r <= baseR + 2; r++) markEdge(baseQ + 6, r, 'E', 'slope');
+
+		    // Inner terrace 2x1 at top row (elev=2) with S/E ramps
+		    for (let q = baseQ + 3; q <= baseQ + 4; q++) setT(q, baseR, { terrain: 'hill', elevation: 2, cover: 1, providesVisionBoost: true });
+		    markEdge(baseQ + 3, baseR, 'S', 'slope');
+		    markEdge(baseQ + 4, baseR, 'S', 'slope');
+		    markEdge(baseQ + 4, baseR, 'E', 'slope');
+
+		    // Separate 3x3 hill southwest with mixed S/E ramps
+		    for (let q = baseQ - 3; q <= baseQ - 1; q++) {
+		      for (let r = baseR + 3; r <= baseR + 5; r++) setT(q, r, { terrain: 'hill', elevation: 1, cover: 1, providesVisionBoost: true });
+		    }
+		    markEdge(baseQ - 2, baseR + 5, 'S', 'slope');
+		    markEdge(baseQ - 3, baseR + 5, 'S', 'slope');
+		    markEdge(baseQ - 1, baseR + 4, 'E', 'slope');
+		    markEdge(baseQ - 1, baseR + 5, 'E', 'slope');
+
+		    // Ramp walkway: 5 tiles in a row (elev=1) each with E ramp to ground
+		    for (let q = baseQ + 8; q <= baseQ + 12; q++) {
+		      setT(q, baseR + 3, { terrain: 'hill', elevation: 1, cover: 1, providesVisionBoost: false });
+		      markEdge(q, baseR + 3, 'E', 'slope');
+		    }
+		  })();
+
 
   // Hills ridge
   for (let r = 3; r < height - 3; r++) {
@@ -456,6 +609,10 @@ export function makeLargeSandboxSpec(opts: { width?: number; height?: number } =
     { definition: enemyAA, coordinate: clamp(Math.floor(width * 0.88), Math.floor(height * 0.48)) },
     { definition: enemyAir, coordinate: clamp(Math.floor(width * 0.90), Math.floor(height * 0.40)) },
   ];
+
+  // Auto-bake 1-step slopes across the stamped terrain for Spellcross-like bevels
+  autoBakeSlopes(map);
+
   for (let i = 0; i < 6; i++) enemies.push({ definition: orc, coordinate: clamp(Math.floor(width * 0.72) + (i % 3) * 2, Math.floor(height * 0.52) + ((i % 5) - 2) * 2) });
   for (let i = 0; i < 2; i++) enemies.push({ definition: enemyTank, coordinate: clamp(Math.floor(width * 0.76) + i * 2, Math.floor(height * 0.60) - i) });
 
