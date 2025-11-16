@@ -81,6 +81,28 @@ describe('combat-resolver', () => {
     expect(calculateAttackRange(attacker, 'unknown')).toBe(0);
   });
 
+  it('grants additional range when the attacker occupies high ground', () => {
+    const elevatedSpec: CreateBattleStateOptions = {
+      ...battleSpec,
+      map: {
+        ...battleSpec.map,
+        tiles: [
+          {
+            ...battleSpec.map.tiles[0],
+            elevation: 1,
+            providesVisionBoost: true
+          },
+          battleSpec.map.tiles[1]
+        ]
+      }
+    };
+    const state = createBattleState(elevatedSpec);
+    const attackerId = Array.from(state.sides.alliance.units.keys())[0];
+    const attacker = state.sides.alliance.units.get(attackerId)!;
+    // base 6 + 1 (elevation) + 1 (vision boost)
+    expect(calculateAttackRange(attacker, 'rifle', state.map)).toBe(8);
+  });
+
   it('resolves lethal attacks and emits events', () => {
     const state = createBattleState(battleSpec);
     const attackerId = Array.from(state.sides.alliance.units.keys())[0];

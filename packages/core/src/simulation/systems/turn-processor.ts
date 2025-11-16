@@ -227,7 +227,7 @@ export class TurnProcessor {
         let bestHit = 0;
         const distance = axialDistance(defender.coordinate, mover.coordinate);
         for (const weaponId of Object.keys(defender.stats.weaponRanges)) {
-          const range = calculateAttackRange(defender, weaponId);
+          const range = calculateAttackRange(defender, weaponId, this.#state.map);
           if (range <= 0 || distance > range) continue;
           if (!canWeaponTarget(defender, weaponId, mover)) continue;
           const hitChance = calculateHitChance({ attacker: defender, defender: mover, weaponId, map: this.#state.map });
@@ -308,7 +308,7 @@ export class TurnProcessor {
       return { success: false, error: 'Routed units cannot attack' };
     }
 
-    const maxRange = calculateAttackRange(attacker, input.weaponId);
+    const maxRange = calculateAttackRange(attacker, input.weaponId, this.#state.map);
     const distance = axialDistance(attacker.coordinate, defender.coordinate);
 
     if (distance > maxRange) {
@@ -349,7 +349,7 @@ export class TurnProcessor {
 
     // Range and LoS check against the tile
     const distance = axialDistance(attacker.coordinate, input.target);
-    const maxRange = calculateAttackRange(attacker, input.weaponId);
+    const maxRange = calculateAttackRange(attacker, input.weaponId, this.#state.map);
     if (distance > maxRange) return { success: false, error: 'Target out of range' };
     if (!hasLineOfSight(this.#state.map, attacker.coordinate, input.target)) {
       return { success: false, error: 'No line of sight to tile' };

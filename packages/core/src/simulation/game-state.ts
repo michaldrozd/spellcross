@@ -8,6 +8,7 @@ import type {
   UnitDefinition,
   UnitInstance
 } from './types.js';
+import { coordinateKey, isWithinBounds } from './utils/grid.js';
 import { updateAllFactionsVision } from './visibility/vision.js';
 
 export interface CreateBattleStateOptions {
@@ -25,10 +26,20 @@ export interface CreateBattleStateOptions {
 export function createBattleState(options: CreateBattleStateOptions): TacticalBattleState {
   const { map, sides, startingFaction } = options;
   const sideStates = new Map<FactionId, TacticalBattleState['sides'][FactionId]>();
+  const occupied = new Set<string>();
 
   for (const side of sides) {
     const units = new Map<string, UnitInstance>();
     for (const unitSpec of side.units) {
+      if (!isWithinBounds(map, unitSpec.coordinate)) {
+        throw new Error(`Unit ${unitSpec.definition.id} spawn out of bounds at ${JSON.stringify(unitSpec.coordinate)}`);
+      }
+      const key = coordinateKey(unitSpec.coordinate);
+      if (occupied.has(key)) {
+        throw new Error(`Spawn collision: multiple units assigned to tile ${key}`);
+      }
+      occupied.add(key);
+
       const id = `${unitSpec.definition.id}-${nanoid(8)}`;
       units.set(id, {
         id,

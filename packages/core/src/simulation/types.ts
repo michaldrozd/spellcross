@@ -18,6 +18,78 @@ export interface HexCoordinate {
 export type EdgeDir = 'N' | 'E' | 'S' | 'W';
 export type ElevEdgeStyle = 'wall' | 'slope' | 'none';
 
+export type PropKind = 'tree' | 'rock' | 'bush' | 'proc-building';
+
+export interface MapPropFacadeStyle {
+  material?: 'plaster' | 'brick' | 'concrete' | 'metal' | 'wood';
+  baseColor?: number;
+  trimColor?: number;
+  accentColor?: number;
+  grime?: number;
+}
+
+export interface MapPropWindows {
+  rows?: number;
+  cols?: number;
+  marginH?: number;
+  marginV?: number;
+  widthPx?: number;
+  heightPx?: number;
+  spacingH?: number;
+  spacingV?: number;
+  frameColor?: number;
+  glassColor?: number;
+  emissive?: number;
+  sides?: EdgeDir[];
+}
+
+export interface MapPropDoor {
+  side: EdgeDir;
+  offset?: number;
+  widthPx?: number;
+  heightPx?: number;
+  color?: number;
+  kind?: 'single' | 'double' | 'roller';
+}
+
+export interface MapPropRoofDetails {
+  overhangPx?: number;
+  trimColor?: number;
+  ridgeCap?: boolean;
+  ventCount?: number;
+}
+
+export interface MapProp {
+  id: string;
+  kind: PropKind;
+  coordinate: HexCoordinate;
+  u?: number;
+  v?: number;
+  texture?: string;
+  scale?: number;
+  flipX?: boolean;
+  // Procedural building extras (kind === 'proc-building')
+  w?: number;
+  h?: number;
+  levels?: number;
+  levelHeightPx?: number;
+  roof?: {
+    kind: 'flat' | 'gabled' | 'hip';
+    dir?: 'E-W' | 'N-S';
+    pitch?: number;
+  };
+  wallColor?: number;
+  roofColor?: number;
+  elevationMode?: 'avg' | 'max';
+  zPivot?: 'southEdge' | 'centroid';
+  baseOffsetPx?: { x: number; y: number };
+  tiles?: HexCoordinate[];
+  facade?: MapPropFacadeStyle;
+  windows?: MapPropWindows;
+  doors?: MapPropDoor[];
+  roofDetails?: MapPropRoofDetails;
+}
+
 export interface MapTile {
   terrain: TerrainType;
   elevation: number;
@@ -37,6 +109,7 @@ export interface BattlefieldMap {
   width: number;
   height: number;
   tiles: MapTile[];
+  props?: MapProp[];
 }
 
 export type UnitStance = 'ready' | 'suppressed' | 'routed' | 'destroyed';
@@ -78,6 +151,7 @@ export interface UnitInstance {
   experience: number;
   level: number;
   statusEffects: Set<string>;
+  destroyedAt?: number; // timestamp when destroyed (used for short-lived markers)
   // Tactical state
   entrench?: number; // 0..3, increases when stationary, reduces on hit
   movedThisRound?: boolean; // set to true when unit moves during its own turn

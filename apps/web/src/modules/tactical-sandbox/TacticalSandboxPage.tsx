@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   axialDistance,
   canAffordAttack,
+  calculateAttackRange,
   calculateHitChance,
   type HexCoordinate,
   type UnitInstance
@@ -102,9 +103,9 @@ export function TacticalSandboxPage() {
         } else if (!defaultWeapon) {
           setActionError('No weapon available');
         } else {
-          const range = attacker.stats.weaponRanges[defaultWeapon];
+          const range = calculateAttackRange(attacker, defaultWeapon, battleState.map);
           const dist = axialDistance(attacker.coordinate, defender.coordinate);
-          if (!(typeof range === 'number') || dist > range) {
+          if (range <= 0 || dist > range) {
             setActionError('Target not in range');
           } else if (!canAffordAttack(attacker)) {
             setActionError('Not enough AP');
@@ -239,8 +240,8 @@ export function TacticalSandboxPage() {
     if (!selectedUnit || !defaultWeapon) {
       return null;
     }
-    return selectedUnit.stats.weaponRanges[defaultWeapon];
-  }, [defaultWeapon, selectedUnit]);
+    return calculateAttackRange(selectedUnit, defaultWeapon, battleState.map);
+  }, [battleState.map, defaultWeapon, selectedUnit]);
 
   const distanceToTarget = useMemo(() => {
     if (!selectedUnit || !targetUnit) {

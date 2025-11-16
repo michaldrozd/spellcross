@@ -1,6 +1,7 @@
 import type {
   BattlefieldMap,
   CreateBattleStateOptions,
+  MapProp,
   TerrainType,
   UnitDefinition
 } from '@spellcross/core';
@@ -45,6 +46,212 @@ function autoBakeSlopes(map: BattlefieldMap) {
           A.elevEdges = { ...(A.elevEdges??{}), [dir]:'slope' };
         }
       }
+    }
+  }
+}
+
+const TREE_TEXTURES = [
+  '/props/tree1.png',
+  '/props/tree2.png',
+  '/props/tree2.png',
+  '/props/tree3.png'
+];
+
+const seededRand = (seed: number) => {
+  let x = Math.imul(seed ^ 0x9e3779b9, 0x85ebca6b);
+  x ^= x >>> 16;
+  x = Math.imul(x, 0xc2b2ae35);
+  x ^= x >>> 16;
+  return (x >>> 0) / 0xffffffff;
+};
+const hashCoord = (q: number, r: number, extra = 0) =>
+  ((q + 31) * (r + 37) * 2654435761 + extra) | 0;
+
+const inBounds = (map: BattlefieldMap, q: number, r: number) =>
+  q >= 0 && r >= 0 && q < map.width && r < map.height;
+const tileIndex = (map: BattlefieldMap, q: number, r: number) => r * map.width + q;
+
+function stampForestProps(map: BattlefieldMap) {
+  const props: MapProp[] = [...(map.props ?? [])];
+  for (let r = 0; r < map.height; r++) {
+    for (let q = 0; q < map.width; q++) {
+      const tile: any = map.tiles[tileIndex(map, q, r)];
+      if (tile.terrain !== 'forest') continue;
+      const baseSeed = hashCoord(q, r);
+      const count = 1 + Math.floor(seededRand(baseSeed) * 3); // 1..3
+      for (let i = 0; i < count; i++) {
+        const u = 0.2 + 0.6 * seededRand(hashCoord(q, r, i + 1));
+        const v = 0.25 + 0.5 * seededRand(hashCoord(q, r, i + 2));
+        const scale = 0.55 + 0.12 * seededRand(hashCoord(q, r, i + 3));
+        const flipX = seededRand(hashCoord(q, r, i + 4)) > 0.5;
+        const texIdx = Math.floor(seededRand(hashCoord(q, r, i + 5)) * TREE_TEXTURES.length);
+        const texture = TREE_TEXTURES[Math.max(0, Math.min(TREE_TEXTURES.length - 1, texIdx))];
+        props.push({
+          id: `tree-${q}-${r}-${i}`,
+          kind: 'tree',
+          coordinate: { q, r },
+          u,
+          v,
+          scale,
+          flipX,
+          texture
+        });
+      }
+    }
+  }
+  map.props = props;
+}
+
+function carveForestPatch(map: BattlefieldMap, coords: Array<{ q: number; r: number }>) {
+  coords.forEach(({ q, r }) => {
+    if (!inBounds(map, q, r)) return;
+    Object.assign(map.tiles[tileIndex(map, q, r)], {
+      terrain: 'forest',
+      cover: 2,
+      providesVisionBoost: false
+    });
+  });
+}
+
+function addProcBuildingRect(
+  map: BattlefieldMap,
+  q0: number,
+  r0: number,
+  w: number,
+  h: number,
+  opt: Partial<MapProp> = {}
+) {
+  const idx = (q: number, r: number) => r * map.width + q;
+  for (let dq = 0; dq < w; dq++) {
+    for (let dr = 0; dr < h; dr++) {
+      const qq = q0 + dq;
+      const rr = r0 + dr;
+      if (qq < 0 || rr < 0 || qq >= map.width || rr >= map.height) continue;
+      const tile = map.tiles[idx(qq, rr)];
+      Object.assign(tile, {
+        terrain: 'structure',
+        passable: false,
+        cover: 3,
+        destructible: tile.destructible ?? true,
+        hp: tile.hp ?? 18
+      });
+    }
+  }
+  const props = map.props ?? (map.props = []);
+  props.push({
+    id: `proc-${q0}-${r0}-${w}x${h}`,
+    kind: 'proc-building',
+    coordinate: { q: q0, r: r0 },
+    w,
+    h,
+    levels: 2,
+    levelHeightPx: 30,
+    wallColor: 0x6f5f4f,
+    roofColor: 0x5e6b73,
+    roof: { kind: 'gabled', dir: 'E-W', pitch: 0.3 },
+    ...opt
+  });
+}
+
+function coveredByProcBuildings(map: BattlefieldMap): Set<number> {
+  const W = map.width, H = map.height;
+  const idx = (q: number, r: number) => r * W + q;
+  const inb = (q: number, r: number) => q >= 0 && r >= 0 && q < W && r < H;
+  const covered = new Set<number>();
+  for (const prop of map.props ?? []) {
+    if (!prop || prop.kind !== 'proc-building') continue;
+    if (prop.tiles && prop.tiles.length) {
+      for (const t of prop.tiles) {
+        if (inb(t.q, t.r)) covered.add(idx(t.q, t.r));
+      }
+      continue;
+    }
+    const q0 = prop.coordinate?.q ?? 0;
+    const r0 = prop.coordinate?.r ?? 0;
+    const w = Math.max(1, prop.w ?? 1);
+    const h = Math.max(1, prop.h ?? 1);
+    for (let dq = 0; dq < w; dq++) {
+      for (let dr = 0; dr < h; dr++) {
+        const qq = q0 + dq;
+        const rr = r0 + dr;
+        if (inb(qq, rr)) covered.add(idx(qq, rr));
+      }
+    }
+  }
+  return covered;
+}
+
+function autofillBuildingsFromStructures(
+  map: BattlefieldMap,
+  options: { minRectW?: number; minRectH?: number; roof?: MapProp['roof']; levels?: number } = {}
+) {
+  const W = map.width, H = map.height;
+  const idx = (q: number, r: number) => r * W + q;
+  const minW = options.minRectW ?? 2;
+  const minH = options.minRectH ?? 2;
+  const covered = coveredByProcBuildings(map);
+  const used = new Uint8Array(W * H);
+
+  const isFreeStructure = (q: number, r: number) => {
+    if (q < 0 || r < 0 || q >= W || r >= H) return false;
+    const tile: any = map.tiles[idx(q, r)];
+    return tile.terrain === 'structure' && !covered.has(idx(q, r)) && used[idx(q, r)] === 0;
+  };
+
+  for (let r = 0; r < H; r++) {
+    for (let q = 0; q < W; q++) {
+      if (!isFreeStructure(q, r)) continue;
+      let width = 0;
+      while (isFreeStructure(q + width, r)) width++;
+      let height = 1;
+      let currWidth = width;
+      while (isFreeStructure(q, r + height)) {
+        let rowWidth = 0;
+        while (rowWidth < currWidth && isFreeStructure(q + rowWidth, r + height)) rowWidth++;
+        if (rowWidth === 0) break;
+        currWidth = Math.min(currWidth, rowWidth);
+        height++;
+      }
+      const rectW = currWidth;
+      const rectH = height;
+      if (rectW >= minW && rectH >= minH) {
+        addProcBuildingRect(map, q, r, rectW, rectH, {
+          roof: options.roof ?? { kind: 'flat' },
+          levels: options.levels ?? 2
+        });
+        for (let dq = 0; dq < rectW; dq++) {
+          for (let dr = 0; dr < rectH; dr++) {
+            const tileIdx = idx(q + dq, r + dr);
+            used[tileIdx] = 1;
+            covered.add(tileIdx);
+          }
+        }
+      } else {
+        for (let dq = 0; dq < rectW; dq++) {
+          for (let dr = 0; dr < rectH; dr++) {
+            used[idx(q + dq, r + dr)] = 2;
+          }
+        }
+      }
+    }
+  }
+}
+
+function demoteLooseStructure(map: BattlefieldMap, to: TerrainType = 'urban') {
+  const W = map.width, H = map.height;
+  const idx = (q: number, r: number) => r * W + q;
+  const covered = coveredByProcBuildings(map);
+  for (let r = 0; r < H; r++) {
+    for (let q = 0; q < W; q++) {
+      const i = idx(q, r);
+      const tile: any = map.tiles[i];
+      if (tile.terrain !== 'structure') continue;
+      if (covered.has(i)) continue;
+      tile.terrain = to;
+      tile.passable = true;
+      tile.cover = to === 'urban' ? 2 : 1;
+      tile.destructible = false;
+      tile.hp = undefined;
     }
   }
 }
@@ -99,6 +306,16 @@ function autoBakeSlopes(map: BattlefieldMap) {
   markEdge(3, 7, 'E', 'slope');
   markEdge(3, 8, 'E', 'slope');
 
+  // Tiny grove near player spawn to showcase tree props immediately
+  carveForestPatch(sandboxMap, [
+    { q: 0, r: 0 },
+    { q: 1, r: 0 },
+    { q: 2, r: 0 },
+    { q: 0, r: 1 },
+    { q: 1, r: 1 },
+    { q: 2, r: 1 }
+  ]);
+
   // --- Multi-tier spiral mound near center for renderer QA ---
   const setRect = (q0: number, q1: number, r0: number, r1: number, elev: number, terrain: TerrainType) => {
     for (let qq = q0; qq <= q1; qq++) {
@@ -135,6 +352,26 @@ function autoBakeSlopes(map: BattlefieldMap) {
   markEdge(10, 0, 'N', 'wall');
   markEdge(10, 0, 'E', 'wall');
 
+  // Procedurálne sklady pri ceste
+  addProcBuildingRect(sandboxMap, 6, 4, 4, 3, {
+    roof: { kind: 'flat' },
+    roofColor: 0x4b5a63,
+    facade: { material: 'brick', baseColor: 0x7a4a36, trimColor: 0xf0e4d2, grime: 0.35 },
+    windows: { rows: 2, cols: 5, emissive: 0.05 },
+    doors: [{ side: 'S', kind: 'roller', widthPx: 48, heightPx: 60, color: 0x3d4348 }],
+    roofDetails: { overhangPx: 5, ridgeCap: false, ventCount: 2 }
+  });
+  addProcBuildingRect(sandboxMap, 2, 7, 3, 2, {
+    roof: { kind: 'gabled', dir: 'N-S', pitch: 0.35 },
+    levels: 3,
+    facade: { material: 'plaster', baseColor: 0xded7c8, trimColor: 0x4c5869, accentColor: 0x2d567f },
+    windows: { rows: 2, cols: 3, marginH: 10, frameColor: 0x2a2a2a },
+    doors: [{ side: 'E', kind: 'single', widthPx: 28, color: 0x2d567f }],
+    roofDetails: { overhangPx: 6, trimColor: 0x3f2b23, ventCount: 1 }
+  });
+  autofillBuildingsFromStructures(sandboxMap, { minRectW: 2, minRectH: 2, roof: { kind: 'flat' }, levels: 2 });
+  demoteLooseStructure(sandboxMap, 'urban');
+
   // Ostatné hrany zostávajú implicitne "cliff" (renderer nakreslí stenu, pathfinding ich nepovolí).
 })();
 
@@ -142,6 +379,7 @@ function autoBakeSlopes(map: BattlefieldMap) {
 
 // Bake default slopes along 1-step elevation differences (makes 1-level edges ramps by default)
 autoBakeSlopes(sandboxMap);
+stampForestProps(sandboxMap);
 
 const lightInfantry: UnitDefinition = {
   id: 'light-infantry',
@@ -430,7 +668,34 @@ export function makeMegaSandboxSpec(opts: { width?: number; height?: number } = 
 
 
   // Auto-bake 1-step slopes across the stamped terrain for Spellcross-like bevels
+  const megaGroveR0 = Math.max(0, Math.floor(height * 0.55) - 3);
+  const megaGroveR1 = Math.min(height - 1, megaGroveR0 + 2);
+  const megaGroveQ0 = Math.max(0, 4);
+  const megaGroveQ1 = Math.min(width - 1, 10);
+  const megaGrove: Array<{ q: number; r: number }> = [];
+  for (let r = megaGroveR0; r <= megaGroveR1; r++) {
+    for (let q = megaGroveQ0; q <= megaGroveQ1; q++) {
+      megaGrove.push({ q, r });
+    }
+  }
+  carveForestPatch(map, megaGrove);
   autoBakeSlopes(map);
+  addProcBuildingRect(map, Math.floor(width * 0.55), Math.floor(height * 0.52), 6, 4, {
+    roof: { kind: 'gabled', dir: 'E-W', pitch: 0.25 },
+    wallColor: 0x67594c,
+    roofColor: 0x5a6670,
+    levels: 2,
+    facade: { material: 'concrete', trimColor: 0xaba9a3, grime: 0.25 },
+    windows: { rows: 2, cols: 6, marginH: 14, marginV: 12, glassColor: 0x7fb6df },
+    doors: [
+      { side: 'S', kind: 'roller', widthPx: 52, heightPx: 64, color: 0x3c3f44 },
+      { side: 'E', kind: 'double', widthPx: 34, heightPx: 58, color: 0x4b5c7a }
+    ],
+    roofDetails: { overhangPx: 5, trimColor: 0x3d4147, ventCount: 3 }
+  });
+  autofillBuildingsFromStructures(map, { minRectW: 3, minRectH: 2, roof: { kind: 'flat' }, levels: 2 });
+  demoteLooseStructure(map, 'urban');
+  stampForestProps(map);
 
   const spec: CreateBattleStateOptions = {
     map,
@@ -648,7 +913,31 @@ export function makeLargeSandboxSpec(opts: { width?: number; height?: number } =
   ];
 
   // Auto-bake 1-step slopes across the stamped terrain for Spellcross-like bevels
+  const largeGroveR0 = Math.max(0, Math.floor(height * 0.55) - 3);
+  const largeGroveR1 = Math.min(height - 1, largeGroveR0 + 2);
+  const largeGroveQ0 = Math.max(0, 4);
+  const largeGroveQ1 = Math.min(width - 1, 9);
+  const largeGrove: Array<{ q: number; r: number }> = [];
+  for (let r = largeGroveR0; r <= largeGroveR1; r++) {
+    for (let q = largeGroveQ0; q <= largeGroveQ1; q++) {
+      largeGrove.push({ q, r });
+    }
+  }
+  carveForestPatch(map, largeGrove);
   autoBakeSlopes(map);
+  addProcBuildingRect(map, Math.floor(width * 0.5), Math.floor(height * 0.5), 4, 3, {
+    roof: { kind: 'hip', pitch: 0.3 },
+    wallColor: 0x6d6054,
+    roofColor: 0x4b4f5a,
+    levels: 2,
+    facade: { material: 'metal', trimColor: 0x9ea3a8, accentColor: 0x2c3b4f, grime: 0.18 },
+    windows: { rows: 1, cols: 4, marginH: 14, marginV: 14, frameColor: 0x1f1f1f, glassColor: 0x93c4f1 },
+    doors: [{ side: 'S', widthPx: 42, heightPx: 62, color: 0x2c3b4f, kind: 'double' }],
+    roofDetails: { overhangPx: 4, trimColor: 0x3a3e45, ventCount: 2 }
+  });
+  autofillBuildingsFromStructures(map, { minRectW: 2, minRectH: 2, roof: { kind: 'flat' }, levels: 2 });
+  demoteLooseStructure(map, 'urban');
+  stampForestProps(map);
 
   for (let i = 0; i < 6; i++) enemies.push({ definition: orc, coordinate: clamp(Math.floor(width * 0.72) + (i % 3) * 2, Math.floor(height * 0.52) + ((i % 5) - 2) * 2) });
   for (let i = 0; i < 2; i++) enemies.push({ definition: enemyTank, coordinate: clamp(Math.floor(width * 0.76) + i * 2, Math.floor(height * 0.60) - i) });

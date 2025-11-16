@@ -2,6 +2,7 @@ import { axialDistance, getTile } from '../utils/grid.js';
 import type {
   BattlefieldMap,
   BattleEvent,
+  MapTile,
   TacticalBattleState,
   UnitInstance
 } from '../types.js';
@@ -35,8 +36,19 @@ const RANGE_ACCURACY_PENALTY = 0.12;
 const MIN_HIT_CHANCE = 0.05;
 const MAX_HIT_CHANCE = 0.98;
 
-export function calculateAttackRange(attacker: UnitInstance, weaponId: string): number {
-  return attacker.stats.weaponRanges[weaponId] ?? 0;
+function elevationRangeBonus(tile?: MapTile | null): number {
+  if (!tile) return 0;
+  let bonus = 0;
+  if ((tile.elevation ?? 0) >= 1) bonus += 1;
+  if (tile.providesVisionBoost) bonus += 1;
+  return bonus;
+}
+
+export function calculateAttackRange(attacker: UnitInstance, weaponId: string, map?: BattlefieldMap): number {
+  const baseRange = attacker.stats.weaponRanges[weaponId] ?? 0;
+  if (!map) return baseRange;
+  const tile = getTile(map, attacker.coordinate);
+  return baseRange + elevationRangeBonus(tile);
 }
 
 export function canWeaponTarget(attacker: UnitInstance, weaponId: string, defender: UnitInstance): boolean {
@@ -53,7 +65,7 @@ export function calculateHitChance(input: {
 }): number {
   const { attacker, defender, weaponId, map } = input;
 
-  const maxRange = calculateAttackRange(attacker, weaponId);
+  const maxRange = calculateAttackRange(attacker, weaponId, map);
   if (maxRange <= 0) {
     return 0;
   }
@@ -89,7 +101,7 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
   const { attacker, defender, weaponId, map, random } = input;
 
   const events: BattleEvent[] = [];
-  const maxRange = calculateAttackRange(attacker, weaponId);
+  const maxRange = calculateAttackRange(attacker, weaponId, map);
   const distance = axialDistance(attacker.coordinate, defender.coordinate);
   const weaponPower = attacker.stats.weaponPower[weaponId] ?? 0;
   const defenderArmor = defender.stats.armor;
@@ -127,6 +139,7 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
 
     if (defender.currentHealth === 0) {
       defender.stance = 'destroyed';
+      defender.destroyedAt = defender.destroyedAt ?? Date.now();
     } else {
       // Update stance from morale thresholds
       defender.stance = defender.currentMorale <= 20 ? 'routed' : defender.currentMorale <= 40 ? 'suppressed' : 'ready';

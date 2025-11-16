@@ -1,17 +1,23 @@
-import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 
-import type { FactionId, HexCoordinate, TacticalBattleState } from '@spellcross/core';
+import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance, MapProp, EdgeDir } from '@spellcross/core';
 import { movementMultiplierForStance } from '@spellcross/core';
 import { canAffordAttack } from '@spellcross/core';
 import { axialDistance } from '@spellcross/core';
-import { Container, Graphics, Stage, Text } from '@pixi/react';
-import { Matrix, Texture, Rectangle } from 'pixi.js';
+import { calculateAttackRange } from '@spellcross/core';
+import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
+import { Matrix, Texture, Rectangle, Graphics as PixiGraphics } from 'pixi.js';
 
 import { TextStyle } from 'pixi.js';
+const basename = (p: string) => {
+  const parts = p.split('/');
+  return parts[parts.length - 1] || p;
+};
 
 const tileSize = 56;
 const hexWidth = tileSize;
 const hexHeight = tileSize * 0.866; // sin(60deg)
+const DEATH_TTL_MS = 20_000;
 
 
 // Isometric elevation illusion parameters
@@ -44,6 +50,8 @@ export interface BattlefieldStageProps {
   cameraMode?: 'fit' | 'follow';
   showAttackOverlay?: boolean;
 }
+
+type DeathMarker = { id: string; q: number; r: number; t: number; faction: FactionId };
 
 const axialToPixel = ({ q, r }: { q: number; r: number }) => {
   const x = (hexWidth * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r)) / Math.sqrt(3);
@@ -134,6 +142,29 @@ const makeCornerPoints = (
   SW: { x: CORNER_OFFSETS.SW.x, y: CORNER_OFFSETS.SW.y - (corners.hSW - avg) * ELEV_Y_OFFSET }
 });
 
+const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+
+const bilerpPoint = (
+  points: Record<CornerKey, { x: number; y: number }>,
+  u: number,
+  v: number
+) => {
+  const uu = clamp01(u);
+  const vv = clamp01(v);
+  const top = {
+    x: (1 - uu) * points.NW.x + uu * points.NE.x,
+    y: (1 - uu) * points.NW.y + uu * points.NE.y
+  };
+  const bottom = {
+    x: (1 - uu) * points.SW.x + uu * points.SE.x,
+    y: (1 - uu) * points.SW.y + uu * points.SE.y
+  };
+  return {
+    x: (1 - vv) * top.x + vv * bottom.x,
+    y: (1 - vv) * top.y + vv * bottom.y
+  };
+};
+
 const topTrianglesFor = (c: { hNW: number; hNE: number; hSE: number; hSW: number }): Array<[CornerKey, CornerKey, CornerKey]> => {
   const d1 = c.hNW + c.hSE;
   const d2 = c.hNE + c.hSW;
@@ -147,6 +178,334 @@ const topTrianglesFor = (c: { hNW: number; hNE: number; hSE: number; hSW: number
     ['NE', 'SE', 'SW'],
     ['NE', 'SW', 'NW']
   ] as Array<[CornerKey, CornerKey, CornerKey]>;
+};
+
+const drawPoly = (g: PixiGraphics, poly: Array<{ x: number; y: number }>) => {
+  if (!poly.length) return;
+  g.moveTo(poly[0].x, poly[0].y);
+  for (let i = 1; i < poly.length; i++) {
+    g.lineTo(poly[i].x, poly[i].y);
+  }
+  g.closePath();
+};
+
+const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+type WindowLayoutConfig = {
+  rows: number;
+  cols: number;
+  marginH: number;
+  marginV: number;
+  widthPx: number;
+  heightPx: number;
+  spacingH: number;
+  spacingV: number;
+  frameColor: number;
+  glassColor: number;
+  emissive: number;
+};
+
+type DoorLayoutConfig = {
+  offset?: number;
+  widthPx: number;
+  heightPx: number;
+  color: number;
+  kind: 'single' | 'double' | 'roller';
+};
+
+const fillQuad = (
+  g: PixiGraphics,
+  p0: { x: number; y: number },
+  p1: { x: number; y: number },
+  p2: { x: number; y: number },
+  p3: { x: number; y: number },
+  color: number,
+  alpha: number,
+  origin: { x: number; y: number }
+) => {
+  g.beginFill(color, alpha);
+  g.moveTo(p0.x - origin.x, p0.y - origin.y);
+  g.lineTo(p1.x - origin.x, p1.y - origin.y);
+  g.lineTo(p2.x - origin.x, p2.y - origin.y);
+  g.lineTo(p3.x - origin.x, p3.y - origin.y);
+  g.closePath();
+  g.endFill();
+};
+
+const lineSegment = (
+  g: PixiGraphics,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  color: number,
+  alpha: number,
+  thickness: number,
+  origin: { x: number; y: number }
+) => {
+  g.lineStyle(thickness, color, alpha);
+  g.moveTo(from.x - origin.x, from.y - origin.y);
+  g.lineTo(to.x - origin.x, to.y - origin.y);
+  g.lineStyle(0, 0, 0);
+};
+
+const drawFacadeMaterial = (
+  g: PixiGraphics,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  heightPx: number,
+  origin: { x: number; y: number },
+  color: number,
+  material: NonNullable<MapProp['facade']>['material'],
+  fogShade: number
+) => {
+  if (!material || material === 'plaster') return;
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 24 || heightPx < 20) return;
+  const ux = dx / length;
+  const uy = dy / length;
+  const horizontalStep = material === 'brick' ? 6 : material === 'wood' ? 10 : 14;
+  const verticalStep = material === 'brick' ? 12 : material === 'metal' ? 18 : 0;
+  const baseAlpha = 0.08 + fogShade * 0.4;
+
+  for (let y = horizontalStep; y < heightPx - 4; y += horizontalStep) {
+    const offset = -y;
+    lineSegment(
+      g,
+      { x: start.x, y: start.y + offset },
+      { x: end.x, y: end.y + offset },
+      darkenColor(color, 0.35),
+      baseAlpha,
+      1,
+      origin
+    );
+  }
+
+  if (verticalStep > 0) {
+    const count = Math.max(2, Math.floor(length / verticalStep));
+    for (let i = 1; i < count; i++) {
+      const s = i / count;
+      const px = start.x + ux * length * s;
+      const py = start.y + uy * length * s;
+      lineSegment(
+        g,
+        { x: px, y: py },
+        { x: px, y: py - Math.min(heightPx, 60) },
+        darkenColor(color, material === 'metal' ? 0.25 : 0.4),
+        baseAlpha * 0.7,
+        1,
+        origin
+      );
+    }
+  }
+};
+
+const drawWindowsOnBottomEdge = (
+  g: PixiGraphics,
+  bottomA: { x: number; y: number },
+  bottomB: { x: number; y: number },
+  heightPx: number,
+  origin: { x: number; y: number },
+  cfg: WindowLayoutConfig,
+  fogShade: number
+) => {
+  const dx = bottomB.x - bottomA.x;
+  const dy = bottomB.y - bottomA.y;
+  const length = Math.hypot(dx, dy);
+  if (length < cfg.widthPx + 8 || heightPx < cfg.heightPx + 8) return;
+  const ux = dx / length;
+  const uy = dy / length;
+
+  const usableWidth = Math.max(0, length - cfg.marginH * 2);
+  const colWidth = cfg.widthPx + cfg.spacingH;
+  const cols = Math.max(1, Math.min(cfg.cols, Math.floor((usableWidth + cfg.spacingH) / colWidth)));
+  if (cols <= 0) return;
+  const usedWidth = cols * cfg.widthPx + (cols - 1) * cfg.spacingH;
+  const startOffset = (length - usedWidth) / 2;
+
+  const rows = Math.max(1, cfg.rows);
+  const frame = Math.max(1.5, Math.min(cfg.widthPx, cfg.heightPx) * 0.08);
+  const glassAlpha = clamp(0.55 + cfg.emissive * 0.25 - fogShade * 0.25, 0.3, 0.95);
+
+  for (let r = 0; r < rows; r++) {
+    const verticalOffset = cfg.marginV + r * (cfg.heightPx + cfg.spacingV);
+    if (verticalOffset + cfg.heightPx > heightPx - 2) continue;
+    for (let c = 0; c < cols; c++) {
+      const offset = startOffset + c * (cfg.widthPx + cfg.spacingH);
+      const baseX = bottomA.x + ux * offset;
+      const baseY = bottomA.y + uy * offset;
+      const topLeft = { x: baseX, y: baseY - (verticalOffset + cfg.heightPx) };
+      const topRight = { x: topLeft.x + ux * cfg.widthPx, y: topLeft.y + uy * cfg.widthPx };
+      const bottomLeft = { x: topLeft.x, y: topLeft.y + cfg.heightPx };
+      const bottomRight = { x: topRight.x, y: topRight.y + cfg.heightPx };
+
+      fillQuad(g, bottomLeft, bottomRight, topRight, topLeft, darkenColor(cfg.frameColor, 0.15), 1, origin);
+
+      const glassTL = { x: topLeft.x + ux * frame, y: topLeft.y + frame };
+      const glassTR = { x: topRight.x - ux * frame, y: topRight.y + frame };
+      const glassBL = { x: bottomLeft.x + ux * frame, y: bottomLeft.y - frame };
+      const glassBR = { x: bottomRight.x - ux * frame, y: bottomRight.y - frame };
+
+      fillQuad(g, glassBL, glassBR, glassTR, glassTL, lightenColor(cfg.glassColor, 0.12), glassAlpha, origin);
+
+      const midTop = { x: (glassTL.x + glassTR.x) / 2, y: (glassTL.y + glassTR.y) / 2 };
+      const midBottom = { x: (glassBL.x + glassBR.x) / 2, y: (glassBL.y + glassBR.y) / 2 };
+      const midLeft = { x: (glassTL.x + glassBL.x) / 2, y: (glassTL.y + glassBL.y) / 2 };
+      const midRight = { x: (glassTR.x + glassBR.x) / 2, y: (glassTR.y + glassBR.y) / 2 };
+      lineSegment(g, midTop, midBottom, darkenColor(cfg.frameColor, 0.35), 0.7, 1, origin);
+      lineSegment(g, midLeft, midRight, darkenColor(cfg.frameColor, 0.25), 0.6, 1, origin);
+    }
+  }
+};
+
+const drawDoorOnBottomEdge = (
+  g: PixiGraphics,
+  bottomA: { x: number; y: number },
+  bottomB: { x: number; y: number },
+  heightPx: number,
+  origin: { x: number; y: number },
+  cfg: DoorLayoutConfig
+) => {
+  const dx = bottomB.x - bottomA.x;
+  const dy = bottomB.y - bottomA.y;
+  const length = Math.hypot(dx, dy);
+  if (length <= cfg.widthPx) return;
+  const ux = dx / length;
+  const uy = dy / length;
+  const offset = Number.isFinite(cfg.offset) ? clamp(cfg.offset ?? 0, 0, Math.max(0, length - cfg.widthPx)) : (length - cfg.widthPx) / 2;
+  const base = { x: bottomA.x + ux * offset, y: bottomA.y + uy * offset };
+  const bottomRight = { x: base.x + ux * cfg.widthPx, y: base.y + uy * cfg.widthPx };
+  const topLeft = { x: base.x, y: base.y - Math.min(cfg.heightPx, heightPx) };
+  const topRight = { x: bottomRight.x, y: bottomRight.y - Math.min(cfg.heightPx, heightPx) };
+
+  fillQuad(g, topLeft, topRight, bottomRight, base, cfg.color, 1, origin);
+  lineSegment(g, base, topLeft, darkenColor(cfg.color, 0.35), 0.8, 2, origin);
+  lineSegment(g, bottomRight, topRight, darkenColor(cfg.color, 0.35), 0.8, 2, origin);
+
+  if (cfg.kind === 'roller') {
+    const slats = Math.max(3, Math.floor((cfg.heightPx ?? 40) / 10));
+    for (let s = 1; s < slats; s++) {
+      const y = -((cfg.heightPx / slats) * s);
+      lineSegment(g, { x: base.x, y: base.y + y }, { x: bottomRight.x, y: bottomRight.y + y }, darkenColor(cfg.color, 0.45), 0.5, 1, origin);
+    }
+  } else {
+    const divider = { x: (base.x + bottomRight.x) / 2, y: (base.y + bottomRight.y) / 2 };
+    lineSegment(
+      g,
+      divider,
+      { x: divider.x, y: divider.y - Math.min(cfg.heightPx, heightPx) },
+      darkenColor(cfg.color, 0.4),
+      0.7,
+      2,
+      origin
+    );
+  }
+};
+
+const drawGrimeBand = (
+  g: PixiGraphics,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  heightPx: number,
+  origin: { x: number; y: number },
+  strength: number
+) => {
+  if (strength <= 0) return;
+  const bandHeight = Math.min(heightPx * 0.35, 26);
+  fillQuad(
+    g,
+    start,
+    end,
+    { x: end.x, y: end.y - bandHeight },
+    { x: start.x, y: start.y - bandHeight },
+    0x000000,
+    0.05 + strength * 0.1,
+    origin
+  );
+};
+
+const drawFasciaLine = (
+  g: PixiGraphics,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  origin: { x: number; y: number },
+  color: number
+) => {
+  lineSegment(g, start, end, color, 0.7, 2, origin);
+};
+
+const drawRoofVents = (
+  g: PixiGraphics,
+  topPoly: Array<{ x: number; y: number }>,
+  origin: { x: number; y: number },
+  count: number,
+  color: number
+) => {
+  if (count <= 0 || topPoly.length < 4) return;
+  const center = topPoly.reduce(
+    (acc, p) => ({ x: acc.x + p.x / topPoly.length, y: acc.y + p.y / topPoly.length }),
+    { x: 0, y: 0 }
+  );
+  const diag = {
+    x: (topPoly[1].x - topPoly[3].x) * 0.15,
+    y: (topPoly[1].y - topPoly[3].y) * 0.15
+  };
+  for (let i = 0; i < count; i++) {
+    const t = count === 1 ? 0 : lerp(-0.4, 0.4, i / (count - 1));
+    const px = center.x + diag.x * t;
+    const py = center.y + diag.y * t - 4;
+    const size = 6;
+    g.beginFill(color, 0.9);
+    g.drawRoundedRect(px - origin.x - size / 2, py - origin.y - size / 2, size, size, 1);
+    g.endFill();
+  }
+};
+
+const PROP_BASE_Y_OFFSET = 0;
+const PROP_SHADOW_Y = 4;
+const PROP_ANCHOR_Y = 0.9;
+const missingLabelStyle = new TextStyle({
+  fontSize: 9,
+  fill: 0xffffff,
+  stroke: 0x000000,
+  strokeThickness: 3,
+  align: 'center'
+});
+const worldCornerOfTile = (
+  q: number,
+  r: number,
+  pick: CornerKey,
+  topGeomForFn: (q: number, r: number) => { avgHeight: number; P: Record<CornerKey, { x: number; y: number }> }
+) => {
+  const pos = toScreen({ q, r });
+  const geom = topGeomForFn(q, r);
+  return {
+    x: pos.x + geom.P[pick].x,
+    y: pos.y - geom.avgHeight * ELEV_Y_OFFSET + geom.P[pick].y
+  };
+};
+const ensureImageDecodable = async (blob: Blob) => {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      await createImageBitmap(blob);
+      return;
+    } catch {
+      // fallback to Image below
+    }
+  }
+  await new Promise<void>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(img.src);
+      resolve();
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(img.src);
+      reject(new Error('decode failed'));
+    };
+    img.src = URL.createObjectURL(blob);
+  });
 };
 
 
@@ -182,6 +541,13 @@ export function BattlefieldStage({
   const viewerVision = battleState.vision[viewerFaction];
   const visibleTiles = viewerVision?.visibleTiles ?? new Set<number>();
   const exploredTiles = viewerVision?.exploredTiles ?? new Set<number>();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(id);
+  }, []);
+  const [deathMarkers, setDeathMarkers] = useState<Map<string, DeathMarker>>(new Map());
+
   const stageDimensions = useMemo(() => {
     if (ISO_MODE) {
       const width = (map.width + map.height) * (ISO_TILE_W / 2) + ISO_TILE_W;
@@ -246,6 +612,38 @@ export function BattlefieldStage({
       if (sizeTimerRef.current) window.clearTimeout(sizeTimerRef.current);
     };
   }, []);
+
+
+  // Maintain a local buffer of recent death markers so they fade out even if the unit object disappears.
+  useEffect(() => {
+    const next = new Map(deathMarkers);
+    for (const side of Object.values(battleState.sides) as any[]) {
+      for (const u of (side as any).units.values()) {
+        if (u.stance === 'destroyed' && !next.has(u.id)) {
+          next.set(u.id, { id: u.id, q: u.coordinate.q, r: u.coordinate.r, t: Date.now(), faction: u.faction });
+        }
+      }
+    }
+    if (next.size !== deathMarkers.size) {
+      setDeathMarkers(next);
+    }
+  }, [battleState.sides, deathMarkers]);
+
+  useEffect(() => {
+    if (deathMarkers.size === 0) return;
+    const cutoff = now - DEATH_TTL_MS;
+    let changed = false;
+    const next = new Map(deathMarkers);
+    for (const [id, marker] of next) {
+      if (marker.t < cutoff) {
+        next.delete(id);
+        changed = true;
+      }
+    }
+    if (changed) {
+      setDeathMarkers(next);
+    }
+  }, [now, deathMarkers]);
 
 
   // Minimap toggle
@@ -346,6 +744,8 @@ export function BattlefieldStage({
   // Optional external texture override (drop PNGs in /public/textures/terrain or a spritesheet in /public/textures/textures_black.png)
   const [externalTerrainTextures, setExternalTerrainTextures] = useState<Record<string, Texture> | null>(null);
   const [externalTexturesAreColored, setExternalTexturesAreColored] = useState<boolean>(false);
+  const [missingTerrainPng, setMissingTerrainPng] = useState<Set<string>>(new Set());
+  const [missingPropPaths, setMissingPropPaths] = useState<Set<string>>(new Set());
   const [allowExternalTextures] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
     const qs = new URLSearchParams(window.location.search);
@@ -360,6 +760,7 @@ export function BattlefieldStage({
     if (!allowExternalTextures) {
       setExternalTerrainTextures(null);
       setExternalTexturesAreColored(false);
+      setMissingTerrainPng(new Set());
       return;
     }
     let cancelled = false;
@@ -390,19 +791,33 @@ export function BattlefieldStage({
         const out: Record<string, Texture> = {} as any;
         let anyLoaded = false;
         let explicitColorTextures = false;
+        const missing = new Set<string>();
         // 1) Per-terrain PNGs (highest priority if present)
-        await Promise.all(names.map(async (n) => {
-          const url = `/textures/terrain/${n}.png`;
-          try {
-            const res = await fetch(url, { method: 'GET' });
-            if (!res.ok) return;
-            const blob = await res.blob();
-            const objUrl = URL.createObjectURL(blob);
-            out[n] = Texture.from(objUrl);
-            anyLoaded = true;
-            explicitColorTextures = true;
-          } catch { /* ignore */ }
-        }));
+        await Promise.all(
+          names.map(async (n) => {
+            const url = `/textures/terrain/${n}.png`;
+            try {
+              const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+              if (!res.ok) {
+                missing.add(`${n}.png`);
+                return;
+              }
+              const type = res.headers.get('content-type') ?? '';
+              if (!type.startsWith('image/')) {
+                missing.add(`${n}.png`);
+                return;
+              }
+              const blob = await res.blob();
+              await ensureImageDecodable(blob);
+              const objUrl = URL.createObjectURL(blob);
+              out[n] = Texture.from(objUrl);
+              anyLoaded = true;
+              explicitColorTextures = true;
+            } catch {
+              missing.add(`${n}.png`);
+            }
+          })
+        );
 
         // 2) Spritesheet fallback(s): prefer COLORED sheet if present; else grayscale
         const trySheet = async (url: string, forcedMode?: 'colored' | 'grayscale'): Promise<'colored' | 'grayscale' | null> => {
@@ -447,6 +862,12 @@ export function BattlefieldStage({
         }
 
         if (cancelled) return;
+        setMissingTerrainPng(missing);
+        if (missing.has('structure.png')) {
+          out['structure'] = terrainTextures.structure;
+          missing.delete('structure.png');
+        }
+
         const finalMode: 'colored' | 'grayscale' =
           explicitColorTextures ? 'colored' : (sheetMode ?? 'grayscale');
         setExternalTerrainTextures(finalMode === 'colored' && anyLoaded ? out : null);
@@ -454,7 +875,45 @@ export function BattlefieldStage({
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
-  }, [allowExternalTextures]);
+  }, [allowExternalTextures, terrainTextures]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const scan = async () => {
+      const props = map.props ?? [];
+      const paths = Array.from(new Set(props.map((p) => p.texture).filter(Boolean))) as string[];
+      if (paths.length === 0) {
+        setMissingPropPaths(new Set());
+        return;
+      }
+      const missing = new Set<string>();
+      await Promise.all(
+        paths.map(async (path) => {
+          try {
+            const res = await fetch(path, { method: 'GET', cache: 'no-store' });
+            if (!res.ok) {
+              missing.add(path);
+              return;
+            }
+            const type = res.headers.get('content-type') ?? '';
+            if (!type.startsWith('image/')) {
+              missing.add(path);
+              return;
+            }
+            const blob = await res.blob();
+            await ensureImageDecodable(blob);
+          } catch {
+            missing.add(path);
+          }
+        })
+      );
+      if (!cancelled) setMissingPropPaths(missing);
+    };
+    scan();
+    return () => {
+      cancelled = true;
+    };
+  }, [map.props]);
 
 
   // Minimap-driven camera target (world pixel coordinates)
@@ -697,6 +1156,43 @@ export function BattlefieldStage({
     } as const;
   }, [map.tiles, map.width, map.height]);
 
+  const topGeomFor = useCallback((q: number, r: number) => {
+    const idx = r * map.width + q;
+    if (ISO_MODE) {
+      const corners = snappedCorners.getCorners(q, r);
+      const avgHeight = averageCornerHeight(corners);
+      const P = makeCornerPoints(corners, avgHeight);
+      const quad = [P.NW, P.NE, P.SE, P.SW] as const;
+      const center = {
+        x: (P.NW.x + P.NE.x + P.SE.x + P.SW.x) / 4,
+        y: (P.NW.y + P.NE.y + P.SE.y + P.SW.y) / 4
+      };
+      const inset = (k: number) =>
+        quad.map((p) => ({ x: center.x + (p.x - center.x) * k, y: center.y + (p.y - center.y) * k }));
+      return { avgHeight, P, quad, center, inset };
+    }
+    const tile = map.tiles[idx] as any;
+    const elev = tile?.elevation ?? 0;
+    const s = tileSize / 2;
+    const hw = hexWidth / 2;
+    const quadBase = [
+      { x: 0, y: -s },
+      { x: hw, y: -s / 2 },
+      { x: 0, y: s },
+      { x: -hw, y: -s / 2 }
+    ] as const;
+    const center = { x: 0, y: 0 };
+    const inset = (k: number) =>
+      quadBase.map((p) => ({ x: center.x + (p.x - center.x) * k, y: center.y + (p.y - center.y) * k }));
+    const P = {
+      NW: quadBase[0],
+      NE: quadBase[1],
+      SE: quadBase[2],
+      SW: quadBase[3]
+    } as Record<CornerKey, { x: number; y: number }>;
+    return { avgHeight: elev, P, quad: quadBase, center, inset };
+  }, [map.tiles, map.width, snappedCorners]);
+
 
   const tileGraphics = useMemo(() => {
     const EDGE_KEYS: EdgeKey[] = ['N', 'E', 'S', 'W'];
@@ -725,8 +1221,9 @@ export function BattlefieldStage({
       const isVisible = visibleTiles.has(index);
       const isExplored = exploredTiles.has(index);
       const baseColor = (terrainPalette as any)[tile.terrain] ?? terrainPalette.plain;
-      const tex = (externalTerrainTextures?.[tile.terrain] ?? externalTerrainTextures?.plain)
-        ?? ((terrainTextures as any)[tile.terrain] ?? (terrainTextures as any).plain);
+      const tex =
+        (externalTerrainTextures?.[tile.terrain] ?? externalTerrainTextures?.plain) ??
+        ((terrainTextures as any)[tile.terrain] ?? (terrainTextures as any).plain);
       const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
       const overlayAlpha = coloredTex ? (isVisible ? 1.0 : 0.75) : (isVisible ? 0.28 : 0.16);
       const texMatrix = new Matrix();
@@ -754,89 +1251,93 @@ export function BattlefieldStage({
             }
           }}
           draw={(g) => {
-            g.clear();
-            if (!isExplored) {
-              g.beginFill(0x030509, 0.95);
-              g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
-              g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
-              g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
-              g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
-              g.closePath();
-              g.endFill();
-              return;
-            }
-            for (const tri of tris) {
-              const [a, b, c] = tri;
-              g.beginFill(baseColor, isVisible ? 1.0 : 0.6);
-              g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
-              g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
-              g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
-              g.closePath();
-              g.endFill();
-            }
-            for (const tri of tris) {
-              const [a, b, c] = tri;
-              g.beginTextureFill({ texture: tex, matrix: texMatrix, alpha: overlayAlpha });
-              g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
-              g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
-              g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
-              g.closePath();
-              g.endFill();
-            }
-
-            EDGE_KEYS.forEach((edge) => {
-              const [cornerA, cornerB] = EDGE_TO_CORNERS[edge];
-              const myEdgeHeight = (cornerHeights[cornerA] + cornerHeights[cornerB]) / 2;
-              const vec = EDGE_VECTORS[edge];
-              const nq = q + vec.dq;
-              const nr = r + vec.dr;
-              if (!inb(nq, nr)) return;
-              const neighborIdx = idxAt(nq, nr);
-              if (!exploredTiles.has(neighborIdx)) return;
-              const neighborTile = map.tiles[neighborIdx] as any;
-              const neighborCorners = snappedCorners.getCorners(nq, nr);
-              const neighborHeights: Record<CornerKey, number> = {
-                NW: neighborCorners.hNW,
-                NE: neighborCorners.hNE,
-                SE: neighborCorners.hSE,
-                SW: neighborCorners.hSW
-              };
-              const oppEdge = OPP_EDGE[edge];
-              const [oppA, oppB] = EDGE_TO_CORNERS[oppEdge];
-              const neighborHeight = (neighborHeights[oppA] + neighborHeights[oppB]) / 2;
-              const delta = neighborHeight - myEdgeHeight;
-              if (delta > 0 && delta <= 1.05) {
-                const tint = mixColor(baseColor, (terrainPalette as any)[neighborTile.terrain] ?? baseColor, 0.45);
-                const alpha = (isVisible ? 0.55 : 0.4) * Math.min(1, delta);
-                g.beginFill(tint, alpha);
-                g.moveTo(center.x, center.y);
-                g.lineTo(cornerPoints[cornerA].x, cornerPoints[cornerA].y);
-                g.lineTo(cornerPoints[cornerB].x, cornerPoints[cornerB].y);
+              g.clear();
+              if (!isExplored) {
+                g.beginFill(0x030509, 0.95);
+                g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
+                g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
+                g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
+                g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
                 g.closePath();
                 g.endFill();
-              } else if (delta < 0) {
-                const depth = Math.min(1, Math.abs(delta));
-                const tint = darkenColor(baseColor, 0.25);
-                const alpha = (isVisible ? 0.35 : 0.2) * depth;
-                g.beginFill(tint, alpha);
-                g.moveTo(center.x, center.y);
-                g.lineTo(cornerPoints[cornerB].x, cornerPoints[cornerB].y);
-                g.lineTo(cornerPoints[cornerA].x, cornerPoints[cornerA].y);
+                return;
+              }
+              for (const tri of tris) {
+                const [a, b, c] = tri;
+                g.beginFill(baseColor, isVisible ? 1.0 : 0.6);
+                g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
+                g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
+                g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
                 g.closePath();
                 g.endFill();
               }
-            });
+              for (const tri of tris) {
+                const [a, b, c] = tri;
+                g.beginTextureFill({ texture: tex, matrix: texMatrix, alpha: overlayAlpha });
+                g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
+                g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
+                g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
+                g.closePath();
+                g.endFill();
+              }
 
-            if (isExplored && !isVisible) {
-              g.lineStyle(1, 0x0a1a2c, 0.22);
-              g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
-              g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
-              g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
-              g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
-              g.closePath();
-            }
-          }}
-        />
+              EDGE_KEYS.forEach((edge) => {
+                const [cornerA, cornerB] = EDGE_TO_CORNERS[edge];
+                const myEdgeHeight = (cornerHeights[cornerA] + cornerHeights[cornerB]) / 2;
+                const vec = EDGE_VECTORS[edge];
+                const nq = q + vec.dq;
+                const nr = r + vec.dr;
+                if (!inb(nq, nr)) return;
+                const neighborIdx = idxAt(nq, nr);
+                if (!exploredTiles.has(neighborIdx)) return;
+                const neighborTile = map.tiles[neighborIdx] as any;
+                const neighborCorners = snappedCorners.getCorners(nq, nr);
+                const neighborHeights: Record<CornerKey, number> = {
+                  NW: neighborCorners.hNW,
+                  NE: neighborCorners.hNE,
+                  SE: neighborCorners.hSE,
+                  SW: neighborCorners.hSW
+                };
+                const oppEdge = OPP_EDGE[edge];
+                const [oppA, oppB] = EDGE_TO_CORNERS[oppEdge];
+                const neighborHeight = (neighborHeights[oppA] + neighborHeights[oppB]) / 2;
+                const delta = neighborHeight - myEdgeHeight;
+                if (delta > 0 && delta <= 1.05) {
+                  const tint = mixColor(
+                    baseColor,
+                    (terrainPalette as any)[neighborTile.terrain] ?? baseColor,
+                    0.45
+                  );
+                  const alpha = (isVisible ? 0.55 : 0.4) * Math.min(1, delta);
+                  g.beginFill(tint, alpha);
+                  g.moveTo(center.x, center.y);
+                  g.lineTo(cornerPoints[cornerA].x, cornerPoints[cornerA].y);
+                  g.lineTo(cornerPoints[cornerB].x, cornerPoints[cornerB].y);
+                  g.closePath();
+                  g.endFill();
+                } else if (delta < 0) {
+                  const depth = Math.min(1, Math.abs(delta));
+                  const tint = darkenColor(baseColor, 0.25);
+                  const alpha = (isVisible ? 0.35 : 0.2) * depth;
+                  g.beginFill(tint, alpha);
+                  g.moveTo(center.x, center.y);
+                  g.lineTo(cornerPoints[cornerB].x, cornerPoints[cornerB].y);
+                  g.lineTo(cornerPoints[cornerA].x, cornerPoints[cornerA].y);
+                  g.closePath();
+                  g.endFill();
+                }
+              });
+
+              if (isExplored && !isVisible) {
+                g.lineStyle(1, 0x0a1a2c, 0.22);
+                g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
+                g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
+                g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
+                g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
+                g.closePath();
+              }
+            }}
+          />
       );
     });
   }, [
@@ -884,6 +1385,65 @@ export function BattlefieldStage({
       })
       .filter(Boolean) as JSX.Element[];
   }, [exploredTiles, map.tiles, map.width, snappedCorners, visibleTiles]);
+  const coveredByProcBuilding = useMemo(() => {
+    const set = new Set<number>();
+    const W = map.width;
+    const H = map.height;
+    const inb = (q: number, r: number) => q >= 0 && r >= 0 && q < W && r < H;
+    const idx = (q: number, r: number) => r * W + q;
+    for (const prop of map.props ?? []) {
+      if (!prop || prop.kind !== 'proc-building') continue;
+      if (Array.isArray(prop.tiles) && prop.tiles.length) {
+        for (const t of prop.tiles) {
+          if (inb(t.q, t.r)) set.add(idx(t.q, t.r));
+        }
+        continue;
+      }
+      const q0 = prop.coordinate?.q ?? 0;
+      const r0 = prop.coordinate?.r ?? 0;
+      const w = Math.max(1, prop.w ?? 1);
+      const h = Math.max(1, prop.h ?? 1);
+      for (let dq = 0; dq < w; dq++) {
+        for (let dr = 0; dr < h; dr++) {
+          const qq = q0 + dq;
+          const rr = r0 + dr;
+          if (inb(qq, rr)) set.add(idx(qq, rr));
+        }
+      }
+    }
+    return set;
+  }, [map.props, map.width, map.height]);
+
+  const terrainMissingTexts = useMemo(() => {
+    if (!allowExternalTextures) return null;
+    if (!missingTerrainPng || missingTerrainPng.size === 0) return null;
+    const labels: JSX.Element[] = [];
+    for (let index = 0; index < map.tiles.length; index++) {
+      const tile: any = map.tiles[index];
+      const terrainName: string = tile.terrain ?? 'plain';
+      if (terrainName === 'structure' && coveredByProcBuilding.has(index)) continue;
+      if (!missingTerrainPng.has(`${terrainName}.png`)) continue;
+      const q = index % map.width;
+      const r = Math.floor(index / map.width);
+      const pos = toScreen({ q, r });
+      const corners = snappedCorners.getCorners(q, r);
+      const avgHeight = averageCornerHeight(corners);
+      const P = makeCornerPoints(corners, avgHeight);
+      const cx = (P.NW.x + P.NE.x + P.SE.x + P.SW.x) / 4;
+      const cy = (P.NW.y + P.NE.y + P.SE.y + P.SW.y) / 4;
+      labels.push(
+        <Text
+          key={`missing-tex-${index}`}
+          text={`${terrainName}.png`}
+          x={pos.x + cx}
+          y={pos.y - avgHeight * ELEV_Y_OFFSET + cy}
+          anchor={0.5}
+          style={missingLabelStyle}
+        />
+      );
+    }
+    return labels;
+  }, [allowExternalTextures, missingTerrainPng, map.tiles, map.width, snappedCorners, toScreen, coveredByProcBuilding]);
   // Local helper to keep UI overlays consistent with core movement rules
   const uiCanEnter = (unitType: any, tile: { terrain: string; passable: boolean }) => {
     if (!tile || !tile.passable) return false;
@@ -984,9 +1544,11 @@ export function BattlefieldStage({
       const idx = r * map.width + q;
       if (!visibleTiles.has(idx)) return; // respect FoW for rendering
       const p = toScreen({ q, r });
+      const geom = ISO_MODE ? topGeomFor(q, r) : null;
       const elev = ((map.tiles[idx] as any).elevation ?? 0);
+      const avgHeight = ISO_MODE ? geom!.avgHeight : elev;
       const x = p.x;
-      const y = p.y - elev * ELEV_Y_OFFSET;
+      const y = p.y - avgHeight * ELEV_Y_OFFSET;
       const leftAP = Math.max(0, apBudget - cost);
       const canShoot = (() => {
         try { return canAffordAttack({ ...(selected as any), actionPoints: Math.floor(leftAP) } as any); }
@@ -1000,37 +1562,63 @@ export function BattlefieldStage({
           y={y}
           draw={(g) => {
             g.clear();
-            const s = (tileSize / 2) * 0.92; const hw = (hexWidth / 2) * 0.92;
-            const pts = ISO_MODE
-              ? [
-                  { x: 0, y: -(s * 0.5) }, { x: hw, y: 0 }, { x: 0, y: (s * 0.5) }, { x: -hw, y: 0 }
-                ]
-              : [
-                  { x: 0, y: -s }, { x: hw, y: -s / 2 }, { x: hw, y: s / 2 },
-                  { x: 0, y: s }, { x: -hw, y: s / 2 }, { x: -hw, y: -s / 2 }
-                ];
             const mvAlpha = externalTexturesAreColored ? (canShoot ? 0.08 : 0.06) : (canShoot ? 0.16 : 0.12);
-            g.beginFill(canShoot ? 0x4a90e2 : 0x245a96, mvAlpha);
-            g.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-            g.closePath(); g.endFill();
+            if (ISO_MODE && geom) {
+              const shape = geom.inset(0.92);
+              g.beginFill(canShoot ? 0x4a90e2 : 0x245a96, mvAlpha);
+              drawPoly(g as PixiGraphics, shape);
+              g.endFill();
 
-            // subtle outline to stand out over terrain overlay
-            g.lineStyle(1, canShoot ? 0x6fb3ff : 0x3a78c4, 0.45);
-            g.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-            g.closePath();
+              g.lineStyle(1, canShoot ? 0x6fb3ff : 0x3a78c4, 0.45);
+              drawPoly(g as PixiGraphics, shape);
 
-            // perimeter ring: draw thicker edges where neighbor is outside range
-            g.lineStyle(1, canShoot ? 0x86b7ff : 0x3a78c4, 0.7);
-            for (let ei = 0; ei < (ISO_MODE ? 4 : 6); ei++) {
-              const d = dirs[ei];
-              const nq = q + d.dq, nr = r + d.dr;
-              const nkey = `${nq},${nr}`;
-              if (!best.has(nkey)) {
-                const a = pts[ei];
-                const b = pts[(ei + 1) % pts.length];
-                if (!a || !b) { continue; }
-                g.moveTo(a.x, a.y);
-                g.lineTo(b.x, b.y);
+              const edgeDirs = [
+                { dq: 0, dr: -1 },
+                { dq: 1, dr: 0 },
+                { dq: 0, dr: 1 },
+                { dq: -1, dr: 0 }
+              ];
+              const edges: Array<[number, number]> = [
+                [0, 1],
+                [1, 2],
+                [2, 3],
+                [3, 0]
+              ];
+              g.lineStyle(1, canShoot ? 0x86b7ff : 0x3a78c4, 0.7);
+              edges.forEach(([aIdx, bIdx], edgeIndex) => {
+                const d = edgeDirs[edgeIndex];
+                const nkey = `${q + d.dq},${r + d.dr}`;
+                if (!best.has(nkey)) {
+                  g.moveTo(shape[aIdx].x, shape[aIdx].y);
+                  g.lineTo(shape[bIdx].x, shape[bIdx].y);
+                }
+              });
+            } else {
+              const s = (tileSize / 2) * 0.92; const hw = (hexWidth / 2) * 0.92;
+              const pts = [
+                { x: 0, y: -s }, { x: hw, y: -s / 2 }, { x: hw, y: s / 2 },
+                { x: 0, y: s }, { x: -hw, y: s / 2 }, { x: -hw, y: -s / 2 }
+              ];
+              g.beginFill(canShoot ? 0x4a90e2 : 0x245a96, mvAlpha);
+              g.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+              g.closePath(); g.endFill();
+
+              g.lineStyle(1, canShoot ? 0x6fb3ff : 0x3a78c4, 0.45);
+              g.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+              g.closePath();
+
+              g.lineStyle(1, canShoot ? 0x86b7ff : 0x3a78c4, 0.7);
+              for (let ei = 0; ei < dirs.length; ei++) {
+                if (ei >= pts.length) break;
+                const d = dirs[ei];
+                const nkey = `${q + d.dq},${r + d.dr}`;
+                if (!best.has(nkey)) {
+                  const a = pts[ei];
+                  const b = pts[(ei + 1) % pts.length];
+                  if (!a || !b) continue;
+                  g.moveTo(a.x, a.y);
+                  g.lineTo(b.x, b.y);
+                }
               }
             }
 
@@ -1042,22 +1630,22 @@ export function BattlefieldStage({
     // Do not draw highlight on the origin tile to avoid clutter
 
     return elements.filter((el) => (el as any).key !== `mv-${start.q}-${start.r}`);
-  }, [battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, exploredTiles, externalTexturesAreColored]);
+  }, [battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, exploredTiles, externalTexturesAreColored, topGeomFor]);
   const attackRangeOverlays = useMemo(() => {
     if (!showAttackOverlay || !selectedUnitId) return null;
 
     // find selected unit
-    let selected: any | undefined;
-    for (const side of Object.values(battleState.sides) as any[]) {
-      const u = (side as any).units.get(selectedUnitId);
+    let selected: UnitInstance | undefined;
+    for (const side of Object.values(battleState.sides)) {
+      const u = side.units.get(selectedUnitId);
       if (u) { selected = u; break; }
     }
     if (!selected) return null;
     if (viewerFaction && selected.faction !== viewerFaction) return null;
 
-    const ranges = Object.keys(selected?.stats?.weaponRanges ?? {});
+    const ranges = Object.keys(selected.stats.weaponRanges ?? {});
     const weaponId = ranges[0];
-    const maxRange: number = weaponId ? (selected.stats.weaponRanges[weaponId] ?? 0) : 0;
+    const maxRange: number = weaponId ? calculateAttackRange(selected, weaponId, battleState.map) : 0;
     if (!maxRange || maxRange <= 0) return null;
 
     const start = selected.coordinate as { q: number; r: number };
@@ -1087,41 +1675,64 @@ export function BattlefieldStage({
       const idx = r * map.width + q;
       if (!visibleTiles.has(idx)) return;
       const p = toScreen({ q, r });
+      const geom = ISO_MODE ? topGeomFor(q, r) : null;
       const elev = ((map.tiles[idx] as any).elevation ?? 0);
+      const avgHeight = ISO_MODE ? geom!.avgHeight : elev;
       const x = p.x;
-      const y = p.y - elev * ELEV_Y_OFFSET;
+      const y = p.y - avgHeight * ELEV_Y_OFFSET;
 
       elements.push(
         <Graphics key={`atk-${q}-${r}`} x={x} y={y} draw={(g) => {
           g.clear();
-          const s = (tileSize / 2) * 0.92; const hw = (hexWidth / 2) * 0.92;
-          const pts = ISO_MODE
-            ? [
-                { x: 0, y: -(s * 0.5) }, { x: hw, y: 0 }, { x: 0, y: (s * 0.5) }, { x: -hw, y: 0 }
-              ]
-            : [
-                { x: 0, y: -s }, { x: hw, y: -s / 2 }, { x: hw, y: s / 2 },
-                { x: 0, y: s }, { x: -hw, y: s / 2 }, { x: -hw, y: -s / 2 }
-              ];
-          // soft orange fill
           const atkAlpha = externalTexturesAreColored ? 0.08 : 0.12;
-          g.beginFill(0xffa726, atkAlpha);
-          g.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-          g.closePath();
-          g.endFill();
-
-          // ring edges only on perimeter of range
-          g.lineStyle(1, 0xffc107, 0.75);
-          for (let ei = 0; ei < (ISO_MODE ? 4 : 6); ei++) {
-            const d = dirs[ei];
-            const nq = q + d.dq, nr = r + d.dr;
-            const nkey = `${nq},${nr}`;
-            if (!inRange.has(nkey)) {
-              const a = pts[ei];
-              const b = pts[(ei + 1) % pts.length];
-              if (!a || !b) { continue; }
-              g.moveTo(a.x, a.y);
-              g.lineTo(b.x, b.y);
+          if (ISO_MODE && geom) {
+            const shape = geom.inset(0.92);
+            g.beginFill(0xffa726, atkAlpha);
+            drawPoly(g as PixiGraphics, shape);
+            g.endFill();
+            g.lineStyle(1, 0xffc107, 0.75);
+            const edgeDirs = [
+              { dq: 0, dr: -1 },
+              { dq: 1, dr: 0 },
+              { dq: 0, dr: 1 },
+              { dq: -1, dr: 0 }
+            ];
+            const edges: Array<[number, number]> = [
+              [0, 1],
+              [1, 2],
+              [2, 3],
+              [3, 0]
+            ];
+            edges.forEach(([aIdx, bIdx], edgeIndex) => {
+              const d = edgeDirs[edgeIndex];
+              const nkey = `${q + d.dq},${r + d.dr}`;
+              if (!inRange.has(nkey)) {
+                g.moveTo(shape[aIdx].x, shape[aIdx].y);
+                g.lineTo(shape[bIdx].x, shape[bIdx].y);
+              }
+            });
+          } else {
+            const s = (tileSize / 2) * 0.92; const hw = (hexWidth / 2) * 0.92;
+            const pts = [
+              { x: 0, y: -s }, { x: hw, y: -s / 2 }, { x: hw, y: s / 2 },
+              { x: 0, y: s }, { x: -hw, y: s / 2 }, { x: -hw, y: -s / 2 }
+            ];
+            g.beginFill(0xffa726, atkAlpha);
+            g.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+            g.closePath();
+            g.endFill();
+            g.lineStyle(1, 0xffc107, 0.75);
+            for (let ei = 0; ei < dirs.length; ei++) {
+              if (ei >= pts.length) break;
+              const d = dirs[ei];
+              const nkey = `${q + d.dq},${r + d.dr}`;
+              if (!inRange.has(nkey)) {
+                const a = pts[ei];
+                const b = pts[(ei + 1) % pts.length];
+                if (!a || !b) continue;
+                g.moveTo(a.x, a.y);
+                g.lineTo(b.x, b.y);
+              }
             }
           }
         }} />
@@ -1130,7 +1741,7 @@ export function BattlefieldStage({
 
     // don't draw over origin to keep selection ring readable
     return elements.filter((el) => (el as any).key !== `atk-${start.q}-${start.r}`);
-  }, [showAttackOverlay, battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, exploredTiles, externalTexturesAreColored]);
+  }, [showAttackOverlay, battleState.map, battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, exploredTiles, externalTexturesAreColored, topGeomFor]);
 
 
 
@@ -1167,10 +1778,10 @@ export function BattlefieldStage({
               if (!visibleTiles.has(idxA) || !visibleTiles.has(idxB)) continue;
               const pa0 = toScreen(a);
               const pb0 = toScreen(b);
-              const elevA = ((map.tiles[idxA] as any).elevation ?? 0);
-              const elevB = ((map.tiles[idxB] as any).elevation ?? 0);
-              const pa = { x: pa0.x, y: pa0.y - elevA * ELEV_Y_OFFSET };
-              const pb = { x: pb0.x, y: pb0.y - elevB * ELEV_Y_OFFSET };
+              const geomA = topGeomFor(a.q, a.r);
+              const geomB = topGeomFor(b.q, b.r);
+              const pa = { x: pa0.x, y: pa0.y - geomA.avgHeight * ELEV_Y_OFFSET };
+              const pb = { x: pb0.x, y: pb0.y - geomB.avgHeight * ELEV_Y_OFFSET };
               g.moveTo(pa.x, pa.y);
               g.lineTo(pb.x, pb.y);
             }
@@ -1185,9 +1796,9 @@ export function BattlefieldStage({
       const idx = dest.r * map.width + dest.q;
       if (visibleTiles.has(idx)) {
         const p = toScreen(dest);
-        const elev = ((map.tiles[idx] as any).elevation ?? 0);
+        const geom = topGeomFor(dest.q, dest.r);
         const x = p.x;
-        const y = p.y - elev * ELEV_Y_OFFSET;
+        const y = p.y - geom.avgHeight * ELEV_Y_OFFSET;
         elements.push(
           <Graphics
             key="dest-ring"
@@ -1195,24 +1806,27 @@ export function BattlefieldStage({
             y={y}
             draw={(g) => {
               g.clear();
-              const s = (tileSize / 2) * 0.96;
-              const hw = (hexWidth / 2) * 0.96;
-              const pts = ISO_MODE
-                ? [
-                    { x: 0, y: -(s * 0.5) }, { x: hw, y: 0 }, { x: 0, y: (s * 0.5) }, { x: -hw, y: 0 }
-                  ]
-                : [
-                    { x: 0, y: -s },
-                    { x: hw, y: -s / 2 },
-                    { x: hw, y: s / 2 },
-                    { x: 0, y: s },
-                    { x: -hw, y: s / 2 },
-                    { x: -hw, y: -s / 2 }
-                  ];
-              g.lineStyle(2, 0xffc107, 0.95);
-              g.moveTo(pts[0].x, pts[0].y);
-              for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-              g.closePath();
+              if (ISO_MODE) {
+                const ring = geom.inset(0.9);
+                g.lineStyle(2, 0xffc107, 0.95);
+                drawPoly(g as PixiGraphics, ring);
+                const inner = geom.inset(0.84);
+                g.lineStyle(1, 0x5a3c00, 0.35);
+                drawPoly(g as PixiGraphics, inner);
+              } else {
+                const s = (tileSize / 2) * 0.96;
+                const hw = (hexWidth / 2) * 0.96;
+                const pts = [
+                  { x: 0, y: -s },
+                  { x: hw, y: -s / 2 },
+                  { x: hw, y: s / 2 },
+                  { x: 0, y: s },
+                  { x: -hw, y: s / 2 },
+                  { x: -hw, y: -s / 2 }
+                ];
+                g.lineStyle(2, 0xffc107, 0.95);
+                drawPoly(g as unknown as PixiGraphics, pts);
+              }
             }}
           />
         );
@@ -1222,7 +1836,7 @@ export function BattlefieldStage({
 
 
     return elements;
-  }, [exploredTiles, map.width, plannedDestination, plannedPath]);
+  }, [exploredTiles, map.width, plannedDestination, plannedPath, visibleTiles, topGeomFor]);
 
   // Elevation walls drawn above overlays for correct occlusion
   const tileWalls = useMemo(() => {
@@ -1313,16 +1927,72 @@ export function BattlefieldStage({
   }, [ISO_MODE, exploredTiles, map.tiles, map.width, snappedCorners, visibleTiles]);
 
 
+  const propTextureCache = useMemo(() => new Map<string, Texture>(), []);
+
+
+  const deathMarkerSprites = useMemo(() => {
+    if (deathMarkers.size === 0) return null;
+    const els: JSX.Element[] = [];
+    deathMarkers.forEach((m) => {
+      const idx = m.r * map.width + m.q;
+      const isFriendly = m.faction === viewerFaction;
+      const isVisible = visibleTiles.has(idx);
+      if (!isFriendly && !isVisible) return;
+
+      const p = toScreen({ q: m.q, r: m.r });
+      const tile = map.tiles[idx] as any;
+      const elev = tile?.elevation ?? 0;
+      const geom = ISO_MODE ? topGeomFor(m.q, m.r) : null;
+      const baseHeight = ISO_MODE && geom ? geom.avgHeight : elev;
+      const x = Math.round(p.x);
+      const y = Math.round(p.y - baseHeight * ELEV_Y_OFFSET);
+      const z = Math.round(y);
+
+      const elapsed = now - m.t;
+      if (elapsed >= DEATH_TTL_MS) return;
+      const fade = Math.max(0, 1 - elapsed / DEATH_TTL_MS);
+
+      els.push(
+        <Container key={`dead-${m.id}`} x={x} y={y} alpha={fade} zIndex={z}>
+          <Graphics
+            draw={(g) => {
+              g.clear();
+              g.beginFill(0x000000, 0.20 + 0.25 * fade);
+              g.drawCircle(0, 0, tileSize * 0.26);
+              g.endFill();
+              g.lineStyle(2, 0xff2d55, 0.85 * fade);
+              g.moveTo(-tileSize * 0.18, -tileSize * 0.18);
+              g.lineTo(tileSize * 0.18, tileSize * 0.18);
+              g.moveTo(tileSize * 0.18, -tileSize * 0.18);
+              g.lineTo(-tileSize * 0.18, tileSize * 0.18);
+            }}
+          />
+          <Text
+            text={'\u2620'}
+            anchor={0.5}
+            y={-tileSize * 0.02}
+            style={new TextStyle({ fill: 0xffe08a, fontSize: 16 })}
+          />
+        </Container>
+      );
+    });
+    return els;
+  }, [deathMarkers, map.tiles, map.width, now, topGeomFor, toScreen, viewerFaction, visibleTiles]);
+
+
   const units = useMemo(() => {
     return (Object.values(battleState.sides) as any[]).flatMap((side) =>
       Array.from((side as any).units.values()).flatMap((unit: any) => {
         const p = toScreen(unit.coordinate);
         const idx = unit.coordinate.r * map.width + unit.coordinate.q;
         const elev = ((map.tiles[idx] as any).elevation ?? 0);
+        const geom = ISO_MODE ? topGeomFor(unit.coordinate.q, unit.coordinate.r) : null;
+        const baseHeight = ISO_MODE && geom ? geom.avgHeight : elev;
         const UNIT_NUDGE_X = 0; // ISO: keep X centered
         const UNIT_NUDGE_Y = ISO_MODE ? -Math.round(ISO_TILE_H * 0.34) : 0; // slightly higher per feedback
         const x = Math.round(p.x + UNIT_NUDGE_X);
-        const y = Math.round(p.y - elev * ELEV_Y_OFFSET + UNIT_NUDGE_Y);
+        const y = Math.round(p.y - baseHeight * ELEV_Y_OFFSET + UNIT_NUDGE_Y);
+        const worldZ = Math.round(y);
         const color = unit.faction === 'alliance' ? 0x5dade2 : 0xe74c3c;
         const isSelected = unit.id === selectedUnitId;
         const isTarget = unit.id === targetUnitId;
@@ -1330,36 +2000,15 @@ export function BattlefieldStage({
         const isVisible = visibleTiles.has(tileIndex);
         const isFriendly = unit.faction === viewerFaction;
         const isDestroyed = unit.stance === 'destroyed';
+        const unitType = (unit as any).unitType as string;
+        const capHeight = unitType === 'air' ? tileSize * 0.10 : tileSize * 0.28;
+        const k = unitType === 'infantry' ? 0.32 : (unitType === 'vehicle' || unitType === 'artillery') ? 0.46 : 0.40;
 
         // Respect fog-of-war for enemies
         if (!isFriendly && !isVisible) return [];
 
-        // Clear death marker (very obvious): skull + burn mark. Do not render normal unit.
         if (isDestroyed) {
-          return (
-            <Container key={unit.id} x={x} y={y}>
-              {/* dark scorched circle */}
-              <Graphics
-                draw={(g) => {
-                  g.clear();
-                  g.beginFill(0x000000, 0.45);
-                  g.drawCircle(0, 0, tileSize * 0.26);
-                  g.endFill();
-                  g.lineStyle(2, 0xff2d55, 0.85);
-                  g.moveTo(-tileSize * 0.18, -tileSize * 0.18);
-                  g.lineTo(tileSize * 0.18, tileSize * 0.18);
-                  g.moveTo(tileSize * 0.18, -tileSize * 0.18);
-                  g.lineTo(-tileSize * 0.18, tileSize * 0.18);
-                }}
-              />
-              <Text
-                text={'\u2620'}
-                anchor={0.5}
-                y={-tileSize * 0.02}
-                style={new TextStyle({ fill: 0xffe08a, fontSize: 16 })}
-              />
-            </Container>
-          );
+          return [];
         }
 
         return (
@@ -1367,6 +2016,8 @@ export function BattlefieldStage({
             key={unit.id}
             x={x}
             y={y}
+            zIndex={worldZ}
+            sortableChildren
             interactive={true}
             pointerdown={() => onSelectUnit?.(unit.id)}
           >
@@ -1375,30 +2026,32 @@ export function BattlefieldStage({
                 <Graphics
                   draw={(g) => {
                     g.clear();
-                    const s = (tileSize / 2) * 0.96;
-                    const hw = (hexWidth / 2) * 0.96;
-                    const pts = ISO_MODE
-                      ? [
+                    const ringShape = (scale: number) => {
+                      if (ISO_MODE) {
+                        if (geom) return geom.inset(scale);
+                        const s = (tileSize / 2) * scale;
+                        const hw = (hexWidth / 2) * scale;
+                        return [
                           { x: 0, y: -(s * 0.5) }, { x: hw, y: 0 }, { x: 0, y: (s * 0.5) }, { x: -hw, y: 0 }
-                        ]
-                      : [
-                          { x: 0, y: -s },
-                          { x: hw, y: -s / 2 },
-                          { x: hw, y: s / 2 },
-                          { x: 0, y: s },
-                          { x: -hw, y: s / 2 },
-                          { x: -hw, y: -s / 2 }
                         ];
+                      }
+                      const s = (tileSize / 2) * scale;
+                      const hw = (hexWidth / 2) * scale;
+                      return [
+                        { x: 0, y: -s },
+                        { x: hw, y: -s / 2 },
+                        { x: hw, y: s / 2 },
+                        { x: 0, y: s },
+                        { x: -hw, y: s / 2 },
+                        { x: -hw, y: -s / 2 }
+                      ];
+                    };
+                    const outer = ringShape(0.96);
+                    const inner = ringShape(0.86);
                     g.lineStyle(1, 0x95d7ab, 0.85);
-                    g.moveTo(pts[0].x, pts[0].y);
-                    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-                    g.closePath();
-                    // inner ring
+                    drawPoly(g as PixiGraphics, outer);
                     g.lineStyle(1, 0x0b2a1d, 0.65);
-                    const k = 0.92;
-                    g.moveTo(pts[0].x * k, pts[0].y * k);
-                    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x * k, pts[i].y * k);
-                    g.closePath();
+                    drawPoly(g as PixiGraphics, inner);
                   }}
                 />
               </Container>
@@ -1408,24 +2061,29 @@ export function BattlefieldStage({
                 <Graphics
                   draw={(g) => {
                     g.clear();
-                    const s = (tileSize / 2) * 0.98;
-                    const hw = (hexWidth / 2) * 0.98;
-                    const pts = ISO_MODE
-                      ? [
+                    const ringShape = (scale: number) => {
+                      if (ISO_MODE) {
+                        if (geom) return geom.inset(scale);
+                        const s = (tileSize / 2) * scale;
+                        const hw = (hexWidth / 2) * scale;
+                        return [
                           { x: 0, y: -(s * 0.5) }, { x: hw, y: 0 }, { x: 0, y: (s * 0.5) }, { x: -hw, y: 0 }
-                        ]
-                      : [
-                          { x: 0, y: -s },
-                          { x: hw, y: -s / 2 },
-                          { x: hw, y: s / 2 },
-                          { x: 0, y: s },
-                          { x: -hw, y: s / 2 },
-                          { x: -hw, y: -s / 2 }
                         ];
+                      }
+                      const s = (tileSize / 2) * scale;
+                      const hw = (hexWidth / 2) * scale;
+                      return [
+                        { x: 0, y: -s },
+                        { x: hw, y: -s / 2 },
+                        { x: hw, y: s / 2 },
+                        { x: 0, y: s },
+                        { x: -hw, y: s / 2 },
+                        { x: -hw, y: -s / 2 }
+                      ];
+                    };
+                    const pts = ringShape(0.98);
                     g.lineStyle(2, 0xff2d55, 0.95);
-                    g.moveTo(pts[0].x, pts[0].y);
-                    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-                    g.closePath();
+                    drawPoly(g as PixiGraphics, pts);
                     // crosshair
                     g.moveTo(-tileSize * 0.18, 0);
                     g.lineTo(tileSize * 0.18, 0);
@@ -1436,6 +2094,25 @@ export function BattlefieldStage({
               </Container>
             )}
             <Graphics
+              zIndex={0}
+              draw={(g) => {
+                g.clear();
+                const shadowScaleISO = Math.min(0.95, Math.max(0.72, k * 1.55));
+                if (ISO_MODE && geom) {
+                  const shadow = geom.inset(shadowScaleISO).map((pt) => ({ x: pt.x, y: pt.y + 1 }));
+                  g.beginFill(0x000000, 0.16);
+                  drawPoly(g as PixiGraphics, shadow);
+                  g.endFill();
+                } else {
+                  const shadowY = tileSize * 0.16;
+                  g.beginFill(0x000000, 0.2);
+                  g.drawEllipse(0, shadowY, tileSize * 0.34, tileSize * 0.16);
+                  g.endFill();
+                }
+              }}
+            />
+            <Graphics
+              zIndex={1}
               draw={(g) => {
                 g.clear();
 
@@ -1449,22 +2126,11 @@ export function BattlefieldStage({
 
                 // pseudo-3D extruded unit (AoE2-like)
                 g.lineStyle(1, 0x000000, 0.55);
-                const t = (unit as any).unitType as string;
+                const H = capHeight;
 
-                // soft ground shadow (under the unit)
-                const shadowY = tileSize * 0.16; // closer to centre so it doesn't feel "between tiles"
-                g.beginFill(0x000000, 0.22);
-                g.drawEllipse(0, shadowY, tileSize * 0.34, tileSize * 0.16);
-                g.endFill();
-
-                // top cap footprint (diamond in ISO mode, hex otherwise)
-                const H = t === 'air' ? tileSize * 0.10 : tileSize * 0.28;
-                const k = t === 'infantry' ? 0.32 : (t === 'vehicle' || t === 'artillery') ? 0.46 : 0.40;
                 const sCap = (tileSize / 2) * k; const hwCap = (hexWidth / 2) * k;
-                const cap = ISO_MODE
-                  ? [
-                      { x: 0, y: -(sCap * 0.5) }, { x: hwCap, y: 0 }, { x: 0, y: (sCap * 0.5) }, { x: -hwCap, y: 0 }
-                    ]
+                const cap = ISO_MODE && geom
+                  ? geom.inset(k)
                   : [
                       { x: 0, y: -sCap },
                       { x: hwCap, y: -sCap / 2 },
@@ -1475,7 +2141,7 @@ export function BattlefieldStage({
                     ];
 
                 // side faces (only for ground units)
-                if (t !== 'air') {
+                if (unitType !== 'air') {
                   if (ISO_MODE) {
                     // right (E) face - darker
                     g.beginFill(0x000000, 0.35);
@@ -1517,9 +2183,7 @@ export function BattlefieldStage({
 
                 // top face (team color)
                 g.beginFill(color, 1);
-                g.moveTo(cap[0].x, cap[0].y);
-                for (let i = 1; i < cap.length; i++) g.lineTo(cap[i].x, cap[i].y);
-                g.closePath();
+                drawPoly(g as PixiGraphics, cap);
                 g.endFill();
 
                 // subtle rim highlights
@@ -1576,8 +2240,370 @@ export function BattlefieldStage({
     selectedUnitId,
     targetUnitId,
     viewerFaction,
-    visibleTiles
+    visibleTiles,
+    topGeomFor
   ]);
+
+  const propsSprites = useMemo(() => {
+    const props = (map.props ?? []).filter((prop) => prop.kind !== 'proc-building');
+    if (props.length === 0) return [];
+    const idxAt = (q: number, r: number) => r * map.width + q;
+    const defaultTexturePath = '/props/tree1.png';
+    const getTexture = (path?: string) => {
+      const key = path ?? defaultTexturePath;
+      if (!propTextureCache.has(key)) {
+        propTextureCache.set(key, Texture.from(key));
+      }
+      return propTextureCache.get(key)!;
+    };
+
+    return props
+      .map((prop) => {
+        const tileIdx = idxAt(prop.coordinate.q, prop.coordinate.r);
+        if (!exploredTiles.has(tileIdx)) {
+          return null;
+        }
+        const isVisible = visibleTiles.has(tileIdx);
+        const pos = toScreen(prop.coordinate);
+        const geom = topGeomFor(prop.coordinate.q, prop.coordinate.r);
+        const anchor = bilerpPoint(geom.P, prop.u ?? 0.5, prop.v ?? 0.5);
+        const worldX = pos.x + anchor.x;
+        const worldY = pos.y - geom.avgHeight * ELEV_Y_OFFSET + anchor.y + PROP_BASE_Y_OFFSET;
+        const zIndex = Math.round(worldY);
+        const scale = prop.scale ?? 1;
+        const scaleX = scale * (prop.flipX ? -1 : 1);
+        const texturePath = prop.texture ?? defaultTexturePath;
+        const textureMissing = missingPropPaths.has(texturePath);
+        const texture = textureMissing ? null : getTexture(texturePath);
+
+        return (
+          <Container key={prop.id} x={worldX} y={worldY} zIndex={zIndex} sortableChildren>
+            <Graphics
+              zIndex={-1}
+              draw={(g) => {
+                g.clear();
+                g.beginFill(0x000000, isVisible ? 0.18 : 0.1);
+                g.drawEllipse(0, PROP_SHADOW_Y, tileSize * 0.18, tileSize * 0.1);
+                g.endFill();
+              }}
+            />
+            {textureMissing ? (
+              <Text
+                text={basename(texturePath)}
+                anchor={0.5}
+                y={-4}
+                alpha={isVisible ? 1 : 0.8}
+                style={missingLabelStyle}
+              />
+            ) : (
+              <Sprite
+                texture={texture!}
+                anchor={{ x: 0.5, y: PROP_ANCHOR_Y }}
+                scale={{ x: scaleX, y: scale }}
+                alpha={isVisible ? 1 : 0.75}
+              />
+            )}
+          </Container>
+        );
+      })
+      .filter(Boolean) as JSX.Element[];
+  }, [map.props, map.width, exploredTiles, visibleTiles, propTextureCache, topGeomFor, toScreen, missingPropPaths]);
+
+  const procBuildings = useMemo(() => {
+    const props = (map.props ?? []).filter(
+      (p): p is MapProp & { kind: 'proc-building' } => p.kind === 'proc-building'
+    );
+    if (props.length === 0) return [];
+
+    const W = map.width;
+    const H = map.height;
+    const idxAt = (q: number, r: number) => r * W + q;
+    const inBounds = (q: number, r: number) => q >= 0 && r >= 0 && q < W && r < H;
+
+    return props
+      .map((b) => {
+        const footprint: number[] = [];
+        if (Array.isArray(b.tiles) && b.tiles.length > 0) {
+          for (const t of b.tiles) {
+            if (inBounds(t.q, t.r)) footprint.push(idxAt(t.q, t.r));
+          }
+        } else {
+          const q0 = b.coordinate.q;
+          const r0 = b.coordinate.r;
+          const w = Math.max(1, b.w ?? 1);
+          const h = Math.max(1, b.h ?? 1);
+          for (let dq = 0; dq < w; dq++) {
+            for (let dr = 0; dr < h; dr++) {
+              const q = q0 + dq;
+              const r = r0 + dr;
+              if (inBounds(q, r)) footprint.push(idxAt(q, r));
+            }
+          }
+        }
+
+        const isExplored = footprint.some((i) => exploredTiles.has(i));
+        if (!isExplored) return null;
+        const isVisible = footprint.some((i) => visibleTiles.has(i));
+        const fogAlpha = isVisible ? 1 : 0.62;
+        const fogShade = isVisible ? 0 : 0.06;
+
+        const q0 = b.coordinate.q;
+        const r0 = b.coordinate.r;
+        const w = Math.max(1, b.w ?? 1);
+        const h = Math.max(1, b.h ?? 1);
+
+        const bottomNW = worldCornerOfTile(q0, r0, 'NW', topGeomFor);
+        const bottomNE = worldCornerOfTile(q0 + w - 1, r0, 'NE', topGeomFor);
+        const bottomSE = worldCornerOfTile(q0 + w - 1, r0 + h - 1, 'SE', topGeomFor);
+        const bottomSW = worldCornerOfTile(q0, r0 + h - 1, 'SW', topGeomFor);
+        const basePoly = [bottomNW, bottomNE, bottomSE, bottomSW];
+
+        const anchor = {
+          x: (bottomSW.x + bottomSE.x) / 2 + (b.baseOffsetPx?.x ?? 0),
+          y: (bottomSW.y + bottomSE.y) / 2 + (b.baseOffsetPx?.y ?? 0)
+        };
+        const zIndex =
+          b.zPivot === 'centroid'
+            ? Math.round((bottomNW.y + bottomNE.y + bottomSE.y + bottomSW.y) / 4)
+            : Math.round(Math.max(bottomSW.y, bottomSE.y));
+
+        const levels = Math.max(1, b.levels ?? 2);
+        const levelHeightPx = Math.max(8, b.levelHeightPx ?? Math.round(tileSize * 0.55));
+        const heightPx = levels * levelHeightPx;
+        const topNW = { x: bottomNW.x, y: bottomNW.y - heightPx };
+        const topNE = { x: bottomNE.x, y: bottomNE.y - heightPx };
+        const topSE = { x: bottomSE.x, y: bottomSE.y - heightPx };
+        const topSW = { x: bottomSW.x, y: bottomSW.y - heightPx };
+
+        const facade = b.facade ?? {};
+        const wallColor = facade.baseColor ?? b.wallColor ?? 0x6f5f4f;
+        const facadeMaterial = facade.material ?? 'plaster';
+        const trimColor = facade.trimColor ?? lightenColor(wallColor, 0.25);
+        const accentColor = facade.accentColor ?? darkenColor(wallColor, 0.2);
+        const grimeStrength = clamp(facade.grime ?? 0, 0, 1);
+
+        const roofColor = b.roofColor ?? 0x5e6b73;
+        const roofCfg =
+          b.roof ?? ({
+            kind: 'flat',
+            pitch: 0.3,
+            dir: 'E-W'
+          } as NonNullable<MapProp['roof']>);
+        const roofDetails = b.roofDetails ?? {};
+        const roofOverhang = roofDetails.overhangPx ?? 4;
+        const roofTrimColor = roofDetails.trimColor ?? trimColor;
+        const ridgeCap = roofDetails.ridgeCap ?? true;
+        const roofVents = roofDetails.ventCount ?? 0;
+
+        const windowSides =
+          (b.windows?.sides && b.windows.sides.length > 0 ? b.windows.sides : null) ??
+          ((w > 1 || h > 1) ? (['E', 'S'] as EdgeDir[]) : (['E'] as EdgeDir[]));
+        const windowConfig: WindowLayoutConfig & { sides: EdgeDir[] } = {
+          rows: Math.max(1, b.windows?.rows ?? Math.min(levels, 2)),
+          cols: Math.max(1, b.windows?.cols ?? Math.max(1, Math.round(w * 1.8))),
+          marginH: b.windows?.marginH ?? 12,
+          marginV: b.windows?.marginV ?? 10,
+          widthPx: b.windows?.widthPx ?? Math.max(16, Math.round(levelHeightPx * 0.45)),
+          heightPx: b.windows?.heightPx ?? Math.max(18, Math.round(levelHeightPx * 0.6)),
+          spacingH: b.windows?.spacingH ?? 8,
+          spacingV: b.windows?.spacingV ?? 8,
+          frameColor: b.windows?.frameColor ?? darkenColor(wallColor, 0.35),
+          glassColor: b.windows?.glassColor ?? 0x6aa2cc,
+          emissive: clamp(b.windows?.emissive ?? 0, 0, 1),
+          sides: windowSides
+        };
+
+        const doorConfigs = (b.doors ?? []).filter(
+          (door): door is NonNullable<MapProp['doors']>[number] => door.side === 'E' || door.side === 'S'
+        );
+        const faces: Array<{
+          side: EdgeDir;
+          topA: { x: number; y: number };
+          topB: { x: number; y: number };
+          bottomA: { x: number; y: number };
+          bottomB: { x: number; y: number };
+        }> = [
+          { side: 'E', topA: topNE, topB: topSE, bottomA: bottomNE, bottomB: bottomSE },
+          { side: 'S', topA: topSE, topB: topSW, bottomA: bottomSE, bottomB: bottomSW }
+        ];
+        const faceInfos: typeof faces = [];
+
+        return (
+          <Container key={b.id} x={anchor.x} y={anchor.y} zIndex={zIndex} sortableChildren alpha={fogAlpha}>
+            <Graphics
+              zIndex={-1}
+              draw={(g) => {
+                g.clear();
+                g.beginFill(0x000000, isVisible ? 0.15 : 0.08);
+                drawPoly(
+                  g as PixiGraphics,
+                  basePoly.map((p) => ({
+                    x: p.x - anchor.x,
+                    y: p.y - anchor.y
+                  }))
+                );
+                g.endFill();
+              }}
+            />
+            <Graphics
+              draw={(g) => {
+                g.clear();
+                faces.forEach((face) => {
+                  const { topA, topB, bottomA, bottomB } = face;
+                  const shade = face.side === 'E' ? 0.18 + fogShade : 0.3 + fogShade;
+                  const color = mixColor(wallColor, 0x000000, clamp(shade, 0, 0.65));
+                  fillQuad(g as PixiGraphics, topA, topB, bottomB, bottomA, color, 1, anchor);
+                  lineSegment(g as PixiGraphics, topA, bottomA, darkenColor(wallColor, 0.35), 0.7, 2, anchor);
+                  lineSegment(g as PixiGraphics, topB, bottomB, darkenColor(wallColor, 0.45), 0.8, 2, anchor);
+                  drawFacadeMaterial(
+                    g as PixiGraphics,
+                    bottomA,
+                    bottomB,
+                    heightPx,
+                    anchor,
+                    wallColor,
+                    facadeMaterial,
+                    fogShade
+                  );
+                  faceInfos.push(face);
+                });
+              }}
+            />
+            <Graphics
+              draw={(g) => {
+                g.clear();
+                faceInfos.forEach((face) => {
+                  if (windowConfig.sides.includes(face.side)) {
+                    drawWindowsOnBottomEdge(g as PixiGraphics, face.bottomA, face.bottomB, heightPx, anchor, windowConfig, fogShade);
+                  }
+                  doorConfigs.forEach((doorRaw) => {
+                    if (doorRaw.side !== face.side) return;
+                    const door: DoorLayoutConfig = {
+                      offset: doorRaw.offset,
+                      widthPx: doorRaw.widthPx ?? Math.max(32, Math.round(levelHeightPx * 0.8)),
+                      heightPx: doorRaw.heightPx ?? Math.round(levelHeightPx * 1.6),
+                      color: doorRaw.color ?? accentColor,
+                      kind: doorRaw.kind ?? 'roller'
+                    };
+                    drawDoorOnBottomEdge(g as PixiGraphics, face.bottomA, face.bottomB, heightPx, anchor, door);
+                  });
+                  if (grimeStrength > 0.001) {
+                    drawGrimeBand(g as PixiGraphics, face.bottomA, face.bottomB, heightPx, anchor, grimeStrength);
+                  }
+                });
+              }}
+            />
+            <Graphics
+              zIndex={1}
+              draw={(g) => {
+                g.clear();
+                const topPoly = [topNW, topNE, topSE, topSW];
+                if (roofCfg.kind === 'flat') {
+                  g.beginFill(mixColor(roofColor, 0x000000, 0.05 + fogShade), 1);
+                  drawPoly(
+                    g as PixiGraphics,
+                    topPoly.map((p) => ({ x: p.x - anchor.x, y: p.y - anchor.y }))
+                  );
+                  g.endFill();
+                } else if (roofCfg.kind === 'gabled') {
+                  const pitch = clamp(roofCfg.pitch ?? 0.3, 0, 0.9);
+                  const dir = roofCfg.dir ?? 'E-W';
+                  if (dir === 'E-W') {
+                    const midW = { x: (topNW.x + topSW.x) / 2, y: (topNW.y + topSW.y) / 2 };
+                    const midE = { x: (topNE.x + topSE.x) / 2, y: (topNE.y + topSE.y) / 2 };
+                    const ridgeW = { x: midW.x, y: midW.y - heightPx * (1 + pitch) };
+                    const ridgeE = { x: midE.x, y: midE.y - heightPx * (1 + pitch) };
+                    fillQuad(
+                      g as PixiGraphics,
+                      { x: topNW.x, y: topNW.y },
+                      { x: topNE.x, y: topNE.y },
+                      ridgeE,
+                      ridgeW,
+                      mixColor(roofColor, 0x000000, 0.02 + fogShade),
+                      1,
+                      anchor
+                    );
+                    fillQuad(
+                      g as PixiGraphics,
+                      ridgeW,
+                      ridgeE,
+                      { x: topSE.x, y: topSE.y },
+                      { x: topSW.x, y: topSW.y },
+                      mixColor(roofColor, 0x000000, 0.12 + fogShade),
+                      1,
+                      anchor
+                    );
+                    if (ridgeCap) {
+                      drawFasciaLine(g as PixiGraphics, ridgeW, ridgeE, anchor, darkenColor(roofColor, 0.35));
+                    }
+                  } else {
+                    const midN = { x: (topNW.x + topNE.x) / 2, y: (topNW.y + topNE.y) / 2 };
+                    const midS = { x: (topSW.x + topSE.x) / 2, y: (topSW.y + topSE.y) / 2 };
+                    const ridgeN = { x: midN.x, y: midN.y - heightPx * (1 + pitch) };
+                    const ridgeS = { x: midS.x, y: midS.y - heightPx * (1 + pitch) };
+                    fillQuad(
+                      g as PixiGraphics,
+                      { x: topNW.x, y: topNW.y },
+                      ridgeN,
+                      ridgeS,
+                      { x: topSW.x, y: topSW.y },
+                      mixColor(roofColor, 0x000000, 0.02 + fogShade),
+                      1,
+                      anchor
+                    );
+                    fillQuad(
+                      g as PixiGraphics,
+                      ridgeN,
+                      { x: topNE.x, y: topNE.y },
+                      { x: topSE.x, y: topSE.y },
+                      ridgeS,
+                      mixColor(roofColor, 0x000000, 0.11 + fogShade),
+                      1,
+                      anchor
+                    );
+                    if (ridgeCap) {
+                      drawFasciaLine(g as PixiGraphics, ridgeN, ridgeS, anchor, darkenColor(roofColor, 0.35));
+                    }
+                  }
+                } else {
+                  const pitch = clamp(roofCfg.pitch ?? 0.25, 0, 1);
+                  const center = {
+                    x: (topNW.x + topNE.x + topSE.x + topSW.x) / 4,
+                    y: (topNW.y + topNE.y + topSE.y + topSW.y) / 4 - heightPx * pitch
+                  };
+                  const faces = [
+                    { poly: [topNW, topNE, center], shade: 0.02 },
+                    { poly: [topNE, topSE, center], shade: 0.08 },
+                    { poly: [topSE, topSW, center], shade: 0.13 },
+                    { poly: [topSW, topNW, center], shade: 0.05 }
+                  ];
+                  faces.forEach(({ poly, shade }) => {
+                    g.beginFill(mixColor(roofColor, 0x000000, shade + fogShade), 1);
+                    drawPoly(
+                      g as PixiGraphics,
+                      poly.map((p) => ({ x: p.x - anchor.x, y: p.y - anchor.y }))
+                    );
+                    g.endFill();
+                  });
+                }
+
+                drawFasciaLine(g as PixiGraphics, topNE, topSE, anchor, roofTrimColor);
+                drawFasciaLine(g as PixiGraphics, topSE, topSW, anchor, roofTrimColor);
+
+                drawRoofVents(
+                  g as PixiGraphics,
+                  topPoly.map((p) => ({ x: p.x, y: p.y })),
+                  anchor,
+                  roofVents,
+                  lightenColor(roofColor, 0.1)
+                );
+              }}
+            />
+          </Container>
+        );
+      })
+      .filter(Boolean) as JSX.Element[];
+  }, [map.props, map.width, map.height, exploredTiles, visibleTiles, topGeomFor]);
 
   // Keyboard pan animation loop: apply velocity from Arrow keys continuously (stable, no restarts)
   useEffect(() => {
@@ -1706,6 +2732,7 @@ export function BattlefieldStage({
           <Container x={ISO_MODE ? isoBaseX : 0} scale={{ x: 1, y: ISO_MODE ? 1 : 0.72 }} skew={{ x: ISO_MODE ? 0 : -0.28, y: 0 }}>
             {tileGraphics}
             {tileOverlays}
+            {terrainMissingTexts}
             {/* Top-only overlay mask: punch holes for all vertical wall faces (E/S) */}
             <Graphics
               ref={overlayMaskRef}
@@ -1792,7 +2819,12 @@ export function BattlefieldStage({
             </Container>
 
             {tileWalls}
-            {units}
+            <Container sortableChildren>
+              {procBuildings}
+              {propsSprites}
+              {deathMarkerSprites}
+              {units}
+            </Container>
           </Container>
         </Container>
         {/* Minimap (screen-space) */}

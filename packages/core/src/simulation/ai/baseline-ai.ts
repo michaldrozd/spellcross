@@ -51,7 +51,7 @@ function bestEnemyShotThreat(
   let best = 0;
   for (const weaponId of Object.keys(enemy.stats.weaponRanges)) {
     if (!canWeaponTarget(enemy, weaponId, defenderAt)) continue;
-    const maxRange = (calculateAttackRange(enemy, weaponId) ?? 0);
+    const maxRange = calculateAttackRange(enemy, weaponId, state.map) ?? 0;
     const dist = axialDistance(enemy.coordinate, defenderAt.coordinate);
     if (dist > maxRange) continue;
     const hit = calculateHitChance({ attacker: enemy, defender: defenderAt, weaponId, map: state.map });
@@ -247,4 +247,3 @@ export function decideNextAIAction(
   // 3) Nothing to do → end turn
   return { type: 'endTurn' };
 }
-
