@@ -1928,6 +1928,7 @@ export function BattlefieldStage({
 
 
   const propTextureCache = useMemo(() => new Map<string, Texture>(), []);
+  const unitTextureCache = useMemo(() => new Map<string, Texture>(), []);
 
 
   const deathMarkerSprites = useMemo(() => {
@@ -2003,6 +2004,7 @@ export function BattlefieldStage({
         const unitType = (unit as any).unitType as string;
         const capHeight = unitType === 'air' ? tileSize * 0.10 : tileSize * 0.28;
         const k = unitType === 'infantry' ? 0.32 : (unitType === 'vehicle' || unitType === 'artillery') ? 0.46 : 0.40;
+        const isAllyInfantry = unitType === 'infantry' && unit.faction === 'alliance';
 
         // Respect fog-of-war for enemies
         if (!isFriendly && !isVisible) return [];
@@ -2111,90 +2113,143 @@ export function BattlefieldStage({
                 }
               }}
             />
+            {unitType === 'vehicle' ? (
+              (() => {
+                const texturePath = '/units/tank.png';
+                let texture = unitTextureCache.get(texturePath);
+                if (!texture) {
+                  texture = Texture.from(texturePath);
+                  unitTextureCache.set(texturePath, texture);
+                }
+                const desiredH = tileSize * 0.45;
+                const scale =
+                  texture?.valid && texture.height > 0 ? desiredH / texture.height : 0.08;
+                return (
+                  <Sprite
+                    texture={texture}
+                    anchor={{ x: 0.5, y: 0.6 }}
+                    scale={scale}
+                    alpha={isVisible ? 1 : 0.8}
+                    y={tileSize * 0.12}
+                    zIndex={1}
+                  />
+                );
+              })()
+            ) : isAllyInfantry ? (
+              (() => {
+                const texturePath = '/units/infantry.png';
+                let texture = unitTextureCache.get(texturePath);
+                if (!texture) {
+                  texture = Texture.from(texturePath);
+                  unitTextureCache.set(texturePath, texture);
+                }
+                const desiredH = tileSize * 0.48;
+                const scale =
+                  texture?.valid && texture.height > 0 ? desiredH / texture.height : 0.08;
+                return (
+                  <Sprite
+                    texture={texture}
+                    anchor={{ x: 0.5, y: 0.9 }}
+                    scale={scale}
+                    alpha={isVisible ? 1 : 0.8}
+                    y={tileSize * 0.16}
+                    zIndex={1}
+                  />
+                );
+              })()
+            ) : (
+              <Graphics
+                zIndex={1}
+                draw={(g) => {
+                  g.clear();
+
+                  // debug: unit origin marker
+                  if (DEBUG_ALIGN) {
+                    g.lineStyle(0);
+                    g.beginFill(0xff0000, 0.9);
+                    g.drawCircle(0, 0, 1.6);
+                    g.endFill();
+                  }
+
+                  // pseudo-3D extruded unit (AoE2-like)
+                  g.lineStyle(1, 0x000000, 0.55);
+                  const H = capHeight;
+
+                  const sCap = (tileSize / 2) * k; const hwCap = (hexWidth / 2) * k;
+                  const cap = ISO_MODE && geom
+                    ? geom.inset(k)
+                    : [
+                        { x: 0, y: -sCap },
+                        { x: hwCap, y: -sCap / 2 },
+                        { x: hwCap, y:  sCap / 2 },
+                        { x: 0, y:  sCap },
+                        { x: -hwCap, y:  sCap / 2 },
+                        { x: -hwCap, y: -sCap / 2 }
+                      ];
+
+                  // side faces (only for ground units)
+                  if (unitType !== 'air') {
+                    if (ISO_MODE) {
+                      // right (E) face - darker
+                      g.beginFill(0x000000, 0.35);
+                      g.moveTo(cap[1].x, cap[1].y);
+                      g.lineTo(cap[2].x, cap[2].y);
+                      g.lineTo(cap[2].x, cap[2].y + H);
+                      g.lineTo(cap[1].x, cap[1].y + H);
+                      g.closePath();
+                      g.endFill();
+
+                      // bottom (S) face - mid
+                      g.beginFill(0x000000, 0.22);
+                      g.moveTo(cap[2].x, cap[2].y);
+                      g.lineTo(cap[3].x, cap[3].y);
+                      g.lineTo(cap[3].x, cap[3].y + H);
+                      g.lineTo(cap[2].x, cap[2].y + H);
+                      g.closePath();
+                      g.endFill();
+                    } else {
+                      // right (SE) face - darker
+                      g.beginFill(0x000000, 0.35);
+                      g.moveTo(cap[2].x, cap[2].y);
+                      g.lineTo(cap[3].x, cap[3].y);
+                      g.lineTo(cap[3].x, cap[3].y + H);
+                      g.lineTo(cap[2].x, cap[2].y + H);
+                      g.closePath();
+                      g.endFill();
+
+                      // left (SW) face - mid
+                      g.beginFill(0x000000, 0.22);
+                      g.moveTo(cap[3].x, cap[3].y);
+                      g.lineTo(cap[4].x, cap[4].y);
+                      g.lineTo(cap[4].x, cap[4].y + H);
+                      g.lineTo(cap[3].x, cap[3].y + H);
+                      g.closePath();
+                      g.endFill();
+                    }
+                  }
+
+                  // top face (team color)
+                  g.beginFill(color, 1);
+                  drawPoly(g as PixiGraphics, cap);
+                  g.endFill();
+
+                  // subtle rim highlights
+                  g.lineStyle(1, 0xffffff, 0.12);
+                  g.moveTo(cap[0].x, cap[0].y); g.lineTo(cap[1].x, cap[1].y); g.lineTo(cap[2].x, cap[2].y);
+                  g.lineStyle(1, 0x000000, 0.38);
+                  if (ISO_MODE) {
+                    g.moveTo(cap[2].x, cap[2].y); g.lineTo(cap[3].x, cap[3].y);
+                  } else {
+                    g.moveTo(cap[3].x, cap[3].y); g.lineTo(cap[4].x, cap[4].y);
+                  }
+                }}
+              />
+            )}
             <Graphics
-              zIndex={1}
+              zIndex={2}
               draw={(g) => {
                 g.clear();
 
-                // debug: unit origin marker
-                if (DEBUG_ALIGN) {
-                  g.lineStyle(0);
-                  g.beginFill(0xff0000, 0.9);
-                  g.drawCircle(0, 0, 1.6);
-                  g.endFill();
-                }
-
-                // pseudo-3D extruded unit (AoE2-like)
-                g.lineStyle(1, 0x000000, 0.55);
-                const H = capHeight;
-
-                const sCap = (tileSize / 2) * k; const hwCap = (hexWidth / 2) * k;
-                const cap = ISO_MODE && geom
-                  ? geom.inset(k)
-                  : [
-                      { x: 0, y: -sCap },
-                      { x: hwCap, y: -sCap / 2 },
-                      { x: hwCap, y:  sCap / 2 },
-                      { x: 0, y:  sCap },
-                      { x: -hwCap, y:  sCap / 2 },
-                      { x: -hwCap, y: -sCap / 2 }
-                    ];
-
-                // side faces (only for ground units)
-                if (unitType !== 'air') {
-                  if (ISO_MODE) {
-                    // right (E) face - darker
-                    g.beginFill(0x000000, 0.35);
-                    g.moveTo(cap[1].x, cap[1].y);
-                    g.lineTo(cap[2].x, cap[2].y);
-                    g.lineTo(cap[2].x, cap[2].y + H);
-                    g.lineTo(cap[1].x, cap[1].y + H);
-                    g.closePath();
-                    g.endFill();
-
-                    // bottom (S) face - mid
-                    g.beginFill(0x000000, 0.22);
-                    g.moveTo(cap[2].x, cap[2].y);
-                    g.lineTo(cap[3].x, cap[3].y);
-                    g.lineTo(cap[3].x, cap[3].y + H);
-                    g.lineTo(cap[2].x, cap[2].y + H);
-                    g.closePath();
-                    g.endFill();
-                  } else {
-                    // right (SE) face - darker
-                    g.beginFill(0x000000, 0.35);
-                    g.moveTo(cap[2].x, cap[2].y);
-                    g.lineTo(cap[3].x, cap[3].y);
-                    g.lineTo(cap[3].x, cap[3].y + H);
-                    g.lineTo(cap[2].x, cap[2].y + H);
-                    g.closePath();
-                    g.endFill();
-
-                    // left (SW) face - mid
-                    g.beginFill(0x000000, 0.22);
-                    g.moveTo(cap[3].x, cap[3].y);
-                    g.lineTo(cap[4].x, cap[4].y);
-                    g.lineTo(cap[4].x, cap[4].y + H);
-                    g.lineTo(cap[3].x, cap[3].y + H);
-                    g.closePath();
-                    g.endFill();
-                  }
-                }
-
-                // top face (team color)
-                g.beginFill(color, 1);
-                drawPoly(g as PixiGraphics, cap);
-                g.endFill();
-
-                // subtle rim highlights
-                g.lineStyle(1, 0xffffff, 0.12);
-                g.moveTo(cap[0].x, cap[0].y); g.lineTo(cap[1].x, cap[1].y); g.lineTo(cap[2].x, cap[2].y);
-                g.lineStyle(1, 0x000000, 0.38);
-                if (ISO_MODE) {
-                  g.moveTo(cap[2].x, cap[2].y); g.lineTo(cap[3].x, cap[3].y);
-                } else {
-                  g.moveTo(cap[3].x, cap[3].y); g.lineTo(cap[4].x, cap[4].y);
-                }
                 // stance ring
                 const stance = unit.stance;
                 if (stance === 'suppressed' || stance === 'routed') {
