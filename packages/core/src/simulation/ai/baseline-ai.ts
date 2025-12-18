@@ -1,22 +1,33 @@
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
-import { axialDistance, coordinateKey, getNeighbors, getTile, tileIndex } from '../utils/grid.js';
+import { axialDistance, coordinateKey, directionIndex, getNeighbors, getTile, orientationDelta, tileIndex } from '../utils/grid.js';
 import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange } from '../combat/combat-resolver.js';
 import { movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import { hasLineOfSight } from '../visibility/vision.js';
 
 export type AIImmediateAction =
   | { type: 'attack'; attackerId: string; defenderId: string; weaponId: string }
+  | { type: 'attackTile'; unitId: string; target: HexCoordinate; weaponId: string }
   | { type: 'move'; unitId: string; path: HexCoordinate[] }
+  | { type: 'supply'; supplierId: string; targetId: string }
   | { type: 'endTurn' };
 
 function isUsableUnit(u: UnitInstance): boolean {
-  return u.stance !== 'destroyed' && u.actionPoints > 0;
+  return u.stance !== 'destroyed' && !u.embarkedOn && u.actionPoints > 0;
 }
 
 function listEnemyUnits(state: TacticalBattleState, faction: FactionId): UnitInstance[] {
   const enemyFaction: FactionId = faction === 'alliance' ? 'otherSide' : 'alliance';
   const side = state.sides[enemyFaction];
-  return Array.from(side.units.values()).filter((u) => u.stance !== 'destroyed');
+  return Array.from(side.units.values()).filter((u) => u.stance !== 'destroyed' && !u.embarkedOn);
+}
+
+function priorityScore(unit: UnitInstance): number {
+  let score = 1;
+  if (unit.unitType === 'hero' || unit.definitionId === 'john-alexander') score += 3;
+  if (unit.stats.transportCapacity && unit.stats.transportCapacity > 0) score += 2.5;
+  if (unit.unitType === 'artillery') score += 2;
+  if (unit.unitType === 'support') score += 1;
+  return score;
 }
 
 function occupiedSet(state: TacticalBattleState): Set<string> {
@@ -63,6 +74,57 @@ function bestEnemyShotThreat(
   return best;
 }
 
+function findDemolitionTarget(
+  state: TacticalBattleState,
+  unit: UnitInstance,
+  goals: HexCoordinate[]
+): { target: HexCoordinate; weaponId: string; score: number } | null {
+  if (!canAffordAttack(unit)) return null;
+  let best: { target: HexCoordinate; weaponId: string; score: number } | null = null;
+  for (let idx = 0; idx < state.map.tiles.length; idx++) {
+    const tile = state.map.tiles[idx];
+    if (!tile?.destructible) continue;
+    if ((tile.hp ?? 0) <= 0) continue;
+    const coord: HexCoordinate = { q: idx % state.map.width, r: Math.floor(idx / state.map.width) };
+    const distToGoal = goals.length
+      ? Math.min(...goals.map((g) => axialDistance(coord, g)))
+      : axialDistance(coord, unit.coordinate);
+    for (const weaponId of Object.keys(unit.stats.weaponRanges)) {
+      const range = calculateAttackRange(unit, weaponId, state.map);
+      if (range <= 0 || axialDistance(unit.coordinate, coord) > range) continue;
+      if (!hasLineOfSight(state.map, unit.coordinate, coord)) continue;
+      const power = unit.stats.weaponPower[weaponId] ?? 0;
+      const score = power + Math.max(0, 6 - distToGoal);
+      if (!best || score > best.score) {
+        best = { target: coord, weaponId, score };
+      }
+    }
+  }
+  return best;
+}
+
+function findSupplyTarget(state: TacticalBattleState, supplier: UnitInstance): { targetId: string; path: HexCoordinate[] } | null {
+  if (supplier.unitType !== 'support' && supplier.stats.ammoCapacity !== 0) return null;
+  const allies = Array.from(state.sides[supplier.faction].units.values()).filter(
+    (u) => u.id !== supplier.id && u.stance !== 'destroyed' && u.currentAmmo < (u.stats.ammoCapacity ?? Infinity)
+  );
+  if (allies.length === 0) return null;
+  let best: { targetId: string; path: HexCoordinate[] } | null = null;
+  for (const ally of allies) {
+    const path = buildThreatAwarePathToward(state, supplier, ally.coordinate, {
+      flankTarget: undefined,
+      threatWeight: 4,
+      flankWeight: 0,
+      maxStepBonus: 0
+    });
+    if (!path) continue;
+    if (!best || path.length < best.path.length) {
+      best = { targetId: ally.id, path };
+    }
+  }
+  return best;
+}
+
 function computeTileThreat(
   state: TacticalBattleState,
   faction: FactionId,
@@ -78,10 +140,40 @@ function computeTileThreat(
   return sum;
 }
 
+function tryFallbackStep(
+  state: TacticalBattleState,
+  unit: UnitInstance,
+  awayFrom: UnitInstance[]
+): HexCoordinate[] | null {
+  let best: { step: HexCoordinate; score: number } | null = null;
+  for (const n of getNeighbors(state.map, unit.coordinate)) {
+    const tile = getTile(state.map, n);
+    if (!tile || !tile.passable) continue;
+    // increase distance from nearest enemy
+    const currentNearest = awayFrom.reduce((min, foe) => Math.min(min, axialDistance(unit.coordinate, foe.coordinate)), Infinity);
+    const afterNearest = awayFrom.reduce((min, foe) => Math.min(min, axialDistance(n, foe.coordinate)), Infinity);
+    if (afterNearest <= currentNearest) continue;
+    const threat = computeTileThreat(state, unit.faction, n, unit);
+    const score = afterNearest - threat;
+    if (!best || score > best.score) best = { step: n, score };
+  }
+  return best ? [best.step] : null;
+}
+
+function maxRange(unit: UnitInstance): number {
+  return Math.max(0, ...Object.values(unit.stats.weaponRanges));
+}
+
 function buildThreatAwarePathToward(
   state: TacticalBattleState,
   unit: UnitInstance,
-  goal: HexCoordinate
+  goal: HexCoordinate,
+  opts: {
+    flankTarget?: UnitInstance;
+    threatWeight: number;
+    flankWeight: number;
+    maxStepBonus?: number;
+  }
 ): HexCoordinate[] {
   const occ = occupiedSet(state);
   const mult = movementMultiplierForStance(unit.stance);
@@ -92,8 +184,8 @@ function buildThreatAwarePathToward(
     const d = axialDistance(unit.coordinate, e.coordinate);
     if (d < nearestDist) nearestDist = d;
   }
-  const scouting = (state.round <= 2) || !anyVisible || nearestDist > 8;
-  const maxStepsCap = scouting ? 5 : 2;
+  const scouting = state.round <= 2 || !anyVisible || nearestDist > 8;
+  const maxStepsCap = (scouting ? 5 : 2) + (opts.maxStepBonus ?? 0);
 
   const path: HexCoordinate[] = [];
   let ap = unit.actionPoints;
@@ -114,14 +206,33 @@ function buildThreatAwarePathToward(
 
       const distGain = baseDist - axialDistance(n, goal);
       const threat = computeTileThreat(state, unit.faction, n, unit);
+      let cohesionBonus = 0;
+      for (const ally of state.sides[unit.faction].units.values()) {
+        if (ally.id === unit.id || ally.stance === 'destroyed') continue;
+        const dist = axialDistance(ally.coordinate, n);
+        if (dist <= 2) {
+          cohesionBonus += 0.25;
+        }
+      }
+      const flankScore = (() => {
+        if (!opts.flankTarget) return 0;
+        const attackDir = directionIndex(opts.flankTarget.coordinate, n);
+        const delta = orientationDelta(opts.flankTarget.orientation ?? 0, attackDir);
+        return delta >= 3 ? opts.flankWeight : delta === 2 ? opts.flankWeight * 0.5 : 0;
+      })();
       // heuristic weights
-      const score = distGain * 8 + (tile.providesVisionBoost ? 0.7 : 0) + tile.cover * 0.3 - threat * 4.5;
+      const score =
+        distGain * 8 +
+        (tile.providesVisionBoost ? 0.7 : 0) +
+        tile.cover * 0.6 +
+        cohesionBonus +
+        flankScore -
+        threat * opts.threatWeight;
       if (!best || score > best.score) best = { step: n, score, cost };
     }
     if (!best) break;
 
     // stop if the chosen step is clearly disadvantageous (no progress and high threat)
-    const chosenTile = getTile(state.map, best.step)!;
     const distGainChosen = axialDistance(current, goal) - axialDistance(best.step, goal);
     const threatChosen = computeTileThreat(state, unit.faction, best.step, unit);
     if (distGainChosen <= 0 && threatChosen > 0.5) break;
@@ -144,6 +255,16 @@ function buildThreatAwarePathToward(
   return path;
 }
 
+function flankAwareAttackScore(attacker: UnitInstance, defender: UnitInstance, weaponId: string, map: TacticalBattleState['map']): number {
+  const hit = calculateHitChance({ attacker, defender, weaponId, map });
+  if (hit <= 0) return 0;
+  const power = attacker.stats.weaponPower[weaponId] ?? 0;
+  const attackDir = directionIndex(defender.coordinate, attacker.coordinate);
+  const delta = orientationDelta(defender.orientation ?? 0, attackDir);
+  const flankBonus = delta >= 3 ? 1.25 : delta === 2 ? 1.15 : 1;
+  return hit * (power || 1) * flankBonus * priorityScore(defender);
+}
+
 function bestAttackFromHere(
   state: TacticalBattleState,
   attacker: UnitInstance
@@ -156,10 +277,8 @@ function bestAttackFromHere(
   for (const enemy of enemies) {
     for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
       if (!canWeaponTarget(attacker, weaponId, enemy)) continue;
-      const hit = calculateHitChance({ attacker, defender: enemy, weaponId, map: state.map });
-      if (hit <= 0) continue;
-      const power = attacker.stats.weaponPower[weaponId] ?? 0;
-      const score = hit * (power || 1);
+      const score = flankAwareAttackScore(attacker, enemy, weaponId, state.map);
+      if (score <= 0) continue;
       if (!best || score > best.score) {
         best = { defenderId: enemy.id, weaponId, score };
       }
@@ -168,80 +287,191 @@ function bestAttackFromHere(
   return best;
 }
 
-function chooseGreedyStepToward(
-  state: TacticalBattleState,
-  unit: UnitInstance,
-  goal: HexCoordinate
-): HexCoordinate | null {
-  const occ = occupiedSet(state);
-  const mult = movementMultiplierForStance(unit.stance);
-
-  let best: { step: HexCoordinate; score: number } | null = null;
-  for (const n of getNeighbors(state.map, unit.coordinate)) {
-    const k = coordinateKey(n);
-    if (occ.has(k)) continue;
-    const tile = getTile(state.map, n);
-    if (!tile || !tile.passable) continue;
-    // movement cost must be affordable for a single step
-    const stepCost = tile.movementCostModifier * mult;
-    if (stepCost > unit.actionPoints) continue;
-
-    // Heuristic: prefer reducing distance, high elevation, higher cover
-    const distGain = axialDistance(unit.coordinate, goal) - axialDistance(n, goal);
-    const score = distGain * 5 + (tile.providesVisionBoost ? 1 : 0) + tile.cover * 0.25;
-    if (!best || score > best.score) best = { step: n, score };
-  }
-  return best?.step ?? null;
+export interface AIContextOptions {
+  objectiveTargets?: HexCoordinate[];
+  holdTargets?: HexCoordinate[];
+  reachTargets?: HexCoordinate[];
+  defendBias?: boolean;
+  aggression?: number; // 0-1, higher = more aggressive
+  avoidTiles?: Set<string>; // tiles to avoid (e.g., destructible chokepoints)
+  difficulty?: 'normal' | 'hard' | 'brutal';
+  allowDemolition?: boolean;
 }
 
 export function decideNextAIAction(
   state: TacticalBattleState,
-  faction: FactionId
+  faction: FactionId,
+  options: AIContextOptions = {}
 ): AIImmediateAction {
+  const difficulty = options.difficulty ?? 'normal';
+  const aggression = options.aggression ?? (difficulty === 'brutal' ? 0.75 : difficulty === 'hard' ? 0.6 : 0.5);
+  const threatWeight = difficulty === 'brutal' ? 3.2 : difficulty === 'hard' ? 3.8 : 4.5;
+  const flankWeight = difficulty === 'brutal' ? 2.8 : difficulty === 'hard' ? 2.2 : 1.5;
+  const maxStepBonus = difficulty === 'brutal' ? 2 : difficulty === 'hard' ? 1 : 0;
   const side = state.sides[faction];
   const units = Array.from(side.units.values()).filter(isUsableUnit);
   if (units.length === 0) return { type: 'endTurn' };
 
-  // 1) Global best immediate attack among all units
+  const enemiesAll = listEnemyUnits(state, faction);
+
+  // 0) Fallback/retreat for fragile units
+  for (const u of units) {
+    const lowHealth = u.currentHealth <= u.stats.maxHealth * (aggression > 0.7 ? 0.25 : 0.35);
+    const rattled = u.currentMorale <= (aggression > 0.7 ? 20 : 30);
+    const rangedStandoff =
+      maxRange(u) >= 6 &&
+      enemiesAll.some((e) => axialDistance(u.coordinate, e.coordinate) < Math.max(2, maxRange(u) - 2));
+    if (lowHealth || rattled || rangedStandoff) {
+      const step = tryFallbackStep(state, u, enemiesAll);
+      if (step && step.length) return { type: 'move', unitId: u.id, path: step };
+    }
+  }
+
+  // Objective contesting: if the opponent is occupying an objective tile, focus fire
+  const contestTargets: UnitInstance[] = [];
+  const objectiveTargets = options.objectiveTargets ?? [];
+  for (const obj of objectiveTargets) {
+    for (const enemy of enemiesAll) {
+      if (coordinateKey(enemy.coordinate) === coordinateKey(obj)) {
+        contestTargets.push(enemy);
+      }
+    }
+  }
+
+  // 1) Global best immediate attack among all units (prioritizing objective occupiers and flanks)
   let bestAttack:
     | { attackerId: string; defenderId: string; weaponId: string; score: number }
     | null = null;
   for (const u of units) {
+    // Fast lane: shoot occupying enemies first
+    for (const target of contestTargets) {
+      for (const weaponId of Object.keys(u.stats.weaponRanges)) {
+        if (!canWeaponTarget(u, weaponId, target)) continue;
+        const score = flankAwareAttackScore(u, target, weaponId, state.map) + 2;
+        if (!bestAttack || score > bestAttack.score) {
+          bestAttack = { attackerId: u.id, defenderId: target.id, weaponId, score };
+        }
+      }
+    }
+
+    // artillery prefers standoff: skip attack if moving closer is safer unless enemy in range
+    const isArtillery = u.unitType === 'artillery' || Object.keys(u.stats.weaponRanges).some((w) => u.stats.weaponRanges[w] >= 7);
     const choice = bestAttackFromHere(state, u);
+    // conserve ammo if low unless high-priority target
+    const lowAmmo = u.currentAmmo !== Infinity && u.currentAmmo <= Math.max(1, (u.stats.ammoCapacity ?? 0) * 0.25);
     if (choice && (!bestAttack || choice.score > bestAttack.score)) {
-      bestAttack = { attackerId: u.id, defenderId: choice.defenderId, weaponId: choice.weaponId, score: choice.score };
+      const defender = listEnemyUnits(state, faction).find((e) => e.id === choice.defenderId);
+      const priority = defender ? priorityScore(defender) : 1;
+      const weightedScore = choice.score * priority;
+      if (lowAmmo && priority < 2) {
+        // hold fire to conserve ammo
+      } else if (isArtillery && defender && axialDistance(u.coordinate, defender.coordinate) <= 2) {
+        // avoid point-blank for artillery; let movement handle reposition
+      } else if (!bestAttack || weightedScore > bestAttack.score) {
+        bestAttack = { attackerId: u.id, defenderId: choice.defenderId, weaponId: choice.weaponId, score: weightedScore };
+      }
     }
   }
   if (bestAttack) {
     return { type: 'attack', attackerId: bestAttack.attackerId, defenderId: bestAttack.defenderId, weaponId: bestAttack.weaponId };
   }
 
-  // 2) Otherwise, plan a (possibly multi-step) threat-aware path toward nearest enemy
-  const enemiesAll = listEnemyUnits(state, faction);
+  // 2) Otherwise, plan a (possibly multi-step) threat-aware path toward objectives or nearest enemy
+  const objectiveGoals = objectiveTargets;
+  const holdGoals = options.holdTargets ?? [];
+  const reachGoals = options.reachTargets ?? [];
+  const defendBias = options.defendBias ?? false;
+  const avoidTiles = options.avoidTiles ?? new Set<string>();
+  if (defendBias && holdGoals.length > 0) {
+    const anchor = holdGoals[0];
+    const holder = units.find((u) => axialDistance(u.coordinate, anchor) <= 2);
+    if (holder) {
+      const shot = bestAttackFromHere(state, holder);
+      if (shot) {
+        return { type: 'attack', attackerId: holder.id, defenderId: shot.defenderId, weaponId: shot.weaponId };
+      }
+      return { type: 'endTurn' };
+    }
+  }
   let bestMove: { unitId: string; path: HexCoordinate[]; score: number } | null = null;
   for (const u of units) {
-    let nearest: UnitInstance | null = null;
-    let nearestDist = Infinity;
-    for (const e of enemiesAll) {
-      const d = axialDistance(u.coordinate, e.coordinate);
-      if (d < nearestDist) { nearest = e; nearestDist = d; }
+    // supply role: if support truck, try resupply first
+    if (u.unitType === 'support' && u.stats.ammoCapacity === 0) {
+      const supply = findSupplyTarget(state, u);
+      if (supply && supply.path.length) {
+        return { type: 'move', unitId: u.id, path: supply.path.slice(0, 2) };
+      }
     }
-    if (!nearest) continue;
-    const path = buildThreatAwarePathToward(state, u, nearest.coordinate);
-    if (!path || path.length === 0) continue;
-    const last = path[path.length - 1];
-    const distReduction = nearestDist - axialDistance(last, nearest.coordinate);
-    // approximate cumulative threat along path (for scoring only)
-    let threatSum = 0;
-    for (const step of path) {
-      threatSum += computeTileThreat(state, u.faction as FactionId, step, u);
+    // ranged standoff: maintain distance while advancing
+    const ranged = maxRange(u) >= 6;
+    const targets: HexCoordinate[] = [];
+    if (objectiveGoals.length > 0) {
+      targets.push(...objectiveGoals);
+    } else if (holdGoals.length > 0) {
+      targets.push(...holdGoals);
+    } else if (reachGoals.length > 0) {
+      targets.push(...reachGoals);
+    } else {
+      let nearest: UnitInstance | null = null;
+      let nearestDist = Infinity;
+      for (const e of enemiesAll) {
+        const d = axialDistance(u.coordinate, e.coordinate);
+        if (d < nearestDist) { nearest = e; nearestDist = d; }
+      }
+      if (nearest) targets.push(nearest.coordinate);
     }
-    const score = distReduction * 12 - threatSum * 2 + Math.min(u.actionPoints, 10) + Math.random() * 0.01;
-    if (!bestMove || score > bestMove.score) bestMove = { unitId: u.id, path, score };
+    if (targets.length === 0) continue;
+
+    for (const tgt of targets) {
+      const flankTarget =
+        enemiesAll.find((e) => coordinateKey(e.coordinate) === coordinateKey(tgt)) ??
+        enemiesAll.sort((a, b) => axialDistance(u.coordinate, a.coordinate) - axialDistance(u.coordinate, b.coordinate))[0];
+      const path = buildThreatAwarePathToward(state, u, tgt, {
+        flankTarget,
+        threatWeight,
+        flankWeight,
+        maxStepBonus: maxStepBonus + (ranged ? 1 : 0)
+      }).filter((step) => !avoidTiles.has(coordinateKey(step)));
+      if (!path || path.length === 0) continue;
+      const last = path[path.length - 1];
+      const distReduction = axialDistance(u.coordinate, tgt) - axialDistance(last, tgt);
+      const threatSum = path.reduce((acc, step) => acc + computeTileThreat(state, u.faction, step, u), 0);
+      const isObjectiveStep = objectiveGoals.some((o) => coordinateKey(o) === coordinateKey(tgt));
+      const flankIncentive = flankTarget ? flankWeight * 0.6 : 0;
+      let score =
+        distReduction * 12 +
+        flankIncentive -
+        threatSum * (threatWeight * (aggression > 0.65 ? 0.35 : 0.5)) +
+        Math.min(u.actionPoints, 10) +
+        (isObjectiveStep ? 4 : 0) +
+        Math.random() * 0.01;
+      if (ranged) {
+        score += 2;
+      }
+      if (defendBias && holdGoals.length > 0) {
+        score += 5;
+      }
+      if (!bestMove || score > bestMove.score) bestMove = { unitId: u.id, path, score };
+    }
   }
 
   if (bestMove) {
     return { type: 'move', unitId: bestMove.unitId, path: bestMove.path };
+  }
+
+  // 2b) If no movement makes sense, consider demolishing blocking cover near objectives
+  if (options.allowDemolition !== false) {
+    let bestDemo: { unitId: string; target: HexCoordinate; weaponId: string; score: number } | null = null;
+    for (const u of units) {
+      const demo = findDemolitionTarget(state, u, objectiveGoals);
+      if (!demo) continue;
+      if (!bestDemo || demo.score > bestDemo.score) {
+        bestDemo = { unitId: u.id, target: demo.target, weaponId: demo.weaponId, score: demo.score };
+      }
+    }
+    if (bestDemo) {
+      return { type: 'attackTile', unitId: bestDemo.unitId, target: bestDemo.target, weaponId: bestDemo.weaponId };
+    }
   }
 
   // 3) Nothing to do → end turn

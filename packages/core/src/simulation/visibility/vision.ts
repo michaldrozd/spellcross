@@ -1,8 +1,11 @@
 import type { BattlefieldMap, FactionId, HexCoordinate, TacticalBattleState } from '../types.js';
 import { getTile, hexLine, hexWithinRange, isWithinBounds, tileIndex } from '../utils/grid.js';
+import { isUnitDetected } from './stealth.js';
 
 export interface VisionOptions {
   rangeModifier?: (params: { unitVision: number; tileProvidesBoost: boolean; elevation: number }) => number;
+  detectionPenalty?: number; // stealth penalty applied globally
+  weather?: 'clear' | 'night' | 'fog';
 }
 
 const DEFAULT_RANGE_MODIFIER = ({
@@ -16,6 +19,7 @@ const DEFAULT_RANGE_MODIFIER = ({
 }) => unitVision + (tileProvidesBoost ? 1 : 0) + (elevation >= 1 ? 1 : 0);
 
 const MAX_VISION_RANGE = 10;
+const BASE_STEALTH_PENALTY = 1;
 
 function tileBlocksVision(map: BattlefieldMap, coordinate: HexCoordinate): boolean {
   const tile = getTile(map, coordinate);
@@ -42,7 +46,8 @@ export function hasLineOfSight(map: BattlefieldMap, from: HexCoordinate, to: Hex
 function computeVisibleTilesForUnit(
   state: TacticalBattleState,
   unitCoordinate: HexCoordinate,
-  visionRange: number
+  visionRange: number,
+  stealthPenalty = 0
 ): Set<number> {
   const result = new Set<number>();
   const boundedRange = Math.min(visionRange, MAX_VISION_RANGE);
@@ -81,6 +86,7 @@ export function updateFactionVision(
   }
 
   const rangeModifier = options.rangeModifier ?? DEFAULT_RANGE_MODIFIER;
+  const weatherPenalty = options.weather === 'fog' ? 1 : options.weather === 'night' ? 0.5 : 0;
 
   const visibleTiles = new Set<number>();
 
@@ -90,7 +96,7 @@ export function updateFactionVision(
     return;
   }
   for (const unit of side.units.values()) {
-    if (unit.stance === 'destroyed') {
+    if (unit.stance === 'destroyed' || unit.embarkedOn) {
       continue;
     }
 
@@ -100,8 +106,9 @@ export function updateFactionVision(
       unitVision: unit.stats.vision,
       tileProvidesBoost: providesBoost,
       elevation: unitTile?.elevation ?? 0
-    });
-    const unitVisibleTiles = computeVisibleTilesForUnit(state, unit.coordinate, range);
+    }) - weatherPenalty;
+    const stealthPenalty = options.detectionPenalty ?? BASE_STEALTH_PENALTY;
+    const unitVisibleTiles = computeVisibleTilesForUnit(state, unit.coordinate, range - stealthPenalty, stealthPenalty);
     for (const tile of unitVisibleTiles) {
       visibleTiles.add(tile);
     }
@@ -110,6 +117,21 @@ export function updateFactionVision(
   visionGrid.visibleTiles = visibleTiles;
   for (const tile of visibleTiles) {
     visionGrid.exploredTiles.add(tile);
+  }
+
+  // Apply stealth: remove unseen enemies from visibleTiles unless detected
+  const enemyFaction: FactionId = faction === 'alliance' ? 'otherSide' : 'alliance';
+  const enemyUnits = state.sides[enemyFaction]?.units;
+  if (enemyUnits) {
+    for (const u of enemyUnits.values()) {
+      const idx = tileIndex(state.map, u.coordinate);
+      if (!visibleTiles.has(idx)) continue;
+      if (!isUnitDetected(state, faction, u, state.map)) {
+        visibleTiles.delete(idx);
+      } else {
+        u.statusEffects.add('spotted');
+      }
+    }
   }
 }
 

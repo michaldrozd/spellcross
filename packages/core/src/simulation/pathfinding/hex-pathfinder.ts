@@ -2,8 +2,7 @@ import type {
   BattlefieldMap,
   HexCoordinate,
   TacticalBattleState,
-  UnitInstance,
-  UnitStance
+  UnitInstance
 } from '../types.js';
 import { axialDistance, coordinateKey, getNeighbors, getTile } from '../utils/grid.js';
 import type { PathfindingOptions, PathResult } from './types.js';
@@ -157,7 +156,7 @@ export function planPathForUnit(
   const occupation = new Set<string>();
   for (const side of Object.values(state.sides)) {
     for (const other of side.units.values()) {
-      if (other.id === unit.id || other.stance === 'destroyed') {
+      if (other.id === unit.id || other.stance === 'destroyed' || other.embarkedOn) {
         continue;
       }
       occupation.add(coordinateKey(other.coordinate));

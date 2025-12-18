@@ -1,4 +1,11 @@
-import type { BattlefieldMap, HexCoordinate, TacticalBattleState, UnitInstance, UnitStance } from '../types.js';
+import type {
+  BattlefieldMap,
+  EdgeDir,
+  HexCoordinate,
+  MapTile,
+  TacticalBattleState,
+  UnitInstance
+} from '../types.js';
 import { getTile, coordinateKey as hexKey } from '../utils/grid.js';
 import { isoDistance, isoNeighbors } from '../utils/grid-iso.js';
 import type { PathfindingOptions, PathResult } from './types.js';
@@ -97,10 +104,12 @@ export function findPathOnMapIso(
       if (elevA !== elevB) {
         // Only allow orthogonal steps across elevation if the higher tile marks that edge as a slope
         if (isDiagonal) continue;
-        const dir: 'N' | 'E' | 'S' | 'W' = dq === 1 && dr === 0 ? 'E' : dq === -1 && dr === 0 ? 'W' : dq === 0 && dr === 1 ? 'S' : 'N';
+        const dir: EdgeDir = dq === 1 && dr === 0 ? 'E' : dq === -1 && dr === 0 ? 'W' : dq === 0 && dr === 1 ? 'S' : 'N';
         const higherIsB = elevB > elevA;
-        const higherTile: any = higherIsB ? tileB : tileA;
-        const edgeOnHigher: 'N' | 'E' | 'S' | 'W' = higherIsB ? (dir === 'N' ? 'S' : dir === 'S' ? 'N' : dir === 'E' ? 'W' : 'E') : dir;
+        const higherTile: MapTile | undefined = higherIsB ? tileB : tileA;
+        const edgeOnHigher: EdgeDir = higherIsB
+          ? (dir === 'N' ? 'S' : dir === 'S' ? 'N' : dir === 'E' ? 'W' : 'E')
+          : dir;
         const style = higherTile?.elevEdges?.[edgeOnHigher];
         if (style !== 'slope') continue; // sheer cliff
         edgePenalty = higherIsB ? 0.6 : 0.3; // uphill costs more than downhill
@@ -170,4 +179,3 @@ export function planPathForUnitIso(
 
   return pathResult;
 }
-

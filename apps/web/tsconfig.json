@@ -5,7 +5,12 @@
     "baseUrl": "src",
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["vite/client"]
+    "types": ["vite/client"],
+    "paths": {
+      "@spellcross/data": ["../../packages/data/src/index.ts"],
+      "@spellcross/core": ["../../packages/core/src/index.ts"],
+      "@core": ["../../packages/core/src/index.ts"]
+    }
   },
   "include": ["src"]
 }

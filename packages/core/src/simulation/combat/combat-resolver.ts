@@ -1,4 +1,4 @@
-import { axialDistance, getTile } from '../utils/grid.js';
+import { axialDistance, directionIndex, getTile, orientationDelta } from '../utils/grid.js';
 import type {
   BattlefieldMap,
   BattleEvent,
@@ -12,6 +12,7 @@ export interface AttackInput {
   defender: UnitInstance;
   weaponId: string;
   map: BattlefieldMap;
+  weather?: 'clear' | 'night' | 'fog';
   random?: () => number;
 }
 
@@ -29,12 +30,19 @@ const MIN_MORALE = 0;
 const MAX_MORALE = 100;
 
 const MORALE_DAMAGE_FACTOR = 0.5;
+const FLANK_ACCURACY_BONUS = 0.08;
+const REAR_ACCURACY_BONUS = 0.15;
 const ARMOR_ABSORPTION_FACTOR = 0.65;
 const COVER_ABSORPTION_FACTOR = 0.35;
 const COVER_ACCURACY_PENALTY = 0.04;
 const RANGE_ACCURACY_PENALTY = 0.12;
 const MIN_HIT_CHANCE = 0.05;
 const MAX_HIT_CHANCE = 0.98;
+const WEATHER_ACCURACY_PENALTY = {
+  clear: 0,
+  night: 0.08,
+  fog: 0.12
+} as const;
 
 function elevationRangeBonus(tile?: MapTile | null): number {
   if (!tile) return 0;
@@ -62,8 +70,9 @@ export function calculateHitChance(input: {
   defender: UnitInstance;
   weaponId: string;
   map: BattlefieldMap;
+  weather?: 'clear' | 'night' | 'fog';
 }): number {
-  const { attacker, defender, weaponId, map } = input;
+  const { attacker, defender, weaponId, map, weather = 'clear' } = input;
 
   const maxRange = calculateAttackRange(attacker, weaponId, map);
   if (maxRange <= 0) {
@@ -76,6 +85,7 @@ export function calculateHitChance(input: {
   }
 
   const baseAccuracy = attacker.stats.weaponAccuracy[weaponId] ?? 0.6;
+  const overwatchBonus = attacker.statusEffects.has('overwatch') ? attacker.stats.overwatchAccuracyBonus ?? 0.06 : 0;
 
   const normalizedDistance = maxRange === 0 ? 1 : distance / maxRange;
   const rangePenalty = normalizedDistance * RANGE_ACCURACY_PENALTY;
@@ -84,21 +94,31 @@ export function calculateHitChance(input: {
   const cover = (defenderTile?.cover ?? 0) + (defender.entrench ?? 0);
   const coverPenalty = cover * COVER_ACCURACY_PENALTY;
 
+  // Flanking/back attack bonus based on defender orientation
+  const attackDir = directionIndex(defender.coordinate, attacker.coordinate);
+  const delta = orientationDelta(defender.orientation ?? 0, attackDir);
+  const flankBonus = delta >= 3 ? REAR_ACCURACY_BONUS : delta === 2 ? FLANK_ACCURACY_BONUS : 0;
+
   // elevation advantage: higher ground yields small accuracy bonus, lower ground penalized
   const attackerTile = getTile(map, attacker.coordinate);
   const elevationDiff = (attackerTile?.elevation ?? 0) - (defenderTile?.elevation ?? 0);
   const elevationAdjust = elevationDiff > 0 ? 0.06 : elevationDiff < 0 ? -0.06 : 0;
 
+  const weatherPenalty = WEATHER_ACCURACY_PENALTY[weather] ?? 0;
+
   const hitChance = Math.min(
     MAX_HIT_CHANCE,
-    Math.max(MIN_HIT_CHANCE, (baseAccuracy + elevationAdjust) - rangePenalty - coverPenalty)
+    Math.max(
+      MIN_HIT_CHANCE,
+      (baseAccuracy + overwatchBonus + elevationAdjust + flankBonus) - rangePenalty - coverPenalty - weatherPenalty
+    )
   );
 
   return hitChance;
 }
 
 export function resolveAttack(input: AttackInput): AttackOutcome {
-  const { attacker, defender, weaponId, map, random } = input;
+  const { attacker, defender, weaponId, map, random, weather = 'clear' } = input;
 
   const events: BattleEvent[] = [];
   const maxRange = calculateAttackRange(attacker, weaponId, map);
@@ -110,7 +130,7 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
 
   const inRange = distance <= maxRange && maxRange > 0;
   const hitChance = inRange && weaponPower > 0 && defender.stance !== 'destroyed'
-    ? calculateHitChance({ attacker, defender, weaponId, map })
+    ? calculateHitChance({ attacker, defender, weaponId, map, weather })
     : 0;
 
   const roll = hitChance > 0 ? (random ?? Math.random)() : 1;
@@ -195,11 +215,18 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
 }
 
 export function canAffordAttack(attacker: UnitInstance): boolean {
-  return attacker.actionPoints >= ATTACK_AP_COST;
+  const hasAmmo = attacker.currentAmmo === Infinity || attacker.currentAmmo > 0;
+  return hasAmmo && attacker.actionPoints >= ATTACK_AP_COST;
 }
 
 export function spendAttackCost(attacker: UnitInstance) {
   attacker.actionPoints -= ATTACK_AP_COST;
+}
+
+export function spendAmmo(attacker: UnitInstance) {
+  if (attacker.currentAmmo !== Infinity) {
+    attacker.currentAmmo = Math.max(0, attacker.currentAmmo - 1);
+  }
 }
 
 export function findUnitInState(

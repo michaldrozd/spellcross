@@ -45,6 +45,28 @@ export function getNeighbors(map: BattlefieldMap, coordinate: HexCoordinate): He
     .filter((neighbor) => isWithinBounds(map, neighbor));
 }
 
+export function directionIndex(from: HexCoordinate, to: HexCoordinate): number {
+  if (from.q === to.q && from.r === to.r) return 0;
+  let bestIdx = 0;
+  let bestScore = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < hexDirections.length; i++) {
+    const dir = hexDirections[i];
+    const dq = to.q - from.q;
+    const dr = to.r - from.r;
+    const score = Math.abs(dq - dir.q) + Math.abs(dr - dir.r);
+    if (score < bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+export function orientationDelta(a: number, b: number): number {
+  const diff = Math.abs(a - b) % 6;
+  return Math.min(diff, 6 - diff);
+}
+
 export interface CubeCoordinate {
   x: number;
   y: number;

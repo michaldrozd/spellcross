@@ -40,12 +40,12 @@ export function isoLine(from: HexCoordinate, to: HexCoordinate): HexCoordinate[]
   const sq = q < q2 ? 1 : -1;
   const sr = r < r2 ? 1 : -1;
   let err = dq - dr;
-  while (true) {
-    points.push({ q, r });
-    if (q === q2 && r === r2) break;
+  points.push({ q, r });
+  while (q !== q2 || r !== r2) {
     const e2 = 2 * err;
     if (e2 > -dr) { err -= dr; q += sq; }
     if (e2 < dq) { err += dq; r += sr; }
+    points.push({ q, r });
   }
   return points;
 }
@@ -62,4 +62,3 @@ export function isoWithinRange(center: HexCoordinate, range: number): HexCoordin
   }
   return res;
 }
-

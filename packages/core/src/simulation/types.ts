@@ -125,6 +125,12 @@ export interface UnitStats {
   weaponTargets?: Record<string, Array<UnitDefinition['type']>>;
   armor: number;
   morale: number;
+  ammoCapacity?: number; // optional ammo cap; undefined = infinite
+  transportCapacity?: number; // optional transport slots for carrying infantry/support
+  stealth?: number; // reduces detection chance
+  spotter?: boolean; // improves detection for adjacent tiles
+  concealmentBonus?: number; // bonus to stealth in cover
+  overwatchAccuracyBonus?: number;
 }
 
 export interface UnitDefinition {
@@ -152,6 +158,9 @@ export interface UnitInstance {
   level: number;
   statusEffects: Set<string>;
   destroyedAt?: number; // timestamp when destroyed (used for short-lived markers)
+  currentAmmo: number; // tracks remaining ammo; Infinity when unlimited
+  embarkedOn?: string;
+  carrying?: string[];
   // Tactical state
   entrench?: number; // 0..3, increases when stationary, reduces on hit
   movedThisRound?: boolean; // set to true when unit moves during its own turn
@@ -175,6 +184,9 @@ export interface TacticalBattleState {
   sides: Record<FactionId, SideState>;
   round: number;
   activeFaction: FactionId;
+  weather?: 'clear' | 'night' | 'fog';
+  supplyZones?: Partial<Record<FactionId, HexCoordinate[]>>; // tiles that refill ammo
+  pickups?: Array<{ coordinate: HexCoordinate; kind: 'ammo'; amount: number; picked?: boolean }>;
   vision: Record<FactionId, VisionGrid>;
   timeline: BattleEvent[];
 }

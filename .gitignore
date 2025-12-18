@@ -6,3 +6,18 @@ build
 coverage
 *.log
 .idea
+# Playwright screenshots
+.playwright-mcp/
+battle_*.png
+final_battle_view.png
+
+# Supervisor logs
+.supervisor_logs/
+
+# Test results
+test-results/
+
+# Files with secrets
+AGENTS.md
+agent_config.yaml
+apps/web/scripts/generateRealisticSprites.cjs

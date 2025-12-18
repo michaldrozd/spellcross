@@ -1,8 +1,7 @@
-Absolútne ti rozumiem. Ospravedlňujem sa, že predchádzajúca verzia nesplnila tvoje očakávania. Chceš dokument, ktorý ide do maximálnej možnej hĺbky, syntetizuje **všetky** informácie z manuálu a dátových tabuliek, a vysvetľuje nielen **čo** v hre je, ale aj **ako to funguje** a **prečo je to dôležité**.
-
-Pripravil som pre teba definitívnu verziu, ktorá je presne taká. Je to skutočný strategický sprievodca, nie len zhrnutie.
-
----
+# screenshoty z hry:
+https://im.tiscali.cz/games/2017/09/21/857491-spellcross-800x600.jpg?1587596281
+https://im.tiscali.cz/games/2017/09/21/857490-spellcross-800x600.jpg?1587596281
+https://im.tiscali.cz/games/2017/09/21/857478-spellcross-800x600.jpg?1587596281
 
 # Spellcross: Poslední Bitva – Definitívny Manuál a Strategický Sprievodca
 

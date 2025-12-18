@@ -3,7 +3,7 @@ import { createBattleState } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
 import { TurnProcessor } from './turn-processor.js';
 
-const tile = (t: any) => ({ terrain: t, elevation: 0, cover: 0, movementCostModifier: 1, passable: true, providesVisionBoost: false });
+const tile = (t: any, extra: Partial<typeof base> = {}) => ({ terrain: t, elevation: 0, cover: 0, movementCostModifier: 1, passable: true, providesVisionBoost: false, ...extra });
 
 describe('Destructible terrain', () => {
   it('allows destroying a structure tile and makes it passable', () => {
@@ -47,4 +47,3 @@ describe('Destructible terrain', () => {
     expect(destroyed).toBeDefined();
   });
 });
-

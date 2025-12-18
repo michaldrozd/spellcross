@@ -18,6 +18,9 @@ export interface CreateBattleStateOptions {
     units: Array<{ definition: UnitDefinition; coordinate: HexCoordinate }>;
   }>;
   startingFaction?: FactionId;
+  supplyZones?: Partial<Record<FactionId, HexCoordinate[]>>;
+  pickups?: Array<{ coordinate: HexCoordinate; kind: 'ammo'; amount: number }>;
+  weather?: 'clear' | 'night' | 'fog';
 }
 
 /**
@@ -53,10 +56,12 @@ export function createBattleState(options: CreateBattleStateOptions): TacticalBa
         maxActionPoints: unitSpec.definition.stats.mobility,
         actionPoints: unitSpec.definition.stats.mobility,
         stats: unitSpec.definition.stats,
+        currentAmmo: unitSpec.definition.stats.ammoCapacity ?? Infinity,
         stance: 'ready',
         experience: 0,
         level: 1,
         statusEffects: new Set(),
+        carrying: [],
         entrench: 0,
         movedThisRound: false
       });
@@ -77,6 +82,9 @@ export function createBattleState(options: CreateBattleStateOptions): TacticalBa
     sides: Object.fromEntries(sideStates) as TacticalBattleState['sides'],
     round: 1,
     activeFaction,
+    weather: options.weather ?? (map as any).weather ?? 'clear',
+    supplyZones: options.supplyZones,
+    pickups: options.pickups?.map((p) => ({ ...p, picked: false })),
     vision: {
       alliance: {
         width: map.width,
