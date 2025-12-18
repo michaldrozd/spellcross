@@ -287,6 +287,8 @@ function bestAttackFromHere(
   return best;
 }
 
+export type AIDifficulty = 'easy' | 'normal' | 'hard' | 'brutal';
+
 export interface AIContextOptions {
   objectiveTargets?: HexCoordinate[];
   holdTargets?: HexCoordinate[];
@@ -294,8 +296,56 @@ export interface AIContextOptions {
   defendBias?: boolean;
   aggression?: number; // 0-1, higher = more aggressive
   avoidTiles?: Set<string>; // tiles to avoid (e.g., destructible chokepoints)
-  difficulty?: 'normal' | 'hard' | 'brutal';
+  difficulty?: AIDifficulty;
   allowDemolition?: boolean;
+}
+
+/**
+ * Get AI behavior modifiers based on difficulty level.
+ * Easy: AI makes mistakes, doesn't flank well, moves slowly
+ * Normal: Balanced AI behavior
+ * Hard: AI prioritizes flanking, moves aggressively
+ * Brutal: AI is highly optimized, minimal mistakes
+ */
+export function getDifficultyModifiers(difficulty: AIDifficulty) {
+  switch (difficulty) {
+    case 'easy':
+      return {
+        aggression: 0.3,
+        threatWeight: 6.0, // very cautious
+        flankWeight: 0.5, // poor flanking
+        maxStepBonus: -1, // slower movement
+        hitChancePenalty: 0.1, // AI misses more often
+        skipAttackChance: 0.15, // sometimes forgets to attack
+      };
+    case 'normal':
+      return {
+        aggression: 0.5,
+        threatWeight: 4.5,
+        flankWeight: 1.5,
+        maxStepBonus: 0,
+        hitChancePenalty: 0,
+        skipAttackChance: 0,
+      };
+    case 'hard':
+      return {
+        aggression: 0.6,
+        threatWeight: 3.8,
+        flankWeight: 2.2,
+        maxStepBonus: 1,
+        hitChancePenalty: 0,
+        skipAttackChance: 0,
+      };
+    case 'brutal':
+      return {
+        aggression: 0.75,
+        threatWeight: 3.2,
+        flankWeight: 2.8,
+        maxStepBonus: 2,
+        hitChancePenalty: -0.05, // AI is more accurate
+        skipAttackChance: 0,
+      };
+  }
 }
 
 export function decideNextAIAction(
@@ -304,10 +354,17 @@ export function decideNextAIAction(
   options: AIContextOptions = {}
 ): AIImmediateAction {
   const difficulty = options.difficulty ?? 'normal';
-  const aggression = options.aggression ?? (difficulty === 'brutal' ? 0.75 : difficulty === 'hard' ? 0.6 : 0.5);
-  const threatWeight = difficulty === 'brutal' ? 3.2 : difficulty === 'hard' ? 3.8 : 4.5;
-  const flankWeight = difficulty === 'brutal' ? 2.8 : difficulty === 'hard' ? 2.2 : 1.5;
-  const maxStepBonus = difficulty === 'brutal' ? 2 : difficulty === 'hard' ? 1 : 0;
+  const mods = getDifficultyModifiers(difficulty);
+  const aggression = options.aggression ?? mods.aggression;
+  const threatWeight = mods.threatWeight;
+  const flankWeight = mods.flankWeight;
+  const maxStepBonus = mods.maxStepBonus;
+  const skipAttackChance = mods.skipAttackChance;
+
+  // Easy difficulty: AI sometimes "forgets" to attack
+  if (skipAttackChance > 0 && Math.random() < skipAttackChance) {
+    // Skip directly to movement phase
+  }
   const side = state.sides[faction];
   const units = Array.from(side.units.values()).filter(isUsableUnit);
   if (units.length === 0) return { type: 'endTurn' };

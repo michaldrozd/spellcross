@@ -60,6 +60,8 @@ export interface BattlefieldStageProps {
   plannedPath?: HexCoordinate[];
   plannedDestination?: HexCoordinate;
   targetUnitId?: string;
+  targetHitChance?: number; // 0-1, hit chance to display on target
+  targetDamagePreview?: number; // predicted damage to show
   selectedUnitId?: string;
   viewerFaction?: FactionId;
   width?: number;
@@ -548,6 +550,8 @@ export function BattlefieldStage({
   plannedPath,
   plannedDestination,
   targetUnitId,
+  targetHitChance,
+  targetDamagePreview,
   selectedUnitId,
   viewerFaction = 'alliance',
   width,
@@ -2158,6 +2162,41 @@ export function BattlefieldStage({
                     g.lineTo(0, tileSize * 0.18);
                   }}
                 />
+                {/* Hit chance display */}
+                {targetHitChance !== undefined && (
+                  <Container y={-tileSize * 0.6}>
+                    <Graphics
+                      draw={(g) => {
+                        g.clear();
+                        g.beginFill(0x000000, 0.75);
+                        g.drawRoundedRect(-28, -10, 56, 20, 4);
+                        g.endFill();
+                      }}
+                    />
+                    <Text
+                      text={`${Math.round(targetHitChance * 100)}%`}
+                      anchor={0.5}
+                      style={new TextStyle({
+                        fontFamily: 'monospace',
+                        fontSize: 14,
+                        fontWeight: 'bold',
+                        fill: targetHitChance >= 0.7 ? 0x4ade80 : targetHitChance >= 0.4 ? 0xfbbf24 : 0xef4444,
+                      })}
+                    />
+                    {targetDamagePreview !== undefined && targetDamagePreview > 0 && (
+                      <Text
+                        text={`~${targetDamagePreview} dmg`}
+                        anchor={0.5}
+                        y={14}
+                        style={new TextStyle({
+                          fontFamily: 'monospace',
+                          fontSize: 10,
+                          fill: 0xffffff,
+                        })}
+                      />
+                    )}
+                  </Container>
+                )}
               </Container>
             )}
             <Graphics
@@ -2398,6 +2437,8 @@ export function BattlefieldStage({
     map.width,
     selectedUnitId,
     targetUnitId,
+    targetHitChance,
+    targetDamagePreview,
     viewerFaction,
     visibleTiles,
     topGeomFor,

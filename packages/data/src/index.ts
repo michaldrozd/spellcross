@@ -42,6 +42,7 @@ export interface UnitStatsData {
   morale: number;
   ammoCapacity?: number;
   transportCapacity?: number;
+  stealth?: number; // stealth rating - harder to detect (used by Hell Riders)
   weaponRanges: Record<string, number>;
   weaponPower: Record<string, number>;
   weaponAccuracy: Record<string, number>;
@@ -181,6 +182,7 @@ const unitStatsSchema = z.object({
   morale: z.number().int().positive(),
   ammoCapacity: z.number().int().nonnegative().optional(),
   transportCapacity: z.number().int().nonnegative().optional(),
+  stealth: z.number().int().nonnegative().optional(),
   weaponRanges: z.record(z.string(), z.number().int().nonnegative()),
   weaponPower: z.record(z.string(), z.number().nonnegative()),
   weaponAccuracy: z.record(z.string(), z.number().min(0).max(1)),
@@ -800,6 +802,80 @@ export const starterUnits: UnitData[] = [
       weaponRanges: { magma: 4, bolt: 6 },
       weaponPower: { magma: 32, bolt: 24 },
       weaponAccuracy: { magma: 0.64, bolt: 0.6 }
+    }
+  },
+  // === NEW UNITS FROM ORIGINAL SPELLCROSS ===
+  {
+    id: 'wolf-rider',
+    name: 'Wolf Rider',
+    faction: 'otherSide',
+    type: 'vehicle', // fast cavalry
+    role: 'recon',
+    cost: 0,
+    stats: {
+      maxHealth: 75,
+      mobility: 11, // very fast
+      vision: 5,
+      armor: 2,
+      morale: 55,
+      weaponRanges: { lance: 1, javelin: 3 },
+      weaponPower: { lance: 18, javelin: 12 },
+      weaponAccuracy: { lance: 0.72, javelin: 0.58 }
+    }
+  },
+  {
+    id: 'hell-rider',
+    name: 'Hell Rider',
+    faction: 'otherSide',
+    type: 'infantry', // teleporting assassin
+    role: 'recon',
+    cost: 0,
+    stats: {
+      maxHealth: 60,
+      mobility: 12, // extremely fast (teleport-like)
+      vision: 6,
+      armor: 1,
+      morale: 75,
+      stealth: 2, // hard to detect
+      weaponRanges: { soulblade: 1, curse: 3 },
+      weaponPower: { soulblade: 22, curse: 14 },
+      weaponAccuracy: { soulblade: 0.78, curse: 0.65 }
+    }
+  },
+  {
+    id: 'skeleton-horde',
+    name: 'Skeleton Horde',
+    faction: 'otherSide',
+    type: 'infantry',
+    role: 'line',
+    cost: 0,
+    stats: {
+      maxHealth: 100, // lots of bones
+      mobility: 5,
+      vision: 3,
+      armor: 0, // vulnerable to explosives/fire
+      morale: 90, // undead don't fear
+      weaponRanges: { bones: 1, arrows: 4 },
+      weaponPower: { bones: 10, arrows: 8 },
+      weaponAccuracy: { bones: 0.65, arrows: 0.52 }
+    }
+  },
+  {
+    id: 'arrow-tower',
+    name: 'Arrow Tower',
+    faction: 'otherSide',
+    type: 'artillery', // stationary defense
+    role: 'support',
+    cost: 0,
+    stats: {
+      maxHealth: 120,
+      mobility: 0, // cannot move
+      vision: 7,
+      armor: 8,
+      morale: 100, // structure doesn't panic
+      weaponRanges: { arrows: 6, oil: 2 },
+      weaponPower: { arrows: 14, oil: 20 },
+      weaponAccuracy: { arrows: 0.68, oil: 0.72 }
     }
   }
 ];

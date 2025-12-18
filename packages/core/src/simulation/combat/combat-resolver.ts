@@ -38,6 +38,8 @@ const COVER_ACCURACY_PENALTY = 0.04;
 const RANGE_ACCURACY_PENALTY = 0.12;
 const MIN_HIT_CHANCE = 0.05;
 const MAX_HIT_CHANCE = 0.98;
+// Strength-based damage: units deal less damage when wounded (like original Spellcross)
+const STRENGTH_DAMAGE_MIN_FACTOR = 0.4; // minimum 40% damage at lowest HP
 const WEATHER_ACCURACY_PENALTY = {
   clear: 0,
   night: 0.08,
@@ -50,6 +52,22 @@ function elevationRangeBonus(tile?: MapTile | null): number {
   if ((tile.elevation ?? 0) >= 1) bonus += 1;
   if (tile.providesVisionBoost) bonus += 1;
   return bonus;
+}
+
+/**
+ * Calculate strength-based damage modifier.
+ * Units deal less damage when wounded (original Spellcross mechanic).
+ * Formula: Linear interpolation from 100% at full HP to MIN_FACTOR at 1 HP.
+ */
+export function calculateStrengthModifier(unit: UnitInstance): number {
+  const maxHealth = unit.stats.maxHealth;
+  const currentHealth = unit.currentHealth;
+  if (maxHealth <= 0) return STRENGTH_DAMAGE_MIN_FACTOR;
+  // healthRatio goes from 1.0 (full) to ~0 (nearly dead)
+  const healthRatio = currentHealth / maxHealth;
+  // Interpolate: at full health = 1.0, at 0 health = MIN_FACTOR
+  const modifier = STRENGTH_DAMAGE_MIN_FACTOR + (1 - STRENGTH_DAMAGE_MIN_FACTOR) * healthRatio;
+  return Math.max(STRENGTH_DAMAGE_MIN_FACTOR, Math.min(1, modifier));
 }
 
 export function calculateAttackRange(attacker: UnitInstance, weaponId: string, map?: BattlefieldMap): number {
@@ -140,9 +158,13 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
   let moraleDamage = 0;
 
   if (hit) {
+    // Apply strength-based damage modifier (wounded units deal less damage)
+    const strengthMod = calculateStrengthModifier(attacker);
+    const effectivePower = weaponPower * strengthMod;
+
     const armorReduction = defenderArmor * ARMOR_ABSORPTION_FACTOR;
     const coverReduction = defenderCover * COVER_ABSORPTION_FACTOR;
-    const mitigatedDamage = weaponPower - armorReduction - coverReduction;
+    const mitigatedDamage = effectivePower - armorReduction - coverReduction;
     damage = Math.max(0, Math.round(mitigatedDamage));
 
     const newHealth = Math.max(0, defender.currentHealth - damage);

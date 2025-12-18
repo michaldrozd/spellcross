@@ -100,7 +100,7 @@ Tento dokument porovnáva našu implementáciu s originálnym GDD.
 | Feature | Popis |
 |---------|-------|
 | Initiative test pre Opportunity Fire | Skúsenosti/iniciatíva pre reaction fire |
-| Strength = Damage output | Menej HP = menej damage |
+| ~~Strength = Damage output~~ | ✅ **IMPLEMENTOVANÉ** - Menej HP = menej damage |
 | Limitované ukladanie | 6 slotov na misiu (Ironman mode) |
 | Ambush triggers | Spawn nepriateľov na trigger |
 | Reinforcements script | Nové jednotky počas misie |
@@ -137,11 +137,11 @@ Tento dokument porovnáva našu implementáciu s originálnym GDD.
 | Originál | Náš Remake | ID |
 |----------|------------|-----|
 | Orcs | ✅ Orc Warband | `orc-warband` |
-| Wolf Riders | ❌ | - |
-| Undead/Skeletons | ⚠️ Specter (podobné) | `specter` |
+| Wolf Riders | ✅ Wolf Rider | `wolf-rider` |
+| Undead/Skeletons | ✅ Skeleton Horde | `skeleton-horde` |
 | Golems | ✅ Ogre Brute | `ogre-brute` |
 | Magotars (flying scout) | ✅ Winged Fiend | `winged-fiend` |
-| Hell Riders | ❌ | - |
+| Hell Riders | ✅ Hell Rider | `hell-rider` |
 | Necromancers | ✅ Necromancer | `necromancer` |
 | Warlocks | ✅ Warlock | `warlock` |
 | Dragons | ✅ Void Drake | `void-drake` |
@@ -149,7 +149,7 @@ Tento dokument porovnáva našu implementáciu s originálnym GDD.
 | Salamander | ✅ Salamander | `salamander` |
 | Ghouls | ✅ Ghoul Pack | `ghoul-pack` |
 | Lich | ✅ Lich Lord | `lich-lord` |
-| Arrow Towers | ❌ | - |
+| Arrow Towers | ✅ Arrow Tower | `arrow-tower` |
 | Fortress of Terror | ❌ | - |
 
 ---
@@ -171,7 +171,7 @@ Tento dokument porovnáva našu implementáciu s originálnym GDD.
 
 | Feature | Popis |
 |---------|-------|
-| Difficulty levels | Len jeden level AI |
+| ~~Difficulty levels~~ | ✅ **IMPLEMENTOVANÉ** - easy/normal/hard/brutal |
 | Formation movement | Skupinový pohyb |
 | Retreat behavior | AI neustupuje |
 | Magic/Spell casting | Špeciálne schopnosti |
@@ -199,8 +199,8 @@ Tento dokument porovnáva našu implementáciu s originálnym GDD.
 
 | Feature | Čo chýba |
 |---------|----------|
-| Hit chance display | Ukázať % pri mierení (nie len v paneli) |
-| Damage preview | Predpokladaný damage pri mierení |
+| ~~Hit chance display~~ | ✅ **IMPLEMENTOVANÉ** - Ukázať % priamo na mape |
+| ~~Damage preview~~ | ✅ **IMPLEMENTOVANÉ** - Predpokladaný damage pri mierení |
 | Formation movement | UI pre pohyb skupiny |
 | Turbo mode | Zrýchlenie animácií nepriateľa |
 | Tooltips | Vysvetlenia mechaník |
