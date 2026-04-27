@@ -46,6 +46,8 @@ const bundle = validatedStarterBundle;
 const CAMPAIGN_STORAGE_KEY = 'spellcross:campaign-state';
 const CAMPAIGN_SLOT_KEY = 'spellcross:campaign-slot';
 const CAMPAIGN_SUMMARY_KEY = 'spellcross:campaign-summary';
+const CAMPAIGN_SCHEMA_KEY = 'spellcross:campaign-schema';
+const CAMPAIGN_SCHEMA_VERSION = '2026-04-27-tactical-launch';
 const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
 const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
 const isoTileTexture = PIXI.Texture.from('/grass_tile_128x64.png');
@@ -198,10 +200,23 @@ const UnitMarker: React.FC<UnitMarkerProps> = ({ unit, size, selected, onClick }
   );
 };
 
+function ensureCampaignStorageSchema() {
+  if (typeof window === 'undefined') return;
+  if (window.localStorage.getItem(CAMPAIGN_SCHEMA_KEY) === CAMPAIGN_SCHEMA_VERSION) return;
+
+  for (const slot of [1, 2, 3]) {
+    window.localStorage.removeItem(`${CAMPAIGN_STORAGE_KEY}:${slot}`);
+    window.localStorage.removeItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
+  }
+  window.localStorage.removeItem(CAMPAIGN_SLOT_KEY);
+  window.localStorage.setItem(CAMPAIGN_SCHEMA_KEY, CAMPAIGN_SCHEMA_VERSION);
+}
+
 function loadSavedCampaign(slot: number): CampaignState {
   if (typeof window === 'undefined') {
     return createCampaign(bundle);
   }
+  ensureCampaignStorageSchema();
   const saved = window.localStorage.getItem(`${CAMPAIGN_STORAGE_KEY}:${slot}`);
   if (!saved) return createCampaign(bundle);
   try {
@@ -215,6 +230,7 @@ function loadSavedCampaign(slot: number): CampaignState {
 
 function loadSummary(slot: number): SlotSummary | null {
   if (typeof window === 'undefined') return null;
+  ensureCampaignStorageSchema();
   const saved = window.localStorage.getItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
   if (!saved) return null;
   try {
