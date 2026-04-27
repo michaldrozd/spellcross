@@ -27,6 +27,7 @@ export default defineConfig({
     '**/tactical-move-click.spec.ts',
     '**/strategic-map-hover.spec.ts',
     '**/tactical-props-assets.spec.ts',
+    '**/tactical-launch-regression.spec.ts',
     '**/tactical-edge-cases.spec.ts'
   ],
   timeout: 20_000,

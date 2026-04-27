@@ -6,7 +6,8 @@ import { canAffordAttack } from '@spellcross/core';
 import { axialDistance } from '@spellcross/core';
 import { calculateAttackRange } from '@spellcross/core';
 import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
-import { Matrix, Texture, Rectangle, Graphics as PixiGraphics, MIPMAP_MODES, SCALE_MODES, settings } from 'pixi.js';
+import { Matrix, Texture, Rectangle, MIPMAP_MODES, SCALE_MODES, settings } from 'pixi.js';
+import type { Graphics as PixiGraphics } from 'pixi.js';
 
 import { TextStyle } from 'pixi.js';
 const basename = (p: string) => {
@@ -963,8 +964,12 @@ export function BattlefieldStage({
   }));
   const sizePendingRef = useRef<{ w: number; h: number } | null>(null);
   const sizeTimerRef = useRef<number | null>(null);
-  // Mask graphics for clipping overlays to top-only (exclude vertical walls)
-  const overlayMaskRef = useRef<any>(null);
+  const [overlayMask, setOverlayMask] = useState<{ mapId: string; node: PixiGraphics } | null>(null);
+  const setOverlayMaskNode = useCallback((node: PixiGraphics | null) => {
+    setOverlayMask(node ? { mapId: map.id, node } : null);
+  }, [map.id]);
+  const activeOverlayMask =
+    overlayMask?.mapId === map.id && !overlayMask.node.destroyed ? overlayMask.node : undefined;
 
   const commitSize = (w: number, h: number) => {
     setHostSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
@@ -4936,7 +4941,8 @@ export function BattlefieldStage({
             {terrainMissingTexts}
             {/* Top-only overlay mask: punch holes for all vertical wall faces (E/S) */}
             <Graphics
-              ref={overlayMaskRef}
+              key={`overlay-mask-${map.id}`}
+              ref={setOverlayMaskNode}
               draw={(g) => {
                 g.clear();
                 g.beginFill(0xffffff, 1);
@@ -5013,7 +5019,7 @@ export function BattlefieldStage({
             />
 
             {/* Overlays clipped by the mask (no spill over walls) */}
-            <Container mask={overlayMaskRef.current as any}>
+            <Container mask={activeOverlayMask}>
               {globalRangeOverlays}
               {movementRangeOverlays}
               {attackRangeOverlays}
