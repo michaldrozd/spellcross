@@ -7,15 +7,20 @@ type RuntimeFallbackState = {
   error?: Error;
 };
 
+const isPixiStageTeardownError = (error: Error) =>
+  error.message.includes("Cannot read properties of null (reading 'stage')") &&
+  (error.stack ?? '').includes('Stage2.componentWillUnmount');
+
 class RuntimeFallback extends React.Component<React.PropsWithChildren, RuntimeFallbackState> {
   override state: RuntimeFallbackState = {};
 
-  static getDerivedStateFromError(error: Error): RuntimeFallbackState {
-    return { error };
-  }
-
   override componentDidCatch(error: Error) {
+    if (isPixiStageTeardownError(error)) {
+      console.warn('Ignored Pixi stage teardown warning', error);
+      return;
+    }
     console.error(error);
+    this.setState({ error });
   }
 
   override render() {
