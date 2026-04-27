@@ -65,9 +65,7 @@ class RuntimeFallback extends React.Component<React.PropsWithChildren, RuntimeFa
 }
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
-  <React.StrictMode>
-    <RuntimeFallback>
-      <App />
-    </RuntimeFallback>
-  </React.StrictMode>
+  <RuntimeFallback>
+    <App />
+  </RuntimeFallback>
 );
