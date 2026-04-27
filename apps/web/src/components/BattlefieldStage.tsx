@@ -4846,6 +4846,16 @@ export function BattlefieldStage({
     return () => cancelAnimationFrame(rafId);
   }, [hostSize.h, hostSize.w, battleState.sides, map.width, map.height, selectedUnitId, stageDimensions.height, stageDimensions.width]);
 
+  const rangeOverlayLayer = (
+    <>
+      {globalRangeOverlays}
+      {movementRangeOverlays}
+      {attackRangeOverlays}
+      {plannedHighlights}
+      {invalidMoveHighlight}
+    </>
+  );
+
   return (
     <div
       ref={hostRef}
@@ -5019,13 +5029,11 @@ export function BattlefieldStage({
             />
 
             {/* Overlays clipped by the mask (no spill over walls) */}
-            <Container mask={activeOverlayMask}>
-              {globalRangeOverlays}
-              {movementRangeOverlays}
-              {attackRangeOverlays}
-              {plannedHighlights}
-              {invalidMoveHighlight}
-            </Container>
+            {activeOverlayMask ? (
+              <Container mask={activeOverlayMask}>{rangeOverlayLayer}</Container>
+            ) : (
+              <Container>{rangeOverlayLayer}</Container>
+            )}
 
             {tileWalls}
             <Container sortableChildren>
