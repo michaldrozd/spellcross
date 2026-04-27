@@ -364,6 +364,10 @@ export class TurnProcessor {
       return { success: false, error: 'Target already destroyed' };
     }
 
+    if (defender.embarkedOn) {
+      return { success: false, error: 'Target is embarked' };
+    }
+
     if (attacker.stance === 'routed') {
       return { success: false, error: 'Routed units cannot attack' };
     }

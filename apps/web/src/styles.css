@@ -347,6 +347,63 @@ body {
   white-space: nowrap;
 }
 
+.battle-phase-notice {
+  position: absolute;
+  top: 4.65rem;
+  left: 1rem;
+  z-index: 48;
+  display: grid;
+  min-width: 180px;
+  max-width: min(340px, calc(100vw - 2rem));
+  padding: 0.34rem 0.58rem;
+  border: 1px solid rgba(171, 86, 72, 0.66);
+  background:
+    repeating-linear-gradient(90deg, rgba(170, 58, 42, 0.075) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, rgba(35, 17, 15, 0.9), rgba(9, 5, 5, 0.92));
+  box-shadow: inset 1px 1px 0 rgba(255, 190, 160, 0.1), 0 8px 20px rgba(0, 0, 0, 0.46);
+  color: #eac0a9;
+  font-family: "Courier New", monospace;
+  text-align: left;
+  text-transform: uppercase;
+  pointer-events: none;
+  animation: battlePhaseNotice 1.28s ease-out forwards;
+}
+
+.battle-phase-notice.alliance {
+  border-color: rgba(94, 153, 178, 0.7);
+  background:
+    repeating-linear-gradient(90deg, rgba(101, 181, 208, 0.06) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, rgba(16, 32, 38, 0.86), rgba(5, 9, 11, 0.9));
+  color: #c8e5e9;
+}
+
+.battle-phase-notice strong {
+  color: #f0d17c;
+  font-size: 0.68rem;
+  line-height: 1.15;
+}
+
+.battle-phase-notice span {
+  margin-top: 0.12rem;
+  color: #c7a893;
+  font-size: 0.54rem;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.battle-phase-notice.alliance span {
+  color: #9fc4cc;
+}
+
+@keyframes battlePhaseNotice {
+  0% { opacity: 0; transform: translateY(4px); }
+  12% { opacity: 0.96; transform: translateY(0); }
+  68% { opacity: 0.88; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-3px); }
+}
+
 @keyframes toastFadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }

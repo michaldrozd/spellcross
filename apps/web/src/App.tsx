@@ -327,6 +327,37 @@ function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: s
   return { hit: false, damage: 0 };
 }
 
+function effectTypeForAttack(attacker: UnitInstance, defender: UnitInstance, weaponId: string): AttackEffect['type'] {
+  const definitionId = attacker.definitionId.toLowerCase();
+  const weapon = weaponId.toLowerCase();
+  const distance = axialDistance(attacker.coordinate, defender.coordinate);
+  if (attacker.unitType === 'vehicle' || attacker.unitType === 'artillery') return 'explosion';
+  if (
+    definitionId.includes('warlock')
+    || definitionId.includes('necromancer')
+    || definitionId.includes('lich')
+    || weapon.includes('hex')
+    || weapon.includes('curse')
+    || weapon.includes('doom')
+    || weapon.includes('shadow')
+    || weapon.includes('scream')
+    || weapon.includes('bolt')
+    || weapon.includes('flame')
+  ) return 'magic';
+  if (weapon.includes('boulder') || weapon.includes('rocket') || weapon.includes('shell')) return 'explosion';
+  if (distance <= 1 && (
+    weapon.includes('claw')
+    || weapon.includes('cleaver')
+    || weapon.includes('maul')
+    || weapon.includes('talon')
+  )) return 'melee';
+  return 'gunshot';
+}
+
+function soundForAttackEffect(effectType: AttackEffect['type']) {
+  return effectType === 'explosion' ? 'explosion' : 'gunshot';
+}
+
 function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: BattlefieldMap): { weapon: string; hit: number } | null {
   let choice: { weapon: string; hit: number } | null = null;
   const distance = axialDistance(attacker.coordinate, defender.coordinate);
@@ -605,6 +636,7 @@ const BattleView: React.FC<{
   const [plannedDestination, setPlannedDestination] = useState<HexCoordinate | null>(null);
   const [invalidMoveFeedback, setInvalidMoveFeedback] = useState<{ coordinate: HexCoordinate; time: number; message: string } | null>(null);
   const [combatNotices, setCombatNotices] = useState<Array<{ id: number; message: string }>>([]);
+  const [phaseNotice, setPhaseNotice] = useState<{ id: number; title: string; detail: string; tone: 'enemy' | 'alliance' } | null>(null);
   const [pendingAttack, setPendingAttack] = useState<{ id: string; time: number } | null>(null);
   const [targetedEnemy, setTargetedEnemy] = useState<UnitInstance | null>(null);
   const size = 26;
@@ -651,7 +683,7 @@ const BattleView: React.FC<{
     if (attackEffects.length === 0) return;
     const timer = setInterval(() => {
       const now = Date.now();
-      setAttackEffects(prev => prev.filter(e => now - e.startTime < 1300));
+      setAttackEffects(prev => prev.filter(e => now - e.startTime < 2600));
     }, 100);
     return () => clearInterval(timer);
   }, [attackEffects.length]);
@@ -1070,6 +1102,43 @@ const BattleView: React.FC<{
     setCombatNotices((existing) => [{ id: Date.now(), message }, ...existing].slice(0, 4));
   };
 
+  const showPhaseNotice = (title: string, detail: string, tone: 'enemy' | 'alliance' = 'alliance') => {
+    const id = Date.now();
+    setPhaseNotice({ id, title, detail, tone });
+    window.setTimeout(() => {
+      setPhaseNotice((current) => current?.id === id ? null : current);
+    }, 1300);
+  };
+
+  const findBattleUnit = (unitId: string) => {
+    for (const side of Object.values(battle.state.sides)) {
+      const unit = side.units.get(unitId);
+      if (unit) return unit;
+    }
+    return undefined;
+  };
+
+  const addAttackEffect = (
+    attacker: UnitInstance,
+    defender: UnitInstance,
+    weaponId: string,
+    outcome: { hit: boolean; damage: number },
+    delay = 0
+  ) => {
+    const effectType = effectTypeForAttack(attacker, defender, weaponId);
+    setAttackEffects(prev => [...prev, {
+      id: `${attacker.id}-${defender.id}-${Date.now()}-${delay}`,
+      fromQ: attacker.coordinate.q,
+      fromR: attacker.coordinate.r,
+      toQ: defender.coordinate.q,
+      toR: defender.coordinate.r,
+      startTime: Date.now() + delay,
+      type: effectType,
+      damage: outcome.damage,
+      hit: outcome.hit
+    }]);
+  };
+
   const rejectMove = (coord: HexCoordinate, message = 'Move blocked or out of range') => {
     AudioManager.play('error');
     const time = Date.now();
@@ -1152,21 +1221,9 @@ const BattleView: React.FC<{
         if (result.success) {
           const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
           // Play attack sound only on success
-          const unitType = (attacker as any).unitType;
-          const effectType = unitType === 'vehicle' ? 'explosion' : 'gunshot';
-          AudioManager.play(effectType);
-          // Add visual attack effect
-          setAttackEffects(prev => [...prev, {
-            id: `${attackerId}-${defender.id}-${Date.now()}`,
-            fromQ: attacker.coordinate.q,
-            fromR: attacker.coordinate.r,
-            toQ: defender.coordinate.q,
-            toR: defender.coordinate.r,
-            startTime: Date.now(),
-            type: effectType,
-            damage: attackOutcome.damage,
-            hit: attackOutcome.hit
-          }]);
+          const effectType = effectTypeForAttack(attacker, defender, anyWeapon);
+          AudioManager.play(soundForAttackEffect(effectType));
+          addAttackEffect(attacker, defender, anyWeapon, attackOutcome);
           // Play hit/death sound based on result
           if (defender.currentHealth <= 0) {
             AudioManager.play('death');
@@ -1193,21 +1250,9 @@ const BattleView: React.FC<{
     } else {
       const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
       // Play attack sound and effects only on success
-      const unitType = (attacker as any).unitType;
-      const effectType = unitType === 'vehicle' ? 'explosion' : 'gunshot';
-      AudioManager.play(effectType);
-      // Add visual attack effect
-      setAttackEffects(prev => [...prev, {
-        id: `${attackerId}-${defender.id}-${Date.now()}`,
-        fromQ: attacker.coordinate.q,
-        fromR: attacker.coordinate.r,
-        toQ: defender.coordinate.q,
-        toR: defender.coordinate.r,
-        startTime: Date.now(),
-        type: effectType,
-        damage: attackOutcome.damage,
-        hit: attackOutcome.hit
-      }]);
+      const effectType = effectTypeForAttack(attacker, defender, weapon.weapon);
+      AudioManager.play(soundForAttackEffect(effectType));
+      addAttackEffect(attacker, defender, weapon.weapon, attackOutcome);
       // Play hit/death sound based on result
       if (defender.currentHealth <= 0) {
         AudioManager.play('death');
@@ -1325,7 +1370,11 @@ const BattleView: React.FC<{
     if (deployMode) return;
     const aiProcessor = new TurnProcessor(battle.state);
     aiProcessor.endTurn(); // player ends, AI starts
+    showPhaseNotice('Enemy Turn', 'Hostile units are acting', 'enemy');
     let safety = 0;
+    let stagedAttacks = 0;
+    let phaseUpdated = false;
+    const maxEnemyAttacks = campaign.turn > 6 ? 3 : 2;
     while (battle.state.activeFaction === 'otherSide' && safety < 50) {
       safety += 1;
       const objectiveTargets = battle.scenario.objectives
@@ -1357,7 +1406,22 @@ const BattleView: React.FC<{
       } else if (action.type === 'move') {
         aiProcessor.moveUnit(action);
       } else if (action.type === 'attack') {
-        aiProcessor.attackUnit(action);
+        const attacker = findBattleUnit(action.attackerId);
+        const defender = findBattleUnit(action.defenderId);
+        const result = aiProcessor.attackUnit(action);
+        if (result.success && attacker && defender) {
+          const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
+          addAttackEffect(attacker, defender, action.weaponId, outcome, stagedAttacks * 650);
+          stagedAttacks += 1;
+          if (!phaseUpdated) {
+            phaseUpdated = true;
+            showPhaseNotice('Enemy Phase', `${unitDisplayName(action.attackerId, battle.state)} attacking`, 'enemy');
+          }
+          if (stagedAttacks >= maxEnemyAttacks) {
+            aiProcessor.endTurn();
+            break;
+          }
+        }
       } else if (action.type === 'attackTile') {
         aiProcessor.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
       }
@@ -1394,6 +1458,12 @@ const BattleView: React.FC<{
       </div>
 
       <div className="battle-ui-layer">
+        {phaseNotice ? (
+          <div className={`battle-phase-notice ${phaseNotice.tone}`}>
+            <strong>{phaseNotice.title}</strong>
+            <span>{phaseNotice.detail}</span>
+          </div>
+        ) : null}
         {showRanges && selectedUnit ? (
           <div className="battle-mode-badge">
             <span>Range Overlay</span>

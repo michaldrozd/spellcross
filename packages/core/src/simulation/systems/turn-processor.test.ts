@@ -190,4 +190,47 @@ describe('TurnProcessor.attackUnit', () => {
       expect(attackEvent.roll).toBe(0);
     }
   });
+
+  it('rejects attacks against embarked passengers', () => {
+    const state = createBattleState({
+      ...baseSpec,
+      sides: [
+        baseSpec.sides[0],
+        {
+          faction: 'otherSide',
+          units: [
+            {
+              definition: {
+                id: 'orc',
+                faction: 'otherSide',
+                name: 'Orc',
+                type: 'infantry',
+                stats: {
+                  maxHealth: 30,
+                  mobility: 5,
+                  vision: 3,
+                  armor: 1,
+                  morale: 40,
+                  weaponRanges: { axe: 1 },
+                  weaponPower: { axe: 10 },
+                  weaponAccuracy: { axe: 0.65 }
+                }
+              },
+              coordinate: { q: 1, r: 0 }
+            }
+          ]
+        }
+      ]
+    });
+    const defenderId = Array.from(state.sides.otherSide.units.keys())[0];
+    const defender = state.sides.otherSide.units.get(defenderId);
+    if (defender) defender.embarkedOn = 'carrier';
+
+    const processor = new TurnProcessor(state, { random: () => 0 });
+    const attackerId = Array.from(state.sides.alliance.units.keys())[0];
+    const result = processor.attackUnit({ attackerId, defenderId, weaponId: 'rifle' });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Target is embarked');
+  });
 });

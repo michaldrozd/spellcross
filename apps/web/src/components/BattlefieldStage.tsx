@@ -55,7 +55,7 @@ export interface AttackEffect {
   toQ: number;
   toR: number;
   startTime: number;
-  type: 'gunshot' | 'explosion' | 'magic';
+  type: 'gunshot' | 'explosion' | 'magic' | 'melee';
   damage?: number;
   hit?: boolean;
 }
@@ -1363,7 +1363,7 @@ export function BattlefieldStage({
       x: ((from.x + to.x) / 2) + (ISO_MODE ? isoBaseX : 0),
       y: ((from.y + to.y) / 2) + tileSize * 0.2
     });
-    setZoom((current) => Math.max(current, targetEffect ? 2.75 : 2.45));
+    setZoom(targetEffect ? 2.62 : 2.25);
   }, [attackEffects, battleState.sides, selectedUnitId, targetUnitId, toScreen, tileSize]);
 
   // Camera panning control
@@ -2396,17 +2396,63 @@ export function BattlefieldStage({
                 g.lineStyle();
               }
             }
+            if (tile.terrain !== 'water') {
+              const flecks = tile.terrain === 'urban' || tile.terrain === 'road' || tile.terrain === 'structure' ? 7 : 5;
+              for (let i = 0; i < flecks; i++) {
+                const salt = 390 + i * 23;
+                const ox = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.62;
+                const oy = (tileNoise(q, r, salt + 1) - 0.5) * ISO_TILE_H * 0.6;
+                const warm = tile.terrain === 'road' || tile.terrain === 'urban' || tile.terrain === 'structure';
+                const fleckColor = warm
+                  ? (tileNoise(q, r, salt + 2) > 0.46 ? 0x7b6b53 : 0x211b15)
+                  : tile.terrain === 'forest'
+                    ? (tileNoise(q, r, salt + 2) > 0.52 ? 0x405b2c : 0x0c180c)
+                    : (tileNoise(q, r, salt + 2) > 0.52 ? 0x647142 : 0x182313);
+                const alpha = fog * (0.12 + tileNoise(q, r, salt + 3) * 0.12);
+                if (tileNoise(q, r, salt + 4) > 0.56) {
+                  const len = 2 + tileNoise(q, r, salt + 5) * 5;
+                  const lean = (tileNoise(q, r, salt + 6) - 0.5) * 3;
+                  g.lineStyle(1, fleckColor, alpha);
+                  g.moveTo(cx + ox - len * 0.5, cy + oy - lean * 0.5);
+                  g.lineTo(cx + ox + len * 0.5, cy + oy + lean * 0.5);
+                  g.lineStyle();
+                } else {
+                  g.beginFill(fleckColor, alpha);
+                  g.drawRect(cx + ox, cy + oy, 1.4, 1.4);
+                  g.endFill();
+                }
+              }
+            }
+            if (tile.terrain === 'road' || tile.terrain === 'urban') {
+              for (let i = 0; i < 2; i++) {
+                const salt = 520 + i * 19;
+                const ox = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.34;
+                const oy = (tileNoise(q, r, salt + 1) - 0.5) * ISO_TILE_H * 0.32;
+                const len = ISO_TILE_W * (0.22 + tileNoise(q, r, salt + 2) * 0.2);
+                const skew = (tileNoise(q, r, salt + 3) - 0.5) * ISO_TILE_H * 0.18;
+                g.lineStyle(1, tile.terrain === 'road' ? 0x9a8564 : 0x5e5a4e, fog * 0.18);
+                g.moveTo(cx + ox - len * 0.5, cy + oy - skew);
+                g.lineTo(cx + ox + len * 0.5, cy + oy + skew);
+                g.lineStyle(1, 0x15110d, fog * 0.12);
+                g.moveTo(cx + ox - len * 0.42, cy + oy + 3 - skew);
+                g.lineTo(cx + ox + len * 0.42, cy + oy + 3 + skew);
+                g.lineStyle();
+              }
+            }
             if (tile.terrain === 'water') {
-              const len = ISO_TILE_W * 0.38;
-              const ox = (tileNoise(q, r, 230) - 0.5) * ISO_TILE_W * 0.35;
-              const oy = (tileNoise(q, r, 231) - 0.5) * ISO_TILE_H * 0.35;
-              g.lineStyle(1, 0x87b7bb, fog * 0.16);
-              g.moveTo(cx + ox - len / 2, cy + oy);
-              g.lineTo(cx + ox + len / 2, cy + oy - 1);
-              g.lineStyle(2, 0x0b2938, fog * 0.16);
-              g.moveTo(cx + ox - len / 3, cy + oy + 5);
-              g.lineTo(cx + ox + len / 3, cy + oy + 4);
-              g.lineStyle();
+              for (let i = 0; i < 3; i++) {
+                const salt = 230 + i * 17;
+                const len = ISO_TILE_W * (0.22 + tileNoise(q, r, salt + 2) * 0.22);
+                const ox = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.42;
+                const oy = (tileNoise(q, r, salt + 1) - 0.5) * ISO_TILE_H * 0.42;
+                g.lineStyle(1, 0x8fc0c5, fog * (0.1 + tileNoise(q, r, salt + 3) * 0.1));
+                g.moveTo(cx + ox - len / 2, cy + oy);
+                g.lineTo(cx + ox + len / 2, cy + oy - 1);
+                g.lineStyle(2, 0x0b2938, fog * 0.11);
+                g.moveTo(cx + ox - len / 3, cy + oy + 4);
+                g.lineTo(cx + ox + len / 3, cy + oy + 3);
+                g.lineStyle();
+              }
             }
           }
         }}
@@ -3325,6 +3371,7 @@ export function BattlefieldStage({
           const elapsed = now - effect.startTime;
           return effect.toQ === unit.coordinate.q
             && effect.toR === unit.coordinate.r
+            && effect.hit !== false
             && elapsed >= 240
             && elapsed <= 920;
         });
@@ -3335,18 +3382,55 @@ export function BattlefieldStage({
             && elapsed >= 0
             && elapsed <= 320;
         });
+        const recentAttackSource = attackEffects.find((effect) => {
+          const elapsed = now - effect.startTime;
+          return effect.fromQ === unit.coordinate.q
+            && effect.fromR === unit.coordinate.r
+            && elapsed >= 0
+            && elapsed <= 1300;
+        });
+        const recentHitTarget = attackEffects.find((effect) => {
+          const elapsed = now - effect.startTime;
+          return effect.toQ === unit.coordinate.q
+            && effect.toR === unit.coordinate.r
+            && effect.hit !== false
+            && elapsed > 920
+            && elapsed <= 2500;
+        });
         const hitElapsed = incomingHit ? now - incomingHit.startTime : 0;
         const hitPhase = incomingHit ? Math.min(Math.max((hitElapsed - 240) / 680, 0), 1) : 1;
         const hitPulse = incomingHit ? 1 - hitPhase : 0;
-        const hitJolt = incomingHit ? Math.sin(hitPhase * Math.PI * 5) * hitPulse * (unitType === 'vehicle' || unitType === 'artillery' ? 1.8 : 2.6) : 0;
+        const hitJolt = incomingHit ? Math.sin(hitPhase * Math.PI * 5) * hitPulse * (unitType === 'vehicle' || unitType === 'artillery' ? 2.6 : 3.2) : 0;
         const shotPulse = outgoingShot ? 1 - Math.min((now - outgoingShot.startTime) / 320, 1) : 0;
-        const shotRecoil = outgoingShot ? -shotPulse * (unitType === 'vehicle' || unitType === 'artillery' ? 2.2 : 1.2) : 0;
+        const residualPulse = recentHitTarget ? 1 - Math.min((now - recentHitTarget.startTime - 920) / 1580, 1) : 0;
+        const effectVector = (effect: AttackEffect | undefined, towardTarget: boolean) => {
+          if (!effect) return { x: 0, y: 0 };
+          const from = toScreen({ q: effect.fromQ, r: effect.fromR });
+          const to = toScreen({ q: effect.toQ, r: effect.toR });
+          const dx = to.x - from.x;
+          const dy = to.y - from.y;
+          const len = Math.max(1, Math.hypot(dx, dy));
+          return towardTarget ? { x: dx / len, y: dy / len } : { x: -dx / len, y: -dy / len };
+        };
+        const outgoingDir = effectVector(outgoingShot, true);
+        const incomingDir = effectVector(incomingHit, true);
+        const isOutgoingMelee = outgoingShot?.type === 'melee';
+        const lunge = outgoingShot
+          ? Math.sin(Math.min(1, (now - outgoingShot.startTime) / 320) * Math.PI) * (isOutgoingMelee ? 4.2 : 0)
+          : 0;
+        const recoil = outgoingShot
+          ? shotPulse * (unitType === 'vehicle' || unitType === 'artillery' ? 2.4 : 1.3)
+          : 0;
+        const shotOffsetX = outgoingShot ? outgoingDir.x * lunge - outgoingDir.x * recoil : 0;
+        const shotOffsetY = outgoingShot ? outgoingDir.y * lunge - outgoingDir.y * recoil * 0.45 : 0;
+        const hitOffsetX = incomingHit ? incomingDir.x * hitJolt : 0;
+        const hitOffsetY = incomingHit ? incomingDir.y * hitJolt * 0.55 : 0;
         const factionAccent = isFriendly ? 0x7ec3df : 0xe05a49;
         const capHeight = unitType === 'air' ? tileSize * 0.10 : tileSize * 0.28;
         const k = unitType === 'infantry' ? 0.32 : (unitType === 'vehicle' || unitType === 'artillery') ? 0.46 : 0.40;
 
         // Respect fog-of-war for enemies
-        if (!isFriendly && !isVisible) return [];
+        if (!isFriendly && !isVisible && !recentAttackSource) return [];
 
         if (isDestroyed || isEmbarked) {
           return [];
@@ -3428,6 +3512,31 @@ export function BattlefieldStage({
                     g.moveTo(-5, 0); g.lineTo(5, 0);
                     g.moveTo(0, -3); g.lineTo(0, 3);
                   }
+                }
+                if (outgoingShot) {
+                  const pulse = Math.max(0, shotPulse);
+                  g.lineStyle(3.2, 0x0d0705, 0.86 * pulse);
+                  g.drawEllipse(0, tileSize * 0.03, rx * 1.62, ry * 1.86);
+                  g.lineStyle(1.8, 0xffd46d, 1 * pulse);
+                  g.drawEllipse(0, tileSize * 0.03, rx * (1.34 + pulse * 0.24), ry * (1.54 + pulse * 0.24));
+                  g.beginFill(0xffd46d, 0.5 * pulse);
+                  g.drawEllipse(0, tileSize * 0.03, rx * 0.86, ry * 0.86);
+                  g.endFill();
+                }
+                if (recentHitTarget) {
+                  const pulse = Math.max(0, residualPulse);
+                  g.beginFill(0x17120d, 0.42 * pulse);
+                  g.drawEllipse(-rx * 0.12, tileSize * 0.06, rx * 0.54, ry * 0.45);
+                  g.drawEllipse(rx * 0.22, tileSize * 0.12, rx * 0.28, ry * 0.25);
+                  g.endFill();
+                  g.beginFill(0x5c3d2c, 0.38 * pulse);
+                  g.drawEllipse(-rx * 0.3, tileSize * 0.0, rx * 0.12, ry * 0.18);
+                  g.drawEllipse(rx * 0.32, tileSize * 0.04, rx * 0.1, ry * 0.16);
+                  g.endFill();
+                  g.beginFill(0xc77c55, 0.42 * pulse);
+                  g.drawRect(-rx * 0.08, -tileSize * 0.01, 2, 2);
+                  g.drawRect(rx * 0.28, tileSize * 0.04, 2, 2);
+                  g.endFill();
                 }
               }}
             />
@@ -3593,7 +3702,8 @@ export function BattlefieldStage({
               const baseScale = desiredH / sourceHeight;
               const facingLeft = canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
               const spriteBobY = isFootUnit ? -Math.abs(stepWave) * (directionalSprite ? 1.35 : 2.1) : unitType === 'air' ? stepWave * 1.4 : 0;
-              const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? fastWave * 0.35 : 0) + hitJolt + shotRecoil;
+              const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? fastWave * 0.35 : 0) + hitOffsetX + shotOffsetX;
+              const spriteCombatY = hitOffsetY + shotOffsetY;
               const spriteRotation = isVehicleUnit ? fastWave * 0.012 : 0;
               const squashX = isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1;
               const squashY = isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1;
@@ -3610,7 +3720,7 @@ export function BattlefieldStage({
                       alpha={silhouetteAlpha}
                       tint={0x050605}
                       x={spriteSwayX + (facingLeft ? -0.7 : 0.7)}
-                      y={spriteBaseY + spriteBobY + 1.1}
+                      y={spriteBaseY + spriteBobY + spriteCombatY + 1.1}
                       rotation={spriteRotation}
                       zIndex={0.8}
                     />
@@ -3623,7 +3733,7 @@ export function BattlefieldStage({
                       alpha={0.11}
                       tint={0xe5dbc4}
                       x={spriteSwayX + (facingLeft ? 0.45 : -0.45)}
-                      y={spriteBaseY + spriteBobY - 0.9}
+                      y={spriteBaseY + spriteBobY + spriteCombatY - 0.9}
                       rotation={spriteRotation}
                       zIndex={0.9}
                     />
@@ -3632,12 +3742,25 @@ export function BattlefieldStage({
                     texture={texture}
                     anchor={{ x: 0.5, y: anchorY }}
                     scale={{ x: scaleX, y: baseScale * squashY }}
-                    alpha={isVisible ? 1 : 0.8}
+                    alpha={isVisible ? 1 : 0.72}
                     x={spriteSwayX}
-                    y={spriteBaseY + spriteBobY}
+                    y={spriteBaseY + spriteBobY + spriteCombatY}
                     rotation={spriteRotation}
                     zIndex={1}
                   />
+                  {outgoingShot ? (
+                    <Sprite
+                      texture={texture}
+                      anchor={{ x: 0.5, y: anchorY }}
+                      scale={{ x: scaleX * 1.018, y: baseScale * squashY * 1.018 }}
+                      alpha={0.36 * shotPulse}
+                      tint={0xffd46d}
+                      x={spriteSwayX}
+                      y={spriteBaseY + spriteBobY + spriteCombatY}
+                      rotation={spriteRotation}
+                      zIndex={1.18}
+                    />
+                  ) : null}
                   {incomingHit ? (
                     <Sprite
                       texture={texture}
@@ -3646,7 +3769,7 @@ export function BattlefieldStage({
                       alpha={0.38 * hitPulse}
                       tint={incomingHit.type === 'magic' ? 0xc58cff : 0xffe3a1}
                       x={spriteSwayX}
-                      y={spriteBaseY + spriteBobY}
+                      y={spriteBaseY + spriteBobY + spriteCombatY}
                       rotation={spriteRotation}
                       zIndex={1.2}
                     />
@@ -3773,6 +3896,17 @@ export function BattlefieldStage({
                 const backplateAlpha = isSelected ? 0.76 : isTarget ? 0.68 : isFriendly ? 0.3 : 0.38;
                 const barAlpha = isSelected ? 0.9 : isTarget ? 0.84 : isFriendly ? 0.5 : 0.6;
                 const backplateH = detailedBar ? 6 : 4;
+                if (hpRatio <= 0.3) {
+                  const criticalPulse = 0.76 + Math.sin(now / 120) * 0.2;
+                  g.lineStyle(2.4, 0x1a0706, 0.78);
+                  g.drawEllipse(0, tileSize * 0.05, tileSize * 0.35, tileSize * 0.15);
+                  g.lineStyle(1.45, 0xef6a55, criticalPulse);
+                  g.drawEllipse(0, tileSize * 0.05, tileSize * 0.3, tileSize * 0.13);
+                  g.beginFill(0xef6a55, criticalPulse * 0.82);
+                  g.drawRect(-2.5, -tileSize * 0.54, 5, 9);
+                  g.drawRect(-2.5, -tileSize * 0.42, 5, 2.5);
+                  g.endFill();
+                }
                 g.lineStyle(1, 0x050708, 0.65);
                 g.beginFill(0x101417, backplateAlpha);
                 g.drawRoundedRect(-bw / 2 - 1, topY - backplateH, bw + 2, backplateH, 1);
@@ -3812,6 +3946,15 @@ export function BattlefieldStage({
                 g.beginFill(0x2a1c18, 0.72 * barAlpha); g.drawRect(-bw / 2, topY - (detailedBar ? 6 : 3), bw, 2); g.endFill();
                 const hpColor = hpRatio > 0.55 ? 0x758c5a : hpRatio > 0.25 ? 0xb08a45 : 0xa84a3f;
                 g.beginFill(hpColor, 0.95 * barAlpha); g.drawRect(-bw / 2, topY - (detailedBar ? 6 : 3), bw * hpRatio, 2); g.endFill();
+                if (hpRatio <= 0.3) {
+                  const pipAlpha = 0.82 + Math.sin(now / 110) * 0.18;
+                  g.beginFill(0x160504, 0.86);
+                  g.drawRect(bw / 2 - 4, topY - (detailedBar ? 8 : 5), 6, 5);
+                  g.endFill();
+                  g.beginFill(0xff6b55, pipAlpha);
+                  g.drawRect(bw / 2 - 3, topY - (detailedBar ? 7 : 4), 4, 3);
+                  g.endFill();
+                }
 
                 if (detailedBar) {
                   g.beginFill(0x1a1a1a, 0.62 * barAlpha); g.drawRect(-bw / 2, topY - 3, bw, 1); g.endFill();
@@ -3868,6 +4011,7 @@ export function BattlefieldStage({
 
     return attackEffects.map((effect) => {
       const elapsed = now - effect.startTime;
+      if (elapsed < 0) return null;
       if (elapsed > EFFECT_DURATION) return null;
 
       const progress = elapsed / EFFECT_DURATION;
@@ -3909,13 +4053,11 @@ export function BattlefieldStage({
 
       return (
         <Container key={effect.id} zIndex={zIndex}>
-          {elapsed < 260 && (
+          {effect.type !== 'gunshot' && elapsed < 620 && (
             <Graphics
-              x={fromX}
-              y={fromY - tileSize * 0.15}
               draw={(g) => {
                 g.clear();
-                const flashSize = tileSize * 0.34 * (1 - elapsed / 260);
+                const groundAlpha = 1 - elapsed / 620;
                 const dx = toX - fromX;
                 const dy = toY - fromY;
                 const len = Math.max(1, Math.hypot(dx, dy));
@@ -3923,21 +4065,64 @@ export function BattlefieldStage({
                 const uy = dy / len;
                 const px = -uy;
                 const py = ux;
-                g.lineStyle(3.2, 0x120b05, 0.88 * (1 - elapsed / 260));
+                const start = effect.type === 'melee' ? 0.18 : 0.12;
+                const end = effect.type === 'melee' ? 0.82 : 0.72;
+                const sx = fromX + dx * start;
+                const sy = fromY + dy * start + tileSize * 0.04;
+                const ex = fromX + dx * end;
+                const ey = fromY + dy * end + tileSize * 0.04;
+                g.lineStyle(effect.type === 'melee' ? 5.2 : 2.8, 0x0a0805, 0.44 * groundAlpha);
+                g.moveTo(sx, sy);
+                g.lineTo(ex, ey);
+                g.lineStyle(effect.type === 'melee' ? 2.6 : 1.35, effect.type === 'magic' ? 0x8d5aa8 : 0xaa8b5a, 0.58 * groundAlpha);
+                g.moveTo(sx, sy);
+                g.lineTo(ex, ey);
+                if (effect.type === 'melee') {
+                  g.beginFill(0x564331, 0.28 * groundAlpha);
+                  g.drawEllipse(fromX - ux * tileSize * 0.06 + px * tileSize * 0.05, fromY + tileSize * 0.1 - uy * tileSize * 0.02 + py * tileSize * 0.05, tileSize * 0.14, tileSize * 0.045);
+                  g.drawEllipse(toX - ux * tileSize * 0.1 - px * tileSize * 0.04, toY + tileSize * 0.09 - uy * tileSize * 0.03 - py * tileSize * 0.04, tileSize * 0.12, tileSize * 0.04);
+                  g.endFill();
+                }
+              }}
+            />
+          )}
+
+          {effect.type !== 'melee' && elapsed < 260 && (
+            <Graphics
+              x={fromX}
+              y={fromY - tileSize * 0.15}
+              draw={(g) => {
+                g.clear();
+                const fade = 1 - elapsed / 260;
+                const flashScale = effect.type === 'gunshot' ? 0.14 : effect.type === 'magic' ? 0.18 : 0.26;
+                const flashReach = effect.type === 'gunshot' ? 0.36 : 0.42;
+                const flashTail = effect.type === 'gunshot' ? 0.32 : 0.38;
+                const flashWidth = effect.type === 'gunshot' ? 0.06 : 0.08;
+                const flashSize = tileSize * flashScale * fade;
+                const dx = toX - fromX;
+                const dy = toY - fromY;
+                const len = Math.max(1, Math.hypot(dx, dy));
+                const ux = dx / len;
+                const uy = dy / len;
+                const px = -uy;
+                const py = ux;
+                g.lineStyle(effect.type === 'gunshot' ? 2.1 : 3.2, 0x120b05, 0.9 * fade);
                 g.moveTo(-ux * tileSize * 0.14, -uy * tileSize * 0.14);
-                g.lineTo(ux * tileSize * 0.32, uy * tileSize * 0.32);
-                g.beginFill(0xffe1a1, 0.78 * (1 - elapsed / 260));
+                g.lineTo(ux * tileSize * (effect.type === 'gunshot' ? 0.28 : 0.32), uy * tileSize * (effect.type === 'gunshot' ? 0.28 : 0.32));
+                g.beginFill(effect.type === 'magic' ? 0xc779ff : 0xffe1a1, (effect.type === 'gunshot' ? 0.68 : 0.78) * fade);
                 g.moveTo(ux * tileSize * 0.1, uy * tileSize * 0.1);
-                g.lineTo(ux * tileSize * 0.42 + px * tileSize * 0.08, uy * tileSize * 0.42 + py * tileSize * 0.08);
-                g.lineTo(ux * tileSize * 0.38 - px * tileSize * 0.08, uy * tileSize * 0.38 - py * tileSize * 0.08);
+                g.lineTo(ux * tileSize * flashReach + px * tileSize * flashWidth, uy * tileSize * flashReach + py * tileSize * flashWidth);
+                g.lineTo(ux * tileSize * flashTail - px * tileSize * flashWidth, uy * tileSize * flashTail - py * tileSize * flashWidth);
                 g.closePath();
                 g.endFill();
-                g.beginFill(0xffd57a, 0.95);
+                g.beginFill(effect.type === 'magic' ? 0xaa44ff : 0xffd57a, (effect.type === 'gunshot' ? 0.84 : 0.95) * fade);
                 g.drawCircle(0, 0, flashSize);
                 g.endFill();
-                g.beginFill(0xffffff, 0.85);
-                g.drawCircle(0, 0, flashSize * 0.42);
-                g.endFill();
+                if (effect.type !== 'gunshot') {
+                  g.beginFill(0xffffff, 0.85 * fade);
+                  g.drawCircle(0, 0, flashSize * 0.42);
+                  g.endFill();
+                }
               }}
             />
           )}
@@ -3951,39 +4136,86 @@ export function BattlefieldStage({
                 const sy = fromY + (toY - fromY) * trailStart - tileSize * 0.15;
                 const tx = projX;
                 const ty = projY - tileSize * 0.15;
-                g.lineStyle(effect.type === 'explosion' ? 5 : 3, 0x15110a, 0.9);
+                g.lineStyle(effect.type === 'explosion' ? 5 : effect.type === 'gunshot' ? 3.4 : 3, 0x15110a, 0.9);
                 g.moveTo(sx, sy); g.lineTo(tx, ty);
                 if (effect.type === 'gunshot') {
-                  g.lineStyle(1.8, 0xffe6a0, 0.98);
+                  g.lineStyle(2.6, 0xffe6a0, 0.98);
                   g.moveTo(sx, sy); g.lineTo(tx, ty);
+                  g.beginFill(0xfff3bd, 0.95);
+                  g.drawCircle(tx, ty, 3);
+                  g.endFill();
                 } else if (effect.type === 'explosion') {
                   g.lineStyle(2.6, 0xffcf5d, 0.98);
                   g.moveTo(sx, sy); g.lineTo(tx, ty);
                   g.beginFill(0xfff0a8, 0.95);
                   g.drawCircle(tx, ty, 4.5);
                   g.endFill();
-                } else {
+                } else if (effect.type === 'magic') {
                   g.lineStyle(2.4, 0xc779ff, 0.96);
                   g.moveTo(sx, sy); g.lineTo(tx, ty);
                   g.beginFill(0xaa44ff, 0.9);
                   g.drawCircle(tx, ty, 4.5);
                   g.endFill();
+                } else {
+                  const slashProgress = Math.min(Math.max((elapsed - 80) / 260, 0), 1);
+                  const cx = fromX + (toX - fromX) * 0.62;
+                  const cy = fromY + (toY - fromY) * 0.62 - tileSize * 0.22;
+                  const radius = tileSize * (0.22 + slashProgress * 0.12);
+                  g.lineStyle(3.4, 0x140908, 0.82 * (1 - slashProgress * 0.5));
+                  g.arc(cx, cy, radius, -0.8, 0.85);
+                  g.lineStyle(1.7, 0xd8c79c, 0.92 * (1 - slashProgress * 0.45));
+                  g.arc(cx, cy, radius * 0.92, -0.8, 0.85);
                 }
               }}
             />
           )}
 
-          {elapsed > 240 && elapsed < 920 && (
+          {elapsed > 220 && elapsed < 1180 && (
             <Graphics
               x={toX}
               y={toY - tileSize * 0.2}
               draw={(g) => {
                 g.clear();
-                const hitProgress = Math.min((elapsed - 240) / 680, 1);
-                const hitSize = tileSize * (0.24 + hitProgress * 0.2);
+                const hitProgress = Math.min((elapsed - 220) / 960, 1);
+                const hitSize = effect.type === 'melee'
+                  ? tileSize * (0.16 + hitProgress * 0.12)
+                  : tileSize * (0.24 + hitProgress * 0.2);
                 const hitAlpha = 1 - hitProgress;
+                const dx = toX - fromX;
+                const dy = toY - fromY;
+                const len = Math.max(1, Math.hypot(dx, dy));
+                const ux = dx / len;
+                const uy = dy / len;
+                const px = -uy;
+                const py = ux;
 
-                if (effect.type === 'explosion') {
+                if (effect.hit === false) {
+                  const missX = px * tileSize * 0.16 - ux * tileSize * 0.06;
+                  const missY = tileSize * 0.08 + py * tileSize * 0.08 - uy * tileSize * 0.04;
+                  const dust = targetMaterial === 'armor' ? 0x44433b : targetMaterial === 'undead' ? 0x686756 : 0x554735;
+                  const spark = effect.type === 'magic' ? 0xa26ac7 : 0xcda06b;
+                  g.beginFill(dust, hitAlpha * 0.46);
+                  g.drawEllipse(missX, missY, hitSize * 0.56, hitSize * 0.18);
+                  g.endFill();
+                  g.beginFill(0x1b160f, hitAlpha * 0.26);
+                  g.drawEllipse(missX - ux * hitSize * 0.18, missY + tileSize * 0.015, hitSize * 0.32, hitSize * 0.1);
+                  g.endFill();
+                  g.lineStyle(1.9, 0x15100b, hitAlpha * 0.78);
+                  g.moveTo(missX - px * hitSize * 0.24, missY - py * hitSize * 0.24);
+                  g.lineTo(missX + px * hitSize * 0.24, missY + py * hitSize * 0.24);
+                  g.lineStyle(1.15, spark, hitAlpha * 0.82);
+                  g.moveTo(missX - px * hitSize * 0.18, missY - py * hitSize * 0.18);
+                  g.lineTo(missX + px * hitSize * 0.18, missY + py * hitSize * 0.18);
+                  for (let i = 0; i < 3; i++) {
+                    const spread = (i - 1) * 0.22;
+                    g.beginFill(spark, hitAlpha * 0.55);
+                    g.drawCircle(missX + px * hitSize * spread - ux * hitSize * 0.1, missY + py * hitSize * spread - uy * hitSize * 0.1, Math.max(1.2, 2.1 * hitAlpha));
+                    g.endFill();
+                  }
+                  return;
+                }
+
+                if (effect.type === 'explosion' || effect.type === 'melee') {
                   const primary = targetMaterial === 'armor' ? 0xffbd58 : targetMaterial === 'undead' ? 0xbec1ad : 0xb07a52;
                   const secondary = targetMaterial === 'armor' ? 0xfff0b0 : targetMaterial === 'undead' ? 0xd8d6c2 : 0xd09a67;
                   const dust = targetMaterial === 'armor' ? 0x4b4b42 : targetMaterial === 'undead' ? 0x6f7164 : 0x5b4b36;
@@ -4008,14 +4240,36 @@ export function BattlefieldStage({
                     g.drawCircle(px, py, Math.max(1.4, 3.2 * hitAlpha));
                     g.endFill();
                   }
-                  g.beginFill(secondary, hitAlpha * 0.58);
+                  const edgeX = -ux * tileSize * 0.12;
+                  const edgeY = -uy * tileSize * 0.1;
+                  g.lineStyle(3.1, 0x1a0b04, hitAlpha * 0.92);
+                  g.moveTo(edgeX - hitSize * 0.34, edgeY);
+                  g.lineTo(edgeX + hitSize * 0.34, edgeY);
+                  g.moveTo(edgeX, edgeY - hitSize * 0.27);
+                  g.lineTo(edgeX, edgeY + hitSize * 0.27);
+                  g.lineStyle(1.55, 0xfff4c8, hitAlpha);
+                  g.moveTo(edgeX - hitSize * 0.27, edgeY);
+                  g.lineTo(edgeX + hitSize * 0.27, edgeY);
+                  g.moveTo(edgeX, edgeY - hitSize * 0.21);
+                  g.lineTo(edgeX, edgeY + hitSize * 0.21);
+                  g.beginFill(secondary, hitAlpha * 0.66);
                   g.drawCircle(0, 0, hitSize * 0.32);
                   g.endFill();
                 } else {
-                  g.lineStyle(2, 0xffffff, hitAlpha * 0.85);
-                  g.drawCircle(0, 0, hitSize * 0.6);
-                  g.beginFill(0xffffff, hitAlpha * 0.55);
-                  g.drawCircle(0, 0, hitSize * 0.2);
+                  const dust = targetMaterial === 'armor' ? 0x3c3d36 : 0x514436;
+                  const spark = targetMaterial === 'armor' ? 0xffe9a8 : 0xd6a26a;
+                  g.beginFill(dust, hitAlpha * 0.3);
+                  g.drawEllipse(0, tileSize * 0.09, hitSize * 0.72, hitSize * 0.24);
+                  g.endFill();
+                  g.lineStyle(2.2, 0x1a0f07, hitAlpha * 0.82);
+                  g.drawCircle(0, 0, hitSize * 0.42);
+                  g.lineStyle(1.2, spark, hitAlpha * 0.9);
+                  g.moveTo(-hitSize * 0.34, -hitSize * 0.08);
+                  g.lineTo(hitSize * 0.34, hitSize * 0.08);
+                  g.moveTo(-hitSize * 0.12, hitSize * 0.24);
+                  g.lineTo(hitSize * 0.16, -hitSize * 0.26);
+                  g.beginFill(spark, hitAlpha * 0.62);
+                  g.drawCircle(0, 0, hitSize * 0.14);
                   g.endFill();
                 }
               }}
@@ -4024,18 +4278,18 @@ export function BattlefieldStage({
           {elapsed > 280 && elapsed < 1000 && (
             <Text
               text={effect.hit ? `-${effect.damage ?? ''}` : 'MISS'}
-              x={toX - (effect.hit ? 11 : 16)}
-              y={toY - tileSize * 0.64 - (elapsed - 280) * 0.012}
+              x={toX - (effect.hit ? 7 : 10)}
+              y={toY - tileSize * 0.46 - (elapsed - 280) * 0.006}
               zIndex={zIndex + 2}
               style={new TextStyle({
                 fontFamily: 'monospace',
-                fontSize: 11,
+                fontSize: effect.hit ? 9 : 8,
                 fontWeight: '700',
-                fill: effect.hit ? '#d7b65f' : '#b8b09e',
+                fill: effect.hit ? '#ffb36d' : '#c7c0aa',
                 stroke: '#120b05',
-                strokeThickness: 3
+                strokeThickness: 2.4
               })}
-              alpha={Math.max(0, 1 - (elapsed - 280) / 720)}
+              alpha={Math.max(0, 0.95 - (elapsed - 280) / 780)}
             />
           )}
         </Container>
