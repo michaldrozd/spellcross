@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { startBattle } from './helpers';
 
 async function clickHex(page: import('@playwright/test').Page, q: number, r: number) {
   const pos = await page.evaluate(({ q, r }) => {
@@ -14,12 +15,8 @@ async function clickHex(page: import('@playwright/test').Page, q: number, r: num
 
 test('UI-driven tactical play: embark, move, disembark, attack, AI reacts', async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto('/');
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
-
-  // Enter first battle (has APC)
-  await page.getByRole('button', { name: /^Attack$/i }).first().click();
-  await expect(page.getByText(/Deployment/i)).toBeVisible();
+  await startBattle(page);
+  await expect(page.getByRole('button', { name: /^Start Battle$/i })).toBeVisible();
 
   const units = await page.evaluate(() => (window as any).__battleControl?.allyUnits?.() ?? []);
   const carrier = units.find((u: any) => (u.cap ?? 0) > 0);
@@ -76,15 +73,14 @@ test('UI-driven tactical play: embark, move, disembark, attack, AI reacts', asyn
   // Attack an enemy by clicking it
   const attacked = await page.evaluate(() => (window as any).__battleControl?.attackFirst?.());
   expect(attacked).toBeTruthy();
-  await expect(page.locator('.log')).toContainText('unit:attacked');
+  await expect(page.locator('.log-entries')).toContainText(/hit|missed/);
 
   // End turn and verify AI turn processed
-  await page.getByRole('button', { name: /^End Turn$/i }).click().catch(() => {});
   await page.evaluate(() => (window as any).__battleControl?.endTurn?.());
   await page.waitForTimeout(500);
 
   // Retreat back to HQ
   const retreatBtn = page.getByRole('button', { name: /^Retreat$/i });
   await retreatBtn.click({ timeout: 3000 }).catch(() => {});
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible({ timeout: 10000 });
+  await expect(page.getByRole('heading', { name: /FIELD HQ/i })).toBeVisible({ timeout: 10000 });
 });

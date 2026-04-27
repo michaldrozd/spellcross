@@ -62,7 +62,7 @@ describe('campaign core', () => {
 
   it('applies retreat losses for units off start tiles', () => {
     const state = createCampaign(starterBundle);
-    const battle = startBattleForTerritory(state, starterBundle, 'evac-lane');
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');
     const [firstUnit] = battle.state.sides.alliance.units.values();
     if (!firstUnit) throw new Error('expected deployed unit');
     // Move first unit off start tile to simulate overextension
@@ -75,14 +75,23 @@ describe('campaign core', () => {
 
   it('stores casualties and rewards after a victory', () => {
     const state = createCampaign(starterBundle);
-    const battle = startBattleForTerritory(state, starterBundle, 'crossroads');
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');
     // wipe enemies to force victory
     for (const enemy of battle.state.sides.otherSide.units.values()) {
       enemy.stance = 'destroyed';
     }
     applyBattleOutcome(state, starterBundle, 'victory');
-    const territory = state.territories.find((t) => t.id === 'crossroads');
+    const territory = state.territories.find((t) => t.id === 'sector-lyon');
     expect(territory?.status).toBe('cleared');
+  });
+
+  it('blocks battles that have no deployable allied units', () => {
+    const state = createCampaign(starterBundle);
+    state.army = [];
+    const territory = state.territories.find((t) => t.id === 'sector-strasbourg');
+    if (!territory) throw new Error('expected Strasbourg territory');
+    territory.status = 'available';
+    expect(() => startBattleForTerritory(state, starterBundle, 'sector-strasbourg')).toThrow(/No deployable units/);
   });
 
   it('serializes and hydrates campaign state for persistence', () => {
@@ -90,6 +99,7 @@ describe('campaign core', () => {
     state.resources.money = 321;
     state.turn = 3;
     state.research.inProgress = { topicId: 'armor-upfit', remaining: 15 };
+    state.popups = [{ turn: 3, title: 'Report', body: 'Recovered report', kind: 'reward' }];
 
     const snapshot = serializeCampaignState(state);
     const restored = hydrateCampaignState(starterBundle, snapshot);
@@ -99,5 +109,6 @@ describe('campaign core', () => {
     expect(restored.research.inProgress?.topicId).toBe('armor-upfit');
     expect(restored.research.completed.has('optics-i')).toBe(true);
     expect(isUnitUnlocked(restored, starterBundle, 'rangers')).toBe(true);
+    expect(restored.popups?.[0]?.title).toBe('Report');
   });
 });

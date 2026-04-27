@@ -17,10 +17,12 @@ interface ArmyUnit {
   id: string;
   definitionId: string;
   name: string;
+  unitType: string;
   tier: string;
   currentHealth: number;
   maxHealth: number;
   experience: number;
+  availableOnTurn?: number;
 }
 
 interface ResearchTopic {
@@ -28,6 +30,8 @@ interface ResearchTopic {
   name: string;
   description: string;
   cost: number;
+  unlocks?: string[];
+  requires?: string[];
 }
 
 interface StrategicHQProps {
@@ -37,11 +41,13 @@ interface StrategicHQProps {
   research: number;
   strategic: number;
   army: ArmyUnit[];
+  reserves: ArmyUnit[];
   territories: Territory[];
   researchTopics: ResearchTopic[];
   currentResearch: { topicId: string; remaining: number } | null;
   completedResearch: Set<string>;
   log: string[];
+  popups?: CampaignState['popups'];
   onStartBattle: (territoryId: string) => void;
   onEndTurn: () => void;
   onRecruit: (unitId: string, tier: 'rookie' | 'veteran' | 'elite') => void;
@@ -51,7 +57,16 @@ interface StrategicHQProps {
   onConvertMoney: (amount: number) => void;
   onConvertResearch: (amount: number) => void;
   onBack: () => void;
-  availableUnits: { id: string; name: string; unlocked: boolean }[];
+  onDismissPopups?: () => void;
+  availableUnits: { id: string; name: string; unlocked: boolean; cost: number; canAfford: boolean }[];
+}
+
+function rosterPortrait(definitionId: string, unitType: string) {
+  if (definitionId === 'm113' || definitionId.includes('truck')) return '/assets/generated/apc_m113.png';
+  if (definitionId.includes('ranger') || definitionId.includes('sniper')) return '/assets/generated/sniper_team.png';
+  if (unitType === 'vehicle') return '/assets/generated/tank_m1_abrams.png';
+  if (unitType === 'artillery') return '/assets/generated/artillery_mlrs.png';
+  return '/assets/generated/infantry_squad.png';
 }
 
 // Strategic Map View Component with visual Europe map
@@ -97,12 +112,17 @@ const StrategicMapView: React.FC<{
       {/* Main map area */}
       <div className="strategic-map-container">
         <svg viewBox="0 0 100 80" className="strategic-map-svg" preserveAspectRatio="xMidYMid meet">
-          {/* Background gradient - dark war map */}
           <defs>
             <radialGradient id="mapGradient" cx="85%" cy="40%" r="60%">
-              <stop offset="0%" stopColor="#4a1515" />
-              <stop offset="100%" stopColor="#1a1a2e" />
+              <stop offset="0%" stopColor="#7b4d34" />
+              <stop offset="52%" stopColor="#6d7446" />
+              <stop offset="100%" stopColor="#b49a66" />
             </radialGradient>
+            <pattern id="paperGrain" width="4" height="4" patternUnits="userSpaceOnUse">
+              <rect width="4" height="4" fill="transparent" />
+              <circle cx="1" cy="1" r="0.16" fill="#2e2419" opacity="0.22" />
+              <circle cx="3" cy="2" r="0.12" fill="#fff1c0" opacity="0.16" />
+            </pattern>
             <filter id="glow">
               <feGaussianBlur stdDeviation="0.5" result="coloredBlur"/>
               <feMerge>
@@ -114,14 +134,15 @@ const StrategicMapView: React.FC<{
 
           {/* Map background */}
           <rect x="0" y="0" width="100" height="80" fill="url(#mapGradient)" />
+          <rect x="0" y="0" width="100" height="80" fill="url(#paperGrain)" opacity="0.55" />
 
           {/* Simplified Europe outline */}
           <path
             d="M 15,25 Q 20,20 30,18 L 50,12 Q 55,15 60,14 L 70,18 Q 80,22 85,30 L 88,45 Q 85,55 80,60 L 70,65 Q 60,68 50,65 L 40,60 Q 30,55 25,50 L 20,40 Q 15,35 15,25"
             fill="none"
-            stroke="#3f3f46"
-            strokeWidth="0.3"
-            opacity="0.5"
+            stroke="#3d3125"
+            strokeWidth="0.45"
+            opacity="0.65"
           />
 
           {/* Region labels */}
@@ -154,6 +175,14 @@ const StrategicMapView: React.FC<{
 
             return (
               <g key={t.id} className="territory-marker" onClick={() => onSelectTerritory(t.id)}>
+                <circle
+                  cx={t.mapPosition.x}
+                  cy={t.mapPosition.y}
+                  r="3.2"
+                  fill="transparent"
+                  className="territory-hit-area"
+                />
+
                 {/* Pulse effect for available territories */}
                 {t.status === 'available' && (
                   <circle
@@ -177,6 +206,7 @@ const StrategicMapView: React.FC<{
                   stroke={isSelected ? '#ffffff' : color}
                   strokeWidth={isSelected ? 0.4 : 0.2}
                   filter={t.status === 'available' ? 'url(#glow)' : undefined}
+                  className="territory-node"
                   style={{ cursor: 'pointer' }}
                 />
 
@@ -289,12 +319,47 @@ const StrategicMapView: React.FC<{
 
 export const StrategicHQ: React.FC<StrategicHQProps> = ({
   turn, warClock, money, research, strategic,
-  army, territories, researchTopics, currentResearch, completedResearch,
+  army, reserves, territories, researchTopics, currentResearch, completedResearch,
   log, onStartBattle, onEndTurn, onRecruit, onRefill, onDismiss,
-  onResearch, onConvertMoney, onConvertResearch, onBack, availableUnits
+  onResearch, onConvertMoney, onConvertResearch, onBack, popups, onDismissPopups, availableUnits
 }) => {
   const [activeTab, setActiveTab] = useState<'map' | 'army' | 'research'>('map');
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
+  const researchById = useMemo(
+    () => new Map(researchTopics.map((topic) => [topic.id, topic])),
+    [researchTopics]
+  );
+  const researchDepths = useMemo(() => {
+    const depths = new Map<string, number>();
+    const visit = (topic: ResearchTopic, trail = new Set<string>()): number => {
+      const cached = depths.get(topic.id);
+      if (cached != null) return cached;
+      if (trail.has(topic.id)) return 0;
+      const nextTrail = new Set(trail);
+      nextTrail.add(topic.id);
+      const prerequisites = topic.requires ?? [];
+      const depth = prerequisites.length === 0
+        ? 0
+        : Math.max(...prerequisites.map((id) => {
+            const requiredTopic = researchById.get(id);
+            return requiredTopic ? visit(requiredTopic, nextTrail) + 1 : 0;
+          }));
+      depths.set(topic.id, depth);
+      return depth;
+    };
+    researchTopics.forEach((topic) => visit(topic));
+    return depths;
+  }, [researchById, researchTopics]);
+  const researchColumns = useMemo(() => {
+    const columns: ResearchTopic[][] = [];
+    for (const topic of researchTopics) {
+      const depth = researchDepths.get(topic.id) ?? 0;
+      columns[depth] ??= [];
+      columns[depth].push(topic);
+    }
+    return columns;
+  }, [researchDepths, researchTopics]);
+  const activeResearchTopic = currentResearch ? researchById.get(currentResearch.topicId) : undefined;
 
   return (
     <div className="strategic-hq">
@@ -342,6 +407,20 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
 
       {/* Content area */}
       <div className="hq-content">
+        {popups && popups.length > 0 && (
+          <div className="hq-alerts" role="alertdialog" aria-label="Operation reports">
+            {popups.map((popup, index) => (
+              <div key={`${popup.title}-${index}`} className={`hq-alert hq-alert-${popup.kind}`}>
+                <strong>{popup.title}</strong>
+                <span>{popup.body}</span>
+              </div>
+            ))}
+            {onDismissPopups && (
+              <button className="dismiss-alerts" onClick={onDismissPopups}>DISMISS</button>
+            )}
+          </div>
+        )}
+
         {activeTab === 'map' && (
           <StrategicMapView
             territories={territories}
@@ -361,13 +440,17 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               ) : (
                 army.map((u) => (
                   <div key={u.id} className="unit-row">
+                    <div className={`roster-token roster-token-${u.unitType}`}>
+                      <img src={rosterPortrait(u.definitionId, u.unitType)} alt="" />
+                      <span>{u.name.slice(0, 1)}</span>
+                    </div>
                     <div className="unit-info">
                       <span className="unit-name">{u.name}</span>
-                      <span className="unit-tier">{u.tier}</span>
+                      <span className="unit-tier">{u.tier} · {u.unitType}</span>
                     </div>
                     <div className="unit-stats">
-                      <span>HP {u.currentHealth}/{u.maxHealth}</span>
-                      <span>XP {u.experience}</span>
+                      <span><b>HP</b> {u.currentHealth}/{u.maxHealth}</span>
+                      <span><b>XP</b> {u.experience}</span>
                     </div>
                     <div className="unit-actions">
                       <button onClick={() => onRefill(u.id, 'rookie')}>REFILL</button>
@@ -376,6 +459,27 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                   </div>
                 ))
               )}
+              {reserves.length > 0 && (
+                <div className="reserve-roster">
+                  <h3>IN TRANSIT</h3>
+                  {reserves.map((u) => (
+                    <div key={u.id} className="unit-row reserve-row">
+                      <div className={`roster-token roster-token-${u.unitType}`}>
+                        <img src={rosterPortrait(u.definitionId, u.unitType)} alt="" />
+                        <span>{u.name.slice(0, 1)}</span>
+                      </div>
+                      <div className="unit-info">
+                        <span className="unit-name">{u.name}</span>
+                        <span className="unit-tier">{u.tier} · {u.unitType}</span>
+                      </div>
+                      <div className="unit-stats">
+                        <span><b>HP</b> {u.currentHealth}/{u.maxHealth}</span>
+                        <span><b>READY</b> T{u.availableOnTurn ?? turn + 1}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="recruit-panel">
               <h3>RECRUIT</h3>
@@ -383,12 +487,14 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                 {availableUnits.map((u) => (
                   <button
                     key={u.id}
-                    className="recruit-btn"
+                    className={`recruit-btn ${!u.canAfford ? 'recruit-btn-short' : ''}`}
                     disabled={!u.unlocked}
                     onClick={() => onRecruit(u.id, 'rookie')}
                   >
-                    {u.name}
-                    {!u.unlocked && <span className="locked">🔒</span>}
+                    <span>{u.name}</span>
+                    <span className="recruit-meta">
+                      {u.unlocked ? `${u.cost} CR · ${u.canAfford ? 'T+2' : 'NEED FUNDS'}` : 'LOCKED'}
+                    </span>
                   </button>
                 ))}
               </div>
@@ -403,7 +509,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                 <div className="active-research">
                   <h3>CURRENTLY RESEARCHING</h3>
                   <div className="research-progress">
-                    <span className="research-name">{currentResearch.topicId}</span>
+                    <span className="research-name">{activeResearchTopic?.name ?? currentResearch.topicId}</span>
                     <span className="research-remaining">{currentResearch.remaining} RP remaining</span>
                   </div>
                 </div>
@@ -415,32 +521,57 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               )}
             </div>
             <div className="research-tree">
-              <h3>AVAILABLE RESEARCH</h3>
-              <div className="research-grid">
-                {researchTopics.map((topic) => {
-                  const isCompleted = completedResearch.has(topic.id);
-                  const isActive = currentResearch?.topicId === topic.id;
-                  return (
-                    <div key={topic.id} className={`research-card ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''}`}>
-                      <h4>{topic.name}</h4>
-                      <p>{topic.description}</p>
-                      <div className="research-cost">Cost: {topic.cost} RP</div>
-                      {isCompleted ? (
-                        <span className="research-done">✓ COMPLETED</span>
-                      ) : isActive ? (
-                        <span className="research-progress-label">IN PROGRESS</span>
-                      ) : (
-                        <button
-                          className="research-btn"
-                          disabled={!!currentResearch}
-                          onClick={() => onResearch(topic.id)}
-                        >
-                          START RESEARCH
-                        </button>
-                      )}
+              <h3>RESEARCH NETWORK</h3>
+              <div
+                className="research-tree-board"
+                style={{ '--research-columns': researchColumns.length } as React.CSSProperties}
+              >
+                {researchColumns.map((topics, tierIndex) => (
+                  <section key={tierIndex} className="research-column">
+                    <div className="research-column-header">
+                      <span>TIER {tierIndex + 1}</span>
+                      <b>{topics.length}</b>
                     </div>
-                  );
-                })}
+                    {topics.map((topic) => {
+                      const missingRequirements = (topic.requires ?? []).filter((id) => !completedResearch.has(id));
+                      const requirementNames = (topic.requires ?? []).map((id) => researchById.get(id)?.name ?? id);
+                      const isCompleted = completedResearch.has(topic.id);
+                      const isActive = currentResearch?.topicId === topic.id;
+                      const isLocked = missingRequirements.length > 0;
+                      const isWaiting = Boolean(currentResearch) && !isActive;
+                      const stateLabel = isCompleted ? 'DONE' : isActive ? 'ACTIVE' : isLocked ? 'LOCKED' : isWaiting ? 'WAIT' : 'READY';
+                      return (
+                        <div
+                          key={topic.id}
+                          className={`research-card ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked-node' : ''}`}
+                        >
+                          <span className="research-node-index">{topic.id.toUpperCase()}</span>
+                          <span className="research-node-state">{stateLabel}</span>
+                          <h4>{topic.name}</h4>
+                          <p>{topic.description}</p>
+                          <div className="research-requirements">
+                            <span>REQ</span>
+                            <b>{requirementNames.length ? requirementNames.join(' / ') : 'BASELINE'}</b>
+                          </div>
+                          <div className="research-cost">Cost: {topic.cost} RP</div>
+                          {isCompleted ? (
+                            <span className="research-done">COMPLETED</span>
+                          ) : isActive ? (
+                            <span className="research-progress-label">IN PROGRESS</span>
+                          ) : (
+                            <button
+                              className="research-btn"
+                              disabled={!!currentResearch || isLocked}
+                              onClick={() => onResearch(topic.id)}
+                            >
+                              {isLocked ? `LOCKED: ${missingRequirements.map((id) => researchById.get(id)?.name ?? id).join(' / ')}` : 'QUEUE PROJECT'}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </section>
+                ))}
               </div>
             </div>
             <div className="sp-conversion">
@@ -460,4 +591,3 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
     </div>
   );
 };
-

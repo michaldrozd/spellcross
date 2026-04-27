@@ -115,5 +115,33 @@ describe('iso-pathfinder', () => {
     res = planPathForUnitIso(state, unitId, { q: 4, r: 4 });
     expect(res.success).toBe(true);
   });
-});
 
+  it('planPathForUnitIso includes weather movement penalties', () => {
+    const state = createBattleState({
+      ...baseSpec,
+      weather: 'fog',
+      sides: [
+        {
+          faction: 'alliance',
+          units: [
+            {
+              definition: {
+                ...baseSpec.sides[0].units[0].definition,
+                stats: {
+                  ...baseSpec.sides[0].units[0].definition.stats,
+                  mobility: 2
+                }
+              },
+              coordinate: { q: 0, r: 0 }
+            }
+          ]
+        },
+        { faction: 'otherSide', units: [] }
+      ]
+    });
+    const unitId = Array.from(state.sides.alliance.units.keys())[0];
+    const res = planPathForUnitIso(state, unitId, { q: 2, r: 2 });
+
+    expect(res.success).toBe(false);
+  });
+});

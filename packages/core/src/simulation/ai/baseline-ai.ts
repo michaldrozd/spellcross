@@ -1,5 +1,6 @@
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
-import { axialDistance, coordinateKey, directionIndex, getNeighbors, getTile, orientationDelta, tileIndex } from '../utils/grid.js';
+import { axialDistance, coordinateKey, getNeighbors, getTile, orientationDelta, tileIndex } from '../utils/grid.js';
+import { isoDirectionIndex } from '../utils/grid-iso.js';
 import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange } from '../combat/combat-resolver.js';
 import { movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import { hasLineOfSight } from '../visibility/vision.js';
@@ -216,7 +217,7 @@ function buildThreatAwarePathToward(
       }
       const flankScore = (() => {
         if (!opts.flankTarget) return 0;
-        const attackDir = directionIndex(opts.flankTarget.coordinate, n);
+        const attackDir = isoDirectionIndex(opts.flankTarget.coordinate, n);
         const delta = orientationDelta(opts.flankTarget.orientation ?? 0, attackDir);
         return delta >= 3 ? opts.flankWeight : delta === 2 ? opts.flankWeight * 0.5 : 0;
       })();
@@ -259,7 +260,7 @@ function flankAwareAttackScore(attacker: UnitInstance, defender: UnitInstance, w
   const hit = calculateHitChance({ attacker, defender, weaponId, map });
   if (hit <= 0) return 0;
   const power = attacker.stats.weaponPower[weaponId] ?? 0;
-  const attackDir = directionIndex(defender.coordinate, attacker.coordinate);
+  const attackDir = isoDirectionIndex(defender.coordinate, attacker.coordinate);
   const delta = orientationDelta(defender.orientation ?? 0, attackDir);
   const flankBonus = delta >= 3 ? 1.25 : delta === 2 ? 1.15 : 1;
   return hit * (power || 1) * flankBonus * priorityScore(defender);

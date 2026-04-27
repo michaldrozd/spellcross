@@ -68,6 +68,22 @@ describe('TurnProcessor.moveUnit', () => {
     expect(unit?.actionPoints).toBeCloseTo(4);
   });
 
+  it('accepts diagonal steps used by the isometric pathfinder', () => {
+    const state = createBattleState(baseSpec);
+    const processor = new TurnProcessor(state);
+    const unitId = Array.from(state.sides.alliance.units.keys())[0];
+
+    const result = processor.moveUnit({
+      unitId,
+      path: [{ q: 1, r: 1 }]
+    });
+
+    expect(result.success).toBe(true);
+    const unit = state.sides.alliance.units.get(unitId);
+    expect(unit?.coordinate).toEqual({ q: 1, r: 1 });
+    expect(unit?.orientation).toBe(6);
+  });
+
   it('rejects paths that include occupied tiles', () => {
     const state = createBattleState({
       ...baseSpec,

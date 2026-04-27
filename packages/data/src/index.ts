@@ -15,6 +15,7 @@ export interface HexCoordinate {
   q: number;
   r: number;
 }
+export type EdgeDir = 'N' | 'E' | 'S' | 'W';
 
 export interface MapTile {
   terrain: TerrainType;
@@ -32,6 +33,68 @@ export interface BattlefieldMap {
   width: number;
   height: number;
   tiles: MapTile[];
+  props?: MapProp[];
+}
+
+export interface MapProp {
+  id: string;
+  kind: 'tree' | 'rock' | 'bush' | 'proc-building';
+  coordinate: HexCoordinate;
+  u?: number;
+  v?: number;
+  texture?: string;
+  scale?: number;
+  flipX?: boolean;
+  w?: number;
+  h?: number;
+  levels?: number;
+  levelHeightPx?: number;
+  roof?: {
+    kind: 'flat' | 'gabled' | 'hip';
+    dir?: 'E-W' | 'N-S';
+    pitch?: number;
+  };
+  wallColor?: number;
+  roofColor?: number;
+  elevationMode?: 'avg' | 'max';
+  zPivot?: 'southEdge' | 'centroid';
+  baseOffsetPx?: { x: number; y: number };
+  tiles?: HexCoordinate[];
+  facade?: {
+    material?: 'plaster' | 'brick' | 'concrete' | 'metal' | 'wood';
+    baseColor?: number;
+    trimColor?: number;
+    accentColor?: number;
+    grime?: number;
+  };
+  windows?: {
+    rows?: number;
+    cols?: number;
+    marginH?: number;
+    marginV?: number;
+    widthPx?: number;
+    heightPx?: number;
+    spacingH?: number;
+    spacingV?: number;
+    frameColor?: number;
+    glassColor?: number;
+    emissive?: number;
+    sides?: EdgeDir[];
+  };
+  doors?: Array<{
+    side: EdgeDir;
+    offset?: number;
+    widthPx?: number;
+    heightPx?: number;
+    color?: number;
+    kind?: 'single' | 'double' | 'roller';
+  }>;
+  roofDetails?: {
+    overhangPx?: number;
+    trimColor?: number;
+    ridgeCap?: boolean;
+    ventCount?: number;
+  };
 }
 
 export interface UnitStatsData {
@@ -171,12 +234,17 @@ const battlefieldMapSchema = z.object({
   id: z.string(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
-  tiles: z.array(mapTileSchema)
+  tiles: z.array(mapTileSchema),
+  props: z.array(z.object({
+    id: z.string(),
+    kind: z.enum(['tree', 'rock', 'bush', 'proc-building']),
+    coordinate: hexCoordinateSchema
+  }).passthrough()).optional()
 });
 
 const unitStatsSchema = z.object({
   maxHealth: z.number().positive(),
-  mobility: z.number().positive(),
+  mobility: z.number().nonnegative(),
   vision: z.number().int().positive(),
   armor: z.number().nonnegative(),
   morale: z.number().int().positive(),
@@ -306,7 +374,13 @@ const tile = (input: Partial<MapTile> & { terrain: TerrainType }): MapTile => ({
   ...input
 });
 
-const makeMap = (id: string, width: number, height: number, decorate: (q: number, r: number) => Partial<MapTile>): BattlefieldMap => {
+const makeMap = (
+  id: string,
+  width: number,
+  height: number,
+  decorate: (q: number, r: number) => Partial<MapTile>,
+  props: MapProp[] = []
+): BattlefieldMap => {
   const tiles: MapTile[] = [];
   for (let r = 0; r < height; r++) {
     for (let q = 0; q < width; q++) {
@@ -315,7 +389,7 @@ const makeMap = (id: string, width: number, height: number, decorate: (q: number
       tiles.push({ ...base, ...tweaks });
     }
   }
-  return { id, width, height, tiles };
+  return props.length > 0 ? { id, width, height, tiles, props } : { id, width, height, tiles };
 };
 
 export const starterUnits: UnitData[] = [
@@ -952,39 +1026,236 @@ export const starterResearch: ResearchTopic[] = [
   }
 ];
 
-const borderMap = makeMap('evac-corridor', 9, 7, (q, r) => {
+const borderMap = makeMap('evac-corridor', 14, 10, (q, r) => {
   if (q === 4 && r >= 1 && r <= 5) {
     return tile({ terrain: 'water', passable: false, movementCostModifier: 99 });
   }
-  if (r === 0 || r === 6) {
-    return tile({ terrain: 'forest', cover: 2, movementCostModifier: 2 });
+  if (q === 4 && r >= 7 && r <= 8) {
+    return tile({ terrain: 'water', passable: false, movementCostModifier: 99 });
   }
-  if (q === 2 && r >= 2 && r <= 4) {
+  if ((r === 3 || r === 6) && q >= 0 && q <= 12) {
+    return tile({ terrain: 'road', cover: 1, movementCostModifier: 0.8 });
+  }
+  if ((q === 2 && r >= 2 && r <= 4) || (q === 8 && r >= 4 && r <= 6)) {
     return tile({ terrain: 'urban', cover: 3, movementCostModifier: 2, providesVisionBoost: true });
   }
-  if ((q === 6 || q === 7) && r === 3) {
+  if (r === 0 || r === 9 || (q >= 10 && r <= 2)) {
+    return tile({ terrain: 'forest', cover: 2, movementCostModifier: 2 });
+  }
+  if ((q === 6 || q === 7 || q === 11) && (r === 3 || r === 4)) {
     return tile({ terrain: 'hill', elevation: 1, providesVisionBoost: true, cover: 1, movementCostModifier: 1.2 });
   }
   return {};
-});
+}, [
+  { id: 'evac-tree-1', kind: 'tree', coordinate: { q: 0, r: 1 }, texture: '/props/tree1.png', scale: 0.46 },
+  { id: 'evac-tree-2', kind: 'tree', coordinate: { q: 10, r: 1 }, texture: '/props/pine1.png', scale: 0.48 },
+  { id: 'evac-tree-3', kind: 'tree', coordinate: { q: 12, r: 8 }, texture: '/props/tree3.png', scale: 0.48, flipX: true },
+  { id: 'evac-pine-4', kind: 'tree', coordinate: { q: 13, r: 1 }, texture: '/props/pine2.png', scale: 0.42 },
+  { id: 'evac-pine-5', kind: 'tree', coordinate: { q: 11, r: 0 }, texture: '/props/pine1.png', scale: 0.4, flipX: true },
+  { id: 'evac-bush-1', kind: 'bush', coordinate: { q: 2, r: 1 }, u: 0.33, v: 0.62, scale: 0.72 },
+  { id: 'evac-bush-2', kind: 'bush', coordinate: { q: 3, r: 5 }, u: 0.62, v: 0.42, scale: 0.65 },
+  { id: 'evac-bush-3', kind: 'bush', coordinate: { q: 6, r: 6 }, u: 0.46, v: 0.58, scale: 0.78 },
+  { id: 'evac-bush-4', kind: 'bush', coordinate: { q: 9, r: 1 }, u: 0.62, v: 0.46, scale: 0.7 },
+  { id: 'evac-bush-5', kind: 'bush', coordinate: { q: 11, r: 6 }, u: 0.36, v: 0.58, scale: 0.68 },
+  { id: 'evac-rock-1', kind: 'rock', coordinate: { q: 1, r: 6 }, u: 0.58, v: 0.5, scale: 0.75 },
+  { id: 'evac-rock-2', kind: 'rock', coordinate: { q: 5, r: 0 }, u: 0.42, v: 0.55, scale: 0.66 },
+  { id: 'evac-rock-3', kind: 'rock', coordinate: { q: 7, r: 6 }, u: 0.7, v: 0.44, scale: 0.82 },
+  { id: 'evac-rock-4', kind: 'rock', coordinate: { q: 12, r: 5 }, u: 0.38, v: 0.58, scale: 0.72 },
+  { id: 'evac-rock-5', kind: 'rock', coordinate: { q: 13, r: 8 }, u: 0.52, v: 0.5, scale: 0.68 },
+  { id: 'evac-bush-6', kind: 'bush', coordinate: { q: 0, r: 5 }, u: 0.6, v: 0.48, scale: 0.62 },
+  { id: 'evac-bush-7', kind: 'bush', coordinate: { q: 2, r: 6 }, u: 0.32, v: 0.5, scale: 0.58 },
+  { id: 'evac-bush-8', kind: 'bush', coordinate: { q: 5, r: 2 }, u: 0.66, v: 0.44, scale: 0.55 },
+  { id: 'evac-bush-9', kind: 'bush', coordinate: { q: 6, r: 1 }, u: 0.36, v: 0.62, scale: 0.6 },
+  { id: 'evac-rock-6', kind: 'rock', coordinate: { q: 0, r: 7 }, u: 0.5, v: 0.48, scale: 0.58 },
+  { id: 'evac-rock-7', kind: 'rock', coordinate: { q: 3, r: 1 }, u: 0.62, v: 0.54, scale: 0.54 },
+  { id: 'evac-rock-8', kind: 'rock', coordinate: { q: 5, r: 6 }, u: 0.45, v: 0.48, scale: 0.62 },
+  { id: 'evac-tree-6', kind: 'tree', coordinate: { q: 2, r: 7 }, texture: '/props/pine2.png', scale: 0.38, flipX: true },
+  { id: 'evac-tree-7', kind: 'tree', coordinate: { q: 1, r: 1 }, texture: '/props/pine1.png', scale: 0.36 },
+  { id: 'evac-tree-8', kind: 'tree', coordinate: { q: 3, r: 0 }, texture: '/props/pine1.png', scale: 0.36, flipX: true },
+  { id: 'evac-tree-9', kind: 'tree', coordinate: { q: 7, r: 0 }, texture: '/props/pine1.png', scale: 0.34 },
+  { id: 'evac-pine-10', kind: 'tree', coordinate: { q: 9, r: 2 }, texture: '/props/pine2.png', scale: 0.42, flipX: true },
+  { id: 'evac-bush-10', kind: 'bush', coordinate: { q: 1, r: 5 }, u: 0.42, v: 0.5, scale: 0.64 },
+  { id: 'evac-bush-11', kind: 'bush', coordinate: { q: 5, r: 4 }, u: 0.58, v: 0.6, scale: 0.56 },
+  { id: 'evac-bush-12', kind: 'bush', coordinate: { q: 7, r: 5 }, u: 0.34, v: 0.46, scale: 0.62 },
+  { id: 'evac-rock-9', kind: 'rock', coordinate: { q: 6, r: 2 }, u: 0.68, v: 0.42, scale: 0.48 },
+  { id: 'evac-rock-10', kind: 'rock', coordinate: { q: 9, r: 4 }, u: 0.5, v: 0.56, scale: 0.64 },
+  {
+    id: 'evac-storehouse',
+    kind: 'proc-building',
+    coordinate: { q: 3, r: 1 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 16,
+    roof: { kind: 'gabled', dir: 'E-W', pitch: 0.36 },
+    wallColor: 0x514b41,
+    roofColor: 0x3f2420,
+    facade: { material: 'brick', grime: 0.75, trimColor: 0x302b24, accentColor: 0x241f1b },
+    windows: { rows: 1, cols: 1, widthPx: 11, heightPx: 13, glassColor: 0x314b55, frameColor: 0x171717, sides: ['E'] },
+    doors: [{ side: 'S', offset: 0.58, widthPx: 14, heightPx: 17, color: 0x211b15, kind: 'single' }],
+    roofDetails: { overhangPx: 3, trimColor: 0x211d19, ventCount: 1 }
+  },
+  {
+    id: 'evac-roadblock',
+    kind: 'proc-building',
+    coordinate: { q: 3, r: 4 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 12,
+    roof: { kind: 'flat' },
+    wallColor: 0x48443c,
+    roofColor: 0x242625,
+    facade: { material: 'concrete', grime: 0.8, trimColor: 0x2b2b26, accentColor: 0x201c18 },
+    windows: { rows: 1, cols: 1, widthPx: 9, heightPx: 9, glassColor: 0x29363a, frameColor: 0x151515, sides: ['E'] },
+    roofDetails: { overhangPx: 2, trimColor: 0x191a18, ventCount: 1 }
+  },
+  {
+    id: 'evac-watch-post',
+    kind: 'proc-building',
+    coordinate: { q: 7, r: 1 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 14,
+    roof: { kind: 'flat' },
+    wallColor: 0x42483f,
+    roofColor: 0x222725,
+    facade: { material: 'metal', grime: 0.7, trimColor: 0x242824, accentColor: 0x1b1d1a },
+    windows: { rows: 1, cols: 1, widthPx: 10, heightPx: 10, glassColor: 0x2f454b, frameColor: 0x111412, sides: ['S'] },
+    doors: [{ side: 'E', offset: 0.46, widthPx: 12, heightPx: 15, color: 0x1f211e, kind: 'single' }],
+    roofDetails: { overhangPx: 2, trimColor: 0x181a18, ventCount: 1 }
+  },
+  { id: 'evac-ruin-1', kind: 'proc-building', coordinate: { q: 8, r: 4 }, w: 1, h: 1, levels: 1, roof: { kind: 'flat' }, wallColor: 0x5d574f, roofColor: 0x2f3136 },
+  { id: 'evac-ruin-2', kind: 'proc-building', coordinate: { q: 8, r: 5 }, w: 1, h: 1, levels: 1, roof: { kind: 'flat' }, wallColor: 0x6b6258, roofColor: 0x34363a }
+]);
 
-const hamletMap = makeMap('crossroads-hold', 8, 6, (q, r) => {
+const hamletMap = makeMap('crossroads-hold', 12, 9, (q, r) => {
   if ((q === 3 || q === 4) && r === 2) {
     return tile({ terrain: 'urban', cover: 3, movementCostModifier: 2, destructible: true, hp: 35 });
   }
-  if (r === 2 && q >= 2 && q <= 5) {
+  if ((r === 2 && q >= 2 && q <= 7) || (r === 4 && q >= 4 && q <= 8)) {
     return tile({ terrain: 'urban', cover: 3, movementCostModifier: 2 });
   }
-  if (q === 1 && r >= 1 && r <= 4) {
+  if ((q === 1 && r >= 1 && r <= 5) || (q >= 8 && r >= 1 && r <= 3)) {
     return tile({ terrain: 'forest', cover: 2, movementCostModifier: 2 });
   }
-  if (r === 5 || r === 0) {
+  if ((r === 3 && q >= 0 && q <= 10) || (q === 6 && r >= 3 && r <= 7)) {
+    return tile({ terrain: 'road', cover: 1, movementCostModifier: 0.8 });
+  }
+  if (r === 8 || r === 0 || (q >= 9 && r >= 6)) {
     return tile({ terrain: 'hill', elevation: 1, providesVisionBoost: true, movementCostModifier: 1.3 });
   }
   return {};
-});
+}, [
+  {
+    id: 'hamlet-house-1',
+    kind: 'proc-building',
+    coordinate: { q: 2, r: 2 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 22,
+    roof: { kind: 'gabled', dir: 'E-W', pitch: 0.22 },
+    wallColor: 0x6f604d,
+    roofColor: 0x4f2525,
+    facade: { material: 'plaster', grime: 0.72, baseColor: 0x6f604d, trimColor: 0x8a806b },
+    windows: { rows: 1, cols: 1, widthPx: 12, heightPx: 14, glassColor: 0x506a73, frameColor: 0x24201b }
+  },
+  {
+    id: 'hamlet-house-2',
+    kind: 'proc-building',
+    coordinate: { q: 3, r: 2 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 21,
+    roof: { kind: 'hip', pitch: 0.18 },
+    wallColor: 0x625d55,
+    roofColor: 0x333a3d,
+    facade: { material: 'plaster', grime: 0.68, baseColor: 0x625d55 },
+    windows: { rows: 1, cols: 1, widthPx: 12, heightPx: 13, glassColor: 0x536c77, frameColor: 0x222426 }
+  },
+  {
+    id: 'hamlet-ruin',
+    kind: 'proc-building',
+    coordinate: { q: 4, r: 2 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 18,
+    roof: { kind: 'flat' },
+    wallColor: 0x4f4a42,
+    roofColor: 0x26282b,
+    facade: { material: 'concrete', grime: 0.9, baseColor: 0x4f4a42 },
+    windows: { rows: 1, cols: 1, widthPx: 11, heightPx: 12, glassColor: 0x39444a, frameColor: 0x1d1d1d }
+  },
+  {
+    id: 'hamlet-barn',
+    kind: 'proc-building',
+    coordinate: { q: 6, r: 4 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 20,
+    roof: { kind: 'gabled', dir: 'N-S', pitch: 0.2 },
+    wallColor: 0x5a3f31,
+    roofColor: 0x3f2424,
+    facade: { material: 'wood', grime: 0.76, baseColor: 0x5a3f31, trimColor: 0x6d5a45 },
+    windows: { rows: 1, cols: 1, widthPx: 11, heightPx: 12, glassColor: 0x394a4d, frameColor: 0x1e1712 }
+  },
+  {
+    id: 'hamlet-shed',
+    kind: 'proc-building',
+    coordinate: { q: 7, r: 2 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 18,
+    roof: { kind: 'flat' },
+    wallColor: 0x4c4b45,
+    roofColor: 0x242729,
+    facade: { material: 'concrete', grime: 0.82, baseColor: 0x4c4b45 },
+    windows: { rows: 1, cols: 1, widthPx: 10, heightPx: 12, glassColor: 0x39474e, frameColor: 0x1f2020 }
+  },
+  { id: 'hamlet-tree-1', kind: 'tree', coordinate: { q: 1, r: 1 }, texture: '/props/tree1.png', scale: 0.5 },
+  { id: 'hamlet-tree-2', kind: 'tree', coordinate: { q: 1, r: 3 }, texture: '/props/tree2.png', scale: 0.48, flipX: true },
+  { id: 'hamlet-tree-3', kind: 'tree', coordinate: { q: 1, r: 4 }, texture: '/props/pine1.png', scale: 0.5 },
+  { id: 'hamlet-tree-4', kind: 'tree', coordinate: { q: 8, r: 2 }, texture: '/props/tree3.png', scale: 0.48 },
+  { id: 'hamlet-tree-5', kind: 'tree', coordinate: { q: 10, r: 7 }, texture: '/props/pine2.png', scale: 0.5, flipX: true },
+  { id: 'hamlet-tree-6', kind: 'tree', coordinate: { q: 9, r: 1 }, texture: '/props/tree1.png', scale: 0.42, flipX: true },
+  { id: 'hamlet-tree-7', kind: 'tree', coordinate: { q: 11, r: 8 }, texture: '/props/pine1.png', scale: 0.44 },
+  { id: 'hamlet-tree-8', kind: 'tree', coordinate: { q: 2, r: 1 }, texture: '/props/dead_tree.png', scale: 0.3 },
+  { id: 'hamlet-tree-9', kind: 'tree', coordinate: { q: 4, r: 6 }, texture: '/props/pine2.png', scale: 0.38, flipX: true },
+  { id: 'hamlet-tree-10', kind: 'tree', coordinate: { q: 8, r: 6 }, texture: '/props/tree2.png', scale: 0.38 },
+  { id: 'hamlet-bush-1', kind: 'bush', coordinate: { q: 0, r: 5 }, u: 0.56, v: 0.45, scale: 0.66 },
+  { id: 'hamlet-bush-2', kind: 'bush', coordinate: { q: 2, r: 5 }, u: 0.38, v: 0.62, scale: 0.72 },
+  { id: 'hamlet-bush-3', kind: 'bush', coordinate: { q: 5, r: 1 }, u: 0.48, v: 0.42, scale: 0.58 },
+  { id: 'hamlet-bush-4', kind: 'bush', coordinate: { q: 9, r: 5 }, u: 0.65, v: 0.52, scale: 0.7 },
+  { id: 'hamlet-bush-5', kind: 'bush', coordinate: { q: 11, r: 6 }, u: 0.45, v: 0.56, scale: 0.7 },
+  { id: 'hamlet-bush-6', kind: 'bush', coordinate: { q: 3, r: 3 }, u: 0.32, v: 0.68, scale: 0.54 },
+  { id: 'hamlet-bush-7', kind: 'bush', coordinate: { q: 4, r: 4 }, u: 0.68, v: 0.36, scale: 0.52 },
+  { id: 'hamlet-bush-8', kind: 'bush', coordinate: { q: 7, r: 5 }, u: 0.28, v: 0.58, scale: 0.58 },
+  { id: 'hamlet-bush-9', kind: 'bush', coordinate: { q: 8, r: 3 }, u: 0.62, v: 0.42, scale: 0.48 },
+  { id: 'hamlet-bush-10', kind: 'bush', coordinate: { q: 3, r: 1 }, u: 0.6, v: 0.5, scale: 0.46 },
+  { id: 'hamlet-bush-11', kind: 'bush', coordinate: { q: 5, r: 3 }, u: 0.28, v: 0.66, scale: 0.42 },
+  { id: 'hamlet-bush-12', kind: 'bush', coordinate: { q: 6, r: 5 }, u: 0.66, v: 0.34, scale: 0.5 },
+  { id: 'hamlet-bush-13', kind: 'bush', coordinate: { q: 9, r: 2 }, u: 0.3, v: 0.7, scale: 0.44 },
+  { id: 'hamlet-dead-tree-1', kind: 'tree', coordinate: { q: 4, r: 1 }, texture: '/props/dead_tree.png', scale: 0.38, flipX: true },
+  { id: 'hamlet-dead-tree-2', kind: 'tree', coordinate: { q: 5, r: 5 }, texture: '/props/dead_tree.png', scale: 0.34 },
+  { id: 'hamlet-rock-1', kind: 'rock', coordinate: { q: 0, r: 0 }, u: 0.58, v: 0.55, scale: 0.7 },
+  { id: 'hamlet-rock-2', kind: 'rock', coordinate: { q: 5, r: 6 }, u: 0.42, v: 0.5, scale: 0.76 },
+  { id: 'hamlet-rock-3', kind: 'rock', coordinate: { q: 8, r: 7 }, u: 0.64, v: 0.44, scale: 0.68 },
+  { id: 'hamlet-rock-4', kind: 'rock', coordinate: { q: 10, r: 3 }, u: 0.5, v: 0.6, scale: 0.72 },
+  { id: 'hamlet-rock-5', kind: 'rock', coordinate: { q: 3, r: 5 }, u: 0.38, v: 0.52, scale: 0.52 },
+  { id: 'hamlet-rock-6', kind: 'rock', coordinate: { q: 7, r: 3 }, u: 0.74, v: 0.5, scale: 0.48 },
+  { id: 'hamlet-rock-7', kind: 'rock', coordinate: { q: 7, r: 4 }, u: 0.34, v: 0.62, scale: 0.5 },
+  { id: 'hamlet-rock-8', kind: 'rock', coordinate: { q: 2, r: 3 }, u: 0.68, v: 0.42, scale: 0.38 },
+  { id: 'hamlet-rock-9', kind: 'rock', coordinate: { q: 4, r: 3 }, u: 0.32, v: 0.6, scale: 0.42 },
+  { id: 'hamlet-rock-10', kind: 'rock', coordinate: { q: 8, r: 4 }, u: 0.72, v: 0.48, scale: 0.4 }
+]);
 
-const bridgeMap = makeMap('river-bridge', 10, 6, (q, r) => {
+const bridgeMap = makeMap('river-bridge', 14, 9, (q, r) => {
   if (q === 4 && r === 2) {
     return tile({ terrain: 'structure', cover: 3, passable: false, movementCostModifier: 99 });
   }
@@ -1000,11 +1271,36 @@ const bridgeMap = makeMap('river-bridge', 10, 6, (q, r) => {
   if (q === 4 || q === 5) {
     return tile({ terrain: 'water', passable: false, movementCostModifier: 99 });
   }
-  if (r === 1 || r === 4) {
+  if ((r === 1 || r === 4 || r === 7) && q !== 4 && q !== 5) {
     return tile({ terrain: 'forest', cover: 2, movementCostModifier: 2 });
   }
+  if ((r === 3 && q >= 0 && q <= 12) || (q === 9 && r >= 2 && r <= 6)) {
+    return tile({ terrain: 'road', cover: 1, movementCostModifier: 0.8 });
+  }
+  if (q >= 10 && r >= 1 && r <= 3) {
+    return tile({ terrain: 'hill', elevation: 1, providesVisionBoost: true, cover: 1, movementCostModifier: 1.2 });
+  }
   return {};
-});
+}, [
+  { id: 'bridge-bunker-west', kind: 'proc-building', coordinate: { q: 4, r: 2 }, w: 1, h: 1, levels: 1, roof: { kind: 'flat' }, wallColor: 0x4e5552, roofColor: 0x303633 },
+  { id: 'bridge-bunker-east', kind: 'proc-building', coordinate: { q: 5, r: 3 }, w: 1, h: 1, levels: 1, roof: { kind: 'flat' }, wallColor: 0x4e5552, roofColor: 0x303633 },
+  { id: 'bridge-tree-1', kind: 'tree', coordinate: { q: 2, r: 1 }, texture: '/props/pine1.png', scale: 0.5 },
+  { id: 'bridge-tree-2', kind: 'tree', coordinate: { q: 7, r: 4 }, texture: '/props/pine2.png', scale: 0.52 },
+  { id: 'bridge-tree-3', kind: 'tree', coordinate: { q: 1, r: 4 }, texture: '/props/tree3.png', scale: 0.48, flipX: true },
+  { id: 'bridge-tree-4', kind: 'tree', coordinate: { q: 10, r: 2 }, texture: '/props/tree1.png', scale: 0.46 },
+  { id: 'bridge-tree-5', kind: 'tree', coordinate: { q: 11, r: 7 }, texture: '/props/pine1.png', scale: 0.5, flipX: true },
+  { id: 'bridge-tree-6', kind: 'tree', coordinate: { q: 12, r: 1 }, texture: '/props/tree2.png', scale: 0.44 },
+  { id: 'bridge-tree-7', kind: 'tree', coordinate: { q: 0, r: 7 }, texture: '/props/pine2.png', scale: 0.43, flipX: true },
+  { id: 'bridge-bush-1', kind: 'bush', coordinate: { q: 2, r: 2 }, u: 0.42, v: 0.6, scale: 0.68 },
+  { id: 'bridge-bush-2', kind: 'bush', coordinate: { q: 3, r: 6 }, u: 0.58, v: 0.48, scale: 0.72 },
+  { id: 'bridge-bush-3', kind: 'bush', coordinate: { q: 6, r: 1 }, u: 0.36, v: 0.56, scale: 0.62 },
+  { id: 'bridge-bush-4', kind: 'bush', coordinate: { q: 8, r: 6 }, u: 0.66, v: 0.46, scale: 0.72 },
+  { id: 'bridge-bush-5', kind: 'bush', coordinate: { q: 13, r: 4 }, u: 0.46, v: 0.58, scale: 0.66 },
+  { id: 'bridge-rock-1', kind: 'rock', coordinate: { q: 3, r: 1 }, u: 0.54, v: 0.5, scale: 0.72 },
+  { id: 'bridge-rock-2', kind: 'rock', coordinate: { q: 6, r: 4 }, u: 0.42, v: 0.58, scale: 0.84 },
+  { id: 'bridge-rock-3', kind: 'rock', coordinate: { q: 8, r: 3 }, u: 0.62, v: 0.5, scale: 0.75 },
+  { id: 'bridge-rock-4', kind: 'rock', coordinate: { q: 12, r: 6 }, u: 0.5, v: 0.42, scale: 0.68 }
+]);
 
 const outpostMap = makeMap('forward-outpost', 9, 6, (q, r) => {
   if (r === 0 || r === 5) {
@@ -1026,7 +1322,13 @@ const outpostMap = makeMap('forward-outpost', 9, 6, (q, r) => {
     return tile({ terrain: 'swamp', cover: 1, movementCostModifier: 2 });
   }
   return {};
-});
+}, [
+  { id: 'outpost-shed-1', kind: 'proc-building', coordinate: { q: 2, r: 3 }, w: 1, h: 1, levels: 1, roof: { kind: 'flat' }, wallColor: 0x57534e, roofColor: 0x27272a },
+  { id: 'outpost-block-1', kind: 'proc-building', coordinate: { q: 3, r: 2 }, w: 1, h: 2, levels: 1, roof: { kind: 'flat' }, wallColor: 0x4b5563, roofColor: 0x1f2937 },
+  { id: 'outpost-block-2', kind: 'proc-building', coordinate: { q: 5, r: 2 }, w: 1, h: 2, levels: 1, roof: { kind: 'flat' }, wallColor: 0x4b5563, roofColor: 0x1f2937 },
+  { id: 'outpost-dead-tree-1', kind: 'tree', coordinate: { q: 0, r: 2 }, texture: '/props/dead_tree.png', scale: 0.45 },
+  { id: 'outpost-dead-tree-2', kind: 'tree', coordinate: { q: 7, r: 3 }, texture: '/props/dead_tree.png', scale: 0.48, flipX: true }
+]);
 
 const blackSpireMap = makeMap('black-spire', 11, 8, (q, r) => {
   if (r === 0 || r === 7) {
@@ -1051,7 +1353,13 @@ const blackSpireMap = makeMap('black-spire', 11, 8, (q, r) => {
     return tile({ terrain: 'road', cover: 1, movementCostModifier: 0.8 });
   }
   return {};
-});
+}, [
+  { id: 'spire-core', kind: 'proc-building', coordinate: { q: 5, r: 2 }, w: 2, h: 4, levels: 2, roof: { kind: 'flat' }, wallColor: 0x30243a, roofColor: 0x15111d, elevationMode: 'max' },
+  { id: 'spire-guard-west', kind: 'proc-building', coordinate: { q: 4, r: 3 }, w: 1, h: 1, levels: 1, roof: { kind: 'flat' }, wallColor: 0x46304f, roofColor: 0x1f1725 },
+  { id: 'spire-guard-east', kind: 'proc-building', coordinate: { q: 7, r: 3 }, w: 1, h: 1, levels: 1, roof: { kind: 'flat' }, wallColor: 0x46304f, roofColor: 0x1f1725 },
+  { id: 'spire-dead-tree-1', kind: 'tree', coordinate: { q: 2, r: 2 }, texture: '/props/dead_tree.png', scale: 0.48 },
+  { id: 'spire-dead-tree-2', kind: 'tree', coordinate: { q: 8, r: 5 }, texture: '/props/dead_tree.png', scale: 0.5, flipX: true }
+]);
 
 export const starterScenarios: TacticalScenario[] = [
   {
@@ -1064,7 +1372,9 @@ export const starterScenarios: TacticalScenario[] = [
         { q: 0, r: 2 },
         { q: 0, r: 3 },
         { q: 0, r: 4 },
-        { q: 1, r: 3 }
+        { q: 1, r: 3 },
+        { q: 1, r: 4 },
+        { q: 2, r: 3 }
       ],
       otherSide: [
         { q: 7, r: 2 },
@@ -1104,7 +1414,10 @@ export const starterScenarios: TacticalScenario[] = [
       alliance: [
         { q: 0, r: 2 },
         { q: 0, r: 3 },
-        { q: 1, r: 2 }
+        { q: 0, r: 4 },
+        { q: 1, r: 2 },
+        { q: 2, r: 3 },
+        { q: 2, r: 4 }
       ],
       otherSide: [
         { q: 6, r: 2 },
@@ -1137,7 +1450,10 @@ export const starterScenarios: TacticalScenario[] = [
       alliance: [
         { q: 2, r: 2 },
         { q: 2, r: 3 },
-        { q: 1, r: 2 }
+        { q: 1, r: 2 },
+        { q: 2, r: 4 },
+        { q: 1, r: 4 },
+        { q: 0, r: 3 }
       ],
       otherSide: [
         { q: 6, r: 2 },
@@ -1176,10 +1492,13 @@ export const starterScenarios: TacticalScenario[] = [
     map: bridgeMap,
     startZones: {
       alliance: [
+        { q: 2, r: 3 },
         { q: 0, r: 2 },
         { q: 0, r: 3 },
         { q: 1, r: 2 },
-        { q: 1, r: 3 }
+        { q: 1, r: 3 },
+        { q: 2, r: 2 },
+        { q: 2, r: 4 }
       ],
       otherSide: [
         { q: 8, r: 2 },
@@ -1214,7 +1533,9 @@ export const starterScenarios: TacticalScenario[] = [
         { q: 0, r: 2 },
         { q: 0, r: 3 },
         { q: 1, r: 2 },
-        { q: 1, r: 3 }
+        { q: 1, r: 3 },
+        { q: 0, r: 4 },
+        { q: 2, r: 1 }
       ],
       otherSide: [
         { q: 7, r: 2 },
@@ -1247,7 +1568,9 @@ export const starterScenarios: TacticalScenario[] = [
         { q: 1, r: 3 },
         { q: 0, r: 4 },
         { q: 1, r: 4 },
-        { q: 2, r: 4 }
+        { q: 2, r: 4 },
+        { q: 2, r: 3 },
+        { q: 0, r: 5 }
       ],
       otherSide: [
         { q: 9, r: 3 },

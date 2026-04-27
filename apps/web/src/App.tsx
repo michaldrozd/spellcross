@@ -14,6 +14,7 @@ import { OverwatchButton } from './components/OverwatchButton.js';
 import {
   applyBattleOutcome,
   calculateHitChance,
+  canAffordAttack,
   canWeaponTarget,
   convertStrategicToMoney,
   convertStrategicToResearch,
@@ -38,13 +39,15 @@ import {
   TurnProcessor,
   updateAllFactionsVision
 } from '@spellcross/core';
-import type { BattlefieldMap, CampaignState, HexCoordinate, UnitInstance } from '@spellcross/core';
+import type { BattleEvent, BattlefieldMap, CampaignState, HexCoordinate, TacticalBattleState, UnitInstance } from '@spellcross/core';
 import { validatedStarterBundle } from '@spellcross/data';
 
 const bundle = validatedStarterBundle;
 const CAMPAIGN_STORAGE_KEY = 'spellcross:campaign-state';
 const CAMPAIGN_SLOT_KEY = 'spellcross:campaign-slot';
 const CAMPAIGN_SUMMARY_KEY = 'spellcross:campaign-summary';
+const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
+const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
 const isoTileTexture = PIXI.Texture.from('/grass_tile_128x64.png');
 const terrainTextures: Record<string, PIXI.Texture> = {
   plain: isoTileTexture,
@@ -276,32 +279,72 @@ function formatNumber(n: number) {
   return Math.round(n);
 }
 
+function unitDisplayName(unitId: string, battleState: TacticalBattleState) {
+  for (const side of Object.values(battleState.sides)) {
+    const unit = side.units.get(unitId);
+    if (!unit) continue;
+    const def = bundle.units.find((candidate) => candidate.id === unit.definitionId);
+    return def?.name ?? unit.definitionId;
+  }
+  return unitId.replace(/[-_][A-Za-z0-9]{6,}$/, '');
+}
+
+function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState): string {
+  switch (event.kind) {
+    case 'round:started':
+      return `Round ${event.round}: ${event.activeFaction === 'alliance' ? 'Alliance' : 'Enemy'} turn`;
+    case 'unit:moved':
+      return `Move ${unitDisplayName(event.unitId, battleState)} advances through cover`;
+    case 'unit:attacked':
+      return event.hit
+        ? `${unitDisplayName(event.attackerId, battleState)} hits ${unitDisplayName(event.defenderId, battleState)} for ${event.damage} damage`
+        : `${unitDisplayName(event.attackerId, battleState)} fires at ${unitDisplayName(event.defenderId, battleState)} - missed`;
+    case 'unit:defeated':
+      return `${unitDisplayName(event.unitId, battleState)} destroyed`;
+    case 'unit:xp':
+      return `${unitDisplayName(event.unitId, battleState)} gains field experience`;
+    case 'tile:destroyed':
+      return `Tile destroyed at ${event.at.q},${event.at.r}`;
+    case 'unit:level':
+      return `${unitDisplayName(event.unitId, battleState)} reached level ${event.level}`;
+    default:
+      return 'Battle event';
+  }
+}
+
+function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: string, defenderId: string) {
+  if (!events) return { hit: false, damage: 0 };
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (
+      event.kind === 'unit:attacked'
+      && event.attackerId === attackerId
+      && event.defenderId === defenderId
+    ) {
+      return { hit: event.hit, damage: event.damage };
+    }
+  }
+  return { hit: false, damage: 0 };
+}
+
 function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: BattlefieldMap): { weapon: string; hit: number } | null {
   let choice: { weapon: string; hit: number } | null = null;
   const distance = axialDistance(attacker.coordinate, defender.coordinate);
 
-  console.log('[bestWeapon] Checking weapons for attacker:', attacker.id, 'vs defender:', defender.id);
-  console.log('[bestWeapon] Distance:', distance);
-  console.log('[bestWeapon] Available weapons:', Object.keys(attacker.stats.weaponRanges));
-
   for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
     const range = attacker.stats.weaponRanges[weaponId] ?? 0;
-    console.log(`[bestWeapon] Weapon ${weaponId}: range=${range}, canTarget=${canWeaponTarget(attacker, weaponId, defender)}`);
 
     // Check range first
     if (distance > range) {
-      console.log(`[bestWeapon] ${weaponId}: out of range (${distance} > ${range})`);
       continue;
     }
 
     // Check if weapon can target this unit type
     if (!canWeaponTarget(attacker, weaponId, defender)) {
-      console.log(`[bestWeapon] ${weaponId}: cannot target this unit type`);
       continue;
     }
 
     const hit = calculateHitChance({ attacker, defender, weaponId, map });
-    console.log(`[bestWeapon] ${weaponId}: hitChance=${hit} (${Math.round(hit * 100)}%)`);
 
     if (hit <= 0) continue;
 
@@ -314,19 +357,16 @@ function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: Battlef
 
   // Fallback: if no weapon found via normal checks, try any weapon in range
   if (!choice) {
-    console.log('[bestWeapon] No weapon found via normal checks, trying fallback...');
     for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
       const range = attacker.stats.weaponRanges[weaponId] ?? 0;
       if (distance <= range) {
         const hit = calculateHitChance({ attacker, defender, weaponId, map });
         choice = { weapon: weaponId, hit: Math.max(5, Math.round(hit * 100)) }; // At least 5% chance
-        console.log('[bestWeapon] Fallback weapon:', weaponId, 'hit:', choice.hit);
         break;
       }
     }
   }
 
-  console.log('[bestWeapon] Final choice:', choice);
   return choice;
 }
 
@@ -563,7 +603,10 @@ const BattleView: React.FC<{
   const [deployMode, setDeployMode] = useState(true);
   const [plannedPath, setPlannedPath] = useState<HexCoordinate[] | null>(null);
   const [plannedDestination, setPlannedDestination] = useState<HexCoordinate | null>(null);
+  const [invalidMoveFeedback, setInvalidMoveFeedback] = useState<{ coordinate: HexCoordinate; time: number; message: string } | null>(null);
+  const [combatNotices, setCombatNotices] = useState<Array<{ id: number; message: string }>>([]);
   const [pendingAttack, setPendingAttack] = useState<{ id: string; time: number } | null>(null);
+  const [targetedEnemy, setTargetedEnemy] = useState<UnitInstance | null>(null);
   const size = 26;
   const width = Math.max(1100, map.width * size * 2.4);
   const height = Math.max(800, map.height * size * 2.2);
@@ -572,18 +615,43 @@ const BattleView: React.FC<{
   const exploredTiles = battle.state.vision.alliance.exploredTiles;
   const tileIndex = (coord: HexCoordinate) => coord.r * map.width + coord.q;
   const selectedUnit = selected ? battle.state.sides.alliance.units.get(selected) : undefined;
+  const selectedDefinition = selectedUnit ? bundle.units.find((unit) => unit.id === selectedUnit.definitionId) : undefined;
+  const nearestVisibleEnemy = selectedUnit
+    ? Array.from(battle.state.sides.otherSide.units.values())
+      .filter((unit) => {
+        if (unit.stance === 'destroyed') return false;
+        const idx = unit.coordinate.r * map.width + unit.coordinate.q;
+        return visibleTiles.has(idx);
+      })
+      .sort((a, b) => {
+        const distanceA = axialDistance(selectedUnit.coordinate, a.coordinate);
+        const distanceB = axialDistance(selectedUnit.coordinate, b.coordinate);
+        const priorityA = distanceA <= 1 ? distanceA + 20 : distanceA;
+        const priorityB = distanceB <= 1 ? distanceB + 20 : distanceB;
+        return priorityA - priorityB;
+      })[0]
+    : undefined;
+  const previewEnemy = targetedEnemy ?? nearestVisibleEnemy;
+  const targetWeaponPreview = selectedUnit && targetedEnemy ? bestWeapon(selectedUnit, targetedEnemy, battle.state.map) : null;
   const [showRanges, setShowRanges] = useState(false);
   const [attackEffects, setAttackEffects] = useState<AttackEffect[]>([]);
 
   // Movement animation state
   const [movingUnit, setMovingUnit] = useState<MovingUnit | null>(null);
+  const deployModeRef = useRef(deployMode);
+  const movingUnitRef = useRef<MovingUnit | null>(movingUnit);
+  const selectedRef = useRef<string | null>(selected);
+
+  useEffect(() => { deployModeRef.current = deployMode; }, [deployMode]);
+  useEffect(() => { movingUnitRef.current = movingUnit; }, [movingUnit]);
+  useEffect(() => { selectedRef.current = selected; }, [selected]);
 
   // Clean up expired attack effects
   useEffect(() => {
     if (attackEffects.length === 0) return;
     const timer = setInterval(() => {
       const now = Date.now();
-      setAttackEffects(prev => prev.filter(e => now - e.startTime < 500));
+      setAttackEffects(prev => prev.filter(e => now - e.startTime < 1300));
     }, 100);
     return () => clearInterval(timer);
   }, [attackEffects.length]);
@@ -612,28 +680,25 @@ const BattleView: React.FC<{
     return valid;
   }, [selectedUnit, visibleTiles, map.width]);
   const globalRangeTiles = useMemo(() => {
-    if (!showRanges) return new Set<string>();
+    if (!showRanges || !selectedUnit) return new Set<string>();
     const acc = new Set<string>();
-    for (const u of battle.state.sides.alliance.units.values()) {
-      if (u.stance === 'destroyed') continue;
-      for (const weapon of Object.keys(u.stats.weaponRanges)) {
-        const range = u.stats.weaponRanges[weapon] ?? 0;
-        for (const coord of hexWithinRange(u.coordinate, range)) {
-          acc.add(`${coord.q},${coord.r}`);
-        }
+    for (const weapon of Object.keys(selectedUnit.stats.weaponRanges)) {
+      const range = selectedUnit.stats.weaponRanges[weapon] ?? 0;
+      for (const coord of hexWithinRange(selectedUnit.coordinate, range)) {
+        acc.add(`${coord.q},${coord.r}`);
       }
     }
     return acc;
-  }, [battle.state.sides.alliance.units, showRanges]);
+  }, [selectedUnit, showRanges]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     setDeployMode(true);
     // ensure vision populated immediately so tiles are interactive
     updateAllFactionsVision(battle.state);
     // default select first unit for immediate click-to-move
     const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
     if (first) setSelected(first.id);
+    if (typeof window === 'undefined' || !import.meta.env.DEV) return;
     const getTile = (coord: HexCoordinate) => {
       if (coord.q < 0 || coord.q >= map.width || coord.r < 0 || coord.r >= map.height) return undefined;
       return map.tiles[coord.r * map.width + coord.q];
@@ -642,7 +707,7 @@ const BattleView: React.FC<{
       const occ = new Set<string>();
       for (const side of Object.values(battle.state.sides)) {
         for (const u of side.units.values()) {
-          if (u.stance === 'destroyed') continue;
+          if (u.stance === 'destroyed' || u.embarkedOn) continue;
           occ.add(`${u.coordinate.q},${u.coordinate.r}`);
         }
       }
@@ -696,6 +761,35 @@ const BattleView: React.FC<{
         const res = proc.attackUnit({ attackerId: first.id, defenderId: foe.id, weaponId: weapon });
         persist();
         return res.success;
+      },
+      attackUnitWith: (attackerId: string, defenderId: string) => {
+        const attacker = battle.state.sides.alliance.units.get(attackerId);
+        if (!attacker) return { success: false, error: `Unit ${attackerId} not found` };
+        const weapon = Object.keys(attacker.stats.weaponRanges).sort((a, b) => {
+          const rangeDiff = (attacker.stats.weaponRanges[b] ?? 0) - (attacker.stats.weaponRanges[a] ?? 0);
+          if (rangeDiff !== 0) return rangeDiff;
+          return (attacker.stats.weaponPower[b] ?? 0) - (attacker.stats.weaponPower[a] ?? 0);
+        })[0];
+        if (!weapon) return { success: false, error: 'No weapon available' };
+        const proc = new TurnProcessor(battle.state);
+        const res = proc.attackUnit({ attackerId, defenderId, weaponId: weapon });
+        if (!res.success) {
+          setCombatNotices((existing) => [{ id: Date.now(), message: res.error || 'Attack failed' }, ...existing].slice(0, 4));
+        }
+        persist();
+        resolveOutcome();
+        return { ...res, weaponId: weapon, actionPoints: attacker.actionPoints };
+      },
+      setActionPoints: (unitId: string, actionPoints: number) => {
+        for (const side of Object.values(battle.state.sides)) {
+          const unit = side.units.get(unitId);
+          if (unit) {
+            unit.actionPoints = actionPoints;
+            persist();
+            return true;
+          }
+        }
+        return false;
       },
       endTurn: () => {
         const proc = new TurnProcessor(battle.state);
@@ -807,6 +901,15 @@ const BattleView: React.FC<{
         if (!first) return { success: false, path: [], cost: 0, reason: 'no_unit' };
         return planPathForUnit(battle.state, first.id, { q, r });
       },
+      pathForUnit: (unitId: string, q: number, r: number) => planPathForUnit(battle.state, unitId, { q, r }),
+      moveSelectedTo: (q: number, r: number) => {
+        const selectedUnitId = selectedRef.current;
+        if (!selectedUnitId) return false;
+        return actMove(selectedUnitId, { q, r });
+      },
+      animateUnitTo: (unitId: string, q: number, r: number) => actMove(unitId, { q, r }),
+      animationState: () => movingUnitRef.current,
+      deployMode: () => deployModeRef.current,
       ammoFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
         if (!first) return null;
@@ -852,12 +955,14 @@ const BattleView: React.FC<{
         }));
       },
       enemyUnits: () => {
+        const visible = battle.state.vision.alliance.visibleTiles;
         return Array.from(battle.state.sides.otherSide.units.values()).map((u) => ({
           id: u.id,
           type: u.unitType,
           coord: u.coordinate,
           ap: u.actionPoints,
-          stance: u.stance
+          stance: u.stance,
+          visible: visible.has(u.coordinate.r * map.width + u.coordinate.q)
         }));
       },
       forceAllianceTurn: () => {
@@ -874,6 +979,19 @@ const BattleView: React.FC<{
           : Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
         if (!target) return false;
         setSelected(target.id);
+        setPlannedPath(null);
+        setPlannedDestination(null);
+        setPendingAttack(null);
+        setTargetedEnemy(null);
+        setInvalidMoveFeedback(null);
+        return true;
+      },
+      targetEnemy: (unitId: string) => {
+        const target = battle.state.sides.otherSide.units.get(unitId);
+        if (!target || target.stance === 'destroyed') return false;
+        setTargetedEnemy(target);
+        setPendingAttack({ id: target.id, time: Date.now() });
+        setInvalidMoveFeedback(null);
         return true;
       },
       setOverwatch: (unitId?: string) => {
@@ -898,12 +1016,28 @@ const BattleView: React.FC<{
         persist();
         return `Killed ${killed} enemies`;
       },
+      killAllAllies: () => {
+        let killed = 0;
+        for (const unit of battle.state.sides.alliance.units.values()) {
+          if (unit.stance !== 'destroyed') {
+            unit.stance = 'destroyed';
+            unit.currentHealth = 0;
+            killed++;
+          }
+        }
+        persist();
+        resolveOutcome();
+        return `Killed ${killed} allies`;
+      },
       checkVictory: () => {
         const status = evaluateBattleOutcome(battle);
         const enemies = Array.from(battle.state.sides.otherSide.units.values());
         const survivingEnemies = enemies.filter((u) => u.stance !== 'destroyed');
         return { status, totalEnemies: enemies.length, surviving: survivingEnemies.length };
       }
+    };
+    return () => {
+      delete (window as any).__battleControl;
     };
   }, [battle.state, map.width, map.height]);
 
@@ -915,6 +1049,8 @@ const BattleView: React.FC<{
     setPlannedPath(null);
     setPlannedDestination(null);
     setPendingAttack(null);
+    setTargetedEnemy(null);
+    setInvalidMoveFeedback(null);
   };
 
   const resolveOutcome = () => {
@@ -930,15 +1066,41 @@ const BattleView: React.FC<{
     }
   };
 
+  const addCombatNotice = (message: string) => {
+    setCombatNotices((existing) => [{ id: Date.now(), message }, ...existing].slice(0, 4));
+  };
+
+  const rejectMove = (coord: HexCoordinate, message = 'Move blocked or out of range') => {
+    AudioManager.play('error');
+    const time = Date.now();
+    setInvalidMoveFeedback({ coordinate: { ...coord }, time, message });
+    addCombatNotice(message);
+    window.setTimeout(() => {
+      setInvalidMoveFeedback((current) => current?.time === time ? null : current);
+    }, 1800);
+  };
+
   const actMove = (unitId: string, target: HexCoordinate) => {
-    if (deployMode) return;
-    if (movingUnit) return; // Don't start new movement while animating
+    if (deployModeRef.current) return false;
+    if (movingUnitRef.current) return false; // Don't start new movement while animating
     const path = planPathForUnit(battle.state, unitId, target);
-    if (!path.success || path.cost === undefined || path.path.length === 0) return;
+    if (!path.success || path.cost === undefined || path.path.length === 0) {
+      rejectMove(target);
+      return false;
+    }
 
     // Get unit's starting position
     const unit = battle.state.sides.alliance.units.get(unitId);
-    if (!unit) return;
+    if (!unit) return false;
+    const startCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
+
+    const moveResult = processor.moveUnit({ unitId, path: path.path });
+    if (!moveResult.success) {
+      setPlannedPath(null);
+      setPlannedDestination(null);
+      rejectMove(target, moveResult.error || 'Move order blocked');
+      return false;
+    }
 
     // Play movement sound
     const unitType = (unit as any).unitType;
@@ -949,7 +1111,7 @@ const BattleView: React.FC<{
     }
 
     // Start movement animation - include starting position
-    const fullPath = [{ q: unit.coordinate.q, r: unit.coordinate.r }, ...path.path];
+    const fullPath = [startCoord, ...path.path];
     const stepDuration = unitType === 'vehicle' ? 120 : 180; // vehicles move faster
     setMovingUnit({
       unitId,
@@ -958,18 +1120,16 @@ const BattleView: React.FC<{
       stepDuration
     });
 
-    // Actually move the unit in game state (instant, but we animate visually)
-    processor.moveUnit({ unitId, path: path.path });
     setSelected(unitId);
     setPlannedPath(null);
     setPlannedDestination(null);
+    setInvalidMoveFeedback(null);
     persist();
     resolveOutcome();
+    return true;
   };
 
   const actAttack = (attackerId: string, defender: UnitInstance) => {
-    console.log('[Attack] Starting attack - attackerId:', attackerId, 'defender:', defender.id);
-
     // Exit deploy mode when attacking
     if (deployMode) {
       setDeployMode(false);
@@ -978,25 +1138,19 @@ const BattleView: React.FC<{
 
     const attacker = battle.state.sides.alliance.units.get(attackerId);
     if (!attacker) {
-      console.log('[Attack] No attacker found:', attackerId);
       AudioManager.play('error');
       return;
     }
 
-    console.log('[Attack] Attacker found:', attacker.id, 'AP:', attacker.actionPoints, 'Ammo:', attacker.currentAmmo);
-    console.log('[Attack] Active faction:', battle.state.activeFaction);
-
     const weapon = bestWeapon(attacker, defender, battle.state.map);
     if (!weapon) {
-      console.log('[Attack] No valid weapon for attack - attacker:', attacker.id, 'defender:', defender.id);
       // Try to use any weapon
       const anyWeapon = Object.keys(attacker.stats.weaponRanges)[0];
       if (anyWeapon) {
-        console.log('[Attack] Using fallback weapon:', anyWeapon);
         const result = processor.attackUnit({ attackerId, defenderId: defender.id, weaponId: anyWeapon });
-        console.log('[Attack] Fallback attack result:', result);
 
         if (result.success) {
+          const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
           // Play attack sound only on success
           const unitType = (attacker as any).unitType;
           const effectType = unitType === 'vehicle' ? 'explosion' : 'gunshot';
@@ -1009,7 +1163,9 @@ const BattleView: React.FC<{
             toQ: defender.coordinate.q,
             toR: defender.coordinate.r,
             startTime: Date.now(),
-            type: effectType
+            type: effectType,
+            damage: attackOutcome.damage,
+            hit: attackOutcome.hit
           }]);
           // Play hit/death sound based on result
           if (defender.currentHealth <= 0) {
@@ -1020,24 +1176,22 @@ const BattleView: React.FC<{
           persist();
           resolveOutcome();
         } else {
-          console.error('[Attack] Fallback attack failed:', result.error);
           AudioManager.play('error');
           showToast(result.error || 'Attack failed', 'error');
+          addCombatNotice(result.error || 'Attack failed');
         }
       }
       return;
     }
 
-    console.log('[Attack] Attacking with weapon:', weapon.weapon);
-
     const result = processor.attackUnit({ attackerId, defenderId: defender.id, weaponId: weapon.weapon });
-    console.log('[Attack] Attack result:', result);
 
     if (!result.success) {
-      console.error('[Attack] Attack failed:', result.error);
       AudioManager.play('error');
       showToast(result.error || 'Attack failed', 'error');
+      addCombatNotice(result.error || 'Attack failed');
     } else {
+      const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
       // Play attack sound and effects only on success
       const unitType = (attacker as any).unitType;
       const effectType = unitType === 'vehicle' ? 'explosion' : 'gunshot';
@@ -1050,7 +1204,9 @@ const BattleView: React.FC<{
         toQ: defender.coordinate.q,
         toR: defender.coordinate.r,
         startTime: Date.now(),
-        type: effectType
+        type: effectType,
+        damage: attackOutcome.damage,
+        hit: attackOutcome.hit
       }]);
       // Play hit/death sound based on result
       if (defender.currentHealth <= 0) {
@@ -1063,9 +1219,6 @@ const BattleView: React.FC<{
     persist();
     resolveOutcome();
   };
-
-  // Track targeted enemy for attack confirmation UI
-  const [targetedEnemy, setTargetedEnemy] = useState<UnitInstance | null>(null);
 
   const handleHexClick = (coord: HexCoordinate) => {
     // Clear targeted enemy when clicking elsewhere
@@ -1156,11 +1309,15 @@ const BattleView: React.FC<{
         return;
       }
       const path = planPathForUnit(battle.state, selected, coord);
-      if (!path.success || path.path.length === 0) return;
+      if (!path.success || path.path.length === 0) {
+        rejectMove(coord);
+        return;
+      }
       const unit = battle.state.sides.alliance.units.get(selected);
       const withOrigin = unit ? [unit.coordinate, ...path.path] : path.path;
       setPlannedPath(withOrigin);
       setPlannedDestination(coord);
+      setInvalidMoveFeedback(null);
     }
   };
 
@@ -1214,27 +1371,42 @@ const BattleView: React.FC<{
       <div className="battle-map-layer">
         <BattlefieldStage
           battleState={battle.state}
-          onSelectUnit={(id) => setSelected(id)}
+          onSelectUnit={(id) => {
+            const unit = battle.state.sides.alliance.units.get(id);
+            if (unit) handleSelect(unit);
+          }}
           onSelectTile={(coord) => handleHexClick(coord)}
           selectedUnitId={selected ?? undefined}
           plannedPath={plannedPath ?? undefined}
           plannedDestination={plannedDestination ?? undefined}
+          invalidMoveFeedback={invalidMoveFeedback}
+          targetUnitId={previewEnemy?.id}
+          targetHitChance={targetedEnemy && targetWeaponPreview ? targetWeaponPreview.hit / 100 : undefined}
+          targetDamagePreview={targetedEnemy && targetWeaponPreview ? selectedUnit?.stats.weaponPower[targetWeaponPreview.weapon] : undefined}
           viewerFaction="alliance"
           width={window.innerWidth}
           height={window.innerHeight}
+          cameraMode="follow"
+          rangeOverlayCoords={showRanges ? globalRangeTiles : undefined}
           attackEffects={attackEffects}
           movingUnit={movingUnit}
         />
       </div>
 
       <div className="battle-ui-layer">
+        {showRanges && selectedUnit ? (
+          <div className="battle-mode-badge">
+            <span>Range Overlay</span>
+            <strong>{selectedDefinition?.name ?? selectedUnit.definitionId}</strong>
+          </div>
+        ) : null}
         <div className="battle-top-bar">
           <div className="mission-info">
             <h2>{battle.scenario.name}</h2>
             <p className="muted">{battle.scenario.brief}</p>
           </div>
           <div className="battle-controls">
-            <button onClick={() => setShowRanges((v) => !v)} disabled={deployMode}>{showRanges ? 'Hide Ranges' : 'Show Ranges'}</button>
+            <button className={showRanges ? 'active' : undefined} onClick={() => setShowRanges((v) => !v)}>{showRanges ? 'Hide Ranges' : 'Show Ranges'}</button>
             <OverwatchButton unit={deployMode ? undefined : selectedUnit} onOverwatch={() => {
               if (!selectedUnit || deployMode) return;
               const proc = new TurnProcessor(battle.state);
@@ -1281,10 +1453,19 @@ const BattleView: React.FC<{
                 const def = bundle.units.find(d => d.id === unit.definitionId);
                 return (
                   <div className="unit-details">
+                    <div className="unit-monitor">
+                      <div className={`unit-scope unit-scope-${unit.unitType}`}>
+                        <span>{(def?.name ?? unit.unitType).slice(0, 1)}</span>
+                      </div>
+                      <div className="unit-readout">
+                        <span>{unit.unitType}</span>
+                        <strong>{def?.name ?? unit.definitionId}</strong>
+                      </div>
+                    </div>
                     <div className="unit-stats">
                       <strong>{def?.name ?? unit.unitType}</strong>
-                      <p>HP <span className={unit.currentHealth < unit.stats.maxHealth * 0.5 ? 'warn' : ''}>{unit.currentHealth}</span>/{unit.stats.maxHealth}</p>
-                      <p>AP {unit.actionPoints}/{unit.maxActionPoints}</p>
+                      <p>HP <span className={unit.currentHealth < unit.stats.maxHealth * 0.5 ? 'warn' : ''}>{compactNumber(unit.currentHealth)}</span>/{compactNumber(unit.stats.maxHealth)}</p>
+                      <p>AP {displayActionPoints(unit.actionPoints)}/{displayActionPoints(unit.maxActionPoints)}</p>
                       <p>Ammo {unit.stats.ammoCapacity ? `${unit.currentAmmo}/${unit.stats.ammoCapacity}` : '∞'}</p>
                     </div>
                     <div className="unit-status">
@@ -1391,48 +1572,71 @@ const BattleView: React.FC<{
             )}
           </div>
 
-          {/* Target enemy panel with Attack button */}
           {targetedEnemy && selected && (
             <div className="unit-card target-card">
-              <h3>⚔ Target Enemy</h3>
+              <h3>Fire Control</h3>
               {(() => {
                 const attacker = battle.state.sides.alliance.units.get(selected);
                 const def = bundle.units.find(d => d.id === targetedEnemy.definitionId);
                 const weapon = attacker ? bestWeapon(attacker, targetedEnemy, battle.state.map) : null;
+                const canAttackNow = Boolean(attacker && weapon && canAffordAttack(attacker));
+                const attackBlockReason = !weapon
+                  ? 'Blocked by range'
+                  : attacker && !canAffordAttack(attacker)
+                    ? attacker.currentAmmo !== Infinity && attacker.currentAmmo <= 0 ? 'No ammo' : 'Need 2 AP'
+                    : '';
                 const distance = attacker ? axialDistance(attacker.coordinate, targetedEnemy.coordinate) : 999;
                 return (
-                  <div className="unit-details">
-                    <div className="unit-stats">
-                      <strong style={{ color: '#ef4444' }}>{def?.name ?? targetedEnemy.unitType}</strong>
-                      <p>HP {targetedEnemy.currentHealth}/{targetedEnemy.stats.maxHealth}</p>
-                      <p>Distance: {distance} hex</p>
+                  <div className="fire-control">
+                    <div className="fire-control-target">
+                      <span>Hostile Contact</span>
+                      <strong>{def?.name ?? targetedEnemy.unitType}</strong>
+                      <small>HP {targetedEnemy.currentHealth}/{targetedEnemy.stats.maxHealth}</small>
                     </div>
-                    <div className="unit-status">
+                    <div className="fire-control-metrics">
+                      <span>
+                        <strong>{distance}</strong>
+                        Hex
+                      </span>
                       {weapon ? (
                         <>
-                          <p>Hit Chance: {weapon.hit}%</p>
-                          <p>Weapon: {weapon.weapon}</p>
+                          <span>
+                            <strong>{weapon.hit}%</strong>
+                            Hit
+                          </span>
+                          <span>
+                            <strong>{weapon.weapon}</strong>
+                            Weapon
+                          </span>
                         </>
                       ) : (
-                        <p style={{ color: '#ef4444' }}>Out of range!</p>
+                        <span className="fire-control-warning">
+                          <strong>Blocked</strong>
+                          Range
+                        </span>
+                      )}
+                      {attackBlockReason && (
+                        <span className="fire-control-warning">
+                          <strong>{attackBlockReason}</strong>
+                          Status
+                        </span>
                       )}
                     </div>
-                    <div className="unit-actions">
+                    <div className="unit-actions target-actions">
                       <button
                         className="primary-btn"
-                        disabled={!weapon}
+                        disabled={!canAttackNow}
                         onClick={() => {
+                          if (!canAttackNow) {
+                            addCombatNotice(attackBlockReason || 'Attack unavailable');
+                            AudioManager.play('error');
+                            return;
+                          }
                           actAttack(selected, targetedEnemy);
                           setTargetedEnemy(null);
                         }}
-                        style={{
-                          background: weapon ? '#22c55e' : '#333',
-                          borderColor: weapon ? '#4ade80' : '#555',
-                          fontSize: '1.1rem',
-                          padding: '0.75rem 2rem'
-                        }}
                       >
-                        ⚔ ATTACK
+                        Attack
                       </button>
                       <button
                         className="sm-btn"
@@ -1450,10 +1654,31 @@ const BattleView: React.FC<{
           <div className="battle-log-panel">
             <h3>Combat Log</h3>
             <div className="log-entries">
-              {battle.state.timeline.slice(-4).reverse().map((e, idx) => (
-                <div key={idx} className="log-line">{(e as any).message ?? JSON.stringify(e)}</div>
-              ))}
+              {combatNotices.length > 0 || battle.state.timeline.length > 0 ? (
+                <>
+                  {combatNotices.map((notice) => (
+                    <div key={`notice-${notice.id}`} className="log-line log-line-alert">{notice.message}</div>
+                  ))}
+                  {battle.state.timeline.filter((e) => e.kind !== 'unit:xp').slice(-5 + combatNotices.length).reverse().map((e, idx) => (
+                    <div key={idx} className="log-line">{formatBattleEvent(e, battle.state)}</div>
+                  ))}
+                </>
+              ) : (
+                <>
+                  <div className="log-line log-line-muted">TACTICAL LINK READY</div>
+                  <div className="log-line log-line-muted">SENSOR GRID ONLINE</div>
+                  <div className="log-line log-line-muted">AWAITING FIRE ORDER</div>
+                </>
+              )}
             </div>
+          </div>
+          <div className="command-rack" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
+            <span />
           </div>
         </div>
       </div>
@@ -1492,6 +1717,19 @@ export function App() {
   const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
   const [savedSlots, setSavedSlots] = useState<(SlotSummary | null)[]>(() => loadAllSummaries());
 
+  const reportBattleLaunchError = (err: unknown) => {
+    const message = err instanceof Error ? err.message : 'Operation could not be launched';
+    mutate((state) => {
+      const body = `${message}. Open the Army tab and rebuild the force before launching.`;
+      const existing = state.popups ?? [];
+      state.popups = existing.some((popup) => popup.title === 'Deployment blocked' && popup.body === body)
+        ? existing
+        : [...existing, { turn: state.turn, title: 'Deployment blocked', body, kind: 'warning' }];
+      state.log.push(`Launch blocked: ${message}`);
+    });
+    showToast(message, 'warning');
+  };
+
   // Reload saved slots when returning to menu
   useEffect(() => {
     if (mode === 'menu') {
@@ -1500,10 +1738,14 @@ export function App() {
   }, [mode]);
 
   const startBattle = (territoryId: string) => {
-    mutate((state) => {
-      startBattleForTerritory(state, bundle, territoryId);
-    });
-    setMode('battle');
+    try {
+      mutate((state) => {
+        startBattleForTerritory(state, bundle, territoryId);
+      });
+      setMode('battle');
+    } catch (err) {
+      reportBattleLaunchError(err);
+    }
   };
 
   const handleNewGame = (newSlot: number) => {
@@ -1516,6 +1758,50 @@ export function App() {
     changeSlot(continueSlot);
     setMode('strategic');
   };
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !import.meta.env.DEV) return;
+    (window as any).__campaignControl = {
+      mode: () => mode,
+      newCampaign: (nextSlot = 1) => {
+        changeSlot(nextSlot);
+        reset();
+        setMode('strategic');
+        return true;
+      },
+      startBattle: (territoryId?: string) => {
+        let started = false;
+        try {
+          mutate((state) => {
+            state.activeBattle = undefined;
+            const territory = territoryId
+              ? state.territories.find((t) => t.id === territoryId)
+              : state.territories.find((t) => t.status === 'available');
+            if (!territory) return;
+            territory.status = 'available';
+            startBattleForTerritory(state, bundle, territory.id);
+            started = true;
+          });
+        } catch (err) {
+          reportBattleLaunchError(err);
+          return false;
+        }
+        if (started) {
+          setMode('battle');
+        }
+        return started;
+      },
+      territories: () => campaign.territories.map((t) => ({
+        id: t.id,
+        scenarioId: t.scenarioId,
+        status: t.status,
+        name: t.name
+      }))
+    };
+    return () => {
+      delete (window as any).__campaignControl;
+    };
+  }, [campaign, mode, changeSlot, mutate, reset, reportBattleLaunchError]);
 
   // Show menu
   if (mode === 'menu') {
@@ -1556,20 +1842,26 @@ export function App() {
       id: u.id,
       name: u.name,
       unlocked: isUnitUnlocked(campaign, bundle, u.id),
+      cost: u.cost,
+      canAfford: campaign.resources.money >= u.cost,
     }));
 
-  const armyUnits = campaign.army.map((u) => {
+  const toArmyUnit = (u: (typeof campaign.army)[number]) => {
     const def = bundle.units.find((d) => d.id === u.definitionId)!;
     return {
       id: u.id,
       definitionId: u.definitionId,
       name: def?.name ?? 'Unknown',
+      unitType: def?.type ?? 'unit',
       tier: u.tier,
       currentHealth: u.currentHealth ?? def?.stats.maxHealth ?? 100,
       maxHealth: def?.stats.maxHealth ?? 100,
       experience: u.experience ?? 0,
+      availableOnTurn: u.availableOnTurn,
     };
-  });
+  };
+  const armyUnits = campaign.army.map(toArmyUnit);
+  const reserveUnits = campaign.reserves.map(toArmyUnit);
 
   const territories = campaign.territories.map((t) => ({
     id: t.id,
@@ -1593,14 +1885,25 @@ export function App() {
         research={campaign.resources.research}
         strategic={campaign.resources.strategic}
         army={armyUnits}
+        reserves={reserveUnits}
         territories={territories}
         researchTopics={bundle.research}
         currentResearch={campaign.research.inProgress ?? null}
         completedResearch={campaign.research.completed}
         log={campaign.log}
+        popups={campaign.popups}
         onStartBattle={startBattle}
         onEndTurn={() => mutate((s) => endStrategicTurn(s, bundle))}
-        onRecruit={(id, tier) => mutate((s) => recruitUnit(s, bundle, id, tier))}
+        onRecruit={(id, tier) => {
+          try {
+            mutate((s) => recruitUnit(s, bundle, id, tier));
+            const unit = bundle.units.find((candidate) => candidate.id === id);
+            showToast(`${unit?.name ?? 'Unit'} enters reserve queue`, 'success');
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Recruitment failed';
+            showToast(message, 'error');
+          }
+        }}
         onRefill={(id, tier) => mutate((s) => refillUnit(s, bundle, id, tier))}
         onDismiss={(id) => mutate((s) => dismissUnit(s, id))}
         onResearch={(topic) => {
@@ -1615,6 +1918,7 @@ export function App() {
         onConvertMoney={(amt) => mutate((s) => convertStrategicToMoney(s, amt))}
         onConvertResearch={(amt) => mutate((s) => convertStrategicToResearch(s, amt))}
         onBack={() => setMode('menu')}
+        onDismissPopups={dismissPopups}
         availableUnits={availableUnits}
       />
     </>

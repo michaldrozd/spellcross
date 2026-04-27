@@ -1,0 +1,11 @@
+{
+  "unit": "rangers",
+  "state": "walk",
+  "sheet": "rangers_walk_sheet.png",
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "frameCount": 4,
+  "directions": ["n", "ne", "e", "se", "s", "sw", "w", "nw"],
+  "anchor": { "x": 0.5, "y": 0.84 },
+  "layout": "directions-columns-frames-rows"
+}

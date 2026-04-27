@@ -63,8 +63,23 @@ export function directionIndex(from: HexCoordinate, to: HexCoordinate): number {
 }
 
 export function orientationDelta(a: number, b: number): number {
-  const diff = Math.abs(a - b) % 6;
-  return Math.min(diff, 6 - diff);
+  const toCompassIndex = (orientation: number) => {
+    switch (((Math.round(orientation) % 8) + 8) % 8) {
+      case 0: return 0; // E
+      case 1: return 1; // NE
+      case 2: return 2; // N
+      case 7: return 3; // NW
+      case 3: return 4; // W
+      case 4: return 5; // SW
+      case 5: return 6; // S
+      case 6: return 7; // SE
+      default: return 0;
+    }
+  };
+  const ai = toCompassIndex(a);
+  const bi = toCompassIndex(b);
+  const diff = Math.abs(ai - bi) % 8;
+  return Math.min(diff, 8 - diff);
 }
 
 export interface CubeCoordinate {

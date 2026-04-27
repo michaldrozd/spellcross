@@ -167,7 +167,9 @@ export function planPathForUnitIso(
     }
   }
 
-  const movementMultiplier = movementMultiplierForStance(unit.stance);
+  const weather = (state as any).weather as ('clear' | 'night' | 'fog' | undefined);
+  const weatherMoveMod = weather === 'fog' ? 1.2 : weather === 'night' ? 1.1 : 1;
+  const movementMultiplier = movementMultiplierForStance(unit.stance) * weatherMoveMod;
 
   const pathResult = findPathOnMapIso(state.map, start, destination, {
     occupied: occupation,

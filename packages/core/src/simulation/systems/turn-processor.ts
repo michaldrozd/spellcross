@@ -11,6 +11,7 @@ import {
 import { movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import type { HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { axialDistance, coordinateKey, directionIndex, getTile, isNeighbor } from '../utils/grid.js';
+import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
 import { hasLineOfSight, updateAllFactionsVision, updateFactionVision } from '../visibility/vision.js';
 
 export interface TurnContext {
@@ -169,7 +170,7 @@ export class TurnProcessor {
     // First pass: validate path and compute total cost
     let accumulatedCost = 0;
     for (const step of input.path) {
-      if (!isNeighbor(origin, step)) {
+      if (!isNeighbor(origin, step) && !isIsoNeighbor(origin, step)) {
         return { success: false, error: 'Path contains non-adjacent steps' };
       }
 
@@ -229,7 +230,7 @@ export class TurnProcessor {
     unit.actionPoints -= accumulatedCost;
     if (input.path.length > 0) {
       const lastStep = input.path[input.path.length - 1];
-      unit.orientation = directionIndex(from, lastStep);
+      unit.orientation = isIsoNeighbor(from, lastStep) ? isoDirectionIndex(from, lastStep) : directionIndex(from, lastStep);
     }
     this.#state.timeline.push({
       kind: 'unit:moved',
@@ -382,7 +383,9 @@ export class TurnProcessor {
       weather: (this.#state as any).weather ?? 'clear',
       random: this.#random
     });
-    attacker.orientation = directionIndex(attacker.coordinate, defender.coordinate);
+    attacker.orientation = isIsoNeighbor(attacker.coordinate, defender.coordinate)
+      ? isoDirectionIndex(attacker.coordinate, defender.coordinate)
+      : directionIndex(attacker.coordinate, defender.coordinate);
 
     spendAttackCost(attacker);
     spendAmmo(attacker);

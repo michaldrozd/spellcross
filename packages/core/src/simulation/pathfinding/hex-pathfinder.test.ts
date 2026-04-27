@@ -155,4 +155,41 @@ describe('planPathForUnit', () => {
 
     expect(result.success).toBe(false);
   });
+
+  it('includes weather movement penalties in the action point budget', () => {
+    const custom = createBattleState({
+      map: {
+        id: 'fog-path-map',
+        width: 4,
+        height: 1,
+        tiles: [plainTile, plainTile, plainTile, plainTile]
+      },
+      weather: 'fog',
+      sides: [
+        {
+          faction: 'alliance',
+          units: [
+            {
+              definition: {
+                ...baseSpec.sides[0].units[0].definition,
+                stats: {
+                  ...baseSpec.sides[0].units[0].definition.stats,
+                  mobility: 3
+                }
+              },
+              coordinate: { q: 0, r: 0 }
+            }
+          ]
+        },
+        { faction: 'otherSide', units: [] }
+      ]
+    });
+
+    const result = planPathForUnit(custom, Array.from(custom.sides.alliance.units.keys())[0], {
+      q: 3,
+      r: 0
+    });
+
+    expect(result.success).toBe(false);
+  });
 });

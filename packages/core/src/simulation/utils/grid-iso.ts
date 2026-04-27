@@ -28,6 +28,26 @@ export function isoNeighbors(map: BattlefieldMap, c: HexCoordinate): HexCoordina
     .filter((n) => isWithinBounds(map, n));
 }
 
+export function isIsoNeighbor(a: HexCoordinate, b: HexCoordinate): boolean {
+  const dq = Math.abs(a.q - b.q);
+  const dr = Math.abs(a.r - b.r);
+  return Math.max(dq, dr) === 1;
+}
+
+export function isoDirectionIndex(from: HexCoordinate, to: HexCoordinate): number {
+  const dq = Math.sign(to.q - from.q);
+  const dr = Math.sign(to.r - from.r);
+  if (dq > 0 && dr === 0) return 0;
+  if (dq > 0 && dr < 0) return 1;
+  if (dq === 0 && dr < 0) return 2;
+  if (dq < 0 && dr === 0) return 3;
+  if (dq < 0 && dr > 0) return 4;
+  if (dq === 0 && dr > 0) return 5;
+  if (dq > 0 && dr > 0) return 6;
+  if (dq < 0 && dr < 0) return 7;
+  return 0;
+}
+
 // Bresenham line on square grid (q,r interpreted as x,y)
 export function isoLine(from: HexCoordinate, to: HexCoordinate): HexCoordinate[] {
   const points: HexCoordinate[] = [];

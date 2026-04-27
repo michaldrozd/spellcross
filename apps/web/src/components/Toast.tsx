@@ -21,11 +21,11 @@ export function showToast(message: string, type: ToastType = 'error') {
   }
 }
 
-const typeStyles: Record<ToastType, { bg: string; border: string; icon: string }> = {
-  error: { bg: 'rgba(180, 40, 40, 0.92)', border: '#e74c3c', icon: '⚠' },
-  warning: { bg: 'rgba(180, 120, 40, 0.92)', border: '#f39c12', icon: '⚡' },
-  info: { bg: 'rgba(40, 100, 160, 0.92)', border: '#3498db', icon: 'ℹ' },
-  success: { bg: 'rgba(40, 140, 80, 0.92)', border: '#27ae60', icon: '✓' },
+const toastIcons: Record<ToastType, string> = {
+  error: '!',
+  warning: '!',
+  info: 'i',
+  success: '+',
 };
 
 export const ToastContainer: React.FC = () => {
@@ -50,54 +50,18 @@ export const ToastContainer: React.FC = () => {
   if (toasts.length === 0) return null;
 
   return (
-    <div style={{
-      position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      zIndex: 10000,
-      display: 'flex',
-      flexDirection: 'column',
-      gap: 12,
-      pointerEvents: 'none',
-    }}>
+    <div className="toast-stack">
       {toasts.map((toast) => {
-        const style = typeStyles[toast.type];
         return (
           <div
             key={toast.id}
-            style={{
-              background: style.bg,
-              border: `2px solid ${style.border}`,
-              borderRadius: 8,
-              padding: '14px 24px',
-              color: '#fff',
-              fontSize: 15,
-              fontWeight: 500,
-              fontFamily: "'Orbitron', 'Segoe UI', sans-serif",
-              textAlign: 'center',
-              boxShadow: '0 4px 24px rgba(0,0,0,0.5)',
-              backdropFilter: 'blur(4px)',
-              animation: 'toastFadeIn 0.2s ease-out',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 10,
-              minWidth: 200,
-              maxWidth: 400,
-            }}
+            className={`toast-message toast-${toast.type}`}
           >
-            <span style={{ fontSize: 20 }}>{style.icon}</span>
+            <span className="toast-icon">{toastIcons[toast.type]}</span>
             <span>{toast.message}</span>
           </div>
         );
       })}
-      <style>{`
-        @keyframes toastFadeIn {
-          from { opacity: 0; transform: scale(0.9); }
-          to { opacity: 1; transform: scale(1); }
-        }
-      `}</style>
     </div>
   );
 };
-

@@ -23,7 +23,11 @@ export default defineConfig({
     '**/tactical-overwatch-ui.spec.ts',
     '**/ai-behavior.spec.ts',
     '**/autosave-summary.spec.ts',
-    '**/tactical-move-click.spec.ts'
+    '**/strategic-army-recruit.spec.ts',
+    '**/tactical-move-click.spec.ts',
+    '**/strategic-map-hover.spec.ts',
+    '**/tactical-props-assets.spec.ts',
+    '**/tactical-edge-cases.spec.ts'
   ],
   timeout: 20_000,
   expect: { timeout: 5_000 },

@@ -6,12 +6,25 @@ import { canAffordAttack } from '@spellcross/core';
 import { axialDistance } from '@spellcross/core';
 import { calculateAttackRange } from '@spellcross/core';
 import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
-import { Matrix, Texture, Rectangle, Graphics as PixiGraphics } from 'pixi.js';
+import { Matrix, Texture, Rectangle, Graphics as PixiGraphics, MIPMAP_MODES, SCALE_MODES, settings } from 'pixi.js';
 
 import { TextStyle } from 'pixi.js';
 const basename = (p: string) => {
   const parts = p.split('/');
   return parts[parts.length - 1] || p;
+};
+const assetUrl = (path: string) => (path.startsWith('/') ? path : `/${path}`);
+(settings as any).SCALE_MODE = SCALE_MODES.LINEAR;
+settings.ROUND_PIXELS = true;
+
+const crispTexture = (texture: Texture) => {
+  const baseTexture = texture.baseTexture as any;
+  if (baseTexture) {
+    baseTexture.scaleMode = SCALE_MODES.LINEAR;
+    baseTexture.mipmap = MIPMAP_MODES.OFF;
+    baseTexture.update?.();
+  }
+  return texture;
 };
 
 const tileSize = 56;
@@ -25,15 +38,14 @@ const ELEV_Y_OFFSET = Math.floor(Math.max(8, Math.floor(tileSize * 0.5)) / 2);  
 const CLIFF_DEPTH   = Math.floor(Math.max(8, Math.floor(tileSize * 0.5)) / 2);     // sheer cliff face height per level
 
 const terrainPalette: Record<string, number> = {
-  // Spellcross-like greens (top color comes from here; textures are grayscale overlay)
-  plain: 0x3a6e2a,     // grassy green
-  road:  0x6b5a45,     // earthy road
-  forest: 0x1f5a1f,    // darker green
-  urban: 0x6e6a76,     // neutral gray for buildings
-  hill:  0x6d7f31,     // olive-ish hills
-  water: 0x1b3f7a,     // deep water blue (kept blue)
-  swamp: 0x355b3a,     // murky green
-  structure: 0x6f5f4f  // brownish structures
+  plain: 0x4b7139,
+  road: 0x756650,
+  forest: 0x203b1c,
+  urban: 0x625f57,
+  hill: 0x6b7040,
+  water: 0x226480,
+  swamp: 0x3a5437,
+  structure: 0x62584b
 };
 
 export interface AttackEffect {
@@ -44,6 +56,8 @@ export interface AttackEffect {
   toR: number;
   startTime: number;
   type: 'gunshot' | 'explosion' | 'magic';
+  damage?: number;
+  hit?: boolean;
 }
 
 export interface MovingUnit {
@@ -53,12 +67,18 @@ export interface MovingUnit {
   stepDuration: number;
 }
 
+export interface InvalidMoveFeedback {
+  coordinate: HexCoordinate;
+  time: number;
+}
+
 export interface BattlefieldStageProps {
   battleState: TacticalBattleState;
   onSelectUnit?: (unitId: string) => void;
   onSelectTile?: (coordinate: HexCoordinate) => void;
   plannedPath?: HexCoordinate[];
   plannedDestination?: HexCoordinate;
+  invalidMoveFeedback?: InvalidMoveFeedback | null;
   targetUnitId?: string;
   targetHitChance?: number; // 0-1, hit chance to display on target
   targetDamagePreview?: number; // predicted damage to show
@@ -68,6 +88,7 @@ export interface BattlefieldStageProps {
   height?: number;
   cameraMode?: 'fit' | 'follow';
   showAttackOverlay?: boolean;
+  rangeOverlayCoords?: Set<string>;
   attackEffects?: AttackEffect[];
   movingUnit?: MovingUnit | null;
 }
@@ -104,7 +125,7 @@ function makeCanvasTexture(draw: (ctx: CanvasRenderingContext2D, w: number, h: n
   const ctx = canvas.getContext('2d')!;
   (ctx as any).imageSmoothingEnabled = false;
   draw(ctx, w, h);
-  return Texture.from(canvas);
+  return crispTexture(Texture.from(canvas));
 }
 
 function hexToRgb(hex: number) {
@@ -124,11 +145,31 @@ function mixColor(source: number, target: number, t: number) {
 
 const lightenColor = (color: number, amount: number) => mixColor(color, 0xffffff, amount);
 const darkenColor = (color: number, amount: number) => mixColor(color, 0x000000, amount);
+const tileNoise = (q: number, r: number, salt: number) => {
+  const value = Math.sin(q * 127.1 + r * 311.7 + salt * 74.7) * 43758.5453;
+  return value - Math.floor(value);
+};
 const dist2 = (a: { x: number; y: number }, b: { x: number; y: number }) => {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return dx * dx + dy * dy;
 };
+const snapCameraScale = (value: number) => {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  return Math.max(0.5, Math.round(value * 4) / 4);
+};
+
+const CAMERA_ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75, 4, 4.25, 4.5];
+
+const nextCameraScale = (current: number, direction: 'in' | 'out') => {
+  const scale = snapCameraScale(current);
+  if (direction === 'in') {
+    return CAMERA_ZOOM_STEPS.find((step) => step > scale + 0.001) ?? CAMERA_ZOOM_STEPS[CAMERA_ZOOM_STEPS.length - 1];
+  }
+  return [...CAMERA_ZOOM_STEPS].reverse().find((step) => step < scale - 0.001) ?? CAMERA_ZOOM_STEPS[0];
+};
+
+const clampCameraScale = (value: number) => Math.min(CAMERA_ZOOM_STEPS[CAMERA_ZOOM_STEPS.length - 1], Math.max(CAMERA_ZOOM_STEPS[0], value));
 
 type CornerKey = 'NW' | 'NE' | 'SE' | 'SW';
 type EdgeKey = 'N' | 'E' | 'S' | 'W';
@@ -149,6 +190,117 @@ const EDGE_TO_CORNERS: Record<EdgeKey, [CornerKey, CornerKey]> = {
 };
 
 const OPP_EDGE: Record<EdgeKey, EdgeKey> = { N: 'S', E: 'W', S: 'N', W: 'E' };
+const DIRECTIONAL_UNIT_SPRITES: Record<string, string> = {
+  'john-alexander': 'light_infantry',
+  'field-medic': 'light_infantry',
+  'heavy-infantry': 'heavy_infantry',
+  'light-infantry': 'light_infantry',
+  rangers: 'rangers'
+};
+
+const directionNameForOrientation = (orientation: number) => {
+  const normalized = ((Math.round(orientation) % 8) + 8) % 8;
+  const directionNames = ['e', 'ne', 'n', 'w', 'sw', 's', 'se', 'nw'];
+  return directionNames[normalized] ?? 'e';
+};
+
+const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+const UNIT_SHEET_FRAME_SIZE = 128;
+const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
+  '/assets/generated/infantry_squad.png': 767,
+  '/assets/generated/ghoul_pack.png': 159,
+  '/assets/generated/sniper_team.png': 768,
+  '/assets/generated/medic_unit.png': 768,
+  '/assets/generated/skeleton_warrior.png': 620,
+  '/assets/generated/zombie_horde.png': 994,
+  '/assets/generated/ogre_brute.png': 891,
+  '/assets/generated/bone_golem.png': 902,
+  '/assets/generated/necromancer.png': 929,
+  '/assets/generated/death_knight.png': 820
+};
+const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
+  '/assets/generated/apc_m113.png': 0.71,
+  '/assets/generated/artillery_mlrs.png': 0.9,
+  '/assets/generated/bone_golem.png': 0.96,
+  '/assets/generated/death_knight.png': 0.99,
+  '/assets/generated/ghoul_pack.png': 0.86,
+  '/assets/generated/helicopter_apache.png': 0.91,
+  '/assets/generated/infantry_squad.png': 0.85,
+  '/assets/generated/medic_unit.png': 0.94,
+  '/assets/generated/necromancer.png': 0.98,
+  '/assets/generated/ogre_brute.png': 0.95,
+  '/assets/generated/skeleton_warrior.png': 0.76,
+  '/assets/generated/sniper_team.png': 0.98,
+  '/assets/generated/tank_m1_abrams.png': 0.65,
+  '/assets/generated/watchtower.png': 0.99,
+  '/assets/generated/zombie_horde.png': 0.97
+};
+const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
+  heavy_infantry: 0.92,
+  light_infantry: 0.74,
+  rangers: 0.77
+};
+
+type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
+
+function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
+  if (unitType === 'vehicle') {
+    if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.72;
+    if (definitionId.includes('truck')) return tile * 0.66;
+    return tile * 0.72;
+  }
+  if (unitType === 'artillery') return tile * 0.64;
+  if (unitType === 'hero') return tile * 0.58;
+  if (unitType === 'support') return definitionId.includes('truck') ? tile * 0.66 : tile * 0.52;
+  if (definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead')) return tile * 0.46;
+  if (definitionId.includes('golem') || definitionId.includes('ogre') || definitionId.includes('brute')) return tile * 0.74;
+  if (directionalSprite === 'heavy_infantry') return tile * 0.6;
+  if (directionalSprite === 'rangers') return tile * 0.56;
+  if (unitType === 'infantry') return tile * 0.56;
+  return tile * 0.54;
+}
+
+function unitContactFootprint(tile: number, unitType: string, definitionId: string): UnitVisualFootprint {
+  if (unitType === 'vehicle') return { rx: tile * 0.28, ry: tile * 0.07, alpha: 0.38, y: tile * 0.045 };
+  if (unitType === 'artillery') return { rx: tile * 0.3, ry: tile * 0.075, alpha: 0.34, y: tile * 0.045 };
+  if (unitType === 'air') return { rx: tile * 0.22, ry: tile * 0.055, alpha: 0.12, y: tile * 0.08 };
+  if (definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead')) {
+    return { rx: tile * 0.25, ry: tile * 0.065, alpha: 0.32, y: tile * 0.04 };
+  }
+  if (definitionId.includes('golem') || definitionId.includes('ogre') || definitionId.includes('brute')) {
+    return { rx: tile * 0.25, ry: tile * 0.075, alpha: 0.34, y: tile * 0.045 };
+  }
+  return { rx: tile * 0.18, ry: tile * 0.05, alpha: 0.28, y: tile * 0.04 };
+}
+
+const unitSheetTexture = (
+  cache: Map<string, Texture>,
+  spriteName: string,
+  state: 'idle' | 'walk',
+  direction: string,
+  frame: number
+) => {
+  const sheetPath = `/assets/generated/${spriteName}_${state}_sheet.png`;
+  const directionIndex = Math.max(0, UNIT_SHEET_DIRECTIONS.indexOf(direction));
+  const frameIndex = state === 'walk' ? Math.max(0, Math.min(3, frame)) : 0;
+  const key = `${sheetPath}:${directionIndex}:${frameIndex}`;
+  const cached = cache.get(key);
+  if (cached) return cached;
+
+  const sheet = cache.get(sheetPath) ?? crispTexture(Texture.from(sheetPath));
+  cache.set(sheetPath, sheet);
+  const texture = crispTexture(new Texture(
+    sheet.baseTexture,
+    new Rectangle(
+      directionIndex * UNIT_SHEET_FRAME_SIZE,
+      frameIndex * UNIT_SHEET_FRAME_SIZE,
+      UNIT_SHEET_FRAME_SIZE,
+      UNIT_SHEET_FRAME_SIZE
+    )
+  ));
+  cache.set(key, texture);
+  return texture;
+};
 
 const averageCornerHeight = (c: { hNW: number; hNE: number; hSE: number; hSW: number }) =>
   (c.hNW + c.hNE + c.hSE + c.hSW) / 4;
@@ -269,6 +421,37 @@ const lineSegment = (
   g.lineStyle(0, 0, 0);
 };
 
+const facePoint = (
+  start: { x: number; y: number },
+  ux: number,
+  uy: number,
+  alongPx: number,
+  upPx: number
+) => ({
+  x: start.x + ux * alongPx,
+  y: start.y + uy * alongPx - upPx
+});
+
+const fillFaceRect = (
+  g: PixiGraphics,
+  start: { x: number; y: number },
+  ux: number,
+  uy: number,
+  alongPx: number,
+  upPx: number,
+  widthPx: number,
+  heightPx: number,
+  color: number,
+  alpha: number,
+  origin: { x: number; y: number }
+) => {
+  const p0 = facePoint(start, ux, uy, alongPx, upPx);
+  const p1 = facePoint(start, ux, uy, alongPx + widthPx, upPx);
+  const p2 = facePoint(start, ux, uy, alongPx + widthPx, upPx + heightPx);
+  const p3 = facePoint(start, ux, uy, alongPx, upPx + heightPx);
+  fillQuad(g, p3, p2, p1, p0, color, alpha, origin);
+};
+
 const drawFacadeMaterial = (
   g: PixiGraphics,
   start: { x: number; y: number },
@@ -279,16 +462,15 @@ const drawFacadeMaterial = (
   material: NonNullable<MapProp['facade']>['material'],
   fogShade: number
 ) => {
-  if (!material || material === 'plaster') return;
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const length = Math.hypot(dx, dy);
   if (length < 24 || heightPx < 20) return;
   const ux = dx / length;
   const uy = dy / length;
-  const horizontalStep = material === 'brick' ? 6 : material === 'wood' ? 10 : 14;
-  const verticalStep = material === 'brick' ? 12 : material === 'metal' ? 18 : 0;
-  const baseAlpha = 0.08 + fogShade * 0.4;
+  const horizontalStep = material === 'brick' ? 7 : material === 'wood' ? 10 : material === 'metal' ? 18 : 16;
+  const verticalStep = material === 'brick' ? 16 : material === 'metal' ? 20 : material === 'concrete' ? 28 : 0;
+  const baseAlpha = (material === 'plaster' ? 0.11 : material === 'brick' ? 0.15 : 0.12) + fogShade * 0.25;
 
   for (let y = horizontalStep; y < heightPx - 4; y += horizontalStep) {
     const offset = -y;
@@ -306,19 +488,47 @@ const drawFacadeMaterial = (
   if (verticalStep > 0) {
     const count = Math.max(2, Math.floor(length / verticalStep));
     for (let i = 1; i < count; i++) {
-      const s = i / count;
-      const px = start.x + ux * length * s;
-      const py = start.y + uy * length * s;
-      lineSegment(
-        g,
-        { x: px, y: py },
-        { x: px, y: py - Math.min(heightPx, 60) },
-        darkenColor(color, material === 'metal' ? 0.25 : 0.4),
-        baseAlpha * 0.7,
-        1,
-        origin
-      );
+      const along = (length / count) * i;
+      const maxUp = Math.min(heightPx, material === 'brick' ? heightPx - 5 : 64);
+      if (material === 'brick') {
+        for (let y = 6; y < maxUp; y += horizontalStep * 2) {
+          const seam = facePoint(start, ux, uy, along + ((Math.floor(y / horizontalStep) % 2) * verticalStep) / 2, y);
+          lineSegment(
+            g,
+            seam,
+            { x: seam.x, y: seam.y - horizontalStep },
+            darkenColor(color, 0.42),
+            baseAlpha * 0.45,
+            1,
+            origin
+          );
+        }
+      } else {
+        const p = facePoint(start, ux, uy, along, 0);
+        lineSegment(
+          g,
+          p,
+          { x: p.x, y: p.y - maxUp },
+          darkenColor(color, material === 'metal' ? 0.25 : 0.34),
+          baseAlpha * 0.65,
+          1,
+          origin
+        );
+      }
     }
+  }
+
+  const chipCount = Math.max(6, Math.min(26, Math.round((length * heightPx) / 380)));
+  for (let i = 0; i < chipCount; i++) {
+    const salt = Math.round(length * 13 + heightPx * 7 + i * 19);
+    const along = 3 + tileNoise(salt, i, 41) * Math.max(1, length - 12);
+    const up = 5 + tileNoise(salt, i, 42) * Math.max(8, heightPx - 12);
+    const w = material === 'brick' ? 3 + Math.floor(tileNoise(salt, i, 43) * 5) : 2 + Math.floor(tileNoise(salt, i, 43) * 9);
+    const h = material === 'wood' ? 5 + Math.floor(tileNoise(salt, i, 44) * 9) : 1 + Math.floor(tileNoise(salt, i, 44) * 5);
+    const patchColor = tileNoise(salt, i, 45) > 0.55
+      ? lightenColor(color, material === 'plaster' ? 0.18 : 0.1)
+      : darkenColor(color, material === 'brick' ? 0.36 : 0.28);
+    fillFaceRect(g, start, ux, uy, along, up, w, h, patchColor, 0.1 + baseAlpha * 0.45, origin);
   }
 };
 
@@ -446,6 +656,155 @@ const drawGrimeBand = (
   );
 };
 
+const drawFaceDamage = (
+  g: PixiGraphics,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  heightPx: number,
+  origin: { x: number; y: number },
+  color: number,
+  strength: number,
+  salt: number
+) => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 16 || heightPx < 14) return;
+  const ux = dx / length;
+  const uy = dy / length;
+  const marks = Math.max(3, Math.round(3 + strength * 4));
+  for (let i = 0; i < marks; i++) {
+    const alongPx = 5 + tileNoise(salt, i, 301) * Math.max(1, length - 16);
+    const up = 5 + tileNoise(salt, i, 302) * Math.max(8, heightPx - 12);
+    const w = 4 + tileNoise(salt, i, 303) * 10;
+    const h = 2 + tileNoise(salt, i, 304) * 6;
+    fillFaceRect(
+      g,
+      start,
+      ux,
+      uy,
+      alongPx,
+      up,
+      w,
+      h,
+      tileNoise(salt, i, 305) > 0.45 ? darkenColor(color, 0.46) : lightenColor(color, 0.16),
+      0.1 + strength * 0.1,
+      origin
+    );
+    if (tileNoise(salt, i, 306) > 0.62) {
+      const p = facePoint(start, ux, uy, alongPx + w * 0.5, up + h);
+      const crack = 3 + tileNoise(salt, i, 307) * 5;
+      lineSegment(
+        g,
+        p,
+        { x: p.x + (tileNoise(salt, i, 308) - 0.5) * 5, y: p.y + crack },
+        darkenColor(color, 0.58),
+        0.16 + strength * 0.12,
+        1,
+        origin
+      );
+    }
+  }
+};
+
+const drawFacadeEdgeWear = (
+  g: PixiGraphics,
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  heightPx: number,
+  origin: { x: number; y: number },
+  color: number,
+  salt: number
+) => {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 18 || heightPx < 14) return;
+  const ux = dx / length;
+  const uy = dy / length;
+  for (let i = 0; i < 7; i++) {
+    const along = 3 + tileNoise(salt, i, 361) * Math.max(1, length - 10);
+    const atTop = tileNoise(salt, i, 362) > 0.42;
+    const up = atTop ? heightPx - 2 - tileNoise(salt, i, 363) * 6 : 2 + tileNoise(salt, i, 364) * 7;
+    const w = 2 + Math.floor(tileNoise(salt, i, 365) * 8);
+    const h = 1 + Math.floor(tileNoise(salt, i, 366) * 4);
+    fillFaceRect(
+      g,
+      start,
+      ux,
+      uy,
+      along,
+      up,
+      w,
+      h,
+      atTop ? darkenColor(color, 0.48) : darkenColor(color, 0.56),
+      atTop ? 0.24 : 0.18,
+      origin
+    );
+  }
+};
+
+const drawRoofSurfaceDetail = (
+  g: PixiGraphics,
+  topPoly: Array<{ x: number; y: number }>,
+  origin: { x: number; y: number },
+  roofColor: number,
+  fogShade: number,
+  salt: number
+) => {
+  if (topPoly.length < 4) return;
+  const west = { x: (topPoly[0].x + topPoly[3].x) / 2, y: (topPoly[0].y + topPoly[3].y) / 2 };
+  const east = { x: (topPoly[1].x + topPoly[2].x) / 2, y: (topPoly[1].y + topPoly[2].y) / 2 };
+  const north = { x: (topPoly[0].x + topPoly[1].x) / 2, y: (topPoly[0].y + topPoly[1].y) / 2 };
+  const south = { x: (topPoly[3].x + topPoly[2].x) / 2, y: (topPoly[3].y + topPoly[2].y) / 2 };
+  const bands = 4;
+  for (let i = 1; i < bands; i++) {
+    const t = i / bands;
+    const a = { x: lerp(west.x, east.x, t), y: lerp(west.y, east.y, t) };
+    const b = { x: lerp(north.x, south.x, t), y: lerp(north.y, south.y, t) };
+    lineSegment(g, a, b, darkenColor(roofColor, 0.3), 0.18 + fogShade * 0.08, 1, origin);
+  }
+  for (let i = 0; i < 18; i++) {
+    const u = 0.1 + tileNoise(salt, i, 331) * 0.8;
+    const v = 0.1 + tileNoise(salt, i, 332) * 0.8;
+    const top = {
+      x: lerp(topPoly[0].x, topPoly[1].x, u),
+      y: lerp(topPoly[0].y, topPoly[1].y, u)
+    };
+    const bottom = {
+      x: lerp(topPoly[3].x, topPoly[2].x, u),
+      y: lerp(topPoly[3].y, topPoly[2].y, u)
+    };
+    const px = lerp(top.x, bottom.x, v);
+    const py = lerp(top.y, bottom.y, v);
+    const size = tileNoise(salt, i, 333) > 0.5 ? 2 : 1;
+    g.beginFill(tileNoise(salt, i, 334) > 0.5 ? darkenColor(roofColor, 0.45) : lightenColor(roofColor, 0.12), 0.22);
+    g.drawRect(Math.round(px - origin.x), Math.round(py - origin.y), size, size);
+    g.endFill();
+  }
+  for (let i = 0; i < 4; i++) {
+    const u = 0.16 + tileNoise(salt, i, 341) * 0.68;
+    const v = 0.16 + tileNoise(salt, i, 342) * 0.68;
+    const top = {
+      x: lerp(topPoly[0].x, topPoly[1].x, u),
+      y: lerp(topPoly[0].y, topPoly[1].y, u)
+    };
+    const bottom = {
+      x: lerp(topPoly[3].x, topPoly[2].x, u),
+      y: lerp(topPoly[3].y, topPoly[2].y, u)
+    };
+    const p = {
+      x: lerp(top.x, bottom.x, v),
+      y: lerp(top.y, bottom.y, v)
+    };
+    const w = 5 + tileNoise(salt, i, 343) * 10;
+    const h = 2 + tileNoise(salt, i, 344) * 5;
+    g.beginFill(tileNoise(salt, i, 345) > 0.55 ? darkenColor(roofColor, 0.6) : lightenColor(roofColor, 0.16), 0.16);
+    g.drawRect(Math.round(p.x - origin.x - w / 2), Math.round(p.y - origin.y - h / 2), Math.round(w), Math.round(h));
+    g.endFill();
+  }
+};
+
 const drawFasciaLine = (
   g: PixiGraphics,
   start: { x: number; y: number },
@@ -549,6 +908,7 @@ export function BattlefieldStage({
   onSelectTile,
   plannedPath,
   plannedDestination,
+  invalidMoveFeedback,
   targetUnitId,
   targetHitChance,
   targetDamagePreview,
@@ -558,6 +918,7 @@ export function BattlefieldStage({
   height,
   cameraMode = 'fit',
   showAttackOverlay,
+  rangeOverlayCoords,
   attackEffects = [],
   movingUnit
 }: BattlefieldStageProps) {
@@ -776,10 +1137,11 @@ export function BattlefieldStage({
     if (typeof window === 'undefined') return false;
     const qs = new URLSearchParams(window.location.search);
     const pref = qs.get('textures') ?? qs.get('tileset');
-    if (!pref) return false;
+    if (!pref) return true;
     const norm = pref.toLowerCase();
+    if (norm === 'off' || norm === 'false' || norm === 'procedural') return false;
     if (norm === 'external' || norm === 'on' || norm === 'true' || norm === 'color') return true;
-    return false;
+    return true;
   });
 
   useEffect(() => {
@@ -836,7 +1198,7 @@ export function BattlefieldStage({
               const blob = await res.blob();
               await ensureImageDecodable(blob);
               const objUrl = URL.createObjectURL(blob);
-              out[n] = Texture.from(objUrl);
+              out[n] = crispTexture(Texture.from(objUrl));
               anyLoaded = true;
               explicitColorTextures = true;
             } catch {
@@ -855,9 +1217,9 @@ export function BattlefieldStage({
             const cols = 4, rows = 2;
             const cellW = Math.floor(bmp.width / cols);
             const cellH = Math.floor(bmp.height / rows);
-            const base = Texture.from(bmp).baseTexture;
+            const base = crispTexture(Texture.from(bmp)).baseTexture;
             const rect = (x: number, y: number, w: number, h: number) => new Rectangle(x, y, w, h);
-            const sub = (cx: number, cy: number) => new Texture(base, rect(cx * cellW, cy * cellH, cellW, cellH));
+            const sub = (cx: number, cy: number) => crispTexture(new Texture(base, rect(cx * cellW, cy * cellH, cellW, cellH)));
             const order = ['plain','road','forest','urban','hill','water','swamp','structure'] as const;
             const coords: Array<[number, number]> = [[0,0],[1,0],[2,0],[3,0],[0,1],[1,1],[2,1],[3,1]];
             let loaded = false;
@@ -907,7 +1269,10 @@ export function BattlefieldStage({
     let cancelled = false;
     const scan = async () => {
       const props = map.props ?? [];
-      const paths = Array.from(new Set(props.map((p) => p.texture).filter(Boolean))) as string[];
+      const paths = Array.from(new Set([
+        '/props/tree1.png',
+        ...props.map((p) => p.texture).filter(Boolean).map((path) => assetUrl(path as string))
+      ]));
       if (paths.length === 0) {
         setMissingPropPaths(new Set());
         return;
@@ -916,7 +1281,7 @@ export function BattlefieldStage({
       await Promise.all(
         paths.map(async (path) => {
           try {
-            const res = await fetch(path, { method: 'GET', cache: 'no-store' });
+            const res = await fetch(assetUrl(path), { method: 'GET', cache: 'no-store' });
             if (!res.ok) {
               missing.add(path);
               return;
@@ -974,6 +1339,32 @@ export function BattlefieldStage({
       didAutoCenterRef.current = true;
     }
   }, [battleState.sides, viewerFaction]);
+
+  useEffect(() => {
+    const targetEffect = attackEffects[attackEffects.length - 1];
+    let fromCoord: any | undefined;
+    let toCoord: any | undefined;
+
+    if (targetEffect) {
+      fromCoord = { q: targetEffect.fromQ, r: targetEffect.fromR };
+      toCoord = { q: targetEffect.toQ, r: targetEffect.toR };
+    } else if (selectedUnitId && targetUnitId) {
+      for (const side of Object.values(battleState.sides) as any[]) {
+        fromCoord ??= side.units.get(selectedUnitId)?.coordinate;
+        toCoord ??= side.units.get(targetUnitId)?.coordinate;
+      }
+    }
+
+    if (!fromCoord || !toCoord) return;
+
+    const from = toScreen(fromCoord);
+    const to = toScreen(toCoord);
+    setFollowTargetPx({
+      x: ((from.x + to.x) / 2) + (ISO_MODE ? isoBaseX : 0),
+      y: ((from.y + to.y) / 2) + tileSize * 0.2
+    });
+    setZoom((current) => Math.max(current, targetEffect ? 2.75 : 2.45));
+  }, [attackEffects, battleState.sides, selectedUnitId, targetUnitId, toScreen, tileSize]);
 
   // Camera panning control
   const PAN_SPEED = 800; // pixels per second (keyboard)
@@ -1043,14 +1434,22 @@ export function BattlefieldStage({
     const el = hostRef.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      const rect = el.getBoundingClientRect();
+      const inside =
+        e.clientX >= rect.left &&
+        e.clientX <= rect.right &&
+        e.clientY >= rect.top &&
+        e.clientY <= rect.bottom;
+      if (!inside) return;
+      const target = e.target instanceof HTMLElement ? e.target : null;
+      if (target?.closest('button,input,select,textarea,a')) return;
       // Always prevent page scroll when interacting over canvas
       e.preventDefault();
       e.stopPropagation();
       const hasFollow = !!followRef.current;
       if (!(cameraMode === 'follow' || hasFollow)) return;
-      const current = zoomRef.current;
       const delta = Math.sign(e.deltaY);
-      const next = Math.min(2.0, Math.max(0.4, current * (delta > 0 ? 0.9 : 1.1)));
+      const direction = delta > 0 ? 'out' : 'in';
       // If we don't yet have a follow center, adopt selected unit or map center
       if (!hasFollow) {
         let selected: any | undefined;
@@ -1064,19 +1463,36 @@ export function BattlefieldStage({
         const p = toScreen(coord);
         setFollowTargetPx({ x: p.x + (ISO_MODE ? isoBaseX : 0), y: p.y });
       }
-      if (next !== current) setZoom(next);
+      setZoom((current) => {
+        const next = nextCameraScale(current, direction);
+        zoomRef.current = next;
+        return next;
+      });
     };
-    el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    window.addEventListener('wheel', onWheel, { passive: false });
+    return () => window.removeEventListener('wheel', onWheel);
   }, [cameraMode, battleState.sides, selectedUnitId, map.width, map.height]);
 
-  const fitScale = Math.min(
+  const fitScaleRaw = Math.min(
     hostSize.w > 0 ? hostSize.w / contentWidth : 1,
     hostSize.h > 0 ? hostSize.h / contentHeight : 1
   );
+  const fitScale = snapCameraScale(fitScaleRaw);
+  const initialFollowZoom = clampCameraScale(Math.max(2.35, snapCameraScale(fitScaleRaw * 1.95)));
+  const didSetInitialZoomRef = useRef(false);
+  useEffect(() => {
+    if (cameraMode === 'follow' && !didSetInitialZoomRef.current) {
+      didSetInitialZoomRef.current = true;
+      setZoom(initialFollowZoom);
+      return;
+    }
+    if (!followTargetPx || didSetInitialZoomRef.current) return;
+    didSetInitialZoomRef.current = true;
+    setZoom(initialFollowZoom);
+  }, [cameraMode, followTargetPx, initialFollowZoom]);
 
   // Choose scale: fit or follow
-  const scale = (cameraMode === 'follow' || !!followTargetPx) ? zoom : fitScale;
+  const scale = (cameraMode === 'follow' || !!followTargetPx) ? clampCameraScale(snapCameraScale(zoom)) : fitScale;
 
   // keep scaleRef in sync
   useEffect(() => { scaleRef.current = scale; }, [scale]);
@@ -1101,15 +1517,48 @@ export function BattlefieldStage({
     if (followTargetPx) {
 
       offsetX = hostSize.w / 2 - followTargetPx.x * scale;
-      offsetY = hostSize.h / 2 - followTargetPx.y * scale;
+      offsetY = hostSize.h * 0.31 - followTargetPx.y * scale;
     } else {
       const followCoord = selected?.coordinate ?? { q: Math.floor(map.width / 2), r: Math.floor(map.height / 2) };
       const { x: tx, y: ty } = toScreen(followCoord);
       const adjx = ISO_MODE ? tx + isoBaseX : tx;
       offsetX = hostSize.w / 2 - adjx * scale;
-      offsetY = hostSize.h / 2 - ty * scale;
+      offsetY = hostSize.h * 0.37 - ty * scale;
     }
   }
+  offsetX = Math.round(offsetX);
+  offsetY = Math.round(offsetY);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !import.meta.env.DEV) return;
+    (window as any).__battleCamera = {
+      centerOnCoord: (q: number, r: number) => {
+        const p = toScreen({ q, r });
+        setFollowTargetPx({ x: p.x + (ISO_MODE ? isoBaseX : 0), y: p.y });
+        return true;
+      },
+      centerOnWorld: (x: number, y: number) => {
+        setFollowTargetPx({ x, y });
+        return true;
+      },
+      setZoom: (next: number) => {
+        const clamped = clampCameraScale(next);
+        zoomRef.current = clamped;
+        setZoom(clamped);
+        return clamped;
+      },
+      metrics: () => ({
+        centerX: (-offsetX + hostSize.w / 2) / scale,
+        centerY: (-offsetY + hostSize.h / 2) / scale,
+        scale,
+        stageWidth: stageDimensions.width,
+        stageHeight: stageDimensions.height
+      })
+    };
+    return () => {
+      delete (window as any).__battleCamera;
+    };
+  }, [hostSize.h, hostSize.w, offsetX, offsetY, scale, stageDimensions.height, stageDimensions.width, toScreen]);
 
   // Precompute friendly units by coordinate for quick tile-click selection
   const friendlyByCoord = useMemo(() => {
@@ -1220,6 +1669,52 @@ export function BattlefieldStage({
   }, [map.tiles, map.width, snappedCorners]);
 
 
+  const battlefieldBackdrop = useMemo(() => {
+    const nw = worldCornerOfTile(0, 0, 'NW', topGeomFor);
+    const ne = worldCornerOfTile(map.width - 1, 0, 'NE', topGeomFor);
+    const se = worldCornerOfTile(map.width - 1, map.height - 1, 'SE', topGeomFor);
+    const sw = worldCornerOfTile(0, map.height - 1, 'SW', topGeomFor);
+    const cx = (nw.x + ne.x + se.x + sw.x) / 4;
+    const cy = (nw.y + ne.y + se.y + sw.y) / 4;
+    const expand = (p: { x: number; y: number }, amount: number) => {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      const len = Math.max(1, Math.hypot(dx, dy));
+      return { x: p.x + (dx / len) * amount, y: p.y + (dy / len) * amount };
+    };
+    const outer = [expand(nw, 72), expand(ne, 88), expand(se, 94), expand(sw, 82)];
+    const middle = [expand(nw, 36), expand(ne, 48), expand(se, 50), expand(sw, 42)];
+    return (
+      <Graphics
+        zIndex={5000}
+        draw={(g) => {
+          g.clear();
+          g.beginFill(0x050906, 0.22);
+          drawPoly(g as unknown as PixiGraphics, outer);
+          g.endFill();
+          g.beginFill(0x0b150b, 0.1);
+          drawPoly(g as unknown as PixiGraphics, middle);
+          g.endFill();
+          for (let i = 0; i < 18; i++) {
+            const salt = 810 + i * 3;
+            const u = tileNoise(i, map.width, salt);
+            const v = tileNoise(i, map.height, salt + 1);
+            const left = outer[3].x + (outer[2].x - outer[3].x) * u;
+            const right = outer[0].x + (outer[1].x - outer[0].x) * u;
+            const top = outer[0].y + (outer[3].y - outer[0].y) * v;
+            const bottom = outer[1].y + (outer[2].y - outer[1].y) * v;
+            const x = (left + right) / 2 + (tileNoise(i, map.width, salt + 2) - 0.5) * 70;
+            const y = (top + bottom) / 2 + (tileNoise(i, map.height, salt + 3) - 0.5) * 48;
+            g.beginFill(tileNoise(i, map.width, salt + 4) > 0.5 ? 0x1a2b18 : 0x0b1b12, 0.045);
+            g.drawEllipse(x, y, 38 + tileNoise(i, map.width, salt + 5) * 70, 12 + tileNoise(i, map.height, salt + 6) * 30);
+            g.endFill();
+          }
+        }}
+      />
+    );
+  }, [map.height, map.width, topGeomFor]);
+
+
   const tileGraphics = useMemo(() => {
     const EDGE_KEYS: EdgeKey[] = ['N', 'E', 'S', 'W'];
     const EDGE_VECTORS: Record<EdgeKey, { dq: number; dr: number }> = {
@@ -1246,12 +1741,27 @@ export function BattlefieldStage({
       const tris = topTrianglesFor(corners);
       const isVisible = visibleTiles.has(index);
       const isExplored = exploredTiles.has(index);
-      const baseColor = (terrainPalette as any)[tile.terrain] ?? terrainPalette.plain;
+      const fillTerrain = tile.terrain === 'road' ? 'plain' : tile.terrain === 'water' ? 'swamp' : tile.terrain;
+      let baseColor = (terrainPalette as any)[fillTerrain] ?? terrainPalette.plain;
+      const colorNoise = tileNoise(q, r, 911) - 0.5;
+      if (tile.terrain !== 'water') {
+        baseColor = colorNoise > 0
+          ? lightenColor(baseColor, colorNoise * 0.08)
+          : darkenColor(baseColor, Math.abs(colorNoise) * 0.12);
+      }
+      const roadColor = terrainPalette.road;
+      const waterColor = terrainPalette.water;
       const tex =
-        (externalTerrainTextures?.[tile.terrain] ?? externalTerrainTextures?.plain) ??
-        ((terrainTextures as any)[tile.terrain] ?? (terrainTextures as any).plain);
+        (externalTerrainTextures?.[fillTerrain] ?? externalTerrainTextures?.plain) ??
+        ((terrainTextures as any)[fillTerrain] ?? (terrainTextures as any).plain);
+      const roadTex =
+        externalTerrainTextures?.road ??
+        ((terrainTextures as any).road ?? tex);
+      const waterTex =
+        externalTerrainTextures?.water ??
+        ((terrainTextures as any).water ?? tex);
       const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
-      const overlayAlpha = coloredTex ? (isVisible ? 1.0 : 0.75) : (isVisible ? 0.28 : 0.16);
+      const overlayAlpha = coloredTex ? (isVisible ? 0.42 : 0.28) : (isVisible ? 0.17 : 0.11);
       const texMatrix = new Matrix();
       texMatrix.translate((q * 13 + r * 7) % 32, (q * 5 + r * 11) % 32);
       const center = {
@@ -1264,7 +1774,6 @@ export function BattlefieldStage({
           key={`tile-${index}`}
           x={pos.x}
           y={pos.y - avgHeight * ELEV_Y_OFFSET}
-          interactive={isExplored}
           eventMode={isExplored ? 'static' : 'none'}
           cursor={isExplored ? 'pointer' : 'not-allowed'}
           pointertap={() => {
@@ -1280,18 +1789,32 @@ export function BattlefieldStage({
           draw={(g) => {
               g.clear();
               if (!isExplored) {
-                g.beginFill(0x030509, 0.95);
+                const hiddenColor = mixColor(baseColor, 0x020508, 0.72);
+                g.beginFill(hiddenColor, 0.92);
                 g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
                 g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
                 g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
                 g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
                 g.closePath();
                 g.endFill();
+                g.beginTextureFill({ texture: tex, matrix: texMatrix, alpha: 0.07 });
+                g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
+                g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
+                g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
+                g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
+                g.closePath();
+                g.endFill();
+                g.lineStyle(1, 0x0b1722, 0.2);
+                g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
+                g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
+                g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
+                g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
+                g.closePath();
                 return;
               }
               for (const tri of tris) {
                 const [a, b, c] = tri;
-                g.beginFill(baseColor, isVisible ? 1.0 : 0.6);
+                g.beginFill(baseColor, isVisible ? 0.98 : 0.58);
                 g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
                 g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
                 g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
@@ -1306,6 +1829,294 @@ export function BattlefieldStage({
                 g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
                 g.closePath();
                 g.endFill();
+              }
+
+              if (tile.terrain === 'road') {
+                const roadNeighbor = (edge: EdgeKey) => {
+                  const vec = EDGE_VECTORS[edge];
+                  if (!inb(q + vec.dq, r + vec.dr)) return false;
+                  const neighbor = map.tiles[idxAt(q + vec.dq, r + vec.dr)] as any;
+                  return neighbor?.terrain === 'road' || neighbor?.terrain === 'urban' || neighbor?.terrain === 'structure';
+                };
+                const edgeMid = (edge: EdgeKey) => {
+                  const [a, b] = EDGE_TO_CORNERS[edge];
+                  return {
+                    x: (cornerPoints[a].x + cornerPoints[b].x) / 2,
+                    y: (cornerPoints[a].y + cornerPoints[b].y) / 2
+                  };
+                };
+                const connected = EDGE_KEYS.filter(roadNeighbor);
+                const exits = connected.length > 0 ? connected : (['E', 'W'] as EdgeKey[]);
+                const roadAlpha = isVisible ? 0.96 : 0.68;
+                const shoulderColor = mixColor(roadColor, baseColor, 0.34);
+                const drawRoadBand = (edge: EdgeKey, width: number, color: number, alpha: number, jitterSalt: number) => {
+                  const p = edgeMid(edge);
+                  const dx = p.x - center.x;
+                  const dy = p.y - center.y;
+                  const len = Math.max(1, Math.hypot(dx, dy));
+                  const nx = (-dy / len) * width;
+                  const ny = (dx / len) * width * 0.72;
+                  const j1 = (tileNoise(q, r, jitterSalt) - 0.5) * 1.8;
+                  const j2 = (tileNoise(q, r, jitterSalt + 1) - 0.5) * 1.8;
+                  const poly = [
+                    { x: center.x + nx + j1, y: center.y + ny },
+                    { x: p.x + nx + j2, y: p.y + ny },
+                    { x: p.x - nx + j2, y: p.y - ny },
+                    { x: center.x - nx + j1, y: center.y - ny }
+                  ];
+                  g.beginFill(color, alpha);
+                  drawPoly(g as unknown as PixiGraphics, poly);
+                  g.endFill();
+                };
+                exits.forEach((edge, i) => {
+                  drawRoadBand(edge, 10.5, darkenColor(shoulderColor, 0.1), isVisible ? 0.92 : 0.58, 310 + i * 7);
+                });
+                g.beginFill(darkenColor(shoulderColor, 0.12), isVisible ? 0.95 : 0.62);
+                g.drawEllipse(center.x, center.y, 12.5, 5.8);
+                g.endFill();
+                exits.forEach((edge, i) => {
+                  drawRoadBand(edge, 7.2, roadColor, roadAlpha, 340 + i * 7);
+                });
+                g.beginFill(roadColor, roadAlpha);
+                g.drawEllipse(center.x, center.y, 9.2, 4.2);
+                g.endFill();
+                exits.forEach((edge, i) => {
+                  const p = edgeMid(edge);
+                  const dx = p.x - center.x;
+                  const dy = p.y - center.y;
+                  const len = Math.max(1, Math.hypot(dx, dy));
+                  const nx = (-dy / len) * 4.8;
+                  const ny = (dx / len) * 3;
+                  const poly = [
+                    { x: center.x + nx, y: center.y + ny },
+                    { x: p.x + nx, y: p.y + ny },
+                    { x: p.x - nx, y: p.y - ny },
+                    { x: center.x - nx, y: center.y - ny }
+                  ];
+                  const roadTextureMatrix = new Matrix();
+                  roadTextureMatrix.translate((q * 17 + r * 5 + i * 11) % 64, (q * 3 + r * 19 + i * 7) % 32);
+                  g.beginTextureFill({ texture: roadTex, matrix: roadTextureMatrix, alpha: isVisible ? 0.32 : 0.18 });
+                  drawPoly(g as unknown as PixiGraphics, poly);
+                  g.endFill();
+                  g.lineStyle(1, darkenColor(roadColor, 0.24), isVisible ? 0.35 : 0.18);
+                  g.moveTo(center.x + nx, center.y + ny);
+                  g.lineTo(p.x + nx, p.y + ny);
+                  g.moveTo(center.x - nx, center.y - ny);
+                  g.lineTo(p.x - nx, p.y - ny);
+                  g.lineStyle();
+                });
+              }
+
+              if (tile.terrain === 'water') {
+                const waterNeighbor = (edge: EdgeKey) => {
+                  const vec = EDGE_VECTORS[edge];
+                  if (!inb(q + vec.dq, r + vec.dr)) return false;
+                  const neighbor = map.tiles[idxAt(q + vec.dq, r + vec.dr)] as any;
+                  return neighbor?.terrain === 'water';
+                };
+                const edgeMid = (edge: EdgeKey) => {
+                  const [a, b] = EDGE_TO_CORNERS[edge];
+                  return {
+                    x: (cornerPoints[a].x + cornerPoints[b].x) / 2,
+                    y: (cornerPoints[a].y + cornerPoints[b].y) / 2
+                  };
+                };
+                const connected = EDGE_KEYS.filter(waterNeighbor);
+                const exits = connected.length > 0 ? connected : (['E', 'W'] as EdgeKey[]);
+                const drawWaterBand = (edge: EdgeKey, width: number, color: number, alpha: number, jitterSalt: number) => {
+                  const p = edgeMid(edge);
+                  const dx = p.x - center.x;
+                  const dy = p.y - center.y;
+                  const len = Math.max(1, Math.hypot(dx, dy));
+                  const nx = (-dy / len) * width;
+                  const ny = (dx / len) * width * 0.76;
+                  const j1 = (tileNoise(q, r, jitterSalt) - 0.5) * 2.4;
+                  const j2 = (tileNoise(q, r, jitterSalt + 1) - 0.5) * 2.4;
+                  const poly = [
+                    { x: center.x + nx + j1, y: center.y + ny },
+                    { x: p.x + nx + j2, y: p.y + ny },
+                    { x: p.x - nx + j2, y: p.y - ny },
+                    { x: center.x - nx + j1, y: center.y - ny }
+                  ];
+                  g.beginFill(color, alpha);
+                  drawPoly(g as unknown as PixiGraphics, poly);
+                  g.endFill();
+                };
+                const bankColor = mixColor(baseColor, waterColor, 0.36);
+                exits.forEach((edge, i) => {
+                  drawWaterBand(edge, 13.2, bankColor, isVisible ? 0.84 : 0.52, 700 + i * 9);
+                });
+                g.beginFill(bankColor, isVisible ? 0.86 : 0.54);
+                g.drawEllipse(center.x, center.y, 15.5, 7.1);
+                g.endFill();
+                exits.forEach((edge, i) => {
+                  drawWaterBand(edge, 9.6, waterColor, isVisible ? 0.96 : 0.65, 740 + i * 9);
+                });
+                g.beginFill(waterColor, isVisible ? 0.98 : 0.67);
+                g.drawEllipse(center.x, center.y, 11.6, 5.3);
+                g.endFill();
+                exits.forEach((edge, i) => {
+                  const p = edgeMid(edge);
+                  const dx = p.x - center.x;
+                  const dy = p.y - center.y;
+                  const len = Math.max(1, Math.hypot(dx, dy));
+                  const nx = (-dy / len) * 6.8;
+                  const ny = (dx / len) * 4.1;
+                  const poly = [
+                    { x: center.x + nx, y: center.y + ny },
+                    { x: p.x + nx, y: p.y + ny },
+                    { x: p.x - nx, y: p.y - ny },
+                    { x: center.x - nx, y: center.y - ny }
+                  ];
+                  const waterTextureMatrix = new Matrix();
+                  waterTextureMatrix.translate((q * 23 + r * 7 + i * 13) % 64, (q * 5 + r * 17 + i * 11) % 32);
+                  g.beginTextureFill({ texture: waterTex, matrix: waterTextureMatrix, alpha: isVisible ? 0.46 : 0.24 });
+                  drawPoly(g as unknown as PixiGraphics, poly);
+                  g.endFill();
+                });
+              }
+
+              if (isVisible) {
+                const decalAlpha = coloredTex ? 0.32 : 0.28;
+                const drawSpot = (salt: number, color: number, alpha: number, rx: number, ry: number) => {
+                  const px = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.56;
+                  const py = (tileNoise(q, r, salt + 17) - 0.5) * ISO_TILE_H * 0.58;
+                  g.beginFill(color, alpha);
+                  g.drawEllipse(px, py, rx, ry);
+                  g.endFill();
+                };
+                const drawStroke = (salt: number, color: number, alpha: number, len = 12) => {
+                  const px = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.58;
+                  const py = (tileNoise(q, r, salt + 9) - 0.5) * ISO_TILE_H * 0.56;
+                  const angle = (tileNoise(q, r, salt + 19) - 0.5) * 0.7;
+                  const dx = Math.cos(angle) * len * 0.5;
+                  const dy = Math.sin(angle) * len * 0.22;
+                  g.lineStyle(1, color, alpha);
+                  g.moveTo(px - dx, py - dy);
+                  g.lineTo(px + dx, py + dy);
+                  g.lineStyle();
+                };
+                const pointOnTile = (u: number, v: number) => {
+                  const top = {
+                    x: lerp(cornerPoints.NW.x, cornerPoints.NE.x, u),
+                    y: lerp(cornerPoints.NW.y, cornerPoints.NE.y, u)
+                  };
+                  const bottom = {
+                    x: lerp(cornerPoints.SW.x, cornerPoints.SE.x, u),
+                    y: lerp(cornerPoints.SW.y, cornerPoints.SE.y, u)
+                  };
+                  return {
+                    x: lerp(top.x, bottom.x, v),
+                    y: lerp(top.y, bottom.y, v)
+                  };
+                };
+                const drawPixelBreakup = (
+                  saltBase: number,
+                  count: number,
+                  colors: number[],
+                  alpha = 0.34,
+                  maxLen = 5
+                ) => {
+                  for (let i = 0; i < count; i++) {
+                    const u = 0.08 + tileNoise(q, r, saltBase + i * 13) * 0.84;
+                    const v = 0.1 + tileNoise(q, r, saltBase + i * 13 + 1) * 0.8;
+                    const p = pointOnTile(u, v);
+                    const color = colors[Math.floor(tileNoise(q, r, saltBase + i * 13 + 2) * colors.length)] ?? colors[0];
+                    const horizontal = tileNoise(q, r, saltBase + i * 13 + 3) > 0.38;
+                    const len = 1 + Math.floor(tileNoise(q, r, saltBase + i * 13 + 4) * maxLen);
+                    const thickness = tileNoise(q, r, saltBase + i * 13 + 5) > 0.82 ? 2 : 1;
+                    g.beginFill(color, alpha * (0.55 + tileNoise(q, r, saltBase + i * 13 + 6) * 0.5));
+                    if (horizontal) {
+                      g.drawRect(Math.round(p.x - len / 2), Math.round(p.y), len, thickness);
+                    } else {
+                      g.drawRect(Math.round(p.x), Math.round(p.y - len / 2), thickness, len);
+                    }
+                    g.endFill();
+                  }
+                };
+                const drawEdgeBreakup = (colors: number[], alpha = 0.34) => {
+                  EDGE_KEYS.forEach((edge, edgeIndex) => {
+                    const [aKey, bKey] = EDGE_TO_CORNERS[edge];
+                    const a = cornerPoints[aKey];
+                    const b = cornerPoints[bKey];
+                    for (let i = 0; i < 2; i++) {
+                      const t = 0.18 + tileNoise(q, r, 870 + edgeIndex * 11 + i) * 0.64;
+                      const p = { x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) };
+                      const dx = (b.x - a.x) * 0.08;
+                      const dy = (b.y - a.y) * 0.08;
+                      const color = colors[(edgeIndex + i) % colors.length] ?? colors[0];
+                      g.lineStyle(1, color, alpha * (0.5 + tileNoise(q, r, 880 + edgeIndex * 11 + i) * 0.45));
+                      g.moveTo(Math.round(p.x - dx), Math.round(p.y - dy));
+                      g.lineTo(Math.round(p.x + dx), Math.round(p.y + dy));
+                      g.lineStyle();
+                    }
+                  });
+                };
+	                if (tile.terrain === 'plain') {
+	                  drawPixelBreakup(410, 14, [darkenColor(baseColor, 0.28), darkenColor(baseColor, 0.16), lightenColor(baseColor, 0.2), 0x334829], 0.26, 5);
+	                  drawEdgeBreakup([darkenColor(baseColor, 0.38), lightenColor(baseColor, 0.12)], 0.28);
+	                } else if (tile.terrain === 'forest') {
+	                  drawPixelBreakup(430, 20, [0x0b180d, 0x153015, 0x2e4a21, 0x4d6c32], 0.36, 5);
+	                  drawEdgeBreakup([0x0a160b, 0x315127], 0.31);
+	                } else if (tile.terrain === 'hill') {
+	                  drawPixelBreakup(450, 18, [darkenColor(baseColor, 0.3), 0x7e7c49, 0x454629, 0x97905d], 0.31, 6);
+	                  drawEdgeBreakup([darkenColor(baseColor, 0.44), lightenColor(baseColor, 0.12)], 0.3);
+	                } else if (tile.terrain === 'road') {
+	                  drawPixelBreakup(470, 14, [0x342a20, 0x7d6d54, 0x4a3d2f, 0x998a6b], 0.32, 7);
+	                  drawEdgeBreakup([0x2b241b, 0x7c6e55], 0.32);
+	                } else if (tile.terrain === 'urban' || tile.terrain === 'structure') {
+	                  drawPixelBreakup(490, 16, [0x2d2c29, 0x746f65, 0x494640, 0x938c7c], 0.31, 5);
+	                  drawEdgeBreakup([0x24231f, 0x777268], 0.34);
+	                } else if (tile.terrain === 'swamp') {
+	                  drawPixelBreakup(510, 14, [0x182516, 0x594c30, 0x416138, 0x0e1d12], 0.32, 5);
+                  drawEdgeBreakup([0x121d13, 0x405b35], 0.28);
+                } else if (tile.terrain === 'water') {
+                  drawPixelBreakup(530, 10, [0x0c2a3a, 0x2f6b7b, 0x78aab0], 0.28, 7);
+                }
+                const scar = tileNoise(q, r, 103);
+                if (scar > 0.7 && tile.terrain !== 'water') {
+                  drawSpot(104, 0x17130f, decalAlpha * 1.25, 7 + tileNoise(q, r, 105) * 5, 3.2);
+                  drawSpot(106, 0x5f5a4a, decalAlpha * 0.55, 4.5, 1.8);
+                }
+                if (tile.terrain === 'plain' || tile.terrain === 'hill' || tile.terrain === 'swamp') {
+                  drawSpot(1, darkenColor(baseColor, 0.32), decalAlpha, 9, 3.5);
+                  drawSpot(2, lightenColor(baseColor, 0.13), decalAlpha * 0.8, 11, 2.7);
+                  drawSpot(8, darkenColor(baseColor, 0.24), decalAlpha * 0.8, 4.5, 2.2);
+                  drawSpot(15, 0x1b2514, decalAlpha * 0.55, 6, 2.5);
+                  drawStroke(30, lightenColor(baseColor, 0.13), decalAlpha * 0.95, 11);
+                  drawStroke(31, darkenColor(baseColor, 0.28), decalAlpha * 0.75, 15);
+                  drawStroke(37, 0x1a2516, decalAlpha * 0.7, 17);
+                } else if (tile.terrain === 'forest') {
+                  drawSpot(3, 0x0f2310, decalAlpha * 1.65, 10, 5.5);
+                  drawSpot(4, 0x3a5c27, decalAlpha * 1.05, 8, 3.3);
+                  drawSpot(12, 0x0b1a0d, decalAlpha * 1.35, 6, 4.4);
+                  drawStroke(33, 0x172e14, decalAlpha * 1.1, 15);
+                  drawStroke(38, 0x314c24, decalAlpha * 0.7, 11);
+                } else if (tile.terrain === 'road' || tile.terrain === 'urban') {
+                  const markBase = tile.terrain === 'road' ? roadColor : baseColor;
+                  g.lineStyle(1, darkenColor(markBase, 0.26), decalAlpha * 0.9);
+                  for (let i = 0; i < 3; i++) {
+                    const px = (tileNoise(q, r, 50 + i) - 0.5) * ISO_TILE_W * 0.55;
+                    const py = (tileNoise(q, r, 60 + i) - 0.5) * ISO_TILE_H * 0.55;
+                    g.moveTo(px - 7, py);
+                    g.lineTo(px + 8, py + (tileNoise(q, r, 70 + i) - 0.5) * 2);
+                  }
+                  g.lineStyle();
+                  drawSpot(5, lightenColor(markBase, 0.1), decalAlpha * 0.68, 8, 2.3);
+                  drawSpot(14, 0x211a12, decalAlpha * 0.72, 6, 2.8);
+                  drawStroke(54, 0x1a1511, decalAlpha * 0.98, 20);
+                  drawStroke(55, 0x756954, decalAlpha * 0.52, 13);
+                } else if (tile.terrain === 'water') {
+                  g.lineStyle(1, 0x7ab0b8, 0.22);
+                  for (let i = 0; i < 3; i++) {
+                    const px = (tileNoise(q, r, 80 + i) - 0.5) * ISO_TILE_W * 0.5;
+                    const py = (tileNoise(q, r, 90 + i) - 0.5) * ISO_TILE_H * 0.35;
+                    g.moveTo(px - 8, py);
+                    g.lineTo(px + 8, py - 1);
+                  }
+                  g.lineStyle();
+                  drawSpot(92, 0x0d2f43, 0.2, 11, 3);
+                }
               }
 
               EDGE_KEYS.forEach((edge) => {
@@ -1329,6 +2140,54 @@ export function BattlefieldStage({
                 const [oppA, oppB] = EDGE_TO_CORNERS[oppEdge];
                 const neighborHeight = (neighborHeights[oppA] + neighborHeights[oppB]) / 2;
                 const delta = neighborHeight - myEdgeHeight;
+                if (tile.terrain === 'water' || neighborTile.terrain === 'water') {
+                  const a = cornerPoints[cornerA];
+                  const b = cornerPoints[cornerB];
+                  const edgeIndex = EDGE_KEYS.indexOf(edge);
+                  const towardCenter = (p: { x: number; y: number }, amount: number) => ({
+                    x: p.x + (center.x - p.x) * amount,
+                    y: p.y + (center.y - p.y) * amount
+                  });
+                  const mid = {
+                    x: (a.x + b.x) / 2 + (tileNoise(q, r, 620 + edgeIndex) - 0.5) * 3.4,
+                    y: (a.y + b.y) / 2 + (tileNoise(q, r, 624 + edgeIndex) - 0.5) * 2.2
+                  };
+                  if (tile.terrain !== neighborTile.terrain) {
+                    const landTerrain = tile.terrain === 'water' ? neighborTile.terrain : tile.terrain;
+                    const landColor = (terrainPalette as any)[landTerrain] ?? terrainPalette.plain;
+                    const bankBase = mixColor(landColor, terrainPalette.water, tile.terrain === 'water' ? 0.18 : 0.32);
+                    const depthA = 0.13 + tileNoise(q, r, 630 + edgeIndex) * 0.08;
+                    const depthB = 0.13 + tileNoise(q, r, 634 + edgeIndex) * 0.08;
+                    const depthM = 0.2 + tileNoise(q, r, 638 + edgeIndex) * 0.09;
+                    const bank = [
+                      a,
+                      b,
+                      towardCenter(b, depthB),
+                      towardCenter(mid, depthM),
+                      towardCenter(a, depthA)
+                    ];
+                    g.beginFill(bankBase, tile.terrain === 'water' ? (isVisible ? 0.88 : 0.58) : (isVisible ? 0.62 : 0.36));
+                    drawPoly(g as unknown as PixiGraphics, bank);
+                    g.endFill();
+                    const wet = [
+                      towardCenter(a, Math.max(0.04, depthA - 0.05)),
+                      towardCenter(b, Math.max(0.04, depthB - 0.05)),
+                      towardCenter(b, depthB + 0.04),
+                      towardCenter(mid, depthM + 0.04),
+                      towardCenter(a, depthA + 0.04)
+                    ];
+                    g.beginFill(mixColor(bankBase, 0x0b2532, 0.35), isVisible ? 0.34 : 0.2);
+                    drawPoly(g as unknown as PixiGraphics, wet);
+                    g.endFill();
+                  }
+                  const shoreColor = tile.terrain === neighborTile.terrain ? 0x24485b : 0x8c8a6d;
+                  const shoreAlpha = tile.terrain === neighborTile.terrain ? 0.08 : 0.36;
+                  g.lineStyle(tile.terrain === neighborTile.terrain ? 1 : 2, shoreColor, shoreAlpha);
+                  g.moveTo(a.x, a.y);
+                  g.lineTo(mid.x, mid.y);
+                  g.lineTo(b.x, b.y);
+                  g.lineStyle();
+                }
                 if (delta > 0 && delta <= 1.05) {
                   const tint = mixColor(
                     baseColor,
@@ -1353,6 +2212,40 @@ export function BattlefieldStage({
                   g.closePath();
                   g.endFill();
                 }
+              });
+
+              EDGE_KEYS.forEach((edge, edgeIndex) => {
+                const [cornerA, cornerB] = EDGE_TO_CORNERS[edge];
+                const vec = EDGE_VECTORS[edge];
+                const nq = q + vec.dq;
+                const nr = r + vec.dr;
+                const neighborIdx = inb(nq, nr) ? idxAt(nq, nr) : -1;
+                if (neighborIdx >= 0 && exploredTiles.has(neighborIdx)) return;
+                const a = cornerPoints[cornerA];
+                const b = cornerPoints[cornerB];
+                const towardCenter = (p: { x: number; y: number }, amount: number) => ({
+                  x: p.x + (center.x - p.x) * amount,
+                  y: p.y + (center.y - p.y) * amount
+                });
+                const fringeDepth = 0.15 + tileNoise(q, r, 960 + edgeIndex) * 0.12;
+                const fringe = [
+                  a,
+                  b,
+                  towardCenter(b, fringeDepth),
+                  towardCenter(a, fringeDepth * 0.82)
+                ];
+                g.beginFill(darkenColor(baseColor, 0.45), isVisible ? 0.24 : 0.16);
+                drawPoly(g as unknown as PixiGraphics, fringe);
+                g.endFill();
+                g.lineStyle(1, 0x050805, isVisible ? 0.2 : 0.12);
+                const mid = {
+                  x: (a.x + b.x) / 2 + (tileNoise(q, r, 970 + edgeIndex) - 0.5) * 6,
+                  y: (a.y + b.y) / 2 + (tileNoise(q, r, 974 + edgeIndex) - 0.5) * 3
+                };
+                g.moveTo(a.x, a.y);
+                g.lineTo(mid.x, mid.y);
+                g.lineTo(b.x, b.y);
+                g.lineStyle();
               });
 
               if (isExplored && !isVisible) {
@@ -1380,6 +2273,22 @@ export function BattlefieldStage({
     visibleTiles
   ]);
 
+  const screenBackdrop = useMemo(() => {
+    return (
+      <Graphics
+        draw={(g) => {
+          g.clear();
+          g.beginFill(0x030507, 1);
+          g.drawRect(0, 0, hostSize.w, hostSize.h);
+          g.endFill();
+          g.beginFill(0x000000, 0.24);
+          g.drawRect(0, 0, hostSize.w, hostSize.h);
+          g.endFill();
+        }}
+      />
+    );
+  }, [hostSize.h, hostSize.w]);
+
   const tileOverlays = useMemo(() => {
     return map.tiles
       .map((_: any, index: number) => {
@@ -1399,7 +2308,7 @@ export function BattlefieldStage({
             y={pos.y - avgHeight * ELEV_Y_OFFSET}
             draw={(g) => {
               g.clear();
-              g.lineStyle(1, 0x0d1b24, isVisible ? 0.14 : 0.10);
+              g.lineStyle(1, 0x0d1b24, isVisible ? 0.012 : 0.01);
               g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
               g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
               g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
@@ -1412,6 +2321,98 @@ export function BattlefieldStage({
       })
       .filter(Boolean) as JSX.Element[];
   }, [exploredTiles, map.tiles, map.width, snappedCorners, visibleTiles]);
+  const terrainGrimeLayer = useMemo(() => {
+    return (
+      <Graphics
+        draw={(g) => {
+          g.clear();
+          for (let index = 0; index < map.tiles.length; index++) {
+            if (!exploredTiles.has(index)) continue;
+            const tile = map.tiles[index] as any;
+            const q = index % map.width;
+            const r = Math.floor(index / map.width);
+            const visible = visibleTiles.has(index);
+            const geom = topGeomFor(q, r);
+            const pos = toScreen({ q, r });
+            const cx = pos.x + geom.center.x;
+            const cy = pos.y - geom.avgHeight * ELEV_Y_OFFSET + geom.center.y;
+            const fog = visible ? 1 : 0.45;
+            const seed = tileNoise(q, r, 211);
+            if (tile.terrain !== 'water' && tileNoise(q, r, 205) > 0.08) {
+              const washColor =
+                tile.terrain === 'road' || tile.terrain === 'urban'
+                  ? 0x2d271e
+                  : tile.terrain === 'forest'
+                    ? 0x122712
+                    : tile.terrain === 'hill'
+                      ? 0x4b5530
+                      : 0x26391f;
+              const rx = ISO_TILE_W * (0.55 + tileNoise(q, r, 206) * 0.55);
+              const ry = ISO_TILE_H * (0.22 + tileNoise(q, r, 207) * 0.32);
+              const ox = (tileNoise(q, r, 208) - 0.5) * ISO_TILE_W * 0.9;
+              const oy = (tileNoise(q, r, 209) - 0.5) * ISO_TILE_H * 0.85;
+              g.beginFill(washColor, fog * (0.024 + tileNoise(q, r, 210) * 0.035));
+              g.drawEllipse(cx + ox, cy + oy, rx, ry);
+              g.endFill();
+            }
+            if (tile.terrain !== 'water' && seed > 0.18) {
+              const color =
+                tile.terrain === 'road' || tile.terrain === 'urban'
+                  ? 0x1b1713
+                  : tile.terrain === 'forest'
+                    ? 0x0c1a0d
+                    : 0x1d2517;
+              const rx = ISO_TILE_W * (0.22 + tileNoise(q, r, 212) * 0.34);
+              const ry = ISO_TILE_H * (0.1 + tileNoise(q, r, 213) * 0.18);
+              const ox = (tileNoise(q, r, 214) - 0.5) * ISO_TILE_W * 0.45;
+              const oy = (tileNoise(q, r, 215) - 0.5) * ISO_TILE_H * 0.5;
+              g.beginFill(color, fog * (0.05 + tileNoise(q, r, 216) * 0.045));
+              g.drawEllipse(cx + ox, cy + oy, rx, ry);
+              g.endFill();
+            }
+            if (tile.terrain !== 'water' && tileNoise(q, r, 221) > 0.34) {
+              const len = ISO_TILE_W * (0.32 + tileNoise(q, r, 222) * 0.35);
+              const ox = (tileNoise(q, r, 223) - 0.5) * ISO_TILE_W * 0.5;
+              const oy = (tileNoise(q, r, 224) - 0.5) * ISO_TILE_H * 0.5;
+              const skew = (tileNoise(q, r, 225) - 0.5) * ISO_TILE_H * 0.28;
+              g.lineStyle(1, tile.terrain === 'road' ? 0x6e604c : 0x25361f, fog * 0.12);
+              g.moveTo(cx + ox - len / 2, cy + oy - skew);
+              g.lineTo(cx + ox + len / 2, cy + oy + skew);
+              g.lineStyle();
+            }
+            if (tile.terrain === 'plain' || tile.terrain === 'forest' || tile.terrain === 'hill' || tile.terrain === 'swamp') {
+              const clusters = tile.terrain === 'forest' ? 5 : 3;
+              for (let i = 0; i < clusters; i++) {
+                const salt = 260 + i * 17;
+                const ox = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.58;
+                const oy = (tileNoise(q, r, salt + 1) - 0.5) * ISO_TILE_H * 0.58;
+                const blade = 2 + tileNoise(q, r, salt + 2) * 3;
+                const color = tile.terrain === 'forest'
+                  ? (tileNoise(q, r, salt + 3) > 0.5 ? 0x102610 : 0x2f4c22)
+                  : (tileNoise(q, r, salt + 3) > 0.5 ? 0x273820 : 0x4f6134);
+                g.lineStyle(1, color, fog * 0.22);
+                g.moveTo(cx + ox - blade, cy + oy + 1);
+                g.lineTo(cx + ox + blade, cy + oy - 1);
+                g.lineStyle();
+              }
+            }
+            if (tile.terrain === 'water') {
+              const len = ISO_TILE_W * 0.38;
+              const ox = (tileNoise(q, r, 230) - 0.5) * ISO_TILE_W * 0.35;
+              const oy = (tileNoise(q, r, 231) - 0.5) * ISO_TILE_H * 0.35;
+              g.lineStyle(1, 0x87b7bb, fog * 0.16);
+              g.moveTo(cx + ox - len / 2, cy + oy);
+              g.lineTo(cx + ox + len / 2, cy + oy - 1);
+              g.lineStyle(2, 0x0b2938, fog * 0.16);
+              g.moveTo(cx + ox - len / 3, cy + oy + 5);
+              g.lineTo(cx + ox + len / 3, cy + oy + 4);
+              g.lineStyle();
+            }
+          }
+        }}
+      />
+    );
+  }, [exploredTiles, map.tiles, map.width, topGeomFor, toScreen, visibleTiles]);
   const coveredByProcBuilding = useMemo(() => {
     const set = new Set<number>();
     const W = map.width;
@@ -1489,6 +2490,7 @@ export function BattlefieldStage({
   };
 
   const movementRangeOverlays = useMemo(() => {
+    if (!plannedDestination && (!plannedPath || plannedPath.length === 0)) return null;
     if (!selectedUnitId) return null;
 
     // find selected unit in state
@@ -1589,14 +2591,14 @@ export function BattlefieldStage({
           y={y}
           draw={(g) => {
             g.clear();
-            const mvAlpha = externalTexturesAreColored ? (canShoot ? 0.08 : 0.06) : (canShoot ? 0.16 : 0.12);
+                  const mvAlpha = externalTexturesAreColored ? (canShoot ? 0.045 : 0.035) : (canShoot ? 0.11 : 0.085);
             if (ISO_MODE && geom) {
               const shape = geom.inset(0.92);
               g.beginFill(canShoot ? 0x4a90e2 : 0x245a96, mvAlpha);
               drawPoly(g as PixiGraphics, shape);
               g.endFill();
 
-              g.lineStyle(1, canShoot ? 0x6fb3ff : 0x3a78c4, 0.45);
+              g.lineStyle(1, canShoot ? 0x87b6bc : 0x5d7f84, canShoot ? 0.18 : 0.12);
               drawPoly(g as PixiGraphics, shape);
 
               const edgeDirs = [
@@ -1611,7 +2613,7 @@ export function BattlefieldStage({
                 [2, 3],
                 [3, 0]
               ];
-              g.lineStyle(1, canShoot ? 0x86b7ff : 0x3a78c4, 0.7);
+              g.lineStyle(1, canShoot ? 0x87b6bc : 0x5d7f84, canShoot ? 0.22 : 0.14);
               edges.forEach(([aIdx, bIdx], edgeIndex) => {
                 const d = edgeDirs[edgeIndex];
                 const nkey = `${q + d.dq},${r + d.dr}`;
@@ -1630,11 +2632,11 @@ export function BattlefieldStage({
               g.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
               g.closePath(); g.endFill();
 
-              g.lineStyle(1, canShoot ? 0x6fb3ff : 0x3a78c4, 0.45);
+              g.lineStyle(1, canShoot ? 0x87b6bc : 0x5d7f84, canShoot ? 0.18 : 0.12);
               g.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
               g.closePath();
 
-              g.lineStyle(1, canShoot ? 0x86b7ff : 0x3a78c4, 0.7);
+              g.lineStyle(1, canShoot ? 0x87b6bc : 0x5d7f84, canShoot ? 0.22 : 0.14);
               for (let ei = 0; ei < dirs.length; ei++) {
                 if (ei >= pts.length) break;
                 const d = dirs[ei];
@@ -1657,7 +2659,84 @@ export function BattlefieldStage({
     // Do not draw highlight on the origin tile to avoid clutter
 
     return elements.filter((el) => (el as any).key !== `mv-${start.q}-${start.r}`);
-  }, [battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, exploredTiles, externalTexturesAreColored, topGeomFor]);
+  }, [battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, exploredTiles, externalTexturesAreColored, topGeomFor, plannedDestination, plannedPath]);
+
+  const globalRangeOverlays = useMemo(() => {
+    if (!rangeOverlayCoords || rangeOverlayCoords.size === 0) return null;
+
+    const edgeDirs = [
+      { dq: 0, dr: -1 },
+      { dq: 1, dr: 0 },
+      { dq: 0, dr: 1 },
+      { dq: -1, dr: 0 }
+    ];
+    const edges: Array<[number, number]> = [
+      [0, 1],
+      [1, 2],
+      [2, 3],
+      [3, 0]
+    ];
+
+    const elements: JSX.Element[] = [];
+    rangeOverlayCoords.forEach((key) => {
+      const [qStr, rStr] = key.split(',');
+      const q = Number(qStr);
+      const r = Number(rStr);
+      if (!Number.isFinite(q) || !Number.isFinite(r)) return;
+      if (q < 0 || r < 0 || q >= map.width || r >= map.height) return;
+      const idx = r * map.width + q;
+      if (!visibleTiles.has(idx)) return;
+
+      const p = toScreen({ q, r });
+      const geom = ISO_MODE ? topGeomFor(q, r) : null;
+      const elev = ((map.tiles[idx] as any).elevation ?? 0);
+      const avgHeight = ISO_MODE && geom ? geom.avgHeight : elev;
+
+      elements.push(
+        <Graphics
+          key={`rng-${q}-${r}`}
+          x={p.x}
+          y={p.y - avgHeight * ELEV_Y_OFFSET}
+          draw={(g) => {
+            g.clear();
+            if (ISO_MODE && geom) {
+              const shape = geom.inset(0.86);
+              g.beginFill(0x9fb884, externalTexturesAreColored ? 0.12 : 0.14);
+              drawPoly(g as PixiGraphics, shape);
+              g.endFill();
+              g.lineStyle(1.35, 0xd2c66e, 0.58);
+              edges.forEach(([aIdx, bIdx], edgeIndex) => {
+                const d = edgeDirs[edgeIndex];
+                if (rangeOverlayCoords.has(`${q + d.dq},${r + d.dr}`)) return;
+                g.moveTo(shape[aIdx].x, shape[aIdx].y);
+                g.lineTo(shape[bIdx].x, shape[bIdx].y);
+              });
+              return;
+            }
+
+            const s = (tileSize / 2) * 0.86;
+            const hw = (hexWidth / 2) * 0.86;
+            const pts = [
+              { x: 0, y: -s },
+              { x: hw, y: -s / 2 },
+              { x: hw, y: s / 2 },
+              { x: 0, y: s },
+              { x: -hw, y: s / 2 },
+              { x: -hw, y: -s / 2 }
+            ];
+            g.beginFill(0x9fb884, 0.14);
+            g.moveTo(pts[0].x, pts[0].y);
+            for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
+            g.closePath();
+            g.endFill();
+          }}
+        />
+      );
+    });
+
+    return elements;
+  }, [rangeOverlayCoords, map.width, map.height, map.tiles, visibleTiles, externalTexturesAreColored, topGeomFor]);
+
   const attackRangeOverlays = useMemo(() => {
     if (!showAttackOverlay || !selectedUnitId) return null;
 
@@ -1865,6 +2944,71 @@ export function BattlefieldStage({
     return elements;
   }, [exploredTiles, map.width, plannedDestination, plannedPath, visibleTiles, topGeomFor]);
 
+  const invalidMoveHighlight = useMemo(() => {
+    if (!invalidMoveFeedback) return null;
+    const elapsed = now - invalidMoveFeedback.time;
+    const duration = 1800;
+    if (elapsed < 0 || elapsed > duration) return null;
+    const coord = invalidMoveFeedback.coordinate;
+    if (coord.q < 0 || coord.r < 0 || coord.q >= map.width || coord.r >= map.height) return null;
+
+    const p = toScreen(coord);
+    const geom = topGeomFor(coord.q, coord.r);
+    const pulse = 1 - elapsed / duration;
+    const scale = 0.88 + (1 - pulse) * 0.12;
+    const alpha = 0.32 + pulse * 0.34;
+    const x = p.x;
+    const y = p.y - geom.avgHeight * ELEV_Y_OFFSET;
+
+    return (
+      <Graphics
+        key={`invalid-move-${invalidMoveFeedback.time}`}
+        zIndex={50}
+        x={x}
+        y={y}
+        draw={(g) => {
+          g.clear();
+          const drawCross = () => {
+            g.lineStyle(1.6, 0xffd277, Math.min(0.76, alpha + 0.14));
+            g.moveTo(-tileSize * 0.24, -tileSize * 0.1);
+            g.lineTo(tileSize * 0.24, tileSize * 0.1);
+            g.moveTo(tileSize * 0.24, -tileSize * 0.1);
+            g.lineTo(-tileSize * 0.24, tileSize * 0.1);
+          };
+
+          if (ISO_MODE) {
+            const ring = geom.inset(scale);
+            g.beginFill(0x6f1812, alpha * 0.18);
+            drawPoly(g as PixiGraphics, ring);
+            g.endFill();
+            g.lineStyle(2.4, 0x170706, alpha * 0.55);
+            drawPoly(g as PixiGraphics, ring);
+            g.lineStyle(1.2, 0xf05a43, Math.min(0.82, alpha + 0.14));
+            drawPoly(g as PixiGraphics, ring);
+            drawCross();
+          } else {
+            const s = (tileSize / 2) * scale;
+            const hw = (hexWidth / 2) * scale;
+            const pts = [
+              { x: 0, y: -s },
+              { x: hw, y: -s / 2 },
+              { x: hw, y: s / 2 },
+              { x: 0, y: s },
+              { x: -hw, y: s / 2 },
+              { x: -hw, y: -s / 2 }
+            ];
+            g.beginFill(0x6f1812, alpha * 0.18);
+            drawPoly(g as PixiGraphics, pts);
+            g.endFill();
+            g.lineStyle(1.4, 0xf05a43, Math.min(0.82, alpha + 0.14));
+            drawPoly(g as PixiGraphics, pts);
+            drawCross();
+          }
+        }}
+      />
+    );
+  }, [invalidMoveFeedback, map.height, map.width, now, topGeomFor, toScreen]);
+
   // Elevation walls drawn above overlays for correct occlusion
   const tileWalls = useMemo(() => {
     if (!ISO_MODE) return null;
@@ -1956,6 +3100,46 @@ export function BattlefieldStage({
 
   const propTextureCache = useMemo(() => new Map<string, Texture>(), []);
   const unitTextureCache = useMemo(() => new Map<string, Texture>(), []);
+  const propAtlasTextures = useMemo(() => {
+    const bush = makeCanvasTexture((ctx) => {
+      const leaf = (x: number, y: number, w: number, h: number, color: string) => {
+        ctx.fillStyle = color;
+        ctx.fillRect(x, y, w, h);
+      };
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fillRect(10, 25, 28, 4);
+      leaf(13, 15, 10, 8, '#1f421b');
+      leaf(21, 11, 13, 10, '#2e5b25');
+      leaf(29, 16, 9, 8, '#1a3416');
+      leaf(16, 22, 16, 5, '#162b13');
+      leaf(10, 20, 8, 5, '#315e25');
+      leaf(32, 22, 7, 5, '#3f7130');
+      leaf(20, 14, 4, 2, '#638a43');
+      leaf(30, 18, 5, 2, '#5a813d');
+      leaf(15, 23, 5, 1, '#0c180b');
+      leaf(25, 25, 9, 1, '#0c180b');
+    }, 48, 36);
+
+    const rock = makeCanvasTexture((ctx) => {
+      ctx.fillStyle = 'rgba(0,0,0,0.24)';
+      ctx.fillRect(8, 25, 31, 5);
+      ctx.fillStyle = '#45443c';
+      ctx.fillRect(12, 18, 12, 7);
+      ctx.fillRect(22, 15, 11, 10);
+      ctx.fillRect(31, 20, 7, 5);
+      ctx.fillStyle = '#666458';
+      ctx.fillRect(14, 15, 9, 5);
+      ctx.fillRect(24, 13, 8, 4);
+      ctx.fillStyle = '#858171';
+      ctx.fillRect(16, 14, 5, 1);
+      ctx.fillRect(25, 12, 5, 1);
+      ctx.fillStyle = '#25241f';
+      ctx.fillRect(12, 24, 10, 2);
+      ctx.fillRect(26, 23, 10, 2);
+    }, 48, 36);
+
+    return { bush, rock };
+  }, []);
 
 
   const deathMarkerSprites = useMemo(() => {
@@ -1988,18 +3172,12 @@ export function BattlefieldStage({
               g.beginFill(0x000000, 0.20 + 0.25 * fade);
               g.drawCircle(0, 0, tileSize * 0.26);
               g.endFill();
-              g.lineStyle(2, 0xff2d55, 0.85 * fade);
-              g.moveTo(-tileSize * 0.18, -tileSize * 0.18);
-              g.lineTo(tileSize * 0.18, tileSize * 0.18);
-              g.moveTo(tileSize * 0.18, -tileSize * 0.18);
-              g.lineTo(-tileSize * 0.18, tileSize * 0.18);
+              g.lineStyle(2, 0x5f3328, 0.72 * fade);
+              g.moveTo(-tileSize * 0.16, tileSize * 0.02);
+              g.lineTo(tileSize * 0.16, tileSize * 0.02);
+              g.moveTo(-tileSize * 0.11, -tileSize * 0.07);
+              g.lineTo(tileSize * 0.09, tileSize * 0.1);
             }}
-          />
-          <Text
-            text={'\u2620'}
-            anchor={0.5}
-            y={-tileSize * 0.02}
-            style={new TextStyle({ fill: 0xffe08a, fontSize: 16 })}
           />
         </Container>
       );
@@ -2007,13 +3185,89 @@ export function BattlefieldStage({
     return els;
   }, [deathMarkers, map.tiles, map.width, now, topGeomFor, toScreen, viewerFaction, visibleTiles]);
 
+  const targetLinkOverlay = useMemo(() => {
+    if (!selectedUnitId || !targetUnitId) return null;
+    let selectedUnit: any | undefined;
+    let targetUnit: any | undefined;
+    for (const side of Object.values(battleState.sides) as any[]) {
+      const selectedCandidate = side.units.get(selectedUnitId);
+      const targetCandidate = side.units.get(targetUnitId);
+      if (selectedCandidate) selectedUnit = selectedCandidate;
+      if (targetCandidate) targetUnit = targetCandidate;
+    }
+    if (!selectedUnit || !targetUnit || targetUnit.stance === 'destroyed') return null;
+    const targetIdx = targetUnit.coordinate.r * map.width + targetUnit.coordinate.q;
+    if (!visibleTiles.has(targetIdx)) return null;
+    const pointFor = (unit: any) => {
+      const p = toScreen(unit.coordinate);
+      const geom = ISO_MODE ? topGeomFor(unit.coordinate.q, unit.coordinate.r) : null;
+      const elev = geom?.avgHeight ?? ((map.tiles[unit.coordinate.r * map.width + unit.coordinate.q] as any)?.elevation ?? 0);
+      return { x: p.x, y: p.y - elev * ELEV_Y_OFFSET };
+    };
+    const from = pointFor(selectedUnit);
+    const to = pointFor(targetUnit);
+    const explicitTarget = targetHitChance !== undefined;
+    return (
+      <Graphics
+        draw={(g) => {
+          g.clear();
+          const dx = to.x - from.x;
+          const dy = to.y - from.y;
+          const len = Math.max(1, Math.hypot(dx, dy));
+          const ux = dx / len;
+          const uy = dy / len;
+          const startGap = 16;
+          const endGap = 14;
+          const sx = from.x + ux * startGap;
+          const sy = from.y + uy * startGap;
+          const ex = to.x - ux * endGap;
+          const ey = to.y - uy * endGap;
+          const linkLen = Math.max(1, Math.hypot(ex - sx, ey - sy));
+          const step = explicitTarget ? 10 : 18;
+          const dash = explicitTarget ? 8 : 7;
+          g.lineStyle(explicitTarget ? 4.4 : 2, 0x050807, explicitTarget ? 0.82 : 0.5);
+          for (let d = 0; d < linkLen; d += step) {
+            const a = d / linkLen;
+            const b = Math.min(d + dash, linkLen) / linkLen;
+            g.moveTo(sx + (ex - sx) * a, sy + (ey - sy) * a);
+            g.lineTo(sx + (ex - sx) * b, sy + (ey - sy) * b);
+          }
+          g.lineStyle(explicitTarget ? 2.3 : 1, explicitTarget ? 0xf1e7a8 : 0xb0aa62, explicitTarget ? 0.94 : 0.58);
+          for (let d = 0; d < linkLen; d += step) {
+            const a = d / linkLen;
+            const b = Math.min(d + dash, linkLen) / linkLen;
+            g.moveTo(sx + (ex - sx) * a, sy + (ey - sy) * a);
+            g.lineTo(sx + (ex - sx) * b, sy + (ey - sy) * b);
+          }
+          const midX = (sx + ex) / 2;
+          const midY = (sy + ey) / 2;
+          g.beginFill(explicitTarget ? 0xf1e7a8 : 0x9c9c58, explicitTarget ? 0.84 : 0.48);
+          g.drawCircle(midX, midY, explicitTarget ? 3.8 : 1.8);
+          g.endFill();
+        }}
+      />
+    );
+  }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetUnitId, toScreen, topGeomFor, visibleTiles]);
+
 
   const units = useMemo(() => {
+    let selectedEmbarkedCarrierId: string | undefined;
+    if (selectedUnitId) {
+      for (const side of Object.values(battleState.sides) as any[]) {
+        const selected = (side as any).units.get(selectedUnitId);
+        if (selected?.embarkedOn) {
+          selectedEmbarkedCarrierId = selected.embarkedOn;
+          break;
+        }
+      }
+    }
+
     return (Object.values(battleState.sides) as any[]).flatMap((side) =>
       Array.from((side as any).units.values()).flatMap((unit: any) => {
-        // Calculate animated position if this unit is moving
         let displayCoord = unit.coordinate;
         let animatedOrientation = unit.orientation ?? 0;
+        let movementPhase = 0;
+        let movingThisUnit = false;
 
         if (movingUnit && movingUnit.unitId === unit.id && movingUnit.path.length >= 2) {
           const elapsed = now - movingUnit.startTime;
@@ -2021,27 +3275,29 @@ export function BattlefieldStage({
           const currentStepFloat = elapsed / movingUnit.stepDuration;
           const currentStep = Math.min(Math.max(0, Math.floor(currentStepFloat)), totalSteps - 1);
           const stepProgress = Math.min(Math.max(0, currentStepFloat - currentStep), 1);
+          const easedProgress = stepProgress * stepProgress * (3 - 2 * stepProgress);
 
           const fromCoord = movingUnit.path[currentStep];
           const toCoord = movingUnit.path[currentStep + 1];
 
           if (fromCoord && toCoord && currentStep < totalSteps) {
-            // Interpolate position
+            movingThisUnit = true;
+            movementPhase = currentStepFloat;
             displayCoord = {
-              q: fromCoord.q + (toCoord.q - fromCoord.q) * stepProgress,
-              r: fromCoord.r + (toCoord.r - fromCoord.r) * stepProgress
+              q: fromCoord.q + (toCoord.q - fromCoord.q) * easedProgress,
+              r: fromCoord.r + (toCoord.r - fromCoord.r) * easedProgress
             };
 
-            // Calculate facing direction based on movement
             const dq = toCoord.q - fromCoord.q;
             const dr = toCoord.r - fromCoord.r;
-            // Map direction to orientation (0-5)
             if (dq > 0 && dr === 0) animatedOrientation = 0; // E
             else if (dq > 0 && dr < 0) animatedOrientation = 1; // NE
             else if (dq === 0 && dr < 0) animatedOrientation = 2; // N
             else if (dq < 0 && dr === 0) animatedOrientation = 3; // W
             else if (dq < 0 && dr > 0) animatedOrientation = 4; // SW
             else if (dq === 0 && dr > 0) animatedOrientation = 5; // S
+            else if (dq > 0 && dr > 0) animatedOrientation = 6; // SE
+            else if (dq < 0 && dr < 0) animatedOrientation = 7; // NW
           }
         }
 
@@ -2050,29 +3306,49 @@ export function BattlefieldStage({
         const elev = ((map.tiles[idx] as any)?.elevation ?? 0);
         const geom = ISO_MODE ? topGeomFor(Math.floor(displayCoord.q), Math.floor(displayCoord.r)) : null;
         const baseHeight = ISO_MODE && geom ? geom.avgHeight : elev;
-        const UNIT_NUDGE_X = 0; // ISO: keep X centered
         const unitType = (unit as any).unitType as string;
-        // Different Y offsets for different unit types
-        // infantry/hero need less offset, vehicles need more to sit on ground
-        const nudgeMultiplier = (unitType === 'infantry' || unitType === 'hero') ? 0.10 : 0.55;
-        const UNIT_NUDGE_Y = ISO_MODE ? Math.round(ISO_TILE_H * nudgeMultiplier) : 0;
-        const x = Math.round(p.x + UNIT_NUDGE_X);
-        const y = Math.round(p.y - baseHeight * ELEV_Y_OFFSET + UNIT_NUDGE_Y);
-        const worldZ = Math.round(y);
+        const definitionId = unit.definitionId.toLowerCase();
+        const isGhoulPack = definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead');
+        const x = Math.round(p.x);
+        const y = Math.round(p.y - baseHeight * ELEV_Y_OFFSET);
         const color = unit.faction === 'alliance' ? 0x5dade2 : 0xe74c3c;
         const isSelected = unit.id === selectedUnitId;
+        const isSelectedCarrier = unit.id === selectedEmbarkedCarrierId;
         const isTarget = unit.id === targetUnitId;
+        const worldZ = Math.round(y) + (isSelected || isSelectedCarrier || isTarget || movingThisUnit ? 5000 : 0);
         const tileIndex = unit.coordinate.r * map.width + unit.coordinate.q;
         const isVisible = visibleTiles.has(tileIndex);
         const isFriendly = unit.faction === viewerFaction;
         const isDestroyed = unit.stance === 'destroyed';
+        const isEmbarked = Boolean(unit.embarkedOn);
+        const incomingHit = attackEffects.find((effect) => {
+          const elapsed = now - effect.startTime;
+          return effect.toQ === unit.coordinate.q
+            && effect.toR === unit.coordinate.r
+            && elapsed >= 240
+            && elapsed <= 920;
+        });
+        const outgoingShot = attackEffects.find((effect) => {
+          const elapsed = now - effect.startTime;
+          return effect.fromQ === unit.coordinate.q
+            && effect.fromR === unit.coordinate.r
+            && elapsed >= 0
+            && elapsed <= 320;
+        });
+        const hitElapsed = incomingHit ? now - incomingHit.startTime : 0;
+        const hitPhase = incomingHit ? Math.min(Math.max((hitElapsed - 240) / 680, 0), 1) : 1;
+        const hitPulse = incomingHit ? 1 - hitPhase : 0;
+        const hitJolt = incomingHit ? Math.sin(hitPhase * Math.PI * 5) * hitPulse * (unitType === 'vehicle' || unitType === 'artillery' ? 1.8 : 2.6) : 0;
+        const shotPulse = outgoingShot ? 1 - Math.min((now - outgoingShot.startTime) / 320, 1) : 0;
+        const shotRecoil = outgoingShot ? -shotPulse * (unitType === 'vehicle' || unitType === 'artillery' ? 2.2 : 1.2) : 0;
+        const factionAccent = isFriendly ? 0x7ec3df : 0xe05a49;
         const capHeight = unitType === 'air' ? tileSize * 0.10 : tileSize * 0.28;
         const k = unitType === 'infantry' ? 0.32 : (unitType === 'vehicle' || unitType === 'artillery') ? 0.46 : 0.40;
 
         // Respect fog-of-war for enemies
         if (!isFriendly && !isVisible) return [];
 
-        if (isDestroyed) {
+        if (isDestroyed || isEmbarked) {
           return [];
         }
 
@@ -2083,7 +3359,7 @@ export function BattlefieldStage({
             y={y}
             zIndex={worldZ}
             sortableChildren
-            interactive={true}
+            eventMode="static"
             pointerdown={() => {
               if (isFriendly) {
                 onSelectUnit?.(unit.id);
@@ -2092,123 +3368,119 @@ export function BattlefieldStage({
               }
             }}
           >
-            {isSelected && (
-              <Container y={-UNIT_NUDGE_Y}>
-                <Graphics
-                  draw={(g) => {
-                    g.clear();
-                    const ringShape = (scale: number) => {
-                      if (ISO_MODE) {
-                        if (geom) return geom.inset(scale);
-                        const s = (tileSize / 2) * scale;
-                        const hw = (hexWidth / 2) * scale;
-                        return [
-                          { x: 0, y: -(s * 0.5) }, { x: hw, y: 0 }, { x: 0, y: (s * 0.5) }, { x: -hw, y: 0 }
-                        ];
-                      }
-                      const s = (tileSize / 2) * scale;
-                      const hw = (hexWidth / 2) * scale;
-                      return [
-                        { x: 0, y: -s },
-                        { x: hw, y: -s / 2 },
-                        { x: hw, y: s / 2 },
-                        { x: 0, y: s },
-                        { x: -hw, y: s / 2 },
-                        { x: -hw, y: -s / 2 }
-                      ];
-                    };
-                    const outer = ringShape(0.96);
-                    const inner = ringShape(0.86);
-                    g.lineStyle(1, 0x95d7ab, 0.85);
-                    drawPoly(g as PixiGraphics, outer);
-                    g.lineStyle(1, 0x0b2a1d, 0.65);
-                    drawPoly(g as PixiGraphics, inner);
-                  }}
-                />
-              </Container>
-            )}
+            <Graphics
+              zIndex={0}
+              draw={(g) => {
+                g.clear();
+                const markerScale = unitType === 'vehicle' || unitType === 'artillery' ? 1.08 : 1;
+                const rx = tileSize * 0.25 * markerScale;
+                const ry = tileSize * 0.095 * markerScale;
+                const strokeArc = (startDeg: number, endDeg: number, colorValue: number, alpha: number, width: number) => {
+                  const steps = 14;
+                  g.lineStyle(width, colorValue, alpha);
+                  for (let i = 0; i <= steps; i++) {
+                    const t = (startDeg + (endDeg - startDeg) * (i / steps)) * Math.PI / 180;
+                    const px = Math.cos(t) * rx;
+                    const py = Math.sin(t) * ry;
+                    if (i === 0) g.moveTo(px, py);
+                    else g.lineTo(px, py);
+                  }
+                };
+                const bracket = (sx: number, sy: number, colorValue: number, alpha: number, width: number) => {
+                  g.lineStyle(width, colorValue, alpha);
+                  g.moveTo(-sx, -2); g.lineTo(-sx + 5, -sy);
+                  g.moveTo(-sx, 2); g.lineTo(-sx + 5, sy);
+                  g.moveTo(sx, -2); g.lineTo(sx - 5, -sy);
+                  g.moveTo(sx, 2); g.lineTo(sx - 5, sy);
+                };
+                if (isFriendly) {
+                  if (isSelected || isSelectedCarrier) {
+                    g.lineStyle(3, 0x071015, 0.82);
+                    g.drawEllipse(0, tileSize * 0.03, rx * 1.16, ry * 1.28);
+                    g.lineStyle(1.4, isSelectedCarrier ? 0xf0d17c : 0xc8edf3, 0.82);
+                    g.drawEllipse(0, tileSize * 0.03, rx * 1.08, ry * 1.18);
+                    strokeArc(192, 253, isSelectedCarrier ? 0xd8b65b : 0x7ec3df, 0.92, 1.8);
+                    strokeArc(287, 348, isSelectedCarrier ? 0xd8b65b : 0x7ec3df, 0.92, 1.8);
+                    g.lineStyle(1, isSelectedCarrier ? 0xffe6a3 : 0xd4f4f2, 0.58);
+                    g.moveTo(-rx - 3, 1); g.lineTo(-rx + 3, -2);
+                    g.moveTo(rx + 3, 1); g.lineTo(rx - 3, -2);
+                    if (isSelectedCarrier) {
+                      g.beginFill(0xf0d17c, 0.9);
+                      g.drawRect(-7, -tileSize * 0.21, 4, 4);
+                      g.drawRect(-1, -tileSize * 0.21, 4, 4);
+                      g.drawRect(5, -tileSize * 0.21, 4, 4);
+                      g.endFill();
+                    }
+                  } else {
+                    const sx = tileSize * 0.2 * markerScale;
+                    const sy = tileSize * 0.055 * markerScale;
+                    bracket(sx, sy, 0x081014, 0.3, 1.7);
+                    bracket(sx, sy, 0x75b7d3, 0.3, 0.9);
+                  }
+                } else {
+                  const sx = isTarget ? tileSize * 0.24 * markerScale : tileSize * 0.19 * markerScale;
+                  const sy = isTarget ? tileSize * 0.09 * markerScale : tileSize * 0.064 * markerScale;
+                  const accent = isTarget ? 0xe08a54 : 0xe05a49;
+                  bracket(sx, sy, 0x160706, isTarget ? 0.9 : 0.58, isTarget ? 2.6 : 2);
+                  bracket(sx, sy, accent, isTarget ? 0.98 : 0.62, isTarget ? 1.25 : 0.9);
+                  if (isTarget) {
+                    g.lineStyle(1.1, 0xc08a55, 0.72);
+                    g.moveTo(-5, 0); g.lineTo(5, 0);
+                    g.moveTo(0, -3); g.lineTo(0, 3);
+                  }
+                }
+              }}
+            />
             {isTarget && (
-              <Container y={-UNIT_NUDGE_Y}>
-                <Graphics
-                  draw={(g) => {
-                    g.clear();
-                    const ringShape = (scale: number) => {
-                      if (ISO_MODE) {
-                        if (geom) return geom.inset(scale);
-                        const s = (tileSize / 2) * scale;
-                        const hw = (hexWidth / 2) * scale;
-                        return [
-                          { x: 0, y: -(s * 0.5) }, { x: hw, y: 0 }, { x: 0, y: (s * 0.5) }, { x: -hw, y: 0 }
-                        ];
-                      }
+              <Graphics
+                draw={(g) => {
+                  g.clear();
+                  const ringShape = (scale: number) => {
+                    if (ISO_MODE) {
+                      if (geom) return geom.inset(scale);
                       const s = (tileSize / 2) * scale;
                       const hw = (hexWidth / 2) * scale;
                       return [
-                        { x: 0, y: -s },
-                        { x: hw, y: -s / 2 },
-                        { x: hw, y: s / 2 },
-                        { x: 0, y: s },
-                        { x: -hw, y: s / 2 },
-                        { x: -hw, y: -s / 2 }
+                        { x: 0, y: -(s * 0.5) }, { x: hw, y: 0 }, { x: 0, y: (s * 0.5) }, { x: -hw, y: 0 }
                       ];
-                    };
-                    const pts = ringShape(0.98);
-                    g.lineStyle(2, 0xff2d55, 0.95);
-                    drawPoly(g as PixiGraphics, pts);
-                    // crosshair
-                    g.moveTo(-tileSize * 0.18, 0);
-                    g.lineTo(tileSize * 0.18, 0);
-                    g.moveTo(0, -tileSize * 0.18);
-                    g.lineTo(0, tileSize * 0.18);
-                  }}
-                />
-                {/* Hit chance display */}
-                {targetHitChance !== undefined && (
-                  <Container y={-tileSize * 0.6}>
-                    <Graphics
-                      draw={(g) => {
-                        g.clear();
-                        g.beginFill(0x000000, 0.75);
-                        g.drawRoundedRect(-28, -10, 56, 20, 4);
-                        g.endFill();
-                      }}
-                    />
-                    <Text
-                      text={`${Math.round(targetHitChance * 100)}%`}
-                      anchor={0.5}
-                      style={new TextStyle({
-                        fontFamily: 'monospace',
-                        fontSize: 14,
-                        fontWeight: 'bold',
-                        fill: targetHitChance >= 0.7 ? 0x4ade80 : targetHitChance >= 0.4 ? 0xfbbf24 : 0xef4444,
-                      })}
-                    />
-                    {targetDamagePreview !== undefined && targetDamagePreview > 0 && (
-                      <Text
-                        text={`~${targetDamagePreview} dmg`}
-                        anchor={0.5}
-                        y={14}
-                        style={new TextStyle({
-                          fontFamily: 'monospace',
-                          fontSize: 10,
-                          fill: 0xffffff,
-                        })}
-                      />
-                    )}
-                  </Container>
-                )}
-              </Container>
+                    }
+                    const s = (tileSize / 2) * scale;
+                    const hw = (hexWidth / 2) * scale;
+                    return [
+                      { x: 0, y: -s },
+                      { x: hw, y: -s / 2 },
+                      { x: hw, y: s / 2 },
+                      { x: 0, y: s },
+                      { x: -hw, y: s / 2 },
+                      { x: -hw, y: -s / 2 }
+                    ];
+                  };
+                  const pts = ringShape(0.88);
+                  g.lineStyle(2, 0x090806, 0.52);
+                  drawPoly(g as PixiGraphics, pts);
+                  g.lineStyle(1.1, 0xc08a55, 0.72);
+                  drawPoly(g as PixiGraphics, pts);
+                }}
+              />
             )}
             <Graphics
               zIndex={0}
               draw={(g) => {
                 g.clear();
-                const shadowScaleISO = Math.min(0.95, Math.max(0.72, k * 1.55));
-                if (ISO_MODE && geom) {
-                  const shadow = geom.inset(shadowScaleISO).map((pt) => ({ x: pt.x, y: pt.y + 1 }));
-                  g.beginFill(0x000000, 0.16);
-                  drawPoly(g as PixiGraphics, shadow);
-                  g.endFill();
+                if (ISO_MODE) {
+	                  const footprint = unitContactFootprint(tileSize, unitType, definitionId);
+	                  const showFactionBase = isSelected || isTarget;
+	                  if (showFactionBase) {
+	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? (isFriendly ? 0.16 : 0.24) : 0.08);
+	                    g.drawEllipse(0, footprint.y, footprint.rx * 1.22, footprint.ry * 1.35);
+	                    g.endFill();
+	                  }
+	                  g.beginFill(0x000000, isVisible ? footprint.alpha : footprint.alpha * 0.55);
+	                  g.drawEllipse(1, footprint.y, footprint.rx, footprint.ry);
+	                  g.endFill();
+	                  g.beginFill(0x000000, isVisible ? footprint.alpha * 0.45 : footprint.alpha * 0.22);
+	                  g.drawEllipse(1, footprint.y - tileSize * 0.006, footprint.rx * 0.56, footprint.ry * 0.46);
+	                  g.endFill();
                 } else {
                   const shadowY = tileSize * 0.16;
                   g.beginFill(0x000000, 0.2);
@@ -2218,15 +3490,29 @@ export function BattlefieldStage({
               }}
             />
             {(() => {
-              // Smart sprite selection based on unit type and definitionId
-              const defId = unit.definitionId.toLowerCase();
+              const defId = definitionId;
               let texturePath = '/assets/generated/infantry_squad.png';
-              let desiredH = tileSize * 0.45; // infantry default - smaller to fit tile
-              let anchorY = 0.95; // anchor near bottom so units stand on ground
+              let desiredH = tileSize * 0.45;
+              let anchorY = 0.95;
+              let canMirrorForFacing = true;
+              const directionalSprite = DIRECTIONAL_UNIT_SPRITES[defId];
+              const spriteDirection = directionNameForOrientation(animatedOrientation);
+              const isFootUnit = unitType === 'infantry' || unitType === 'support' || unitType === 'hero';
+              const isVehicleUnit = unitType === 'vehicle' || unitType === 'artillery';
+              const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
+              const fastWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 4) : 0;
+              const sheetState = movingThisUnit && directionalSprite && isFootUnit ? 'walk' : 'idle';
+              const sheetFrame = sheetState === 'walk' ? Math.floor((((movementPhase % 1) + 1) % 1) * 4) : 0;
+              let texture: Texture | null = null;
 
-              if (unitType === 'vehicle') {
-                desiredH = tileSize * 0.65; // vehicles a bit bigger
-                anchorY = 0.95; // anchor near bottom to sit on ground
+              if (directionalSprite) {
+                desiredH = unitVisualHeight(tileSize, unitType, defId, directionalSprite);
+                anchorY = DIRECTIONAL_UNIT_ANCHOR_Y[directionalSprite] ?? 0.9;
+                canMirrorForFacing = false;
+                texture = unitSheetTexture(unitTextureCache, directionalSprite, sheetState, spriteDirection, sheetFrame);
+              } else if (unitType === 'vehicle') {
+                desiredH = unitVisualHeight(tileSize, unitType, defId);
+                anchorY = 0.95;
                 if (defId.includes('tank') || defId.includes('abrams') || defId.includes('m1')) {
                   texturePath = '/assets/generated/tank_m1_abrams.png';
                 } else if (defId.includes('apc') || defId.includes('ifv') || defId.includes('m113')) {
@@ -2237,34 +3523,53 @@ export function BattlefieldStage({
                   texturePath = '/assets/generated/helicopter_apache.png';
                 } else {
                   texturePath = isFriendly ? '/assets/generated/tank_m1_abrams.png' : '/assets/generated/apc_m113.png';
-                }
-              } else if (unitType === 'infantry') {
-                if (isFriendly) {
-                  if (defId.includes('sniper') || defId.includes('scout')) {
-                    texturePath = '/assets/generated/sniper_team.png';
+	                }
+	              } else if (unitType === 'infantry') {
+	                desiredH = unitVisualHeight(tileSize, unitType, defId);
+	                if (isFriendly) {
+	                  if (defId.includes('sniper') || defId.includes('scout')) {
+	                    texturePath = '/assets/generated/sniper_team.png';
                   } else if (defId.includes('medic') || defId.includes('doctor')) {
                     texturePath = '/assets/generated/medic_unit.png';
                   } else {
-                    texturePath = '/assets/generated/infantry_squad.png';
-                  }
-                } else {
-                  if (defId.includes('zombie') || defId.includes('undead')) {
-                    texturePath = '/assets/generated/zombie_horde.png';
-                  } else if (defId.includes('skeleton') || defId.includes('bone')) {
-                    texturePath = '/assets/generated/skeleton_warrior.png';
-                  } else if (defId.includes('golem')) {
-                    texturePath = '/assets/generated/bone_golem.png';
-                  } else if (defId.includes('ogre') || defId.includes('brute') || defId.includes('troll')) {
-                    texturePath = '/assets/generated/ogre_brute.png';
-                    desiredH = tileSize * 0.65; // ogres are bigger than infantry
+	                    texturePath = '/assets/generated/infantry_squad.png';
+	                  }
+	                } else {
+	                  if (defId.includes('ghoul') || defId.includes('zombie') || defId.includes('undead')) {
+	                    texturePath = '/assets/generated/ghoul_pack.png';
+	                  } else if (defId.includes('skeleton') || defId.includes('bone')) {
+	                    texturePath = '/assets/generated/skeleton_warrior.png';
+	                  } else if (defId.includes('golem')) {
+	                    texturePath = '/assets/generated/bone_golem.png';
+	                  } else if (defId.includes('ogre') || defId.includes('brute') || defId.includes('troll')) {
+	                    texturePath = '/assets/generated/ogre_brute.png';
+	                  } else if (defId.includes('orc')) {
+	                    texturePath = '/assets/generated/skeleton_warrior.png';
                   } else {
                     texturePath = '/assets/generated/skeleton_warrior.png';
+	                  }
+	                }
+	              } else if (unitType === 'support') {
+	                desiredH = unitVisualHeight(tileSize, unitType, defId);
+	                if (isFriendly) {
+	                  if (defId.includes('truck')) {
+	                    anchorY = 0.95;
+	                    texturePath = '/assets/generated/apc_m113.png';
+	                  } else {
+                    texturePath = defId.includes('medic') ? '/assets/generated/medic_unit.png' : '/assets/generated/infantry_squad.png';
                   }
-                }
-              } else if (unitType === 'hero') {
-                desiredH = tileSize * 0.55; // heroes slightly bigger than infantry
-                if (isFriendly) {
-                  texturePath = '/assets/generated/infantry_squad.png';
+                } else {
+                  texturePath = defId.includes('warlock') || defId.includes('necromancer') || defId.includes('lich')
+                    ? '/assets/generated/necromancer.png'
+	                    : '/assets/generated/skeleton_warrior.png';
+	                }
+	              } else if (unitType === 'artillery') {
+	                desiredH = unitVisualHeight(tileSize, unitType, defId);
+	                texturePath = isFriendly ? '/assets/generated/artillery_mlrs.png' : '/assets/generated/watchtower.png';
+	              } else if (unitType === 'hero') {
+	                desiredH = unitVisualHeight(tileSize, unitType, defId);
+	                if (isFriendly) {
+	                  texturePath = '/assets/generated/infantry_squad.png';
                 } else {
                   if (defId.includes('knight') || defId.includes('death')) {
                     texturePath = '/assets/generated/death_knight.png';
@@ -2274,26 +3579,79 @@ export function BattlefieldStage({
                 }
               }
 
-              let texture = unitTextureCache.get(texturePath);
               if (!texture) {
-                texture = Texture.from(texturePath);
-                unitTextureCache.set(texturePath, texture);
+                texture = unitTextureCache.get(texturePath) ?? null;
+                if (!texture) {
+                  texture = crispTexture(Texture.from(texturePath));
+                  unitTextureCache.set(texturePath, texture);
+                }
               }
-              const baseScale = texture?.valid && texture.height > 0 ? desiredH / texture.height : 0.05;
-              // Flip sprite based on unit orientation (0-5 hex directions)
-              // 0=E, 1=NE, 2=N face right; 3=W, 4=SW, 5=S face left
-              // Use animatedOrientation for smooth facing during movement
-              const facingLeft = animatedOrientation >= 3 && animatedOrientation <= 5;
-              const scaleX = facingLeft ? -baseScale : baseScale;
+              if (!directionalSprite) {
+                anchorY = RASTER_UNIT_ANCHOR_Y[texturePath] ?? anchorY;
+              }
+              const sourceHeight = directionalSprite ? 128 : (RASTER_UNIT_VISIBLE_HEIGHTS[texturePath] ?? 1024);
+              const baseScale = desiredH / sourceHeight;
+              const facingLeft = canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
+              const spriteBobY = isFootUnit ? -Math.abs(stepWave) * (directionalSprite ? 1.35 : 2.1) : unitType === 'air' ? stepWave * 1.4 : 0;
+              const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? fastWave * 0.35 : 0) + hitJolt + shotRecoil;
+              const spriteRotation = isVehicleUnit ? fastWave * 0.012 : 0;
+              const squashX = isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1;
+              const squashY = isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1;
+              const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
+              const spriteBaseY = directionalSprite ? 0 : tileSize * 0.05;
+              const silhouetteAlpha = isFootUnit && isVisible ? 0.32 : 0;
               return (
-                <Sprite
-                  texture={texture}
-                  anchor={{ x: 0.5, y: anchorY }}
-                  scale={{ x: scaleX, y: baseScale }}
-                  alpha={isVisible ? 1 : 0.8}
-                  y={tileSize * 0.05}
-                  zIndex={1}
-                />
+                <>
+                  {silhouetteAlpha > 0 ? (
+                    <Sprite
+                      texture={texture}
+                      anchor={{ x: 0.5, y: anchorY }}
+                      scale={{ x: scaleX * 1.025, y: baseScale * squashY * 1.02 }}
+                      alpha={silhouetteAlpha}
+                      tint={0x050605}
+                      x={spriteSwayX + (facingLeft ? -0.7 : 0.7)}
+                      y={spriteBaseY + spriteBobY + 1.1}
+                      rotation={spriteRotation}
+                      zIndex={0.8}
+                    />
+                  ) : null}
+                  {isFootUnit && isVisible ? (
+                    <Sprite
+                      texture={texture}
+                      anchor={{ x: 0.5, y: anchorY }}
+                      scale={{ x: scaleX * 1.01, y: baseScale * squashY * 1.01 }}
+                      alpha={0.11}
+                      tint={0xe5dbc4}
+                      x={spriteSwayX + (facingLeft ? 0.45 : -0.45)}
+                      y={spriteBaseY + spriteBobY - 0.9}
+                      rotation={spriteRotation}
+                      zIndex={0.9}
+                    />
+                  ) : null}
+                  <Sprite
+                    texture={texture}
+                    anchor={{ x: 0.5, y: anchorY }}
+                    scale={{ x: scaleX, y: baseScale * squashY }}
+                    alpha={isVisible ? 1 : 0.8}
+                    x={spriteSwayX}
+                    y={spriteBaseY + spriteBobY}
+                    rotation={spriteRotation}
+                    zIndex={1}
+                  />
+                  {incomingHit ? (
+                    <Sprite
+                      texture={texture}
+                      anchor={{ x: 0.5, y: anchorY }}
+                      scale={{ x: scaleX * 1.01, y: baseScale * squashY * 1.01 }}
+                      alpha={0.38 * hitPulse}
+                      tint={incomingHit.type === 'magic' ? 0xc58cff : 0xffe3a1}
+                      x={spriteSwayX}
+                      y={spriteBaseY + spriteBobY}
+                      rotation={spriteRotation}
+                      zIndex={1.2}
+                    />
+                  ) : null}
+                </>
               );
             })()}
             {false && (
@@ -2395,36 +3753,91 @@ export function BattlefieldStage({
                   g.lineStyle(2, stance === 'routed' ? 0xff2d55 : 0xffc107, 0.9);
                   g.drawCircle(0, 0, tileSize * 0.29);
                 }
-                // entrench pips (top - slightly higher to make room for bars)
                 const ent = (unit as any).entrench ?? 0;
                 if (ent > 0) {
                   g.lineStyle(0);
-                  g.beginFill(0xf5f5f5, 0.9);
+                  g.beginFill(isFriendly ? 0x8bb6c8 : 0xb58a63, 0.74);
                   const pipW = 4; const gap = 2; const totalW = ent * pipW + (ent - 1) * gap; let startX = -totalW / 2;
-                  for (let i = 0; i < ent; i++) { g.drawRect(startX, -tileSize * 0.49, pipW, 3); startX += pipW + gap; }
+                  for (let i = 0; i < ent; i++) { g.drawRect(startX, -tileSize * 0.43, pipW, 2); startX += pipW + gap; }
                   g.endFill();
                 }
-                // HP / Morale / AP bars above unit - Spellcross style
                 const maxHp = (unit as any).stats?.maxHealth ?? 100;
                 const hpRatio = Math.max(0, Math.min(1, (unit as any).currentHealth / maxHp));
                 const mrRatio = Math.max(0, Math.min(1, (unit as any).currentMorale / 100));
-                const apRatio = Math.max(0, Math.min(1, (unit as any).currentAP / ((unit as any).stats?.maxAP ?? 10)));
-                const bw = 32, bh = 4; const topY = -tileSize * 0.48;
+                const apRatio = Math.max(0, Math.min(1, (unit as any).actionPoints / ((unit as any).maxActionPoints ?? 10)));
+                const detailedBar = isSelected || isTarget;
+                const bw = detailedBar
+                  ? (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 16 : 20)
+                  : (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 12 : 16);
+                const topY = unitType === 'vehicle' || unitType === 'artillery' ? -tileSize * 0.36 : -tileSize * 0.34;
+                const backplateAlpha = isSelected ? 0.76 : isTarget ? 0.68 : isFriendly ? 0.3 : 0.38;
+                const barAlpha = isSelected ? 0.9 : isTarget ? 0.84 : isFriendly ? 0.5 : 0.6;
+                const backplateH = detailedBar ? 6 : 4;
+                g.lineStyle(1, 0x050708, 0.65);
+                g.beginFill(0x101417, backplateAlpha);
+                g.drawRoundedRect(-bw / 2 - 1, topY - backplateH, bw + 2, backplateH, 1);
+                g.endFill();
+                g.beginFill(factionAccent, isSelected || isTarget ? 0.88 : isFriendly ? 0.72 : 0.86);
+                g.drawRect(isFriendly ? -bw / 2 - 3 : bw / 2 + 1, topY - backplateH, isFriendly ? 2 : 3, backplateH);
+                g.endFill();
 
-                // HP bar (red/green gradient based on health)
-                g.lineStyle(1, 0x222222, 0.9);
-                g.beginFill(0x1a1a1a, 0.75); g.drawRect(-bw / 2, topY - 10, bw, bh); g.endFill();
-                const hpColor = hpRatio > 0.6 ? 0x22cc44 : hpRatio > 0.3 ? 0xffaa00 : 0xff3333;
-                g.beginFill(hpColor, 0.95); g.drawRect(-bw / 2 + 1, topY - 9, (bw - 2) * hpRatio, bh - 2); g.endFill();
+                if (!isFriendly) {
+                  g.lineStyle(1, factionAccent, isTarget ? 0.58 : 0.44);
+                  g.drawRoundedRect(-bw / 2 - 1, topY - backplateH, bw + 2, backplateH, 1);
+                }
 
-                // Morale bar (yellow/blue)
-                g.beginFill(0x1a1a1a, 0.75); g.drawRect(-bw / 2, topY - 5, bw, bh); g.endFill();
-                const mrColor = mrRatio > 0.5 ? 0x4488ff : 0xffd700;
-                g.beginFill(mrColor, 0.9); g.drawRect(-bw / 2 + 1, topY - 4, (bw - 2) * mrRatio, bh - 2); g.endFill();
+                const flagY = topY - backplateH - (isFriendly ? 5 : 7);
+                if (isFriendly && isSelected) {
+                  const markerW = isSelected ? 7 : 5;
+                  const markerDrop = isSelected ? 7 : 5;
+                  g.lineStyle(isSelected ? 1.3 : 1, isSelected ? 0xd4f4f2 : 0x071821, isSelected ? 0.88 : 0.68);
+                  g.beginFill(factionAccent, isSelected ? 0.96 : 0.52);
+                  g.moveTo(0, flagY + 5);
+                  g.lineTo(-markerW, flagY + 5 - markerDrop);
+                  g.lineTo(markerW, flagY + 5 - markerDrop);
+                  g.closePath();
+                  g.endFill();
+                } else if (isTarget) {
+                  g.lineStyle(1, 0x1f0b09, 0.82);
+                  g.beginFill(factionAccent, 0.88);
+                  g.moveTo(0, flagY - 1);
+                  g.lineTo(5, flagY + 4);
+                  g.lineTo(0, flagY + 9);
+                  g.lineTo(-5, flagY + 4);
+                  g.closePath();
+                  g.endFill();
+                }
 
-                // AP bar (cyan)
-                g.beginFill(0x1a1a1a, 0.75); g.drawRect(-bw / 2, topY, bw, bh); g.endFill();
-                g.beginFill(0x00ddff, 0.85); g.drawRect(-bw / 2 + 1, topY + 1, (bw - 2) * apRatio, bh - 2); g.endFill();
+                g.lineStyle(0);
+                g.beginFill(0x2a1c18, 0.72 * barAlpha); g.drawRect(-bw / 2, topY - (detailedBar ? 6 : 3), bw, 2); g.endFill();
+                const hpColor = hpRatio > 0.55 ? 0x758c5a : hpRatio > 0.25 ? 0xb08a45 : 0xa84a3f;
+                g.beginFill(hpColor, 0.95 * barAlpha); g.drawRect(-bw / 2, topY - (detailedBar ? 6 : 3), bw * hpRatio, 2); g.endFill();
+
+                if (detailedBar) {
+                  g.beginFill(0x1a1a1a, 0.62 * barAlpha); g.drawRect(-bw / 2, topY - 3, bw, 1); g.endFill();
+                  const mrColor = mrRatio > 0.55 ? 0xc0b27a : mrRatio > 0.25 ? 0x9d8a58 : 0x7a6250;
+                  g.beginFill(mrColor, 0.82 * barAlpha); g.drawRect(-bw / 2, topY - 3, bw * mrRatio, 1); g.endFill();
+
+                  g.beginFill(0x1a1a1a, 0.62 * barAlpha); g.drawRect(-bw / 2, topY - 1, bw, 1); g.endFill();
+                  g.beginFill(isFriendly ? 0x5f94b8 : 0x8e5042, 0.82 * barAlpha); g.drawRect(-bw / 2, topY - 1, bw * apRatio, 1); g.endFill();
+                }
+              }}
+            />
+            <Graphics
+              zIndex={3}
+              draw={(g) => {
+                g.clear();
+                const accent = isFriendly ? 0x76b7d7 : 0xad5145;
+                const outline = isFriendly ? 0x071821 : 0x1f0b09;
+                g.lineStyle(1.5, outline, 0.9);
+                if (isTarget) {
+                  const flagY = unitType === 'vehicle' || unitType === 'artillery' ? -tileSize * 0.4 : -tileSize * 0.38;
+                  g.lineStyle(1.2, accent, 0.72);
+                  g.moveTo(-5, flagY + 8); g.lineTo(-2, flagY + 5);
+                  g.moveTo(5, flagY + 8); g.lineTo(2, flagY + 5);
+                  g.moveTo(-5, flagY + 8); g.lineTo(-1, flagY + 8);
+                  g.moveTo(5, flagY + 8); g.lineTo(1, flagY + 8);
+                }
               }}
             />
           </Container>
@@ -2439,6 +3852,7 @@ export function BattlefieldStage({
     targetUnitId,
     targetHitChance,
     targetDamagePreview,
+    attackEffects,
     viewerFaction,
     visibleTiles,
     topGeomFor,
@@ -2450,7 +3864,7 @@ export function BattlefieldStage({
   // Attack effects rendering (muzzle flash, projectile trail, hit marker)
   const attackEffectSprites = useMemo(() => {
     if (!attackEffects || attackEffects.length === 0) return [];
-    const EFFECT_DURATION = 400; // ms
+    const EFFECT_DURATION = 1150;
 
     return attackEffects.map((effect) => {
       const elapsed = now - effect.startTime;
@@ -2472,93 +3886,162 @@ export function BattlefieldStage({
       const fromY = fromPos.y - fromElev * ELEV_Y_OFFSET;
       const toX = toPos.x;
       const toY = toPos.y - toElev * ELEV_Y_OFFSET;
+      let targetUnit: any | undefined;
+      for (const side of Object.values(battleState.sides) as any[]) {
+        targetUnit = Array.from(side.units.values() as Iterable<any>).find((unit: any) =>
+          unit.coordinate.q === effect.toQ && unit.coordinate.r === effect.toR
+        );
+        if (targetUnit) break;
+      }
+      const targetDefinitionId = String(targetUnit?.definitionId ?? '').toLowerCase();
+      const targetUnitType = String(targetUnit?.unitType ?? '');
+      const targetMaterial = targetUnitType === 'vehicle' || targetUnitType === 'artillery'
+        ? 'armor'
+        : targetDefinitionId.includes('skeleton') || targetDefinitionId.includes('ghoul') || targetDefinitionId.includes('undead') || targetDefinitionId.includes('orc')
+          ? 'undead'
+          : 'organic';
 
-      // Projectile position along path
-      const projX = fromX + (toX - fromX) * Math.min(progress * 2, 1);
-      const projY = fromY + (toY - fromY) * Math.min(progress * 2, 1);
+      const travel = Math.min(elapsed / 460, 1);
+      const projX = fromX + (toX - fromX) * travel;
+      const projY = fromY + (toY - fromY) * travel;
 
-      const zIndex = Math.round(Math.max(fromY, toY)) + 100;
+      const zIndex = 20000 + Math.round(Math.max(fromY, toY));
 
       return (
         <Container key={effect.id} zIndex={zIndex}>
-          {/* Muzzle flash at source (first 100ms) */}
-          {elapsed < 100 && (
+          {elapsed < 260 && (
             <Graphics
               x={fromX}
               y={fromY - tileSize * 0.15}
               draw={(g) => {
                 g.clear();
-                const flashSize = tileSize * 0.25 * (1 - elapsed / 100);
-                // Orange/yellow flash
-                g.beginFill(0xffaa00, 0.9);
+                const flashSize = tileSize * 0.34 * (1 - elapsed / 260);
+                const dx = toX - fromX;
+                const dy = toY - fromY;
+                const len = Math.max(1, Math.hypot(dx, dy));
+                const ux = dx / len;
+                const uy = dy / len;
+                const px = -uy;
+                const py = ux;
+                g.lineStyle(3.2, 0x120b05, 0.88 * (1 - elapsed / 260));
+                g.moveTo(-ux * tileSize * 0.14, -uy * tileSize * 0.14);
+                g.lineTo(ux * tileSize * 0.32, uy * tileSize * 0.32);
+                g.beginFill(0xffe1a1, 0.78 * (1 - elapsed / 260));
+                g.moveTo(ux * tileSize * 0.1, uy * tileSize * 0.1);
+                g.lineTo(ux * tileSize * 0.42 + px * tileSize * 0.08, uy * tileSize * 0.42 + py * tileSize * 0.08);
+                g.lineTo(ux * tileSize * 0.38 - px * tileSize * 0.08, uy * tileSize * 0.38 - py * tileSize * 0.08);
+                g.closePath();
+                g.endFill();
+                g.beginFill(0xffd57a, 0.95);
                 g.drawCircle(0, 0, flashSize);
                 g.endFill();
-                g.beginFill(0xffffff, 0.8);
-                g.drawCircle(0, 0, flashSize * 0.5);
+                g.beginFill(0xffffff, 0.85);
+                g.drawCircle(0, 0, flashSize * 0.42);
                 g.endFill();
               }}
             />
           )}
 
-          {/* Projectile trail (gunshot = small yellow dot, explosion = larger red) */}
-          {progress < 0.5 && (
+          {travel < 1 && (
             <Graphics
-              x={projX}
-              y={projY - tileSize * 0.15}
               draw={(g) => {
                 g.clear();
+                const trailStart = Math.max(0, travel - 0.24);
+                const sx = fromX + (toX - fromX) * trailStart;
+                const sy = fromY + (toY - fromY) * trailStart - tileSize * 0.15;
+                const tx = projX;
+                const ty = projY - tileSize * 0.15;
+                g.lineStyle(effect.type === 'explosion' ? 5 : 3, 0x15110a, 0.9);
+                g.moveTo(sx, sy); g.lineTo(tx, ty);
                 if (effect.type === 'gunshot') {
-                  // Small yellow tracer
-                  g.beginFill(0xffdd00, 0.95);
-                  g.drawCircle(0, 0, 3);
-                  g.endFill();
+                  g.lineStyle(1.8, 0xffe6a0, 0.98);
+                  g.moveTo(sx, sy); g.lineTo(tx, ty);
                 } else if (effect.type === 'explosion') {
-                  // Larger red projectile
-                  g.beginFill(0xff4400, 0.9);
-                  g.drawCircle(0, 0, 5);
+                  g.lineStyle(2.6, 0xffcf5d, 0.98);
+                  g.moveTo(sx, sy); g.lineTo(tx, ty);
+                  g.beginFill(0xfff0a8, 0.95);
+                  g.drawCircle(tx, ty, 4.5);
                   g.endFill();
                 } else {
-                  // Magic = purple sparkle
+                  g.lineStyle(2.4, 0xc779ff, 0.96);
+                  g.moveTo(sx, sy); g.lineTo(tx, ty);
                   g.beginFill(0xaa44ff, 0.9);
-                  g.drawCircle(0, 0, 4);
+                  g.drawCircle(tx, ty, 4.5);
                   g.endFill();
                 }
               }}
             />
           )}
 
-          {/* Hit marker at target (after 200ms) */}
-          {elapsed > 200 && (
+          {elapsed > 240 && elapsed < 920 && (
             <Graphics
               x={toX}
               y={toY - tileSize * 0.2}
               draw={(g) => {
                 g.clear();
-                const hitProgress = (elapsed - 200) / (EFFECT_DURATION - 200);
-                const hitSize = tileSize * 0.3 * (1 - hitProgress * 0.5);
+                const hitProgress = Math.min((elapsed - 240) / 680, 1);
+                const hitSize = tileSize * (0.24 + hitProgress * 0.2);
                 const hitAlpha = 1 - hitProgress;
 
                 if (effect.type === 'explosion') {
-                  // Explosion ring
-                  g.beginFill(0xff6600, hitAlpha * 0.7);
-                  g.drawCircle(0, 0, hitSize * 1.2);
+                  const primary = targetMaterial === 'armor' ? 0xffbd58 : targetMaterial === 'undead' ? 0xbec1ad : 0xb07a52;
+                  const secondary = targetMaterial === 'armor' ? 0xfff0b0 : targetMaterial === 'undead' ? 0xd8d6c2 : 0xd09a67;
+                  const dust = targetMaterial === 'armor' ? 0x4b4b42 : targetMaterial === 'undead' ? 0x6f7164 : 0x5b4b36;
+                  g.beginFill(dust, hitAlpha * 0.32);
+                  g.drawEllipse(1, tileSize * 0.08, hitSize * 0.9, hitSize * 0.34);
                   g.endFill();
-                  g.beginFill(0xffaa00, hitAlpha * 0.9);
-                  g.drawCircle(0, 0, hitSize * 0.7);
+                  g.lineStyle(3, primary, hitAlpha * 0.88);
+                  g.drawCircle(0, 0, hitSize);
+                  g.lineStyle(1.5, secondary, hitAlpha * 0.82);
+                  for (let i = 0; i < 8; i++) {
+                    const angle = (Math.PI * 2 * i) / 8;
+                    const inner = hitSize * 0.35;
+                    const outer = hitSize * (1.05 + hitProgress * 0.55);
+                    g.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+                    g.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+                  }
+                  for (let i = 0; i < 5; i++) {
+                    const angle = -0.9 + i * 0.45;
+                    const px = Math.cos(angle) * hitSize * (0.45 + hitProgress * 0.35);
+                    const py = Math.sin(angle) * hitSize * (0.26 + hitProgress * 0.25);
+                    g.beginFill(secondary, hitAlpha * 0.75);
+                    g.drawCircle(px, py, Math.max(1.4, 3.2 * hitAlpha));
+                    g.endFill();
+                  }
+                  g.beginFill(secondary, hitAlpha * 0.58);
+                  g.drawCircle(0, 0, hitSize * 0.32);
                   g.endFill();
                 } else {
-                  // Impact sparks
-                  g.beginFill(0xffffff, hitAlpha * 0.8);
-                  g.drawCircle(0, 0, hitSize * 0.4);
+                  g.lineStyle(2, 0xffffff, hitAlpha * 0.85);
+                  g.drawCircle(0, 0, hitSize * 0.6);
+                  g.beginFill(0xffffff, hitAlpha * 0.55);
+                  g.drawCircle(0, 0, hitSize * 0.2);
                   g.endFill();
                 }
               }}
             />
           )}
+          {elapsed > 280 && elapsed < 1000 && (
+            <Text
+              text={effect.hit ? `-${effect.damage ?? ''}` : 'MISS'}
+              x={toX - (effect.hit ? 11 : 16)}
+              y={toY - tileSize * 0.64 - (elapsed - 280) * 0.012}
+              zIndex={zIndex + 2}
+              style={new TextStyle({
+                fontFamily: 'monospace',
+                fontSize: 11,
+                fontWeight: '700',
+                fill: effect.hit ? '#d7b65f' : '#b8b09e',
+                stroke: '#120b05',
+                strokeThickness: 3
+              })}
+              alpha={Math.max(0, 1 - (elapsed - 280) / 720)}
+            />
+          )}
         </Container>
       );
     }).filter(Boolean) as JSX.Element[];
-  }, [attackEffects, now, map.width, map.tiles, topGeomFor, toScreen]);
+  }, [attackEffects, battleState.sides, now, map.width, map.tiles, topGeomFor, toScreen]);
 
   const propsSprites = useMemo(() => {
     const props = (map.props ?? []).filter((prop) => prop.kind !== 'proc-building');
@@ -2568,7 +4051,7 @@ export function BattlefieldStage({
     const getTexture = (path?: string) => {
       const key = path ?? defaultTexturePath;
       if (!propTextureCache.has(key)) {
-        propTextureCache.set(key, Texture.from(key));
+        propTextureCache.set(key, crispTexture(Texture.from(key)));
       }
       return propTextureCache.get(key)!;
     };
@@ -2587,10 +4070,12 @@ export function BattlefieldStage({
         const worldY = pos.y - geom.avgHeight * ELEV_Y_OFFSET + anchor.y + PROP_BASE_Y_OFFSET;
         const zIndex = Math.round(worldY);
         const scale = prop.scale ?? 1;
-        const scaleX = scale * (prop.flipX ? -1 : 1);
-        const texturePath = prop.texture ?? defaultTexturePath;
+        const proceduralProp = !prop.texture && (prop.kind === 'rock' || prop.kind === 'bush');
+        const texturePath = assetUrl(prop.texture ?? defaultTexturePath);
         const textureMissing = missingPropPaths.has(texturePath);
-        const texture = textureMissing ? null : getTexture(texturePath);
+        const texture = textureMissing || proceduralProp ? null : getTexture(texturePath);
+        const bitmapScale = texture && texture.width >= 96 ? scale * 0.5 : scale;
+        const bitmapScaleX = bitmapScale * (prop.flipX ? -1 : 1);
 
         return (
           <Container key={prop.id} x={worldX} y={worldY} zIndex={zIndex} sortableChildren>
@@ -2598,12 +4083,33 @@ export function BattlefieldStage({
               zIndex={-1}
               draw={(g) => {
                 g.clear();
-                g.beginFill(0x000000, isVisible ? 0.18 : 0.1);
-                g.drawEllipse(0, PROP_SHADOW_Y, tileSize * 0.18, tileSize * 0.1);
+                const treeLike = prop.kind === 'tree';
+                g.beginFill(0x000000, isVisible ? (treeLike ? 0.24 : 0.18) : 0.1);
+                g.drawEllipse(0, PROP_SHADOW_Y, tileSize * (treeLike ? 0.24 : 0.18), tileSize * (treeLike ? 0.12 : 0.1));
                 g.endFill();
+                if (treeLike) {
+                  const q = prop.coordinate.q;
+                  const r = prop.coordinate.r;
+                  for (let i = 0; i < 5; i++) {
+                    const ox = (tileNoise(q, r, 310 + i) - 0.5) * tileSize * 0.34;
+                    const oy = PROP_SHADOW_Y + (tileNoise(q, r, 330 + i) - 0.5) * tileSize * 0.12;
+                    const rx = tileSize * (0.045 + tileNoise(q, r, 350 + i) * 0.035);
+                    const ry = tileSize * (0.018 + tileNoise(q, r, 370 + i) * 0.018);
+                    g.beginFill(i % 2 === 0 ? 0x1d2e18 : 0x332a1e, isVisible ? 0.18 : 0.08);
+                    g.drawEllipse(ox, oy, rx, ry);
+                    g.endFill();
+                  }
+                }
               }}
             />
-            {textureMissing ? (
+            {proceduralProp ? (
+              <Sprite
+                texture={prop.kind === 'rock' ? propAtlasTextures.rock : propAtlasTextures.bush}
+                anchor={{ x: 0.5, y: 0.78 }}
+                alpha={isVisible ? 1 : 0.72}
+                scale={scale * 0.58}
+              />
+            ) : textureMissing ? (
               <Text
                 text={basename(texturePath)}
                 anchor={0.5}
@@ -2615,7 +4121,7 @@ export function BattlefieldStage({
               <Sprite
                 texture={texture!}
                 anchor={{ x: 0.5, y: PROP_ANCHOR_Y }}
-                scale={{ x: scaleX, y: scale }}
+                scale={{ x: bitmapScaleX, y: bitmapScale }}
                 alpha={isVisible ? 1 : 0.75}
               />
             )}
@@ -2623,13 +4129,26 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [map.props, map.width, exploredTiles, visibleTiles, propTextureCache, topGeomFor, toScreen, missingPropPaths]);
+  }, [map.props, map.width, exploredTiles, visibleTiles, propTextureCache, propAtlasTextures, topGeomFor, toScreen, missingPropPaths]);
 
   const procBuildings = useMemo(() => {
     const props = (map.props ?? []).filter(
       (p): p is MapProp & { kind: 'proc-building' } => p.kind === 'proc-building'
     );
     if (props.length === 0) return [];
+
+    const focusCoords: Array<{ q: number; r: number }> = [];
+    for (const side of Object.values(battleState.sides) as any[]) {
+      if (selectedUnitId) {
+        const selected = side.units.get(selectedUnitId);
+        if (selected) focusCoords.push(selected.coordinate);
+      }
+      if (movingUnit?.unitId) {
+        const moving = side.units.get(movingUnit.unitId);
+        if (moving) focusCoords.push(moving.coordinate);
+      }
+    }
+    if (movingUnit?.path) focusCoords.push(...movingUnit.path);
 
     const W = map.width;
     const H = map.height;
@@ -2659,14 +4178,16 @@ export function BattlefieldStage({
 
         const isExplored = footprint.some((i) => exploredTiles.has(i));
         if (!isExplored) return null;
-        const isVisible = footprint.some((i) => visibleTiles.has(i));
-        const fogAlpha = isVisible ? 1 : 0.62;
-        const fogShade = isVisible ? 0 : 0.06;
-
         const q0 = b.coordinate.q;
         const r0 = b.coordinate.r;
         const w = Math.max(1, b.w ?? 1);
         const h = Math.max(1, b.h ?? 1);
+        const isVisible = footprint.some((i) => visibleTiles.has(i));
+        const focusNear = focusCoords.some((coord) =>
+          coord.q >= q0 - 1 && coord.q <= q0 + w && coord.r >= r0 - 1 && coord.r <= r0 + h
+        );
+        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? 0.48 : 1);
+        const fogShade = isVisible ? 0 : 0.06;
 
         const bottomNW = worldCornerOfTile(q0, r0, 'NW', topGeomFor);
         const bottomNE = worldCornerOfTile(q0 + w - 1, r0, 'NE', topGeomFor);
@@ -2683,9 +4204,51 @@ export function BattlefieldStage({
             ? Math.round((bottomNW.y + bottomNE.y + bottomSE.y + bottomSW.y) / 4)
             : Math.round(Math.max(bottomSW.y, bottomSE.y));
 
+        if (b.texture) {
+          const texturePath = assetUrl(b.texture);
+          if (!propTextureCache.has(texturePath)) {
+            propTextureCache.set(texturePath, crispTexture(Texture.from(texturePath)));
+          }
+          const texture = propTextureCache.get(texturePath)!;
+          const spriteScale = b.scale ?? 0.16;
+          return (
+            <Container key={b.id} x={anchor.x} y={anchor.y} zIndex={zIndex} sortableChildren alpha={fogAlpha}>
+              <Graphics
+                zIndex={-1}
+                draw={(g) => {
+                  g.clear();
+                  const localBase = basePoly.map((p) => ({
+                    x: p.x - anchor.x,
+                    y: p.y - anchor.y
+                  }));
+                  const centroid = localBase.reduce(
+                    (acc, p) => ({ x: acc.x + p.x / localBase.length, y: acc.y + p.y / localBase.length }),
+                    { x: 0, y: 0 }
+                  );
+                  const skirt = localBase.map((p) => ({
+                    x: centroid.x + (p.x - centroid.x) * 1.18,
+                    y: centroid.y + (p.y - centroid.y) * 1.22 + 2
+                  }));
+                  g.beginFill(0x080806, isVisible ? 0.34 : 0.16);
+                  drawPoly(g as PixiGraphics, skirt);
+                  g.endFill();
+                }}
+              />
+              <Sprite
+                texture={texture}
+                anchor={{ x: 0.5, y: 0.88 }}
+                scale={spriteScale}
+                tint={0x8f947c}
+                alpha={isVisible ? 1 : 0.72}
+              />
+            </Container>
+          );
+        }
+
         const levels = Math.max(1, b.levels ?? 2);
         const levelHeightPx = Math.max(8, b.levelHeightPx ?? Math.round(tileSize * 0.55));
         const heightPx = levels * levelHeightPx;
+        const roofRisePx = Math.max(6, Math.round(levelHeightPx * 0.65));
         const topNW = { x: bottomNW.x, y: bottomNW.y - heightPx };
         const topNE = { x: bottomNE.x, y: bottomNE.y - heightPx };
         const topSE = { x: bottomSE.x, y: bottomSE.y - heightPx };
@@ -2696,7 +4259,7 @@ export function BattlefieldStage({
         const facadeMaterial = facade.material ?? 'plaster';
         const trimColor = facade.trimColor ?? lightenColor(wallColor, 0.25);
         const accentColor = facade.accentColor ?? darkenColor(wallColor, 0.2);
-        const grimeStrength = clamp(facade.grime ?? 0, 0, 1);
+	      const grimeStrength = clamp(Math.max(0.44, facade.grime ?? 0), 0, 1);
 
         const roofColor = b.roofColor ?? 0x5e6b73;
         const roofCfg =
@@ -2747,18 +4310,53 @@ export function BattlefieldStage({
         return (
           <Container key={b.id} x={anchor.x} y={anchor.y} zIndex={zIndex} sortableChildren alpha={fogAlpha}>
             <Graphics
-              zIndex={-1}
+              zIndex={-2}
               draw={(g) => {
                 g.clear();
-                g.beginFill(0x000000, isVisible ? 0.15 : 0.08);
+                const localBase = basePoly.map((p) => ({
+                  x: p.x - anchor.x,
+                  y: p.y - anchor.y
+                }));
+                const centroid = localBase.reduce(
+                  (acc, p) => ({ x: acc.x + p.x / localBase.length, y: acc.y + p.y / localBase.length }),
+                  { x: 0, y: 0 }
+                );
+                const skirt = localBase.map((p) => ({
+                  x: centroid.x + (p.x - centroid.x) * 1.18,
+                  y: centroid.y + (p.y - centroid.y) * 1.22 + 2
+                }));
+                g.beginFill(0x16130e, isVisible ? 0.28 : 0.14);
+                drawPoly(g as PixiGraphics, skirt);
+                g.endFill();
+                g.beginFill(0x000000, isVisible ? 0.22 : 0.1);
                 drawPoly(
                   g as PixiGraphics,
-                  basePoly.map((p) => ({
-                    x: p.x - anchor.x,
-                    y: p.y - anchor.y
-                  }))
+                  localBase
                 );
                 g.endFill();
+                g.lineStyle(1, 0x655a42, isVisible ? 0.22 : 0.1);
+                for (let i = 0; i < 9; i++) {
+                  const t = i / 9;
+                  const a = skirt[Math.floor(tileNoise(q0, r0, 1200 + i) * skirt.length)];
+                  const bPoint = skirt[(Math.floor(tileNoise(q0, r0, 1200 + i) * skirt.length) + 1) % skirt.length];
+                  const x = a.x + (bPoint.x - a.x) * t + (tileNoise(q0, r0, 1210 + i) - 0.5) * 8;
+                  const y = a.y + (bPoint.y - a.y) * t + (tileNoise(q0, r0, 1220 + i) - 0.5) * 4;
+                  g.moveTo(x - 2, y);
+                  g.lineTo(x + 2, y + 1);
+                }
+                g.lineStyle();
+                for (let i = 0; i < 16; i++) {
+                  const edge = Math.floor(tileNoise(q0, r0, 1240 + i) * skirt.length);
+                  const a = skirt[edge];
+                  const bPoint = skirt[(edge + 1) % skirt.length];
+                  const t = tileNoise(q0, r0, 1250 + i);
+                  const x = a.x + (bPoint.x - a.x) * t + (tileNoise(q0, r0, 1260 + i) - 0.5) * 10;
+                  const y = a.y + (bPoint.y - a.y) * t + (tileNoise(q0, r0, 1270 + i) - 0.5) * 5;
+                  const size = tileNoise(q0, r0, 1280 + i) > 0.62 ? 3 : 2;
+                  g.beginFill(tileNoise(q0, r0, 1290 + i) > 0.45 ? 0x625a4b : 0x29241c, isVisible ? 0.62 : 0.32);
+                  g.drawRect(Math.round(x - size / 2), Math.round(y - size / 2), size, size);
+                  g.endFill();
+                }
               }}
             />
             <Graphics
@@ -2780,6 +4378,25 @@ export function BattlefieldStage({
                     wallColor,
                     facadeMaterial,
                     fogShade
+                  );
+                  drawFaceDamage(
+                    g as PixiGraphics,
+                    bottomA,
+                    bottomB,
+                    heightPx,
+                    anchor,
+                    wallColor,
+                    0.45 + grimeStrength,
+                    q0 * 97 + r0 * 131 + (face.side === 'E' ? 17 : 29)
+                  );
+                  drawFacadeEdgeWear(
+                    g as PixiGraphics,
+                    bottomA,
+                    bottomB,
+                    heightPx,
+                    anchor,
+                    wallColor,
+                    q0 * 173 + r0 * 211 + (face.side === 'E' ? 43 : 61)
                   );
                   faceInfos.push(face);
                 });
@@ -2823,12 +4440,13 @@ export function BattlefieldStage({
                   g.endFill();
                 } else if (roofCfg.kind === 'gabled') {
                   const pitch = clamp(roofCfg.pitch ?? 0.3, 0, 0.9);
+                  const ridgeRise = Math.max(6, Math.round(roofRisePx * (0.75 + pitch)));
                   const dir = roofCfg.dir ?? 'E-W';
                   if (dir === 'E-W') {
                     const midW = { x: (topNW.x + topSW.x) / 2, y: (topNW.y + topSW.y) / 2 };
                     const midE = { x: (topNE.x + topSE.x) / 2, y: (topNE.y + topSE.y) / 2 };
-                    const ridgeW = { x: midW.x, y: midW.y - heightPx * (1 + pitch) };
-                    const ridgeE = { x: midE.x, y: midE.y - heightPx * (1 + pitch) };
+                    const ridgeW = { x: midW.x, y: midW.y - ridgeRise };
+                    const ridgeE = { x: midE.x, y: midE.y - ridgeRise };
                     fillQuad(
                       g as PixiGraphics,
                       { x: topNW.x, y: topNW.y },
@@ -2855,8 +4473,8 @@ export function BattlefieldStage({
                   } else {
                     const midN = { x: (topNW.x + topNE.x) / 2, y: (topNW.y + topNE.y) / 2 };
                     const midS = { x: (topSW.x + topSE.x) / 2, y: (topSW.y + topSE.y) / 2 };
-                    const ridgeN = { x: midN.x, y: midN.y - heightPx * (1 + pitch) };
-                    const ridgeS = { x: midS.x, y: midS.y - heightPx * (1 + pitch) };
+                    const ridgeN = { x: midN.x, y: midN.y - ridgeRise };
+                    const ridgeS = { x: midS.x, y: midS.y - ridgeRise };
                     fillQuad(
                       g as PixiGraphics,
                       { x: topNW.x, y: topNW.y },
@@ -2885,7 +4503,7 @@ export function BattlefieldStage({
                   const pitch = clamp(roofCfg.pitch ?? 0.25, 0, 1);
                   const center = {
                     x: (topNW.x + topNE.x + topSE.x + topSW.x) / 4,
-                    y: (topNW.y + topNE.y + topSE.y + topSW.y) / 4 - heightPx * pitch
+                    y: (topNW.y + topNE.y + topSE.y + topSW.y) / 4 - Math.max(5, Math.round(roofRisePx * pitch))
                   };
                   const faces = [
                     { poly: [topNW, topNE, center], shade: 0.02 },
@@ -2905,6 +4523,14 @@ export function BattlefieldStage({
 
                 drawFasciaLine(g as PixiGraphics, topNE, topSE, anchor, roofTrimColor);
                 drawFasciaLine(g as PixiGraphics, topSE, topSW, anchor, roofTrimColor);
+                drawRoofSurfaceDetail(
+                  g as PixiGraphics,
+                  topPoly.map((p) => ({ x: p.x, y: p.y })),
+                  anchor,
+                  roofColor,
+                  fogShade,
+                  q0 * 109 + r0 * 151
+                );
 
                 drawRoofVents(
                   g as PixiGraphics,
@@ -2919,7 +4545,7 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [map.props, map.width, map.height, exploredTiles, visibleTiles, topGeomFor]);
+  }, [map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, movingUnit, propTextureCache]);
 
   // Keyboard pan animation loop: apply velocity from Arrow keys continuously (stable, no restarts)
   useEffect(() => {
@@ -2964,7 +4590,7 @@ export function BattlefieldStage({
   return (
     <div
       ref={hostRef}
-      style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', imageRendering: 'pixelated' }}
+      style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}
       onPointerDown={(e) => {
         if ((e as any).button !== 0 || minimapDragging) return;
         setDraggingCam(true);
@@ -3005,6 +4631,7 @@ export function BattlefieldStage({
       <div data-testid="camera-metrics" style={{ display: 'none' }}
            data-center-x={(-offsetX + hostSize.w / 2) / scale}
            data-center-y={(-offsetY + hostSize.h / 2) / scale}
+           data-scale={scale}
       />
       {/* Hidden map metrics for E2E assertions */}
       <div data-testid="map-metrics" style={{ display: 'none' }}
@@ -3044,10 +4671,13 @@ export function BattlefieldStage({
           antialias: false
         }}
       >
+        {screenBackdrop}
         <Container x={offsetX} y={offsetY} scale={scale}>
           {/* World container. In HEX mode we fake tilt; in ISO mode it's identity. */}
           <Container x={ISO_MODE ? isoBaseX : 0} scale={{ x: 1, y: ISO_MODE ? 1 : 0.72 }} skew={{ x: ISO_MODE ? 0 : -0.28, y: 0 }}>
+            {battlefieldBackdrop}
             {tileGraphics}
+            {terrainGrimeLayer}
             {tileOverlays}
             {terrainMissingTexts}
             {/* Top-only overlay mask: punch holes for all vertical wall faces (E/S) */}
@@ -3130,9 +4760,11 @@ export function BattlefieldStage({
 
             {/* Overlays clipped by the mask (no spill over walls) */}
             <Container mask={overlayMaskRef.current as any}>
+              {globalRangeOverlays}
               {movementRangeOverlays}
               {attackRangeOverlays}
               {plannedHighlights}
+              {invalidMoveHighlight}
             </Container>
 
             {tileWalls}
@@ -3140,6 +4772,7 @@ export function BattlefieldStage({
               {procBuildings}
               {propsSprites}
               {deathMarkerSprites}
+              {targetLinkOverlay}
               {units}
               {attackEffectSprites}
             </Container>
@@ -3147,7 +4780,7 @@ export function BattlefieldStage({
         </Container>
         {/* Minimap (screen-space) */}
         {minimapVisible && (
-          <Container x={10} y={10} interactive={true} eventMode="static"
+          <Container x={10} y={10} eventMode="static"
             pointerdown={(e: any) => {
               setMinimapDragging(true);
               const mmW = 160; const mmH = 120;

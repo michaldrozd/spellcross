@@ -1,4 +1,5 @@
-import { axialDistance, directionIndex, getTile, orientationDelta } from '../utils/grid.js';
+import { axialDistance, getTile, orientationDelta } from '../utils/grid.js';
+import { isoDirectionIndex } from '../utils/grid-iso.js';
 import type {
   BattlefieldMap,
   BattleEvent,
@@ -113,7 +114,7 @@ export function calculateHitChance(input: {
   const coverPenalty = cover * COVER_ACCURACY_PENALTY;
 
   // Flanking/back attack bonus based on defender orientation
-  const attackDir = directionIndex(defender.coordinate, attacker.coordinate);
+  const attackDir = isoDirectionIndex(defender.coordinate, attacker.coordinate);
   const delta = orientationDelta(defender.orientation ?? 0, attackDir);
   const flankBonus = delta >= 3 ? REAR_ACCURACY_BONUS : delta === 2 ? FLANK_ACCURACY_BONUS : 0;
 

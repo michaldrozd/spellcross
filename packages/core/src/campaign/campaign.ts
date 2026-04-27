@@ -631,6 +631,10 @@ export function startBattleForTerritory(
     coordinate: u.coordinate
   }));
 
+  if (tacticalUnits.length + alliedSupport.length === 0) {
+    throw new Error('No deployable units available for this operation');
+  }
+
   const enemyUnits = scenario.otherSideForces.map((unit) => ({
     definition: findUnitDef(bundle, unit.definitionId),
     coordinate: unit.coordinate
@@ -829,6 +833,12 @@ export function applyBattleOutcome(
     state.resources.research += territory.reward.research;
     state.resources.strategic += territory.reward.strategic;
     state.log.push(`Territory secured: ${territory.name}`);
+    state.popups?.push({
+      turn: state.turn,
+      title: 'Sector secured',
+      body: `${territory.name} is under control. Rewards have been added to HQ reserves.`,
+      kind: 'reward'
+    });
 
     // Unlock territories whose requirements are now met
     const clearedIds = new Set(
@@ -850,6 +860,14 @@ export function applyBattleOutcome(
   } else {
     territory.status = territory.status === 'available' ? 'available' : 'failed';
     state.log.push(`Defeat at ${territory.name}`);
+    state.popups?.push({
+      turn: state.turn,
+      title: 'Operation failed',
+      body: state.army.length === 0
+        ? `${territory.name} was lost and no deployable units remain. Open the Army tab, recruit or refill units, then relaunch.`
+        : `${territory.name} was lost. Surviving units have returned to HQ for refit.`,
+      kind: 'loss'
+    });
   }
 
   state.activeBattle = undefined;
@@ -871,7 +889,8 @@ export function serializeCampaignState(state: CampaignState): SerializedCampaign
       inProgress: state.research.inProgress ? { ...state.research.inProgress } : undefined
     },
     log: [...state.log],
-    events: state.events ? [...state.events] : undefined
+    events: state.events ? [...state.events] : undefined,
+    popups: state.popups ? structuredClone(state.popups) : undefined
   };
 }
 
@@ -905,7 +924,8 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     },
     activeBattle: undefined,
     log: [...snapshot.log],
-    events: snapshot.events ? [...snapshot.events] : []
+    events: snapshot.events ? [...snapshot.events] : [],
+    popups: snapshot.popups ? structuredClone(snapshot.popups) : []
   };
 
   return state;
