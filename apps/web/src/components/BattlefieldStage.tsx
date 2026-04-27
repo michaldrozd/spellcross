@@ -18,6 +18,19 @@ const assetUrl = (path: string) => (path.startsWith('/') ? path : `/${path}`);
 (settings as any).SCALE_MODE = SCALE_MODES.LINEAR;
 settings.ROUND_PIXELS = true;
 
+const webglContextNames = ['webgl2', 'webgl', 'experimental-webgl'] as const;
+
+const hasWebGLRenderer = () => {
+  if (typeof document === 'undefined') return true;
+
+  try {
+    const canvas = document.createElement('canvas');
+    return webglContextNames.some((name) => Boolean(canvas.getContext(name)));
+  } catch {
+    return false;
+  }
+};
+
 const crispTexture = (texture: Texture) => {
   const baseTexture = texture.baseTexture as any;
   if (baseTexture) {
@@ -923,6 +936,7 @@ export function BattlefieldStage({
   attackEffects = [],
   movingUnit
 }: BattlefieldStageProps) {
+  const [webglAvailable] = useState(hasWebGLRenderer);
   const map = battleState.map;
   const viewerVision = battleState.vision[viewerFaction];
   const visibleTiles = viewerVision?.visibleTiles ?? new Set<number>();
@@ -4929,6 +4943,52 @@ export function BattlefieldStage({
         </div>
       )}
 
+      {!webglAvailable ? (
+        <div
+          data-testid="webgl-required"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'grid',
+            placeItems: 'center',
+            background: '#050908',
+            color: '#d8e3d0',
+            padding: 24,
+            zIndex: 20
+          }}
+        >
+          <div
+            style={{
+              width: 'min(620px, calc(100vw - 48px))',
+              border: '1px solid #33423a',
+              background: 'linear-gradient(180deg, rgba(20,31,28,0.98), rgba(8,14,13,0.98))',
+              boxShadow: '0 18px 60px rgba(0,0,0,0.55)',
+              padding: 24
+            }}
+          >
+            <div style={{ color: '#d4a520', fontWeight: 800, fontSize: 22, letterSpacing: 1.5, marginBottom: 12 }}>
+              WEBGL REQUIRED
+            </div>
+            <div style={{ fontSize: 14, lineHeight: 1.55, color: '#edf4e8', marginBottom: 18 }}>
+              Tactical combat needs WebGL. Enable browser hardware acceleration or open the game in a browser/profile where WebGL is available, then reload and launch the battle again.
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              style={{
+                background: '#d4a520',
+                color: '#050908',
+                border: '1px solid #f4c520',
+                padding: '10px 14px',
+                fontWeight: 800,
+                cursor: 'pointer',
+                textTransform: 'uppercase'
+              }}
+            >
+              Reload
+            </button>
+          </div>
+        </div>
+      ) : (
 
       <Stage
         width={hostSize.w}
@@ -5126,6 +5186,7 @@ export function BattlefieldStage({
         )}
 
       </Stage>
+      )}
     </div>
   );
 }
