@@ -3571,13 +3571,13 @@ export function BattlefieldStage({
                     bracket(sx, sy, 0x75b7d3, 0.3, 0.9);
                   }
                 } else {
-                  const sx = isTarget ? tileSize * 0.24 * markerScale : tileSize * 0.19 * markerScale;
-                  const sy = isTarget ? tileSize * 0.09 * markerScale : tileSize * 0.064 * markerScale;
+                  const sx = isTarget ? tileSize * 0.21 * markerScale : tileSize * 0.19 * markerScale;
+                  const sy = isTarget ? tileSize * 0.075 * markerScale : tileSize * 0.064 * markerScale;
                   const accent = isTarget ? 0xe08a54 : 0xe05a49;
-                  bracket(sx, sy, 0x160706, isTarget ? 0.9 : 0.58, isTarget ? 2.6 : 2);
-                  bracket(sx, sy, accent, isTarget ? 0.98 : 0.62, isTarget ? 1.25 : 0.9);
+                  bracket(sx, sy, 0x160706, isTarget ? 0.66 : 0.58, isTarget ? 2 : 2);
+                  bracket(sx, sy, accent, isTarget ? 0.84 : 0.62, isTarget ? 0.9 : 0.9);
                   if (isTarget) {
-                    g.lineStyle(1.1, 0xc08a55, 0.72);
+                    g.lineStyle(0.9, 0xc08a55, 0.52);
                     g.moveTo(-5, 0); g.lineTo(5, 0);
                     g.moveTo(0, -3); g.lineTo(0, 3);
                   }
@@ -3634,9 +3634,9 @@ export function BattlefieldStage({
                     ];
                   };
                   const pts = ringShape(0.88);
-                  g.lineStyle(2, 0x090806, 0.52);
+                  g.lineStyle(1.4, 0x090806, 0.38);
                   drawPoly(g as PixiGraphics, pts);
-                  g.lineStyle(1.1, 0xc08a55, 0.72);
+                  g.lineStyle(0.85, 0xc08a55, 0.56);
                   drawPoly(g as PixiGraphics, pts);
                 }}
               />
@@ -4003,12 +4003,12 @@ export function BattlefieldStage({
                   g.closePath();
                   g.endFill();
                 } else if (isTarget) {
-                  g.lineStyle(1, 0x1f0b09, 0.82);
-                  g.beginFill(factionAccent, 0.88);
+                  g.lineStyle(0.9, 0x1f0b09, 0.68);
+                  g.beginFill(factionAccent, 0.72);
                   g.moveTo(0, flagY - 1);
-                  g.lineTo(5, flagY + 4);
-                  g.lineTo(0, flagY + 9);
-                  g.lineTo(-5, flagY + 4);
+                  g.lineTo(4, flagY + 4);
+                  g.lineTo(0, flagY + 8);
+                  g.lineTo(-4, flagY + 4);
                   g.closePath();
                   g.endFill();
                 } else if (!isFriendly) {
@@ -4342,15 +4342,15 @@ export function BattlefieldStage({
                   g.beginFill(dust, hitAlpha * 0.3);
                   g.drawEllipse(0, tileSize * 0.09, hitSize * 0.72, hitSize * 0.24);
                   g.endFill();
-                  g.lineStyle(2.2, 0x1a0f07, hitAlpha * 0.82);
-                  g.drawCircle(0, 0, hitSize * 0.42);
-                  g.lineStyle(1.2, spark, hitAlpha * 0.9);
-                  g.moveTo(-hitSize * 0.34, -hitSize * 0.08);
-                  g.lineTo(hitSize * 0.34, hitSize * 0.08);
-                  g.moveTo(-hitSize * 0.12, hitSize * 0.24);
-                  g.lineTo(hitSize * 0.16, -hitSize * 0.26);
-                  g.beginFill(spark, hitAlpha * 0.62);
-                  g.drawCircle(0, 0, hitSize * 0.14);
+                  g.lineStyle(2.6, 0x1a0f07, hitAlpha * 0.84);
+                  g.drawCircle(0, 0, hitSize * 0.48);
+                  g.lineStyle(1.35, spark, hitAlpha * 0.94);
+                  g.moveTo(-hitSize * 0.42, -hitSize * 0.1);
+                  g.lineTo(hitSize * 0.42, hitSize * 0.1);
+                  g.moveTo(-hitSize * 0.14, hitSize * 0.3);
+                  g.lineTo(hitSize * 0.2, -hitSize * 0.32);
+                  g.beginFill(spark, hitAlpha * 0.68);
+                  g.drawCircle(0, 0, hitSize * 0.18);
                   g.endFill();
                 }
               }}
@@ -4364,11 +4364,11 @@ export function BattlefieldStage({
               zIndex={zIndex + 2}
               style={new TextStyle({
                 fontFamily: 'monospace',
-                fontSize: effect.hit ? 11 : 10,
-                fontWeight: '700',
-                fill: effect.hit ? '#ffd080' : '#d8d1bc',
+                fontSize: effect.hit ? 13 : 11,
+                fontWeight: '800',
+                fill: effect.hit ? '#ffe19a' : '#d8d1bc',
                 stroke: effect.hit ? '#3a1308' : '#17130d',
-                strokeThickness: 2.7
+                strokeThickness: 3
               })}
               alpha={Math.max(0, 0.95 - (elapsed - 280) / 780)}
             />

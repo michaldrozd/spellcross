@@ -148,7 +148,7 @@ test('selecting a friendly unit near enemies preserves manual camera focus', asy
   expect(afterSelect.scale).toBeCloseTo(beforeSelect.scale, 2);
 });
 
-test('canceling explicit target preview restores previous camera focus', async ({ page }) => {
+test('explicit target preview and cancel preserve manual camera focus', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
   await expect.poll(async () => {
@@ -175,6 +175,11 @@ test('canceling explicit target preview restores previous camera focus', async (
   const targeted = await page.evaluate((enemyId) => (window as any).__battleControl.targetEnemy(enemyId), setup!.enemyId);
   expect(targeted).toBeTruthy();
   await page.waitForTimeout(300);
+  const afterTarget = await page.evaluate(() => (window as any).__battleCamera.metrics());
+
+  expect(afterTarget.centerX).toBeCloseTo(beforeTarget.centerX, 1);
+  expect(afterTarget.centerY).toBeCloseTo(beforeTarget.centerY, 1);
+  expect(afterTarget.scale).toBeCloseTo(beforeTarget.scale, 2);
 
   await page.getByRole('button', { name: /^Cancel$/i }).click();
   await page.waitForTimeout(250);

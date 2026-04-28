@@ -2441,6 +2441,64 @@ header.app-header {
   text-shadow: 0 0 7px rgba(220, 91, 71, 0.24);
 }
 
+@media (max-width: 1120px) {
+  .battle-bottom-bar {
+    gap: 0.38rem;
+    padding-left: 0.55rem;
+    padding-right: 10.2rem;
+  }
+
+  .battle-controls {
+    right: 0.5rem;
+    bottom: 0.55rem;
+    width: 150px;
+    grid-auto-rows: 38px;
+    gap: 5px;
+    padding: 1.16rem 0.5rem 0.5rem;
+  }
+
+  .unit-card {
+    min-width: 318px;
+    max-width: 350px;
+    padding: 0.68rem 0.66rem 0.72rem;
+  }
+
+  .unit-card.target-card {
+    min-width: 296px;
+    max-width: 312px;
+  }
+
+  .battle-log-panel {
+    min-width: 186px;
+    max-width: 238px;
+    padding: 0.68rem 0.66rem;
+  }
+
+  .log-entries {
+    font-size: 0.74rem;
+  }
+
+  .unit-details {
+    grid-template-columns: 86px minmax(126px, 1fr) minmax(86px, 0.54fr);
+    gap: 0.42rem;
+    font-size: 0.72rem;
+  }
+
+  .fire-control {
+    grid-template-columns: minmax(106px, 0.82fr) minmax(128px, 1fr);
+    gap: 0.38rem;
+  }
+
+  .fire-control-target {
+    min-height: 58px;
+    padding: 0.42rem 0.48rem;
+  }
+
+  .fire-control-metrics span {
+    min-height: 28px;
+  }
+}
+
 @media (max-width: 900px) {
   .battle-bottom-bar {
     padding: 0.6rem 0.75rem 0.75rem;

@@ -665,22 +665,7 @@ const BattleView: React.FC<{
   const tileIndex = (coord: HexCoordinate) => coord.r * map.width + coord.q;
   const selectedUnit = selected ? battle.state.sides.alliance.units.get(selected) : undefined;
   const selectedDefinition = selectedUnit ? bundle.units.find((unit) => unit.id === selectedUnit.definitionId) : undefined;
-  const nearestVisibleEnemy = selectedUnit
-    ? Array.from(battle.state.sides.otherSide.units.values())
-      .filter((unit) => {
-        if (unit.stance === 'destroyed') return false;
-        const idx = unit.coordinate.r * map.width + unit.coordinate.q;
-        return visibleTiles.has(idx);
-      })
-      .sort((a, b) => {
-        const distanceA = axialDistance(selectedUnit.coordinate, a.coordinate);
-        const distanceB = axialDistance(selectedUnit.coordinate, b.coordinate);
-        const priorityA = distanceA <= 1 ? distanceA + 20 : distanceA;
-        const priorityB = distanceB <= 1 ? distanceB + 20 : distanceB;
-        return priorityA - priorityB;
-      })[0]
-    : undefined;
-  const previewEnemy = targetedEnemy ?? nearestVisibleEnemy;
+  const previewEnemy = targetedEnemy;
   const targetWeaponPreview = selectedUnit && targetedEnemy ? bestWeapon(selectedUnit, targetedEnemy, battle.state.map) : null;
   const [showRanges, setShowRanges] = useState(false);
   const [attackEffects, setAttackEffects] = useState<AttackEffect[]>([]);
@@ -1359,9 +1344,10 @@ const BattleView: React.FC<{
       return;
     }
     if (foe) {
-      // Click on enemy - set as target (will show attack button in UI)
+      setPlannedPath(null);
+      setPlannedDestination(null);
+      setInvalidMoveFeedback(null);
       if (!selected) {
-        // Auto-select first unit if none selected
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
         if (first) {
           setSelected(first.id);
@@ -1480,7 +1466,6 @@ const BattleView: React.FC<{
           plannedDestination={plannedDestination ?? undefined}
           invalidMoveFeedback={invalidMoveFeedback}
           targetUnitId={previewEnemy?.id}
-          focusTargetUnitId={targetedEnemy?.id}
           restoreCameraSignal={cameraRestoreSignal}
           deployMode={deployMode}
           targetHitChance={targetedEnemy && targetWeaponPreview ? targetWeaponPreview.hit / 100 : undefined}
