@@ -127,6 +127,12 @@ const StrategicMapView: React.FC<{
     }
   };
 
+  const mapLabelForTerritory = (name: string) => {
+    if (name.startsWith('The Eastern Rift')) return 'Rift';
+    if (name.startsWith('Black Sea')) return 'Black Sea';
+    return name.split(' ')[0] ?? name;
+  };
+
   const getDifficultyStars = (diff: number = 1) => '★'.repeat(diff) + '☆'.repeat(5 - diff);
 
   return (
@@ -287,7 +293,7 @@ const StrategicMapView: React.FC<{
                   y={t.mapPosition.y + 3.5}
                   className={`territory-name ${t.status}`}
                 >
-                  {t.name.split(' ')[0]}
+                  {mapLabelForTerritory(t.name)}
                 </text>
               </g>
             );

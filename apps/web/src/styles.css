@@ -839,45 +839,55 @@ body {
 }
 
 .strategic-map-svg .region-label {
-  font-size: 2.15px;
-  fill: rgba(87, 113, 111, 0.74);
-  font-weight: 600;
+  font-size: 2.2px;
+  fill: rgba(177, 211, 204, 0.9);
+  font-weight: 800;
   letter-spacing: 0.1em;
   text-anchor: middle;
   pointer-events: none;
-  paint-order: stroke;
-  stroke: rgba(5, 8, 8, 0.38);
-  stroke-width: 0.2px;
+  paint-order: stroke fill;
+  stroke: rgba(2, 5, 5, 0.94);
+  stroke-width: 0.42px;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 0.34px rgba(0, 0, 0, 0.98));
 }
 
 .strategic-map-svg .territory-name {
-  font-size: 1.15px;
+  font-size: 1.28px;
   fill: #d3bc5d;
   text-anchor: middle;
   pointer-events: none;
-  paint-order: stroke;
-  stroke: rgba(6, 8, 7, 0.74);
-  stroke-width: 0.16px;
-  font-weight: 700;
+  paint-order: stroke fill;
+  stroke: rgba(2, 4, 4, 0.96);
+  stroke-width: 0.32px;
+  stroke-linejoin: round;
+  font-weight: 800;
+  filter: drop-shadow(0 0 0.32px rgba(0, 0, 0, 0.95));
 }
 
 .strategic-map-svg .city-label {
   font-size: 0.95px;
-  fill: rgba(31, 37, 36, 0.58);
+  fill: rgba(174, 189, 176, 0.82);
   text-anchor: middle;
   pointer-events: none;
+  paint-order: stroke fill;
+  stroke: rgba(2, 4, 4, 0.85);
+  stroke-width: 0.22px;
+  stroke-linejoin: round;
 }
 
 .strategic-map-svg .territory-name.cleared {
-  fill: #22c55e;
+  fill: #5ee284;
 }
 
 .strategic-map-svg .territory-name.available {
-  fill: #eab308;
+  fill: #ffd238;
 }
 
 .strategic-map-svg .territory-name.locked {
-  fill: rgba(48, 49, 45, 0.62);
+  fill: rgba(216, 228, 236, 0.9);
+  stroke: rgba(2, 4, 4, 0.98);
+  stroke-width: 0.32px;
 }
 
 .strategic-map-svg .timer-text {
@@ -2653,13 +2663,14 @@ header.app-header {
   }
 
   .strategic-map-svg .region-label {
-    font-size: 2.35px;
-    fill: rgba(112, 142, 139, 0.82);
+    font-size: 2.4px;
+    fill: rgba(190, 222, 216, 0.92);
+    stroke-width: 0.46px;
   }
 
   .strategic-map-svg .territory-name {
-    font-size: 1.34px;
-    stroke-width: 0.22px;
+    font-size: 1.42px;
+    stroke-width: 0.34px;
   }
 
   .strategic-map-svg .timer-text {
