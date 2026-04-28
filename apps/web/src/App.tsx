@@ -676,11 +676,13 @@ const BattleView: React.FC<{
   const movingUnitRef = useRef<MovingUnit | null>(movingUnit);
   const selectedRef = useRef<string | null>(selected);
   const targetedEnemyRef = useRef<UnitInstance | null>(targetedEnemy);
+  const plannedDestinationRef = useRef<HexCoordinate | null>(plannedDestination);
 
   useEffect(() => { deployModeRef.current = deployMode; }, [deployMode]);
   useEffect(() => { movingUnitRef.current = movingUnit; }, [movingUnit]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { targetedEnemyRef.current = targetedEnemy; }, [targetedEnemy]);
+  useEffect(() => { plannedDestinationRef.current = plannedDestination; }, [plannedDestination]);
 
   // Clean up expired attack effects
   useEffect(() => {
@@ -949,6 +951,9 @@ const BattleView: React.FC<{
       selectionState: () => ({
         selectedUnitId: selectedRef.current,
         targetedEnemyId: targetedEnemyRef.current?.id ?? null
+      }),
+      planningState: () => ({
+        plannedDestination: plannedDestinationRef.current
       }),
       ammoFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');

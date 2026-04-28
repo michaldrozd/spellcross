@@ -294,7 +294,7 @@ function unitContactFootprint(tile: number, unitType: string, definitionId: stri
 function unitPointerArea(tile: number, unitType: string, definitionId: string): UnitPointerArea {
   const isTruck = definitionId.includes('truck');
   if (unitType === 'vehicle' || (unitType === 'support' && isTruck)) {
-    return { x: -tile * 0.42, y: -tile * 0.5, width: tile * 0.84, height: tile * 0.72 };
+    return { x: -tile * 0.3, y: -tile * 0.3, width: tile * 0.6, height: tile * 0.5 };
   }
   if (unitType === 'artillery') {
     return { x: -tile * 0.38, y: -tile * 0.46, width: tile * 0.76, height: tile * 0.64 };

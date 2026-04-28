@@ -280,6 +280,70 @@ test('visible friendly vehicle body wins over adjacent enemy tile hit', async ({
   expect(afterEnemyClick.scale).toBeCloseTo(beforeClick.scale, 2);
 });
 
+test('empty movement tile beside selected vehicle is not stolen by vehicle hit area', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const allies = ctrl?.allyUnits?.() ?? [];
+    const enemies = ctrl?.enemyUnits?.() ?? [];
+    const vehicle = allies.find((unit: any) => unit.type === 'vehicle' || unit.definitionId?.includes('truck'));
+    if (!vehicle) return null;
+    const vehicleCoord = { q: 4, r: 4 };
+    allies
+      .filter((unit: any) => unit.id !== vehicle.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 1, index));
+    enemies.forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 8, index));
+    ctrl.snapUnit(vehicle.id, vehicleCoord.q, vehicleCoord.r);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(vehicle.id);
+    const candidateTiles = [
+      { q: vehicleCoord.q - 1, r: vehicleCoord.r },
+      { q: vehicleCoord.q, r: vehicleCoord.r - 1 },
+      { q: vehicleCoord.q - 1, r: vehicleCoord.r + 1 }
+    ];
+    const movementTile = candidateTiles.find((coord) => ctrl.pathForUnit(vehicle.id, coord.q, coord.r)?.success);
+    if (!movementTile) return null;
+    return { vehicleId: vehicle.id, vehicleCoord, movementTile };
+  });
+  expect(setup).toBeTruthy();
+
+  await page.waitForFunction(() => Boolean((window as any).__battleCamera));
+  await page.evaluate(({ q, r }) => (window as any).__battleCamera.centerOnCoord(q, r), setup!.vehicleCoord);
+  await page.evaluate(() => (window as any).__battleCamera.setZoom(2.6));
+  await page.waitForTimeout(250);
+
+  const tilePoint = await page.evaluate(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const camera = (window as any).__battleCamera;
+    if (!canvas || !camera) return null;
+    const screen = camera.screenForCoord(q, r);
+    const scale = camera.metrics().scale;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + screen.x + 8 * scale,
+      y: rect.top + screen.y
+    };
+  }, setup!.movementTile);
+  expect(tilePoint).toBeTruthy();
+
+  await page.mouse.click(tilePoint!.x, tilePoint!.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => ({
+      selection: (window as any).__battleControl?.selectionState?.() ?? null,
+      planning: (window as any).__battleControl?.planningState?.() ?? null
+    }));
+  }).toMatchObject({
+    selection: { selectedUnitId: setup!.vehicleId, targetedEnemyId: null },
+    planning: { plannedDestination: setup!.movementTile }
+  });
+});
+
 test('invalid movement gives visible order feedback', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
