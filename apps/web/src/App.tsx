@@ -1956,13 +1956,24 @@ export function App() {
   const availableUnits = bundle.units
     .filter((u) => u.faction === 'alliance')
     .slice(0, 6)
-    .map((u) => ({
-      id: u.id,
-      name: u.name,
-      unlocked: isUnitUnlocked(campaign, bundle, u.id),
-      cost: u.cost,
-      canAfford: campaign.resources.money >= u.cost,
-    }));
+    .map((u) => {
+      const ownedCount = campaign.army.filter((unit) => unit.definitionId === u.id).length;
+      const reserveCount = campaign.reserves.filter((unit) => unit.definitionId === u.id).length;
+      const unlocked = isUnitUnlocked(campaign, bundle, u.id);
+      const canAfford = campaign.resources.money >= u.cost;
+      const uniqueHeroAlreadyQueued = u.type === 'hero' && (ownedCount > 0 || reserveCount > 0);
+      return {
+        id: u.id,
+        name: u.name,
+        unitType: u.type,
+        unlocked,
+        cost: u.cost,
+        canAfford,
+        canRecruit: unlocked && canAfford && !uniqueHeroAlreadyQueued,
+        ownedCount,
+        reserveCount,
+      };
+    });
 
   const toArmyUnit = (u: (typeof campaign.army)[number]) => {
     const def = bundle.units.find((d) => d.id === u.definitionId)!;
@@ -2015,8 +2026,6 @@ export function App() {
         onRecruit={(id, tier) => {
           try {
             mutate((s) => recruitUnit(s, bundle, id, tier));
-            const unit = bundle.units.find((candidate) => candidate.id === id);
-            showToast(`${unit?.name ?? 'Unit'} enters reserve queue`, 'success');
           } catch (err) {
             const message = err instanceof Error ? err.message : 'Recruitment failed';
             showToast(message, 'error');

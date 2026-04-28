@@ -10,15 +10,18 @@ interface ToastMessage {
 
 let toastId = 0;
 let addToastFn: ((message: string, type?: ToastType) => void) | null = null;
+let clearToastsFn: (() => void) | null = null;
 
-// Global function to show toast from anywhere
 export function showToast(message: string, type: ToastType = 'error') {
   if (addToastFn) {
     addToastFn(message, type);
   } else {
-    // Fallback to console if Toast not mounted yet
     console.warn('[Toast not ready]', message);
   }
+}
+
+export function clearToasts() {
+  clearToastsFn?.();
 }
 
 const toastIcons: Record<ToastType, string> = {
@@ -35,15 +38,16 @@ export const ToastContainer: React.FC = () => {
     addToastFn = (message: string, type: ToastType = 'error') => {
       const id = ++toastId;
       setToasts((prev) => [...prev, { id, message, type }]);
-      
-      // Auto-remove after 2.5 seconds
+
       setTimeout(() => {
         setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, 2500);
+      }, type === 'success' ? 1500 : 2500);
     };
+    clearToastsFn = () => setToasts([]);
 
     return () => {
       addToastFn = null;
+      clearToastsFn = null;
     };
   }, []);
 

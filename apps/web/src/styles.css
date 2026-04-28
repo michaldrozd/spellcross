@@ -840,24 +840,24 @@ body {
 
 .strategic-map-svg .region-label {
   font-size: 2.15px;
-  fill: rgba(38, 50, 49, 0.7);
+  fill: rgba(87, 113, 111, 0.74);
   font-weight: 600;
   letter-spacing: 0.1em;
   text-anchor: middle;
   pointer-events: none;
   paint-order: stroke;
-  stroke: rgba(188, 168, 103, 0.18);
+  stroke: rgba(5, 8, 8, 0.38);
   stroke-width: 0.2px;
 }
 
 .strategic-map-svg .territory-name {
   font-size: 1.15px;
-  fill: #231d15;
+  fill: #d3bc5d;
   text-anchor: middle;
   pointer-events: none;
   paint-order: stroke;
-  stroke: rgba(229, 210, 146, 0.62);
-  stroke-width: 0.12px;
+  stroke: rgba(6, 8, 7, 0.74);
+  stroke-width: 0.16px;
   font-weight: 700;
 }
 
@@ -888,8 +888,8 @@ body {
 }
 
 .strategic-map-svg .invasion-label {
-  font-size: 1.5px;
-  fill: #ef4444;
+  font-size: 1.32px;
+  fill: rgba(239, 93, 78, 0.72);
   font-weight: bold;
   text-anchor: middle;
 }
@@ -1564,10 +1564,10 @@ body {
   --research-columns: 4;
   position: relative;
   display: grid;
-  grid-template-columns: repeat(var(--research-columns), minmax(190px, 1fr));
-  gap: 0.75rem;
-  padding: 0.65rem;
-  min-height: 355px;
+  grid-template-columns: repeat(var(--research-columns), minmax(218px, 1fr));
+  gap: 0.95rem;
+  padding: 0.86rem;
+  min-height: 360px;
   overflow-x: auto;
   background:
     repeating-linear-gradient(0deg, rgba(91, 122, 91, 0.05) 0 1px, transparent 1px 18px),
@@ -1592,8 +1592,8 @@ body {
   position: relative;
   display: grid;
   align-content: start;
-  gap: 0.58rem;
-  min-width: 190px;
+  gap: 0.72rem;
+  min-width: 218px;
 }
 
 .research-column::before {
@@ -1627,8 +1627,8 @@ body {
 
 .research-card {
   position: relative;
-  min-height: 150px;
-  padding: 1.16rem 0.75rem 0.72rem 1.05rem;
+  min-height: 154px;
+  padding: 1.16rem 0.88rem 0.84rem 1.14rem;
   background:
     linear-gradient(rgba(90, 110, 83, 0.045) 1px, transparent 1px),
     linear-gradient(90deg, rgba(90, 110, 83, 0.04) 1px, transparent 1px),
@@ -1709,8 +1709,8 @@ body {
 
 .research-card.locked-node {
   border-color: #353b3d #101415 #090c0d #242b2d;
-  filter: saturate(0.7);
-  opacity: 0.78;
+  filter: saturate(0.82);
+  opacity: 0.88;
 }
 
 .research-card.locked-node::before {
@@ -1721,16 +1721,16 @@ body {
 .research-card h4 {
   margin: 0 0 0.5rem;
   color: #eef4ea;
-  font-size: 0.78rem;
+  font-size: 0.84rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .research-card p {
   margin: 0 0 0.75rem;
-  color: #aab8b2;
-  font-size: 0.68rem;
-  line-height: 1.25;
+  color: #bfcbc5;
+  font-size: 0.72rem;
+  line-height: 1.32;
 }
 
 .research-requirements {
@@ -1752,13 +1752,13 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #b5aa75;
+  color: #d0c07b;
   font-weight: 600;
 }
 
 .research-cost {
-  color: var(--muted);
-  font-size: 0.66rem;
+  color: #aab5ac;
+  font-size: 0.68rem;
   margin-bottom: 0.55rem;
 }
 
@@ -1784,7 +1784,7 @@ body {
   border: 1px solid #8c7848;
   color: #e1c86e;
   font-family: "Courier New", monospace;
-  font-size: 0.58rem;
+  font-size: 0.62rem;
   letter-spacing: 0.08em;
   white-space: normal;
   line-height: 1.15;
@@ -2529,6 +2529,222 @@ header.app-header {
 
   .unit-monitor {
     min-height: 64px;
+  }
+}
+
+@media (max-width: 700px) {
+  .strategic-hq {
+    min-height: 100svh;
+    overflow-x: hidden;
+  }
+
+  .hq-topbar {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.62rem;
+    padding: 0.62rem 0.72rem 0.72rem;
+  }
+
+  .hq-title {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas:
+      "menu title"
+      "menu turn";
+    gap: 0.16rem 0.62rem;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .hq-title .back-btn {
+    grid-area: menu;
+    min-width: 68px;
+    padding: 0.42rem 0.48rem;
+    font-size: 0.68rem;
+  }
+
+  .hq-title h1 {
+    grid-area: title;
+    font-size: 1.26rem;
+    line-height: 1;
+    letter-spacing: 0.08em;
+    white-space: nowrap;
+  }
+
+  .turn-info {
+    grid-area: turn;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+
+  .hq-resources {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.42rem;
+  }
+
+  .resource {
+    min-width: 0;
+    grid-template-columns: 1.25rem minmax(0, 1fr);
+    column-gap: 0.34rem;
+    padding: 0.34rem 0.38rem;
+  }
+
+  .resource-icon {
+    width: 1.16rem;
+    height: 1.16rem;
+    font-size: 0.48rem;
+  }
+
+  .resource-value {
+    font-size: 1.05rem;
+  }
+
+  .resource-label {
+    font-size: 0.48rem;
+    letter-spacing: 0.06em;
+  }
+
+  .hq-topbar > .end-turn-btn {
+    width: 100%;
+    min-height: 38px;
+    font-size: 0.72rem;
+  }
+
+  .hq-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: hidden;
+  }
+
+  .hq-tabs .tab {
+    min-width: 0;
+    gap: 0.32rem;
+    padding: 0.7rem 0.32rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.03em;
+  }
+
+  .tab-code {
+    min-width: 1.45rem;
+    height: 1rem;
+    font-size: 0.48rem;
+  }
+
+  .hq-content {
+    padding: 0.72rem;
+    overflow-x: hidden;
+  }
+
+  .strategic-map-view {
+    display: flex;
+    flex-direction: column;
+    gap: 0.72rem;
+    height: auto;
+    min-height: 0;
+  }
+
+  .strategic-map-container {
+    width: 100%;
+    height: clamp(330px, 96vw, 410px);
+    min-height: 330px;
+    border-width: 2px;
+  }
+
+  .strategic-map-svg .region-label {
+    font-size: 2.35px;
+    fill: rgba(112, 142, 139, 0.82);
+  }
+
+  .strategic-map-svg .territory-name {
+    font-size: 1.34px;
+    stroke-width: 0.22px;
+  }
+
+  .strategic-map-svg .timer-text {
+    font-size: 1.16px;
+  }
+
+  .map-status-strip,
+  .map-legend {
+    left: 0.55rem;
+    right: 0.55rem;
+  }
+
+  .map-status-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.3rem;
+    font-size: 0.58rem;
+  }
+
+  .map-status-strip strong {
+    grid-column: 1 / -1;
+  }
+
+  .map-legend {
+    flex-wrap: wrap;
+    gap: 0.38rem;
+    font-size: 0.58rem;
+  }
+
+  .territory-info-panel {
+    min-height: 0;
+    padding: 0.86rem;
+  }
+
+  .no-selection {
+    padding: 1.1rem 0.5rem;
+  }
+
+  .quick-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.4rem;
+    font-size: 0.72rem;
+  }
+
+  .mini-log {
+    margin-top: 0.85rem;
+  }
+
+  .army-view {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .unit-row {
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 0.45rem;
+  }
+
+  .army-view .unit-stats,
+  .army-view .unit-actions {
+    grid-column: 1 / -1;
+  }
+
+  .army-view .unit-actions {
+    justify-content: flex-start;
+  }
+
+  .recruit-panel {
+    width: 100%;
+  }
+
+  .research-status,
+  .sp-conversion {
+    padding: 0.78rem;
+  }
+
+  .research-tree-board {
+    grid-template-columns: repeat(var(--research-columns), minmax(248px, 82vw));
+    min-height: 0;
+    padding: 0.55rem;
+  }
+
+  .toast-stack {
+    bottom: 1rem;
+    width: calc(100vw - 1.2rem);
   }
 }
 

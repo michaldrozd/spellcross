@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { CampaignState } from '@spellcross/core';
+import { clearToasts } from './Toast.js';
 
 interface Territory {
   id: string;
@@ -58,7 +59,17 @@ interface StrategicHQProps {
   onConvertResearch: (amount: number) => void;
   onBack: () => void;
   onDismissPopups?: () => void;
-  availableUnits: { id: string; name: string; unlocked: boolean; cost: number; canAfford: boolean }[];
+  availableUnits: {
+    id: string;
+    name: string;
+    unitType: string;
+    unlocked: boolean;
+    cost: number;
+    canAfford: boolean;
+    canRecruit: boolean;
+    ownedCount: number;
+    reserveCount: number;
+  }[];
 }
 
 function rosterPortrait(definitionId: string, unitType: string) {
@@ -206,11 +217,11 @@ const StrategicMapView: React.FC<{
               y1={conn.from.mapPosition!.y}
               x2={conn.to.mapPosition!.x}
               y2={conn.to.mapPosition!.y}
-              stroke={conn.to.status === 'locked' ? '#3f3f46' : '#6b7280'}
-              strokeWidth="0.3"
-              strokeDasharray={conn.to.status === 'locked' ? '1,1' : 'none'}
-              opacity="0.6"
-            />
+                stroke={conn.to.status === 'locked' ? '#555d58' : '#8a907b'}
+                strokeWidth="0.3"
+                strokeDasharray={conn.to.status === 'locked' ? '1,1' : 'none'}
+                opacity={conn.to.status === 'locked' ? 0.54 : 0.72}
+              />
           ))}
 
           {/* Territory markers */}
@@ -286,7 +297,7 @@ const StrategicMapView: React.FC<{
           <path
             d="M 95,40 L 88,35 L 88,38 L 82,38 L 82,42 L 88,42 L 88,45 Z"
             fill="#ef4444"
-            opacity="0.6"
+            opacity="0.44"
           />
           <text x="93" y="50" className="invasion-label">INVASION</text>
         </svg>
@@ -387,6 +398,10 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'map' | 'army' | 'research'>('map');
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
+  const switchTab = (tab: 'map' | 'army' | 'research') => {
+    clearToasts();
+    setActiveTab(tab);
+  };
   const researchById = useMemo(
     () => new Map(researchTopics.map((topic) => [topic.id, topic])),
     [researchTopics]
@@ -469,15 +484,15 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
 
       {/* Tab navigation */}
       <div className="hq-tabs">
-        <button className={`tab ${activeTab === 'map' ? 'active' : ''}`} data-active={activeTab === 'map'} style={activeTab === 'map' ? activeTabStyle : inactiveTabStyle} onClick={() => setActiveTab('map')}>
+        <button className={`tab ${activeTab === 'map' ? 'active' : ''}`} data-active={activeTab === 'map'} style={activeTab === 'map' ? activeTabStyle : inactiveTabStyle} onClick={() => switchTab('map')}>
           <span className="tab-code">OPS</span>
           <span>Territories</span>
         </button>
-        <button className={`tab ${activeTab === 'army' ? 'active' : ''}`} data-active={activeTab === 'army'} style={activeTab === 'army' ? activeTabStyle : inactiveTabStyle} onClick={() => setActiveTab('army')}>
+        <button className={`tab ${activeTab === 'army' ? 'active' : ''}`} data-active={activeTab === 'army'} style={activeTab === 'army' ? activeTabStyle : inactiveTabStyle} onClick={() => switchTab('army')}>
           <span className="tab-code">TOE</span>
           <span>Army ({army.length})</span>
         </button>
-        <button className={`tab ${activeTab === 'research' ? 'active' : ''}`} data-active={activeTab === 'research'} style={activeTab === 'research' ? activeTabStyle : inactiveTabStyle} onClick={() => setActiveTab('research')}>
+        <button className={`tab ${activeTab === 'research' ? 'active' : ''}`} data-active={activeTab === 'research'} style={activeTab === 'research' ? activeTabStyle : inactiveTabStyle} onClick={() => switchTab('research')}>
           <span className="tab-code">R&amp;D</span>
           <span>Research</span>
         </button>
@@ -572,12 +587,20 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                   <button
                     key={u.id}
                     className={`recruit-btn ${!u.canAfford ? 'recruit-btn-short' : ''}`}
-                    disabled={!u.unlocked}
-                    onClick={() => onRecruit(u.id, 'rookie')}
+                    disabled={!u.canRecruit}
+                    onClick={() => {
+                      if (u.canRecruit) onRecruit(u.id, 'rookie');
+                    }}
                   >
                     <span>{u.name}</span>
                     <span className="recruit-meta">
-                      {u.unlocked ? `${u.cost} CR · ${u.canAfford ? 'T+2' : 'NEED FUNDS'}` : 'LOCKED'}
+                      {!u.unlocked
+                        ? 'LOCKED'
+                        : u.unitType === 'hero' && u.ownedCount > 0
+                          ? 'IN FORCE'
+                          : u.unitType === 'hero' && u.reserveCount > 0
+                            ? 'IN TRANSIT'
+                            : `${u.cost} CR · ${u.canAfford ? 'T+2' : 'NEED FUNDS'}`}
                     </span>
                   </button>
                 ))}

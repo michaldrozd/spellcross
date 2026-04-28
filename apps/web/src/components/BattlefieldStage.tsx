@@ -1586,13 +1586,13 @@ export function BattlefieldStage({
     if (followTargetPx) {
 
       offsetX = hostSize.w / 2 - followTargetPx.x * scale;
-      offsetY = hostSize.h * 0.31 - followTargetPx.y * scale;
+      offsetY = hostSize.h * 0.41 - followTargetPx.y * scale;
     } else {
       const followCoord = selected?.coordinate ?? { q: Math.floor(map.width / 2), r: Math.floor(map.height / 2) };
       const { x: tx, y: ty } = toScreen(followCoord);
       const adjx = ISO_MODE ? tx + isoBaseX : tx;
       offsetX = hostSize.w / 2 - adjx * scale;
-      offsetY = hostSize.h * 0.37 - ty * scale;
+      offsetY = hostSize.h * 0.43 - ty * scale;
     }
   }
   offsetX = Math.round(offsetX);
@@ -3959,6 +3959,7 @@ export function BattlefieldStage({
                 const apRatio = Math.max(0, Math.min(1, (unit as any).actionPoints / ((unit as any).maxActionPoints ?? 10)));
                 const compactDeployStatus = deployMode && isFriendly && !isSelected && !isSelectedCarrier;
                 if (compactDeployStatus) return;
+                if (isFriendly && !isSelected && !isSelectedCarrier && !isTarget && hpRatio > 0.98) return;
                 const detailedBar = isSelected || isTarget;
                 const bw = detailedBar
                   ? (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 16 : 20)
