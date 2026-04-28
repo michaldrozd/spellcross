@@ -194,14 +194,14 @@ const StrategicMapView: React.FC<{
 
           {/* Fixed city anchors make the strategic layer feel less like empty nodes */}
           {[
-            ['Paris', 24, 40],
-            ['Lyon', 28, 53],
-            ['Amsterdam', 31, 25],
-            ['Berlin', 50, 31],
-            ['Prague', 52, 40],
-            ['Vienna', 56, 49],
-            ['Warsaw', 64, 35],
-            ['Kyiv', 78, 40]
+            ['Paris', 25, 43],
+            ['Lyon', 30, 57],
+            ['Amsterdam', 31, 29],
+            ['Berlin', 49, 34],
+            ['Prague', 50, 43],
+            ['Vienna', 53, 51],
+            ['Warsaw', 61, 38],
+            ['Kyiv', 75, 43]
           ].map(([name, x, y]) => (
             <g key={name}>
               <circle cx={x} cy={y} r="0.45" fill="#1b2422" opacity="0.7" />
@@ -209,11 +209,11 @@ const StrategicMapView: React.FC<{
           ))}
 
           {/* Region labels */}
-          <text x="25" y="38" className="region-label">FRANCE</text>
-          <text x="45" y="28" className="region-label">GERMANY</text>
-          <text x="58" y="42" className="region-label">AUSTRIA</text>
-          <text x="65" y="32" className="region-label">POLAND</text>
-          <text x="78" y="42" className="region-label">UKRAINE</text>
+          <text x="20" y="48" className="region-label">FRANCE</text>
+          <text x="42" y="41" className="region-label">GERMANY</text>
+          <text x="54" y="57" className="region-label">AUSTRIA</text>
+          <text x="69" y="35" className="region-label">POLAND</text>
+          <text x="76" y="58" className="region-label">UKRAINE</text>
 
           {/* Connection lines */}
           {connections.map((conn, i) => (
@@ -234,7 +234,14 @@ const StrategicMapView: React.FC<{
           {territories.map(t => {
             if (!t.mapPosition) return null;
             const isSelected = t.id === selectedTerritory;
+            const isSeaAnchor = t.id === 'sector-blacksea';
             const color = getStatusColor(t.status);
+            const markerFill = t.status === 'locked'
+              ? (isSeaAnchor ? '#243745' : '#27272a')
+              : color;
+            const markerStroke = isSelected
+              ? '#ffffff'
+              : (t.status === 'locked' && isSeaAnchor ? '#7f95a3' : color);
 
             return (
               <g
@@ -269,8 +276,8 @@ const StrategicMapView: React.FC<{
                   cx={t.mapPosition.x}
                   cy={t.mapPosition.y}
                   r={isSelected ? 2 : 1.5}
-                  fill={t.status === 'locked' ? '#27272a' : color}
-                  stroke={isSelected ? '#ffffff' : color}
+                  fill={markerFill}
+                  stroke={markerStroke}
                   strokeWidth={isSelected ? 0.4 : 0.2}
                   filter={t.status === 'available' ? 'url(#glow)' : undefined}
                   className="territory-node"
@@ -301,11 +308,11 @@ const StrategicMapView: React.FC<{
 
           {/* Invasion arrow from the east */}
           <path
-            d="M 95,40 L 88,35 L 88,38 L 82,38 L 82,42 L 88,42 L 88,45 Z"
+            d="M 88,52 L 94,47 L 94,50 L 97,50 L 97,54 L 94,54 L 94,57 Z"
             fill="#ef4444"
-            opacity="0.44"
+            opacity="0.38"
           />
-          <text x="93" y="50" className="invasion-label">INVASION</text>
+          <text x="91" y="60" className="invasion-label">INVASION</text>
         </svg>
 
         <div className="map-status-strip">

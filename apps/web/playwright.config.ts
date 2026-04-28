@@ -1,16 +1,22 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Lightweight placeholder config so `pnpm exec playwright test` succeeds during scaffolding.
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/smoke.spec.ts',
   timeout: 20_000,
   expect: { timeout: 5_000 },
   use: {
+    baseURL: 'http://127.0.0.1:5173',
     headless: true,
     trace: 'retain-on-failure',
     video: 'off',
     screenshot: 'only-on-failure'
+  },
+  webServer: {
+    command: 'pnpm dev --host 127.0.0.1',
+    url: 'http://127.0.0.1:5173',
+    reuseExistingServer: true,
+    timeout: 120_000
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }]
 });

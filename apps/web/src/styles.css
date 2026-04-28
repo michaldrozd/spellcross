@@ -839,15 +839,15 @@ body {
 }
 
 .strategic-map-svg .region-label {
-  font-size: 2.2px;
-  fill: rgba(177, 211, 204, 0.9);
+  font-size: 1.76px;
+  fill: rgba(177, 211, 204, 0.72);
   font-weight: 800;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.075em;
   text-anchor: middle;
   pointer-events: none;
   paint-order: stroke fill;
   stroke: rgba(2, 5, 5, 0.94);
-  stroke-width: 0.42px;
+  stroke-width: 0.3px;
   stroke-linejoin: round;
   filter: drop-shadow(0 0 0.34px rgba(0, 0, 0, 0.98));
 }
@@ -2663,9 +2663,9 @@ header.app-header {
   }
 
   .strategic-map-svg .region-label {
-    font-size: 2.4px;
-    fill: rgba(190, 222, 216, 0.92);
-    stroke-width: 0.46px;
+    font-size: 1.9px;
+    fill: rgba(190, 222, 216, 0.76);
+    stroke-width: 0.34px;
   }
 
   .strategic-map-svg .territory-name {
