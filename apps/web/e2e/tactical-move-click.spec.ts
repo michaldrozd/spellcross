@@ -190,6 +190,96 @@ test('explicit target preview and cancel preserve manual camera focus', async ({
   expect(afterCancel.scale).toBeCloseTo(beforeTarget.scale, 2);
 });
 
+test('visible friendly vehicle body wins over adjacent enemy tile hit', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const allies = ctrl?.allyUnits?.() ?? [];
+    const enemies = ctrl?.enemyUnits?.() ?? [];
+    const vehicle = allies.find((unit: any) => unit.type === 'vehicle' || unit.definitionId?.includes('truck'));
+    const enemy = enemies.find((unit: any) => unit.stance !== 'destroyed');
+    if (!vehicle || !enemy) return null;
+    const vehicleCoord = { q: 4, r: 4 };
+    const enemyCoord = { q: 5, r: 4 };
+    allies
+      .filter((unit: any) => unit.id !== vehicle.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 1, index));
+    enemies
+      .filter((unit: any) => unit.id !== enemy.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 8, index));
+    ctrl.snapUnit(vehicle.id, vehicleCoord.q, vehicleCoord.r);
+    ctrl.snapUnit(enemy.id, enemyCoord.q, enemyCoord.r);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(vehicle.id);
+    ctrl.targetEnemy(enemy.id);
+    return {
+      vehicleId: vehicle.id,
+      enemyId: enemy.id,
+      vehicleCoord,
+      enemyCoord
+    };
+  });
+  expect(setup).toBeTruthy();
+
+  await page.waitForFunction(() => Boolean((window as any).__battleCamera));
+  await page.evaluate(({ q, r }) => (window as any).__battleCamera.centerOnCoord(q, r), setup!.vehicleCoord);
+  await page.evaluate(() => (window as any).__battleCamera.setZoom(2.6));
+  await page.waitForTimeout(250);
+  const beforeClick = await page.evaluate(() => (window as any).__battleCamera.metrics());
+
+  const vehicleBodyPoint = await page.evaluate(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const camera = (window as any).__battleCamera;
+    if (!canvas || !camera) return null;
+    const screen = camera.screenForCoord(q, r);
+    const scale = camera.metrics().scale;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + screen.x + 8 * scale,
+      y: rect.top + screen.y - 10 * scale
+    };
+  }, setup!.vehicleCoord);
+  expect(vehicleBodyPoint).toBeTruthy();
+
+  await page.mouse.click(vehicleBodyPoint!.x, vehicleBodyPoint!.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.selectionState?.() ?? null);
+  }).toMatchObject({ selectedUnitId: setup!.vehicleId, targetedEnemyId: null });
+  const afterVehicleClick = await page.evaluate(() => (window as any).__battleCamera.metrics());
+  expect(afterVehicleClick.centerX).toBeCloseTo(beforeClick.centerX, 1);
+  expect(afterVehicleClick.centerY).toBeCloseTo(beforeClick.centerY, 1);
+  expect(afterVehicleClick.scale).toBeCloseTo(beforeClick.scale, 2);
+
+  const enemyBodyPoint = await page.evaluate(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const camera = (window as any).__battleCamera;
+    if (!canvas || !camera) return null;
+    const screen = camera.screenForCoord(q, r);
+    const scale = camera.metrics().scale;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + screen.x,
+      y: rect.top + screen.y - 12 * scale
+    };
+  }, setup!.enemyCoord);
+  expect(enemyBodyPoint).toBeTruthy();
+
+  await page.mouse.click(enemyBodyPoint!.x, enemyBodyPoint!.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.selectionState?.() ?? null);
+  }).toMatchObject({ selectedUnitId: setup!.vehicleId, targetedEnemyId: setup!.enemyId });
+  const afterEnemyClick = await page.evaluate(() => (window as any).__battleCamera.metrics());
+  expect(afterEnemyClick.centerX).toBeCloseTo(beforeClick.centerX, 1);
+  expect(afterEnemyClick.centerY).toBeCloseTo(beforeClick.centerY, 1);
+  expect(afterEnemyClick.scale).toBeCloseTo(beforeClick.scale, 2);
+});
+
 test('invalid movement gives visible order feedback', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();

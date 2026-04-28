@@ -7,7 +7,7 @@ import { axialDistance } from '@spellcross/core';
 import { calculateAttackRange } from '@spellcross/core';
 import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
 import { Matrix, Texture, Rectangle, MIPMAP_MODES, SCALE_MODES, settings } from 'pixi.js';
-import type { Graphics as PixiGraphics } from 'pixi.js';
+import type { FederatedPointerEvent, Graphics as PixiGraphics } from 'pixi.js';
 
 import { TextStyle } from 'pixi.js';
 const basename = (p: string) => {
@@ -259,6 +259,7 @@ const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
 };
 
 type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
+type UnitPointerArea = { x: number; y: number; width: number; height: number };
 
 function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
   if (unitType === 'vehicle') {
@@ -288,6 +289,29 @@ function unitContactFootprint(tile: number, unitType: string, definitionId: stri
     return { rx: tile * 0.25, ry: tile * 0.075, alpha: 0.34, y: tile * 0.045 };
   }
   return { rx: tile * 0.18, ry: tile * 0.05, alpha: 0.28, y: tile * 0.04 };
+}
+
+function unitPointerArea(tile: number, unitType: string, definitionId: string): UnitPointerArea {
+  const isTruck = definitionId.includes('truck');
+  if (unitType === 'vehicle' || (unitType === 'support' && isTruck)) {
+    return { x: -tile * 0.42, y: -tile * 0.5, width: tile * 0.84, height: tile * 0.72 };
+  }
+  if (unitType === 'artillery') {
+    return { x: -tile * 0.38, y: -tile * 0.46, width: tile * 0.76, height: tile * 0.64 };
+  }
+  if (unitType === 'hero') {
+    return { x: -tile * 0.26, y: -tile * 0.58, width: tile * 0.52, height: tile * 0.66 };
+  }
+  if (definitionId.includes('golem') || definitionId.includes('ogre') || definitionId.includes('brute')) {
+    return { x: -tile * 0.3, y: -tile * 0.66, width: tile * 0.6, height: tile * 0.74 };
+  }
+  if (definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead')) {
+    return { x: -tile * 0.34, y: -tile * 0.4, width: tile * 0.68, height: tile * 0.52 };
+  }
+  if (unitType === 'support') {
+    return { x: -tile * 0.28, y: -tile * 0.52, width: tile * 0.56, height: tile * 0.6 };
+  }
+  return { x: -tile * 0.3, y: -tile * 0.46, width: tile * 0.6, height: tile * 0.58 };
 }
 
 const unitSheetTexture = (
@@ -1610,6 +1634,13 @@ export function BattlefieldStage({
         setFollowTargetPx({ x, y });
         return true;
       },
+      screenForCoord: (q: number, r: number) => {
+        const p = toScreen({ q, r });
+        return {
+          x: offsetX + (p.x + (ISO_MODE ? isoBaseX : 0)) * scale,
+          y: offsetY + p.y * scale
+        };
+      },
       setZoom: (next: number) => {
         const clamped = clampCameraScale(next);
         zoomRef.current = clamped;
@@ -1845,7 +1876,8 @@ export function BattlefieldStage({
           y={pos.y - avgHeight * ELEV_Y_OFFSET}
           eventMode={isExplored ? 'static' : 'none'}
           cursor={isExplored ? 'pointer' : 'not-allowed'}
-          pointertap={() => {
+          pointertap={(event: FederatedPointerEvent) => {
+            event.stopPropagation();
             if (!isExplored) return;
             const key = `${q},${r}`;
             const friendly = friendlyByCoord.get(key);
@@ -3497,6 +3529,19 @@ export function BattlefieldStage({
         const factionAccent = isFriendly ? 0x7ec3df : 0xe05a49;
         const capHeight = unitType === 'air' ? tileSize * 0.10 : tileSize * 0.28;
         const k = unitType === 'infantry' ? 0.32 : (unitType === 'vehicle' || unitType === 'artillery') ? 0.46 : 0.40;
+        const pointerArea = unitPointerArea(tileSize, unitType, definitionId);
+        const unitHitArea = new Rectangle(pointerArea.x, pointerArea.y, pointerArea.width, pointerArea.height);
+        const stopUnitEvent = (event: FederatedPointerEvent) => {
+          event.stopPropagation();
+        };
+        const handleUnitTap = (event: FederatedPointerEvent) => {
+          event.stopPropagation();
+          if (isFriendly) {
+            onSelectUnit?.(unit.id);
+          } else {
+            onSelectTile?.(unit.coordinate);
+          }
+        };
 
         // Respect fog-of-war for enemies
         if (!isFriendly && !isVisible && !recentAttackSource) return [];
@@ -3513,13 +3558,10 @@ export function BattlefieldStage({
             zIndex={worldZ}
             sortableChildren
             eventMode="static"
-            pointerdown={() => {
-              if (isFriendly) {
-                onSelectUnit?.(unit.id);
-              } else {
-                onSelectTile?.(unit.coordinate);
-              }
-            }}
+            cursor={isFriendly ? 'pointer' : 'crosshair'}
+            hitArea={unitHitArea}
+            pointerdown={stopUnitEvent}
+            pointertap={handleUnitTap}
           >
             <Graphics
               zIndex={0}
