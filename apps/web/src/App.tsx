@@ -655,6 +655,7 @@ const BattleView: React.FC<{
   const [phaseNotice, setPhaseNotice] = useState<{ id: number; title: string; detail: string; tone: 'enemy' | 'alliance' } | null>(null);
   const [pendingAttack, setPendingAttack] = useState<{ id: string; time: number } | null>(null);
   const [targetedEnemy, setTargetedEnemy] = useState<UnitInstance | null>(null);
+  const [cameraRestoreSignal, setCameraRestoreSignal] = useState(0);
   const size = 26;
   const width = Math.max(1100, map.width * size * 2.4);
   const height = Math.max(800, map.height * size * 2.2);
@@ -1097,7 +1098,7 @@ const BattleView: React.FC<{
     setPlannedPath(null);
     setPlannedDestination(null);
     setPendingAttack(null);
-    setTargetedEnemy(null);
+    clearTargeting(true);
     setInvalidMoveFeedback(null);
   };
 
@@ -1114,9 +1115,21 @@ const BattleView: React.FC<{
     }
   };
 
-  const addCombatNotice = (message: string) => {
-    setCombatNotices((existing) => [{ id: Date.now(), message }, ...existing].slice(0, 4));
+  const addCombatNotice = (message: string, ttlMs = 1800) => {
+    const id = Date.now();
+    setCombatNotices((existing) => [{ id, message }, ...existing].slice(0, 4));
+    window.setTimeout(() => {
+      setCombatNotices((existing) => existing.filter((notice) => notice.id !== id));
+    }, ttlMs);
   };
+
+  function clearTargeting(restoreCamera = false) {
+    if (restoreCamera && targetedEnemy) {
+      setCameraRestoreSignal((current) => current + 1);
+    }
+    setTargetedEnemy(null);
+    setPendingAttack(null);
+  }
 
   const showPhaseNotice = (title: string, detail: string, tone: 'enemy' | 'alliance' = 'alliance') => {
     const id = Date.now();
@@ -1142,6 +1155,12 @@ const BattleView: React.FC<{
     delay = 0
   ) => {
     const effectType = effectTypeForAttack(attacker, defender, weaponId);
+    const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
+    const noticeTitle = outcome.hit ? 'Hit Confirmed' : 'Shot Missed';
+    const noticeDetail = outcome.hit
+      ? `${unitDisplayName(defender.id, battle.state)} - ${outcome.damage} damage`
+      : `${unitDisplayName(attacker.id, battle.state)} missed ${unitDisplayName(defender.id, battle.state)}`;
+    window.setTimeout(() => showPhaseNotice(noticeTitle, noticeDetail, noticeTone), delay);
     setAttackEffects(prev => [...prev, {
       id: `${attacker.id}-${defender.id}-${Date.now()}-${delay}`,
       fromQ: attacker.coordinate.q,
@@ -1287,7 +1306,7 @@ const BattleView: React.FC<{
       (u) => u.coordinate.q === coord.q && u.coordinate.r === coord.r && u.stance !== 'destroyed'
     );
     if (!foe) {
-      setTargetedEnemy(null);
+      clearTargeting(true);
     }
 
     if (deployMode) {
@@ -1462,6 +1481,8 @@ const BattleView: React.FC<{
           invalidMoveFeedback={invalidMoveFeedback}
           targetUnitId={previewEnemy?.id}
           focusTargetUnitId={targetedEnemy?.id}
+          restoreCameraSignal={cameraRestoreSignal}
+          deployMode={deployMode}
           targetHitChance={targetedEnemy && targetWeaponPreview ? targetWeaponPreview.hit / 100 : undefined}
           targetDamagePreview={targetedEnemy && targetWeaponPreview ? selectedUnit?.stats.weaponPower[targetWeaponPreview.weapon] : undefined}
           viewerFaction="alliance"
@@ -1479,6 +1500,12 @@ const BattleView: React.FC<{
           <div className={`battle-phase-notice ${phaseNotice.tone}`}>
             <strong>{phaseNotice.title}</strong>
             <span>{phaseNotice.detail}</span>
+          </div>
+        ) : null}
+        {invalidMoveFeedback ? (
+          <div className="battle-phase-notice movement-warning">
+            <strong>ORDER REJECTED</strong>
+            <span>{invalidMoveFeedback.message}</span>
           </div>
         ) : null}
         {showRanges && selectedUnit ? (
@@ -1538,6 +1565,9 @@ const BattleView: React.FC<{
                 const embarked = unit.embarkedOn;
                 const tile = battle.state.map.tiles[unit.coordinate.r * battle.state.map.width + unit.coordinate.q];
                 const def = bundle.units.find(d => d.id === unit.definitionId);
+                const healthPct = Math.max(0, Math.min(100, Math.round((unit.currentHealth / unit.stats.maxHealth) * 100)));
+                const apPct = Math.max(0, Math.min(100, Math.round((unit.actionPoints / unit.maxActionPoints) * 100)));
+                const moralePct = Math.max(0, Math.min(100, unit.currentMorale));
                 return (
                   <div className="unit-details">
                     <div className="unit-monitor">
@@ -1551,12 +1581,21 @@ const BattleView: React.FC<{
                     </div>
                     <div className="unit-stats">
                       <strong>{def?.name ?? unit.unitType}</strong>
-                      <p>HP <span className={unit.currentHealth < unit.stats.maxHealth * 0.5 ? 'warn' : ''}>{compactNumber(unit.currentHealth)}</span>/{compactNumber(unit.stats.maxHealth)}</p>
-                      <p>AP {displayActionPoints(unit.actionPoints)}/{displayActionPoints(unit.maxActionPoints)}</p>
+                      <p className="unit-stat-line">
+                        HP <span className={unit.currentHealth < unit.stats.maxHealth * 0.5 ? 'warn' : ''}>{compactNumber(unit.currentHealth)}</span>/{compactNumber(unit.stats.maxHealth)}
+                        <i style={{ '--unit-stat-percent': `${healthPct}%` } as React.CSSProperties} />
+                      </p>
+                      <p className="unit-stat-line">
+                        AP {displayActionPoints(unit.actionPoints)}/{displayActionPoints(unit.maxActionPoints)}
+                        <i style={{ '--unit-stat-percent': `${apPct}%` } as React.CSSProperties} />
+                      </p>
                       <p>Ammo {unit.stats.ammoCapacity ? `${unit.currentAmmo}/${unit.stats.ammoCapacity}` : '∞'}</p>
                     </div>
                     <div className="unit-status">
-                      <p>Morale {unit.currentMorale}</p>
+                      <p className="unit-stat-line">
+                        Morale {unit.currentMorale}
+                        <i style={{ '--unit-stat-percent': `${moralePct}%` } as React.CSSProperties} />
+                      </p>
                       <p>Cover {tile?.cover ?? 0}%</p>
                       {unit.statusEffects.has('overwatch') && <span className="badge">Overwatch</span>}
                       {carrier && <p>Cargo {unit.carrying?.length ?? 0}/{unit.stats.transportCapacity}</p>}
@@ -1720,14 +1759,14 @@ const BattleView: React.FC<{
                             return;
                           }
                           actAttack(selected, targetedEnemy);
-                          setTargetedEnemy(null);
+                          clearTargeting(false);
                         }}
                       >
                         Attack
                       </button>
                       <button
                         className="sm-btn"
-                        onClick={() => setTargetedEnemy(null)}
+                        onClick={() => clearTargeting(true)}
                       >
                         Cancel
                       </button>
@@ -1746,9 +1785,16 @@ const BattleView: React.FC<{
                   {combatNotices.map((notice) => (
                     <div key={`notice-${notice.id}`} className="log-line log-line-alert">{notice.message}</div>
                   ))}
-                  {battle.state.timeline.filter((e) => e.kind !== 'unit:xp').slice(-5 + combatNotices.length).reverse().map((e, idx) => (
-                    <div key={idx} className="log-line">{formatBattleEvent(e, battle.state)}</div>
-                  ))}
+                  {battle.state.timeline.filter((e) => e.kind !== 'unit:xp').slice(-5 + combatNotices.length).reverse().map((e, idx) => {
+                    const logTone = e.kind === 'unit:attacked'
+                      ? e.hit ? ' log-line-hit' : ' log-line-miss'
+                      : e.kind === 'unit:defeated'
+                        ? ' log-line-kill'
+                        : '';
+                    return (
+                      <div key={idx} className={`log-line${logTone}`}>{formatBattleEvent(e, battle.state)}</div>
+                    );
+                  })}
                 </>
               ) : (
                 <>

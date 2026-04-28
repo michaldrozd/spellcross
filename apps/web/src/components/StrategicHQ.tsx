@@ -78,6 +78,17 @@ const StrategicMapView: React.FC<{
   log: string[];
 }> = ({ territories, selectedTerritory, onSelectTerritory, onStartBattle, log }) => {
   const selected = territories.find(t => t.id === selectedTerritory);
+  const statusCounts = useMemo(() => ({
+    cleared: territories.filter((t) => t.status === 'cleared').length,
+    available: territories.filter((t) => t.status === 'available').length,
+    locked: territories.filter((t) => t.status === 'locked').length,
+    failed: territories.filter((t) => t.status === 'failed').length
+  }), [territories]);
+  const urgentTerritory = useMemo(() => (
+    territories
+      .filter((t) => t.status === 'available' && t.remainingTimer != null)
+      .sort((a, b) => (a.remainingTimer ?? 99) - (b.remainingTimer ?? 99))[0]
+  ), [territories]);
 
   // Calculate connection lines between territories
   const connections = useMemo(() => {
@@ -114,15 +125,23 @@ const StrategicMapView: React.FC<{
         <svg viewBox="0 0 100 80" className="strategic-map-svg" preserveAspectRatio="xMidYMid meet">
           <defs>
             <radialGradient id="mapGradient" cx="85%" cy="40%" r="60%">
-              <stop offset="0%" stopColor="#7b4d34" />
-              <stop offset="52%" stopColor="#6d7446" />
-              <stop offset="100%" stopColor="#b49a66" />
+              <stop offset="0%" stopColor="#493036" />
+              <stop offset="52%" stopColor="#394b39" />
+              <stop offset="100%" stopColor="#263946" />
             </radialGradient>
             <pattern id="paperGrain" width="4" height="4" patternUnits="userSpaceOnUse">
               <rect width="4" height="4" fill="transparent" />
               <circle cx="1" cy="1" r="0.16" fill="#2e2419" opacity="0.22" />
               <circle cx="3" cy="2" r="0.12" fill="#fff1c0" opacity="0.16" />
             </pattern>
+            <pattern id="mapGrid" width="8" height="8" patternUnits="userSpaceOnUse">
+              <path d="M 8 0 L 0 0 0 8" fill="none" stroke="#283331" strokeWidth="0.08" opacity="0.55" />
+            </pattern>
+            <linearGradient id="frontGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#182544" stopOpacity="0.42" />
+              <stop offset="58%" stopColor="#4a1d24" stopOpacity="0.34" />
+              <stop offset="100%" stopColor="#7a2326" stopOpacity="0.5" />
+            </linearGradient>
             <filter id="glow">
               <feGaussianBlur stdDeviation="0.5" result="coloredBlur"/>
               <feMerge>
@@ -135,6 +154,14 @@ const StrategicMapView: React.FC<{
           {/* Map background */}
           <rect x="0" y="0" width="100" height="80" fill="url(#mapGradient)" />
           <rect x="0" y="0" width="100" height="80" fill="url(#paperGrain)" opacity="0.55" />
+          <rect x="0" y="0" width="100" height="80" fill="url(#mapGrid)" opacity="0.42" />
+          <path d="M 0,0 L 100,0 L 100,80 L 75,80 C 62,72 53,66 40,63 C 26,60 12,54 0,47 Z" fill="#111d2a" opacity="0.28" />
+          <path d="M 52,10 C 60,15 69,15 79,24 C 88,31 92,38 96,50 L 100,80 L 64,80 C 76,69 86,60 91,47 C 96,34 83,22 70,17 C 62,14 56,15 52,10 Z" fill="url(#frontGradient)" />
+          <path d="M 12,55 C 24,46 36,48 48,52 C 58,55 67,53 78,46" fill="none" stroke="#273f52" strokeWidth="0.36" opacity="0.45" />
+          <path d="M 48,17 C 49,25 52,31 55,39 C 57,45 56,51 52,57" fill="none" stroke="#25394b" strokeWidth="0.28" opacity="0.42" />
+          <path d="M 36,28 C 44,31 52,31 59,35 C 67,39 75,38 84,42" fill="none" stroke="#5e5037" strokeWidth="0.18" strokeDasharray="0.8,1.2" opacity="0.5" />
+          <path d="M 22,44 C 32,48 43,50 52,57" fill="none" stroke="#5e5037" strokeWidth="0.18" strokeDasharray="0.8,1.2" opacity="0.42" />
+          <path d="M 61,22 C 70,27 79,29 89,35" fill="none" stroke="#5e5037" strokeWidth="0.18" strokeDasharray="0.8,1.2" opacity="0.48" />
 
           {/* Simplified Europe outline */}
           <path
@@ -144,6 +171,25 @@ const StrategicMapView: React.FC<{
             strokeWidth="0.45"
             opacity="0.65"
           />
+          <path d="M 17,26 Q 26,22 36,21 Q 46,19 53,15" fill="none" stroke="#5d513d" strokeWidth="0.18" opacity="0.5" />
+          <path d="M 28,54 Q 39,58 52,63 Q 60,66 69,64" fill="none" stroke="#5d513d" strokeWidth="0.16" opacity="0.42" />
+          <path d="M 72,22 Q 81,28 86,39 Q 87,48 82,57" fill="none" stroke="#5d513d" strokeWidth="0.16" opacity="0.45" />
+
+          {/* Fixed city anchors make the strategic layer feel less like empty nodes */}
+          {[
+            ['Paris', 24, 40],
+            ['Lyon', 28, 53],
+            ['Amsterdam', 31, 25],
+            ['Berlin', 50, 31],
+            ['Prague', 52, 40],
+            ['Vienna', 56, 49],
+            ['Warsaw', 64, 35],
+            ['Kyiv', 78, 40]
+          ].map(([name, x, y]) => (
+            <g key={name}>
+              <circle cx={x} cy={y} r="0.45" fill="#1b2422" opacity="0.7" />
+            </g>
+          ))}
 
           {/* Region labels */}
           <text x="25" y="38" className="region-label">FRANCE</text>
@@ -174,7 +220,11 @@ const StrategicMapView: React.FC<{
             const color = getStatusColor(t.status);
 
             return (
-              <g key={t.id} className="territory-marker" onClick={() => onSelectTerritory(t.id)}>
+              <g
+                key={t.id}
+                className={`territory-marker territory-${t.status} ${isSelected ? 'selected' : ''}`}
+                onClick={() => onSelectTerritory(t.id)}
+              >
                 <circle
                   cx={t.mapPosition.x}
                   cy={t.mapPosition.y}
@@ -241,6 +291,13 @@ const StrategicMapView: React.FC<{
           <text x="93" y="50" className="invasion-label">INVASION</text>
         </svg>
 
+        <div className="map-status-strip">
+          <span><b>{statusCounts.available}</b> active fronts</span>
+          <span><b>{statusCounts.cleared}</b> secured</span>
+          <span><b>{statusCounts.locked}</b> locked</span>
+          <strong>{urgentTerritory ? `${urgentTerritory.name}: ${urgentTerritory.remainingTimer} turns` : 'No timed crisis'}</strong>
+        </div>
+
         {/* Map legend */}
         <div className="map-legend">
           <div className="legend-item"><span className="legend-dot cleared"></span> Cleared</div>
@@ -258,6 +315,11 @@ const StrategicMapView: React.FC<{
             <div className="territory-region">{selected.region}</div>
             <div className="territory-difficulty">
               Difficulty: <span className="stars">{getDifficultyStars(selected.difficulty)}</span>
+            </div>
+            <div className="territory-metrics">
+              <span><b>{selected.status.toUpperCase()}</b>Status</span>
+              <span><b>{selected.remainingTimer ?? '-'}</b>Turns</span>
+              <span><b>{selected.difficulty ?? 1}/5</b>Risk</span>
             </div>
             <p className="territory-brief">{selected.brief}</p>
 
@@ -360,6 +422,19 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
     return columns;
   }, [researchDepths, researchTopics]);
   const activeResearchTopic = currentResearch ? researchById.get(currentResearch.topicId) : undefined;
+  const activeResearchProgress = activeResearchTopic && currentResearch
+    ? Math.max(0, Math.min(100, Math.round(((activeResearchTopic.cost - currentResearch.remaining) / activeResearchTopic.cost) * 100)))
+    : 0;
+  const activeTabStyle: React.CSSProperties = {
+    background: 'rgba(255, 255, 255, 0.05)',
+    borderBottomColor: 'var(--accent)',
+    color: 'var(--accent)'
+  };
+  const inactiveTabStyle: React.CSSProperties = {
+    background: 'transparent',
+    borderBottomColor: 'transparent',
+    color: 'var(--text-dim)'
+  };
 
   return (
     <div className="strategic-hq">
@@ -372,17 +447,17 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
         </div>
         <div className="hq-resources">
           <div className="resource">
-            <span className="resource-icon">💰</span>
+            <span className="resource-icon">CR</span>
             <span className="resource-value">{Math.round(money)}</span>
             <span className="resource-label">Credits</span>
           </div>
           <div className="resource">
-            <span className="resource-icon">🔬</span>
+            <span className="resource-icon">RP</span>
             <span className="resource-value">{Math.round(research)}</span>
             <span className="resource-label">Research</span>
           </div>
           <div className="resource">
-            <span className="resource-icon">⭐</span>
+            <span className="resource-icon">SP</span>
             <span className="resource-value">{Math.round(strategic)}</span>
             <span className="resource-label">SP</span>
           </div>
@@ -394,14 +469,17 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
 
       {/* Tab navigation */}
       <div className="hq-tabs">
-        <button className={`tab ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>
-          🗺 TERRITORIES
+        <button className={`tab ${activeTab === 'map' ? 'active' : ''}`} data-active={activeTab === 'map'} style={activeTab === 'map' ? activeTabStyle : inactiveTabStyle} onClick={() => setActiveTab('map')}>
+          <span className="tab-code">OPS</span>
+          <span>Territories</span>
         </button>
-        <button className={`tab ${activeTab === 'army' ? 'active' : ''}`} onClick={() => setActiveTab('army')}>
-          ⚔ ARMY ({army.length})
+        <button className={`tab ${activeTab === 'army' ? 'active' : ''}`} data-active={activeTab === 'army'} style={activeTab === 'army' ? activeTabStyle : inactiveTabStyle} onClick={() => setActiveTab('army')}>
+          <span className="tab-code">TOE</span>
+          <span>Army ({army.length})</span>
         </button>
-        <button className={`tab ${activeTab === 'research' ? 'active' : ''}`} onClick={() => setActiveTab('research')}>
-          🔬 RESEARCH
+        <button className={`tab ${activeTab === 'research' ? 'active' : ''}`} data-active={activeTab === 'research'} style={activeTab === 'research' ? activeTabStyle : inactiveTabStyle} onClick={() => setActiveTab('research')}>
+          <span className="tab-code">R&amp;D</span>
+          <span>Research</span>
         </button>
       </div>
 
@@ -449,7 +527,10 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                       <span className="unit-tier">{u.tier} · {u.unitType}</span>
                     </div>
                     <div className="unit-stats">
-                      <span><b>HP</b> {u.currentHealth}/{u.maxHealth}</span>
+                      <span className="stat-with-bar">
+                        <b>HP</b> {u.currentHealth}/{u.maxHealth}
+                        <i style={{ '--stat-percent': `${Math.max(0, Math.min(100, Math.round((u.currentHealth / u.maxHealth) * 100)))}%` } as React.CSSProperties} />
+                      </span>
                       <span><b>XP</b> {u.experience}</span>
                     </div>
                     <div className="unit-actions">
@@ -472,8 +553,11 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                         <span className="unit-name">{u.name}</span>
                         <span className="unit-tier">{u.tier} · {u.unitType}</span>
                       </div>
-                      <div className="unit-stats">
-                        <span><b>HP</b> {u.currentHealth}/{u.maxHealth}</span>
+                    <div className="unit-stats">
+                        <span className="stat-with-bar">
+                          <b>HP</b> {u.currentHealth}/{u.maxHealth}
+                          <i style={{ '--stat-percent': `${Math.max(0, Math.min(100, Math.round((u.currentHealth / u.maxHealth) * 100)))}%` } as React.CSSProperties} />
+                        </span>
                         <span><b>READY</b> T{u.availableOnTurn ?? turn + 1}</span>
                       </div>
                     </div>
@@ -511,6 +595,9 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                   <div className="research-progress">
                     <span className="research-name">{activeResearchTopic?.name ?? currentResearch.topicId}</span>
                     <span className="research-remaining">{currentResearch.remaining} RP remaining</span>
+                  </div>
+                  <div className="research-progress-bar" aria-hidden="true">
+                    <i style={{ '--research-progress': `${activeResearchProgress}%` } as React.CSSProperties} />
                   </div>
                 </div>
               ) : (

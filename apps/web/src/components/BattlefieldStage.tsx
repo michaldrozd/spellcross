@@ -95,6 +95,8 @@ export interface BattlefieldStageProps {
   invalidMoveFeedback?: InvalidMoveFeedback | null;
   targetUnitId?: string;
   focusTargetUnitId?: string;
+  restoreCameraSignal?: number;
+  deployMode?: boolean;
   targetHitChance?: number; // 0-1, hit chance to display on target
   targetDamagePreview?: number; // predicted damage to show
   selectedUnitId?: string;
@@ -132,7 +134,7 @@ const isoSquareToPixel = ({ q, r }: { q: number; r: number }) => {
 const toScreen = ({ q, r }: { q: number; r: number }) => (ISO_MODE ? isoSquareToPixel({ q, r }) : axialToPixel({ q, r }));
 
 // Tiny procedural CC0-like tile textures generated at runtime (keeps repo lean)
-function makeCanvasTexture(draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, w = 32, h = 32) {
+function makeCanvasTexture(draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void, w = 64, h = 64) {
 
 
   const canvas = document.createElement('canvas');
@@ -926,6 +928,8 @@ export function BattlefieldStage({
   invalidMoveFeedback,
   targetUnitId,
   focusTargetUnitId,
+  restoreCameraSignal = 0,
+  deployMode = false,
   targetHitChance,
   targetDamagePreview,
   selectedUnitId,
@@ -1100,20 +1104,28 @@ export function BattlefieldStage({
 
     const grass = makeCanvasTexture((ctx, w, h) => {
       ctx.fillStyle = shade(grassBase, 1.0); ctx.fillRect(0, 0, w, h);
-      for (let i = 0; i < w * h * 0.08; i++) { dot(ctx, (i*29)%w, (i*53)%h, shade(grassBase, 1.08), 0.9); }
-      for (let i = 0; i < w * h * 0.04; i++) { dot(ctx, (i*17)%w, (i*41)%h, shade(grassBase, 0.9), 0.9); }
+      ctx.fillStyle = shade(grassBase, 0.86);
+      for (let i = 0; i < 12; i++) ctx.fillRect((i * 23) % w, (i * 31) % h, 10 + (i % 5), 2);
+      for (let i = 0; i < w * h * 0.055; i++) { dot(ctx, (i*29)%w, (i*53)%h, shade(grassBase, 1.1), 0.72); }
+      for (let i = 0; i < w * h * 0.035; i++) { dot(ctx, (i*17)%w, (i*41)%h, shade(grassBase, 0.86), 0.74); }
     });
 
     const forest = makeCanvasTexture((ctx, w, h) => {
       ctx.fillStyle = shade(forestBase, 1.0); ctx.fillRect(0, 0, w, h);
-      for (let i = 0; i < w * h * 0.10; i++) { dot(ctx, (i*13)%w, (i*37)%h, shade(forestBase, 0.8), 0.9); }
-      for (let i = 0; i < w * h * 0.06; i++) { dot(ctx, (i*23)%w, (i*19)%h, shade(forestBase, 1.15), 0.9); }
+      ctx.fillStyle = shade(forestBase, 0.72);
+      for (let i = 0; i < 20; i++) ctx.fillRect((i * 19) % w, (i * 37) % h, 7 + (i % 4), 3);
+      for (let i = 0; i < w * h * 0.065; i++) { dot(ctx, (i*13)%w, (i*37)%h, shade(forestBase, 0.78), 0.82); }
+      for (let i = 0; i < w * h * 0.045; i++) { dot(ctx, (i*23)%w, (i*19)%h, shade(forestBase, 1.16), 0.78); }
     });
 
     const road = makeCanvasTexture((ctx, w, h) => {
       ctx.fillStyle = shade(roadBase, 0.95); ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = shade(roadBase, 0.75);
       for (let y = 0; y < h; y += 4) { ctx.fillRect(0, y, w, 1); }
+      ctx.fillStyle = shade(roadBase, 1.12);
+      for (let i = 0; i < 18; i++) ctx.fillRect((i * 17) % w, (i * 11) % h, 5 + (i % 5), 1);
+      ctx.fillStyle = shade(roadBase, 0.55);
+      for (let i = 0; i < 10; i++) ctx.fillRect((i * 29) % w, (i * 23) % h, 3 + (i % 4), 1);
     });
 
     const urban = makeCanvasTexture((ctx, w, h) => {
@@ -1121,30 +1133,46 @@ export function BattlefieldStage({
       ctx.fillStyle = shade(urbanBase, 0.8);
       for (let x = 0; x < w; x += 4) ctx.fillRect(x, 0, 1, h);
       for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
+      ctx.fillStyle = shade(urbanBase, 1.16);
+      for (let i = 0; i < 12; i++) ctx.fillRect((i * 31) % w, (i * 17) % h, 3 + (i % 3), 2);
+      ctx.fillStyle = shade(urbanBase, 0.62);
+      for (let i = 0; i < 10; i++) ctx.fillRect((i * 13) % w, (i * 29) % h, 5, 1);
     });
 
     const hill = makeCanvasTexture((ctx, w, h) => {
       ctx.fillStyle = shade(hillBase, 1.0); ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = shade(hillBase, 0.85);
       for (let y = 0; y < h; y += 5) { ctx.fillRect(0, y, w, 1); }
+      ctx.fillStyle = shade(hillBase, 1.14);
+      for (let i = 0; i < 12; i++) ctx.fillRect((i * 17) % w, (i * 29) % h, 8 + (i % 5), 1);
     });
 
     const water = makeCanvasTexture((ctx, w, h) => {
       ctx.fillStyle = shade(waterBase, 0.9); ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = shade(waterBase, 1.1);
       for (let i = 0; i < w; i++) ctx.fillRect((i*7)%w, (i*3)%h, 1, 1);
+      ctx.fillStyle = shade(waterBase, 1.28);
+      for (let i = 0; i < 18; i++) ctx.fillRect((i * 19) % w, (i * 13) % h, 8 + (i % 8), 1);
+      ctx.fillStyle = shade(waterBase, 0.68);
+      for (let i = 0; i < 12; i++) ctx.fillRect((i * 23) % w, (i * 31) % h, 7, 1);
     });
 
     const swamp = makeCanvasTexture((ctx, w, h) => {
       ctx.fillStyle = shade(swampBase, 1.0); ctx.fillRect(0, 0, w, h);
-      for (let i = 0; i < w * h * 0.06; i++) { dot(ctx, (i*11)%w, (i*17)%h, shade(swampBase, 0.8), 0.9); }
-      for (let i = 0; i < w * h * 0.04; i++) { dot(ctx, (i*31)%w, (i*23)%h, '#3b2f2f', 0.8); }
+      for (let i = 0; i < w * h * 0.045; i++) { dot(ctx, (i*11)%w, (i*17)%h, shade(swampBase, 0.78), 0.78); }
+      for (let i = 0; i < w * h * 0.035; i++) { dot(ctx, (i*31)%w, (i*23)%h, '#3b2f2f', 0.72); }
+      ctx.fillStyle = '#1b2d19';
+      for (let i = 0; i < 10; i++) ctx.fillRect((i * 17) % w, (i * 37) % h, 8, 2);
     });
 
     const structure = makeCanvasTexture((ctx, w, h) => {
       ctx.fillStyle = shade(structureBase, 1.0); ctx.fillRect(0, 0, w, h);
       ctx.fillStyle = shade(structureBase, 0.8);
       for (let x = 0; x < w; x += 4) ctx.fillRect(x, 0, 1, h);
+      ctx.fillStyle = shade(structureBase, 1.16);
+      for (let i = 0; i < 12; i++) ctx.fillRect((i * 19) % w, (i * 23) % h, 4 + (i % 4), 2);
+      ctx.fillStyle = shade(structureBase, 0.58);
+      for (let i = 0; i < 8; i++) ctx.fillRect((i * 31) % w, (i * 13) % h, 6, 1);
     });
 
     return { plain: grass, road, forest, urban, hill, water, swamp, structure } as Record<string, Texture>;
@@ -1330,6 +1358,8 @@ export function BattlefieldStage({
 
   // Minimap-driven camera target (world pixel coordinates)
   const [followTargetPx, setFollowTargetPx] = useState<{ x: number; y: number } | null>(null);
+  const targetCameraSnapshotRef = useRef<{ targetId: string; followTargetPx: { x: number; y: number } | null; zoom: number } | null>(null);
+  const lastRestoreCameraSignalRef = useRef(restoreCameraSignal);
   const [minimapDragging, setMinimapDragging] = useState(false);
   useEffect(() => {
     const onUp = () => setMinimapDragging(false);
@@ -1367,9 +1397,17 @@ export function BattlefieldStage({
     let toCoord: any | undefined;
 
     if (targetEffect) {
+      targetCameraSnapshotRef.current = null;
       fromCoord = { q: targetEffect.fromQ, r: targetEffect.fromR };
       toCoord = { q: targetEffect.toQ, r: targetEffect.toR };
     } else if (selectedUnitId && focusTargetUnitId) {
+      if (!targetCameraSnapshotRef.current) {
+        targetCameraSnapshotRef.current = {
+          targetId: focusTargetUnitId,
+          followTargetPx,
+          zoom: zoomRef.current
+        };
+      }
       for (const side of Object.values(battleState.sides) as any[]) {
         fromCoord ??= side.units.get(selectedUnitId)?.coordinate;
         toCoord ??= side.units.get(focusTargetUnitId)?.coordinate;
@@ -1386,6 +1424,16 @@ export function BattlefieldStage({
     });
     setZoom(targetEffect ? 2.62 : 2.25);
   }, [attackEffects, battleState.sides, focusTargetUnitId, selectedUnitId, toScreen, tileSize]);
+
+  useEffect(() => {
+    if (restoreCameraSignal === lastRestoreCameraSignalRef.current) return;
+    lastRestoreCameraSignalRef.current = restoreCameraSignal;
+    const snapshot = targetCameraSnapshotRef.current;
+    if (!snapshot) return;
+    setFollowTargetPx(snapshot.followTargetPx);
+    setZoom(snapshot.zoom);
+    targetCameraSnapshotRef.current = null;
+  }, [restoreCameraSignal]);
 
   // Camera panning control
   const PAN_SPEED = 800; // pixels per second (keyboard)
@@ -1784,7 +1832,7 @@ export function BattlefieldStage({
       const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
       const overlayAlpha = coloredTex ? (isVisible ? 0.42 : 0.28) : (isVisible ? 0.17 : 0.11);
       const texMatrix = new Matrix();
-      texMatrix.translate((q * 13 + r * 7) % 32, (q * 5 + r * 11) % 32);
+      texMatrix.translate((q * 13 + r * 7) % 64, (q * 5 + r * 11) % 64);
       const center = {
         x: (cornerPoints.NW.x + cornerPoints.NE.x + cornerPoints.SE.x + cornerPoints.SW.x) / 4,
         y: (cornerPoints.NW.y + cornerPoints.NE.y + cornerPoints.SE.y + cornerPoints.SW.y) / 4
@@ -3909,6 +3957,8 @@ export function BattlefieldStage({
                 const hpRatio = Math.max(0, Math.min(1, (unit as any).currentHealth / maxHp));
                 const mrRatio = Math.max(0, Math.min(1, (unit as any).currentMorale / 100));
                 const apRatio = Math.max(0, Math.min(1, (unit as any).actionPoints / ((unit as any).maxActionPoints ?? 10)));
+                const compactDeployStatus = deployMode && isFriendly && !isSelected && !isSelectedCarrier;
+                if (compactDeployStatus) return;
                 const detailedBar = isSelected || isTarget;
                 const bw = detailedBar
                   ? (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 16 : 20)
@@ -3959,6 +4009,15 @@ export function BattlefieldStage({
                   g.lineTo(5, flagY + 4);
                   g.lineTo(0, flagY + 9);
                   g.lineTo(-5, flagY + 4);
+                  g.closePath();
+                  g.endFill();
+                } else if (!isFriendly) {
+                  g.lineStyle(1, 0x1f0b09, 0.62);
+                  g.beginFill(0xad5145, 0.58);
+                  g.moveTo(0, flagY + 1);
+                  g.lineTo(3.6, flagY + 4.6);
+                  g.lineTo(0, flagY + 8.2);
+                  g.lineTo(-3.6, flagY + 4.6);
                   g.closePath();
                   g.endFill();
                 }
@@ -4017,6 +4076,7 @@ export function BattlefieldStage({
     targetHitChance,
     targetDamagePreview,
     attackEffects,
+    deployMode,
     viewerFaction,
     visibleTiles,
     topGeomFor,
@@ -4299,16 +4359,16 @@ export function BattlefieldStage({
           {elapsed > 280 && elapsed < 1000 && (
             <Text
               text={effect.hit ? `-${effect.damage ?? ''}` : 'MISS'}
-              x={toX - (effect.hit ? 7 : 10)}
+              x={toX - (effect.hit ? 8 : 14)}
               y={toY - tileSize * 0.46 - (elapsed - 280) * 0.006}
               zIndex={zIndex + 2}
               style={new TextStyle({
                 fontFamily: 'monospace',
-                fontSize: effect.hit ? 9 : 8,
+                fontSize: effect.hit ? 11 : 10,
                 fontWeight: '700',
-                fill: effect.hit ? '#ffb36d' : '#c7c0aa',
-                stroke: '#120b05',
-                strokeThickness: 2.4
+                fill: effect.hit ? '#ffd080' : '#d8d1bc',
+                stroke: effect.hit ? '#3a1308' : '#17130d',
+                strokeThickness: 2.7
               })}
               alpha={Math.max(0, 0.95 - (elapsed - 280) / 780)}
             />

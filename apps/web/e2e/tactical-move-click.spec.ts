@@ -147,3 +147,53 @@ test('selecting a friendly unit near enemies preserves manual camera focus', asy
   expect(afterSelect.centerY).toBeCloseTo(beforeSelect.centerY, 1);
   expect(afterSelect.scale).toBeCloseTo(beforeSelect.scale, 2);
 });
+
+test('canceling explicit target preview restores previous camera focus', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const ally = ctrl?.allyUnits?.().find((unit: any) => !unit.embarkedOn);
+    const enemy = ctrl?.enemyUnits?.().find((unit: any) => unit.stance !== 'destroyed');
+    if (!ally || !enemy) return null;
+    ctrl.selectUnit(ally.id);
+    return { allyId: ally.id, enemyId: enemy.id };
+  });
+  expect(setup).toBeTruthy();
+
+  await page.waitForFunction(() => Boolean((window as any).__battleCamera));
+  await page.evaluate(() => (window as any).__battleCamera.centerOnCoord(8, 6));
+  await page.evaluate(() => (window as any).__battleCamera.setZoom(2.5));
+  await page.waitForTimeout(150);
+  const beforeTarget = await page.evaluate(() => (window as any).__battleCamera.metrics());
+
+  const targeted = await page.evaluate((enemyId) => (window as any).__battleControl.targetEnemy(enemyId), setup!.enemyId);
+  expect(targeted).toBeTruthy();
+  await page.waitForTimeout(300);
+
+  await page.getByRole('button', { name: /^Cancel$/i }).click();
+  await page.waitForTimeout(250);
+  const afterCancel = await page.evaluate(() => (window as any).__battleCamera.metrics());
+
+  expect(afterCancel.centerX).toBeCloseTo(beforeTarget.centerX, 1);
+  expect(afterCancel.centerY).toBeCloseTo(beforeTarget.centerY, 1);
+  expect(afterCancel.scale).toBeCloseTo(beforeTarget.scale, 2);
+});
+
+test('invalid movement gives visible order feedback', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const moved = await page.evaluate(() => (window as any).__battleControl.moveSelectedTo(99, 99));
+  expect(moved).toBeFalsy();
+  await expect(page.getByText(/ORDER REJECTED/i)).toBeVisible();
+});

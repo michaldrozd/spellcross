@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
 interface SaveSlot {
   slot: number;
@@ -28,6 +28,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const [showSlots, setShowSlots] = useState(false);
 
   const hasAnySave = savedSlots.some(s => s !== null);
+  const currentSave = savedSlots[currentSlot - 1];
+  const activeSlots = savedSlots.filter(Boolean).length;
 
   return (
     <div className="main-menu">
@@ -36,6 +38,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         <div className="menu-logo">
           <h1>SPELLCROSS</h1>
           <p className="menu-subtitle">THE LAST BATTLE</p>
+        </div>
+
+        <div className="menu-intel-panel">
+          <span>Campaign Link</span>
+          <strong>{hasAnySave ? `Slot ${currentSlot} ready` : 'No active campaign'}</strong>
+          <small>
+            {currentSave
+              ? `Turn ${currentSave.turn} / ${currentSave.territories} sectors / ${currentSave.activeBattle ? 'battle pending' : 'field HQ'}`
+              : `${activeSlots} saved slots detected`}
+          </small>
         </div>
 
         <div className="menu-buttons">
@@ -131,4 +143,3 @@ export const MainMenu: React.FC<MainMenuProps> = ({
     </div>
   );
 };
-
