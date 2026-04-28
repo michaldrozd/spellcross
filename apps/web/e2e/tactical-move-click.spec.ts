@@ -318,30 +318,33 @@ test('empty movement tile beside selected vehicle is not stolen by vehicle hit a
   await page.evaluate(() => (window as any).__battleCamera.setZoom(2.6));
   await page.waitForTimeout(250);
 
-  const tilePoint = await page.evaluate(({ q, r }) => {
-    const canvas = document.querySelector('canvas');
-    const camera = (window as any).__battleCamera;
-    if (!canvas || !camera) return null;
-    const screen = camera.screenForCoord(q, r);
-    const scale = camera.metrics().scale;
-    const rect = canvas.getBoundingClientRect();
-    return {
-      x: rect.left + screen.x + 8 * scale,
-      y: rect.top + screen.y
-    };
-  }, setup!.movementTile);
-  expect(tilePoint).toBeTruthy();
+  for (const offset of [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 18, y: 0 }]) {
+    await page.evaluate((vehicleId) => (window as any).__battleControl?.selectUnit(vehicleId), setup!.vehicleId);
+    const tilePoint = await page.evaluate(({ q, r, offset }) => {
+      const canvas = document.querySelector('canvas');
+      const camera = (window as any).__battleCamera;
+      if (!canvas || !camera) return null;
+      const screen = camera.screenForCoord(q, r);
+      const scale = camera.metrics().scale;
+      const rect = canvas.getBoundingClientRect();
+      return {
+        x: rect.left + screen.x + offset.x * scale,
+        y: rect.top + screen.y + offset.y * scale
+      };
+    }, { ...setup!.movementTile, offset });
+    expect(tilePoint).toBeTruthy();
 
-  await page.mouse.click(tilePoint!.x, tilePoint!.y);
-  await expect.poll(async () => {
-    return page.evaluate(() => ({
-      selection: (window as any).__battleControl?.selectionState?.() ?? null,
-      planning: (window as any).__battleControl?.planningState?.() ?? null
-    }));
-  }).toMatchObject({
-    selection: { selectedUnitId: setup!.vehicleId, targetedEnemyId: null },
-    planning: { plannedDestination: setup!.movementTile }
-  });
+    await page.mouse.click(tilePoint!.x, tilePoint!.y);
+    await expect.poll(async () => {
+      return page.evaluate(() => ({
+        selection: (window as any).__battleControl?.selectionState?.() ?? null,
+        planning: (window as any).__battleControl?.planningState?.() ?? null
+      }));
+    }).toMatchObject({
+      selection: { selectedUnitId: setup!.vehicleId, targetedEnemyId: null },
+      planning: { plannedDestination: setup!.movementTile }
+    });
+  }
 });
 
 test('invalid movement gives visible order feedback', async ({ page }) => {

@@ -291,10 +291,12 @@ function unitContactFootprint(tile: number, unitType: string, definitionId: stri
   return { rx: tile * 0.18, ry: tile * 0.05, alpha: 0.28, y: tile * 0.04 };
 }
 
-function unitPointerArea(tile: number, unitType: string, definitionId: string): UnitPointerArea {
+function unitPointerArea(tile: number, unitType: string, definitionId: string, selected = false): UnitPointerArea {
   const isTruck = definitionId.includes('truck');
   if (unitType === 'vehicle' || (unitType === 'support' && isTruck)) {
-    return { x: -tile * 0.3, y: -tile * 0.3, width: tile * 0.6, height: tile * 0.5 };
+    return selected
+      ? { x: -tile * 0.04, y: -tile * 0.3, width: tile * 0.42, height: tile * 0.42 }
+      : { x: -tile * 0.18, y: -tile * 0.34, width: tile * 0.54, height: tile * 0.52 };
   }
   if (unitType === 'artillery') {
     return { x: -tile * 0.38, y: -tile * 0.46, width: tile * 0.76, height: tile * 0.64 };
@@ -3529,7 +3531,7 @@ export function BattlefieldStage({
         const factionAccent = isFriendly ? 0x7ec3df : 0xe05a49;
         const capHeight = unitType === 'air' ? tileSize * 0.10 : tileSize * 0.28;
         const k = unitType === 'infantry' ? 0.32 : (unitType === 'vehicle' || unitType === 'artillery') ? 0.46 : 0.40;
-        const pointerArea = unitPointerArea(tileSize, unitType, definitionId);
+        const pointerArea = unitPointerArea(tileSize, unitType, definitionId, isSelected || isSelectedCarrier);
         const unitHitArea = new Rectangle(pointerArea.x, pointerArea.y, pointerArea.width, pointerArea.height);
         const stopUnitEvent = (event: FederatedPointerEvent) => {
           event.stopPropagation();
