@@ -1,11 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { startBattle } from './helpers';
 
 test('AI advances toward objectives and pressures after player ends turn', async ({ page }) => {
   test.setTimeout(80_000);
-  await page.goto('/');
-  await page.getByRole('button', { name: /^Reset$/i }).click();
-  await page.locator('li', { hasText: 'Crossroads Hold' }).getByRole('button', { name: /^Attack$/i }).click();
-  await expect(page.getByText(/Tactical/i)).toBeVisible();
+  await startBattle(page, 'sector-lyon');
 
   // Record initial enemy positions
   const initial = await page.evaluate(() => (window as any).__battleControl?.enemyUnits?.() ?? []);
@@ -13,7 +11,7 @@ test('AI advances toward objectives and pressures after player ends turn', async
 
   // Exit deployment then let a few turn cycles run (player ends, AI responds)
   for (let i = 0; i < 4; i++) {
-    await page.getByRole('button', { name: /^End Turn$/i }).click();
+    await page.getByRole('button', { name: /^(Start Battle|End Turn)$/i }).click();
     await page.waitForTimeout(200);
   }
 

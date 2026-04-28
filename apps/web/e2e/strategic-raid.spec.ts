@@ -1,17 +1,15 @@
 import { expect, test } from '@playwright/test';
+import { endStrategicTurns, startFreshCampaign } from './helpers';
 
 test('strategic raid spawns counteroffensive territory and can be defended', async ({ page }) => {
   test.setTimeout(80_000);
-  await page.goto('/');
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
+  await startFreshCampaign(page);
 
-  // End a few turns to trigger periodic raid
-  for (let i = 0; i < 10; i++) {
-    await page.getByRole('button', { name: /^End Turn$/i }).click();
-  }
+  await endStrategicTurns(page, 10);
 
-  const raid = page.locator('li', { hasText: 'Enemy Raid' }).first();
-  await expect.poll(async () => await raid.count()).toBeGreaterThan(0);
-
-  // Presence of raid is enough to validate counteroffensive spawn
+  const raidCount = await page.evaluate(() => {
+    const territories = (window as any).__campaignControl?.territories?.() ?? [];
+    return territories.filter((t: any) => /Enemy Raid/i.test(t.name)).length;
+  });
+  expect(raidCount).toBeGreaterThan(0);
 });

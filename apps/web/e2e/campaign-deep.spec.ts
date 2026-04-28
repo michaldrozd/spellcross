@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { convertResearch, endStrategicTurns, launchBattle, queueResearch, retreatToHq, startFreshCampaign } from './helpers';
 
 const getTurn = async (page: import('@playwright/test').Page) => {
   const eyebrow = page.locator('.card .eyebrow', { hasText: /Turn/i }).first();
@@ -14,45 +15,34 @@ const getTurn = async (page: import('@playwright/test').Page) => {
 
 test('campaign deep flow: research, outpost strike, slot swap', async ({ page }) => {
   test.setTimeout(45_000);
-  await page.goto('/');
+  await startFreshCampaign(page);
 
-  // Bump research pool and start Optics II
-  const convertResearch = page.getByRole('button', { name: /Convert 3 SP → RP/i });
-  await convertResearch.click();
-  await convertResearch.click();
-  const optics = page.locator('li', { hasText: 'Optics II' });
-  await optics.getByRole('button', { name: /Start/i }).click();
+  await convertResearch(page);
+  await queueResearch(page, 'optics-ii');
 
-  // Finish research on next turn
   const turnStart = await getTurn(page);
-  await page.getByRole('button', { name: /^End Turn$/i }).click();
-  await expect(page.getByText(/Known tech:/i)).toContainText('optics-ii');
+  await endStrategicTurns(page);
+  await page.getByRole('button', { name: /Research/i }).click();
+  await expect(page.locator('.research-card').filter({ hasText: 'Optics II' })).toContainText(/DONE|COMPLETED/);
+  await page.getByRole('button', { name: /Territories/i }).click();
 
-  // Attack the Forward Outpost and ensure tactical view renders
-  const outpost = page.locator('li', { hasText: 'Forward Outpost' });
-  await outpost.getByRole('button', { name: /^Attack$/i }).click();
-  await expect(page.getByText(/Tactical/i)).toBeVisible();
+  await launchBattle(page, 'sector-munich');
+  await expect(page.getByRole('heading', { name: /Outpost Night/i })).toBeVisible();
   await expect(page.locator('canvas').first()).toBeVisible();
 
-  // Retreat back to HQ
-  await page.getByRole('button', { name: /^Retreat$/i }).click();
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
-  // Briefings should appear and be dismissible
+  await retreatToHq(page);
   const popupButton = page.getByRole('button', { name: /Dismiss briefings/i });
   if (await popupButton.isVisible()) {
     await popupButton.click();
   }
 
-  // Verify turn advanced and autosave retains it
   const turnAfterBattle = await getTurn(page);
   expect(turnAfterBattle).toBeGreaterThanOrEqual(turnStart);
   await page.reload();
+  await page.getByRole('button', { name: /CONTINUE/i }).click();
+  await expect(page.getByRole('heading', { name: /FIELD HQ/i })).toBeVisible();
   expect(await getTurn(page)).toBe(turnAfterBattle);
 
-  // Slot swapping preserves independent progress
-  const slotSelect = page.getByLabel(/Slot/i);
-  await slotSelect.selectOption('2');
-  await expect(slotSelect).toHaveValue('2');
-  await slotSelect.selectOption('1');
-  await expect(slotSelect).toHaveValue('1');
+  await startFreshCampaign(page, 2);
+  await expect(page.getByText(/TURN 1/i)).toBeVisible();
 });

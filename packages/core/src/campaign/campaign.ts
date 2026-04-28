@@ -101,6 +101,12 @@ export interface SerializedCampaignState {
   popups?: CampaignState['popups'];
 }
 
+const isGeneratedCounteroffensive = (territory: TerritoryState) =>
+  territory.id === 'counterattack'
+  || territory.id === 'enemy-raid-static'
+  || territory.id.startsWith('raid-')
+  || /^Enemy (Counterattack|Raid)/i.test(territory.name);
+
 const tierModifier = (tier: UnitTier) => {
   switch (tier) {
     case 'rookie':
@@ -215,7 +221,7 @@ export function convertStrategicToResearch(state: CampaignState, amount: number)
   if (amount <= 0) return;
   const spend = Math.min(amount, state.resources.strategic);
   state.resources.strategic -= spend;
-  state.resources.research += spend * 3;
+  state.resources.research += spend * 10;
 }
 
 export function isUnitUnlocked(state: CampaignState, bundle: ContentBundle, unitId: string): boolean {
@@ -395,9 +401,10 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
 
   // Periodic raid/retake attempts on cleared sectors every 4 turns
   if (state.turn % 4 === 0) {
-    const cleared = state.territories.filter((t) => t.status === 'cleared');
-    const fallback = state.territories.filter((t) => t.status === 'available');
-    const candidates = cleared.length ? cleared : fallback.length ? fallback : state.territories;
+    const raidTargets = state.territories.filter((t) => !isGeneratedCounteroffensive(t));
+    const cleared = raidTargets.filter((t) => t.status === 'cleared');
+    const fallback = raidTargets.filter((t) => t.status === 'available');
+    const candidates = cleared.length ? cleared : fallback;
     if (candidates.length) {
       const target = candidates[Math.floor(Math.random() * candidates.length)];
       const raidId = `raid-${target.id}-${state.turn}`;

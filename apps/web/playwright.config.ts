@@ -2,9 +2,10 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: '**/smoke.spec.ts',
-  timeout: 20_000,
+  testMatch: '**/*.spec.ts',
+  timeout: 60_000,
   expect: { timeout: 5_000 },
+  workers: 2,
   use: {
     baseURL: 'http://127.0.0.1:5173',
     headless: true,

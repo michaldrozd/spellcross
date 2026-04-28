@@ -885,6 +885,12 @@ const BattleView: React.FC<{
         }
         return count;
       },
+      revealAll: () => {
+        const allTiles = new Set(map.tiles.map((_, index) => index));
+        battle.state.vision.alliance.visibleTiles = allTiles;
+        battle.state.vision.alliance.exploredTiles = new Set(allTiles);
+        return true;
+      },
       wipeEnemies: () => {
         for (const u of battle.state.sides.otherSide.units.values()) {
           u.stance = 'destroyed';
@@ -1486,6 +1492,7 @@ const BattleView: React.FC<{
           height={window.innerHeight}
           cameraMode="follow"
           rangeOverlayCoords={showRanges ? globalRangeTiles : undefined}
+          objectiveCoords={battle.scenario.objectives.map((objective) => objective.target).filter((coord): coord is HexCoordinate => Boolean(coord))}
           attackEffects={attackEffects}
           movingUnit={movingUnit}
         />
@@ -1919,6 +1926,36 @@ export function App() {
           setMode('battle');
         }
         return started;
+      },
+      endTurn: (count = 1) => {
+        mutate((state) => {
+          for (let i = 0; i < count; i += 1) {
+            endStrategicTurn(state, bundle);
+          }
+        });
+        return true;
+      },
+      startResearch: (topicId: string) => {
+        try {
+          mutate((state) => startResearch(state, bundle, topicId));
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      convertResearch: (amount = 3) => {
+        try {
+          mutate((state) => convertStrategicToResearch(state, amount));
+          return true;
+        } catch {
+          return false;
+        }
+      },
+      dismissPopups: () => {
+        mutate((state) => {
+          state.popups = [];
+        });
+        return true;
       },
       territories: () => campaign.territories.map((t) => ({
         id: t.id,

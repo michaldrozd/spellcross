@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
+import { startFreshCampaign } from './helpers';
 
 test('campaign roster renders', async ({ page }) => {
-  await page.goto('/');
-  await expect(page.getByText(/Army/i)).toBeVisible();
-  await expect(page.locator('.roster li')).not.toHaveCount(0);
+  await startFreshCampaign(page);
+  await page.getByRole('button', { name: /Army/i }).click();
+  await expect(page.getByText(/YOUR FORCES/i)).toBeVisible();
+  await expect(page.locator('.unit-row')).not.toHaveCount(0);
 });

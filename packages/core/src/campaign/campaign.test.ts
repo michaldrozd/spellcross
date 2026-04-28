@@ -60,6 +60,24 @@ describe('campaign core', () => {
     expect(state.resources.money).toBeLessThanOrEqual(beforeMoney);
   });
 
+  it('does not chain raids from generated counteroffensives', () => {
+    const state = createCampaign(starterBundle);
+    const base = state.territories[0];
+    if (!base) throw new Error('expected starter territory');
+    state.turn = 7;
+    state.territories = [{
+      ...base,
+      id: 'counterattack',
+      name: 'Enemy Counterattack',
+      status: 'cleared'
+    }];
+
+    endStrategicTurn(state, starterBundle);
+
+    expect(state.territories.some((territory) => territory.name === 'Enemy Raid near Enemy Counterattack')).toBe(false);
+    expect(state.log.some((entry) => /Enemy raid threatens Enemy Counterattack/i.test(entry))).toBe(false);
+  });
+
   it('applies retreat losses for units off start tiles', () => {
     const state = createCampaign(starterBundle);
     const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');

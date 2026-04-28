@@ -1,12 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { retreatToHq, startBattle } from './helpers';
 
 test('ammo consumption and resupply on supply zones', async ({ page }) => {
   test.setTimeout(60_000);
-  await page.goto('/');
-
-  const bridgeTerritory = page.locator('li', { hasText: 'River Bridge' });
-  await bridgeTerritory.getByRole('button', { name: /^Attack$/i }).click();
-  await expect(page.getByText(/Tactical/i)).toBeVisible();
+  await startBattle(page, 'sector-strasbourg');
 
   const ammoMeta = await page.evaluate(() => (window as any).__battleControl?.ammoFirst?.() ?? null);
   expect(ammoMeta).not.toBeNull();
@@ -20,11 +17,10 @@ test('ammo consumption and resupply on supply zones', async ({ page }) => {
 
   // Move back to a start/supply tile and end turn to resupply fully
   await page.evaluate(() => (window as any).__battleControl?.moveTo?.(0, 2));
-  await page.getByRole('button', { name: /^End Turn$/i }).click().catch(() => {});
+  await page.getByRole('button', { name: /^End Turn$/i }).click({ timeout: 1000 }).catch(() => {});
   await page.evaluate(() => (window as any).__battleControl?.endTurn?.());
   const ammoRefilled = await page.evaluate(() => (window as any).__battleControl?.ammoFirst?.()?.ammo ?? null);
   expect(ammoRefilled).toBeGreaterThanOrEqual(ammoMeta!.cap as number);
 
-  await page.getByRole('button', { name: /^Retreat$/i }).click();
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
+  await retreatToHq(page);
 });

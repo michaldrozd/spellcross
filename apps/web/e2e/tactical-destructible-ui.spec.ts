@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { retreatToHq, startBattle } from './helpers';
 
 async function clickHex(page: import('@playwright/test').Page, q: number, r: number) {
   const pos = await page.evaluate(({ q, r }) => {
@@ -14,12 +15,7 @@ async function clickHex(page: import('@playwright/test').Page, q: number, r: num
 
 test('ui-driven hex clicks can break destructible cover and still resolve battle flow', async ({ page }) => {
   test.setTimeout(90_000);
-  await page.goto('/');
-
-  // Enter the bridgehead scenario that has destructible tiles guarding the span
-  const bridgeTerritory = page.locator('li', { hasText: 'River Bridge' });
-  await bridgeTerritory.getByRole('button', { name: /^Attack$/i }).click();
-  await expect(page.getByText(/Tactical/i)).toBeVisible();
+  await startBattle(page, 'sector-strasbourg');
 
   // Select first allied unit and move closer using real canvas clicks
   await clickHex(page, 0, 2);
@@ -33,6 +29,5 @@ test('ui-driven hex clicks can break destructible cover and still resolve battle
   }
 
   // Finish flow and return to HQ
-  await page.getByRole('button', { name: /^Retreat$/i }).click();
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
+  await retreatToHq(page);
 });

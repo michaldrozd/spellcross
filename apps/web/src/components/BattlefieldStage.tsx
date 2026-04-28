@@ -106,6 +106,7 @@ export interface BattlefieldStageProps {
   cameraMode?: 'fit' | 'follow';
   showAttackOverlay?: boolean;
   rangeOverlayCoords?: Set<string>;
+  objectiveCoords?: HexCoordinate[];
   attackEffects?: AttackEffect[];
   movingUnit?: MovingUnit | null;
 }
@@ -965,6 +966,7 @@ export function BattlefieldStage({
   cameraMode = 'fit',
   showAttackOverlay,
   rangeOverlayCoords,
+  objectiveCoords = [],
   attackEffects = [],
   movingUnit
 }: BattlefieldStageProps) {
@@ -3374,14 +3376,14 @@ export function BattlefieldStage({
           const linkLen = Math.max(1, Math.hypot(ex - sx, ey - sy));
           const step = explicitTarget ? 10 : 18;
           const dash = explicitTarget ? 8 : 7;
-          g.lineStyle(explicitTarget ? 4.4 : 2, 0x050807, explicitTarget ? 0.82 : 0.5);
+          g.lineStyle(explicitTarget ? 3.4 : 1.8, 0x050807, explicitTarget ? 0.68 : 0.42);
           for (let d = 0; d < linkLen; d += step) {
             const a = d / linkLen;
             const b = Math.min(d + dash, linkLen) / linkLen;
             g.moveTo(sx + (ex - sx) * a, sy + (ey - sy) * a);
             g.lineTo(sx + (ex - sx) * b, sy + (ey - sy) * b);
           }
-          g.lineStyle(explicitTarget ? 2.3 : 1, explicitTarget ? 0xf1e7a8 : 0xb0aa62, explicitTarget ? 0.94 : 0.58);
+          g.lineStyle(explicitTarget ? 1.65 : 0.9, explicitTarget ? 0xf1e7a8 : 0xb0aa62, explicitTarget ? 0.82 : 0.48);
           for (let d = 0; d < linkLen; d += step) {
             const a = d / linkLen;
             const b = Math.min(d + dash, linkLen) / linkLen;
@@ -3390,13 +3392,51 @@ export function BattlefieldStage({
           }
           const midX = (sx + ex) / 2;
           const midY = (sy + ey) / 2;
-          g.beginFill(explicitTarget ? 0xf1e7a8 : 0x9c9c58, explicitTarget ? 0.84 : 0.48);
-          g.drawCircle(midX, midY, explicitTarget ? 3.8 : 1.8);
+          g.beginFill(explicitTarget ? 0xf1e7a8 : 0x9c9c58, explicitTarget ? 0.7 : 0.42);
+          g.drawCircle(midX, midY, explicitTarget ? 3.2 : 1.6);
           g.endFill();
         }}
       />
     );
   }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetUnitId, toScreen, topGeomFor, visibleTiles]);
+
+  const objectiveOverlays = useMemo(() => {
+    if (objectiveCoords.length === 0) return [];
+    const pulse = (Math.sin(now / 420) + 1) / 2;
+    return objectiveCoords.map((coord, index) => {
+      const tileIdx = coord.r * map.width + coord.q;
+      if (!exploredTiles.has(tileIdx)) return null;
+      const pos = toScreen(coord);
+      const geom = topGeomFor(coord.q, coord.r);
+      const y = pos.y - geom.avgHeight * ELEV_Y_OFFSET;
+      const isVisible = visibleTiles.has(tileIdx);
+      return (
+        <Graphics
+          key={`objective-${coord.q}-${coord.r}-${index}`}
+          x={pos.x}
+          y={y}
+          draw={(g) => {
+            g.clear();
+            const ring = geom.inset(0.86);
+            const alpha = isVisible ? 0.62 + pulse * 0.18 : 0.3;
+            g.beginFill(0xd8b33f, isVisible ? 0.08 + pulse * 0.04 : 0.04);
+            drawPoly(g as PixiGraphics, ring);
+            g.endFill();
+            g.lineStyle(2.6, 0x090807, isVisible ? 0.5 : 0.24);
+            drawPoly(g as PixiGraphics, ring);
+            g.lineStyle(1.25, 0xf4cf5a, alpha);
+            drawPoly(g as PixiGraphics, ring);
+            const cross = geom.inset(0.34);
+            g.lineStyle(1, 0xf6e6a0, isVisible ? 0.52 : 0.2);
+            g.moveTo(cross[0].x, cross[0].y);
+            g.lineTo(cross[2].x, cross[2].y);
+            g.moveTo(cross[1].x, cross[1].y);
+            g.lineTo(cross[3].x, cross[3].y);
+          }}
+        />
+      );
+    }).filter(Boolean) as JSX.Element[];
+  }, [objectiveCoords, map.width, exploredTiles, visibleTiles, now, toScreen, topGeomFor]);
 
 
   const units = useMemo(() => {
@@ -3592,9 +3632,9 @@ export function BattlefieldStage({
                 };
                 if (isFriendly) {
                   if (isSelected || isSelectedCarrier) {
-                    g.lineStyle(3, 0x071015, 0.82);
+                    g.lineStyle(2.4, 0x071015, 0.74);
                     g.drawEllipse(0, tileSize * 0.03, rx * 1.16, ry * 1.28);
-                    g.lineStyle(1.4, isSelectedCarrier ? 0xf0d17c : 0xc8edf3, 0.82);
+                    g.lineStyle(1.15, isSelectedCarrier ? 0xf0d17c : 0xc8edf3, 0.78);
                     g.drawEllipse(0, tileSize * 0.03, rx * 1.08, ry * 1.18);
                     strokeArc(192, 253, isSelectedCarrier ? 0xd8b65b : 0x7ec3df, 0.92, 1.8);
                     strokeArc(287, 348, isSelectedCarrier ? 0xd8b65b : 0x7ec3df, 0.92, 1.8);
@@ -3618,8 +3658,8 @@ export function BattlefieldStage({
                   const sx = isTarget ? tileSize * 0.21 * markerScale : tileSize * 0.19 * markerScale;
                   const sy = isTarget ? tileSize * 0.075 * markerScale : tileSize * 0.064 * markerScale;
                   const accent = isTarget ? 0xe08a54 : 0xe05a49;
-                  bracket(sx, sy, 0x160706, isTarget ? 0.66 : 0.58, isTarget ? 2 : 2);
-                  bracket(sx, sy, accent, isTarget ? 0.84 : 0.62, isTarget ? 0.9 : 0.9);
+                  bracket(sx, sy, 0x160706, isTarget ? 0.54 : 0.5, isTarget ? 1.7 : 1.8);
+                  bracket(sx, sy, accent, isTarget ? 0.72 : 0.56, isTarget ? 0.8 : 0.85);
                   if (isTarget) {
                     g.lineStyle(0.9, 0xc08a55, 0.52);
                     g.moveTo(-5, 0); g.lineTo(5, 0);
@@ -3678,9 +3718,9 @@ export function BattlefieldStage({
                     ];
                   };
                   const pts = ringShape(0.88);
-                  g.lineStyle(1.4, 0x090806, 0.38);
+                  g.lineStyle(1, 0x090806, 0.32);
                   drawPoly(g as PixiGraphics, pts);
-                  g.lineStyle(0.85, 0xc08a55, 0.56);
+                  g.lineStyle(0.65, 0xc08a55, 0.46);
                   drawPoly(g as PixiGraphics, pts);
                 }}
               />
@@ -4133,7 +4173,7 @@ export function BattlefieldStage({
   // Attack effects rendering (muzzle flash, projectile trail, hit marker)
   const attackEffectSprites = useMemo(() => {
     if (!attackEffects || attackEffects.length === 0) return [];
-    const EFFECT_DURATION = 1150;
+    const EFFECT_DURATION = 1700;
 
     return attackEffects.map((effect) => {
       const elapsed = now - effect.startTime;
@@ -4296,17 +4336,17 @@ export function BattlefieldStage({
             />
           )}
 
-          {elapsed > 220 && elapsed < 1180 && (
+          {elapsed > 220 && elapsed < 1340 && (
             <Graphics
               x={toX}
               y={toY - tileSize * 0.2}
               draw={(g) => {
                 g.clear();
-                const hitProgress = Math.min((elapsed - 220) / 960, 1);
+                const hitProgress = Math.min((elapsed - 220) / 1120, 1);
                 const hitSize = effect.type === 'melee'
                   ? tileSize * (0.16 + hitProgress * 0.12)
                   : tileSize * (0.24 + hitProgress * 0.2);
-                const hitAlpha = 1 - hitProgress;
+                const hitAlpha = Math.pow(1 - hitProgress, 0.72);
                 const dx = toX - fromX;
                 const dy = toY - fromY;
                 const len = Math.max(1, Math.hypot(dx, dy));
@@ -4401,21 +4441,21 @@ export function BattlefieldStage({
               }}
             />
           )}
-          {elapsed > 280 && elapsed < 1000 && (
+          {elapsed > 260 && elapsed < 1700 && (
             <Text
-              text={effect.hit ? `-${effect.damage ?? ''}` : 'MISS'}
-              x={toX - (effect.hit ? 8 : 14)}
-              y={toY - tileSize * 0.46 - (elapsed - 280) * 0.006}
+              text={effect.hit ? `HIT -${effect.damage ?? ''}` : 'MISS'}
+              x={toX - (effect.hit ? 26 : 14)}
+              y={toY - tileSize * 0.48 - (elapsed - 260) * 0.004}
               zIndex={zIndex + 2}
               style={new TextStyle({
                 fontFamily: 'monospace',
-                fontSize: effect.hit ? 13 : 11,
+                fontSize: effect.hit ? 17 : 13,
                 fontWeight: '800',
                 fill: effect.hit ? '#ffe19a' : '#d8d1bc',
                 stroke: effect.hit ? '#3a1308' : '#17130d',
                 strokeThickness: 3
               })}
-              alpha={Math.max(0, 0.95 - (elapsed - 280) / 780)}
+              alpha={Math.max(0, 0.96 - (elapsed - 260) / 1440)}
             />
           )}
         </Container>
@@ -4527,6 +4567,10 @@ export function BattlefieldStage({
         const moving = side.units.get(movingUnit.unitId);
         if (moving) focusCoords.push(moving.coordinate);
       }
+      if (targetUnitId) {
+        const target = side.units.get(targetUnitId);
+        if (target) focusCoords.push(target.coordinate);
+      }
     }
     if (movingUnit?.path) focusCoords.push(...movingUnit.path);
 
@@ -4566,7 +4610,7 @@ export function BattlefieldStage({
         const focusNear = focusCoords.some((coord) =>
           coord.q >= q0 - 1 && coord.q <= q0 + w && coord.r >= r0 - 1 && coord.r <= r0 + h
         );
-        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? 0.48 : 1);
+        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? 0.62 : 1);
         const fogShade = isVisible ? 0 : 0.06;
 
         const bottomNW = worldCornerOfTile(q0, r0, 'NW', topGeomFor);
@@ -4880,10 +4924,14 @@ export function BattlefieldStage({
                     }
                   }
                 } else {
+                  const roofCenter = {
+                    x: (topNW.x + topNE.x + topSE.x + topSW.x) / 4,
+                    y: (topNW.y + topNE.y + topSE.y + topSW.y) / 4
+                  };
                   const pitch = clamp(roofCfg.pitch ?? 0.25, 0, 1);
                   const center = {
-                    x: (topNW.x + topNE.x + topSE.x + topSW.x) / 4,
-                    y: (topNW.y + topNE.y + topSE.y + topSW.y) / 4 - Math.max(5, Math.round(roofRisePx * pitch))
+                    x: roofCenter.x,
+                    y: roofCenter.y - Math.max(5, Math.round(roofRisePx * pitch))
                   };
                   const faces = [
                     { poly: [topNW, topNE, center], shade: 0.02 },
@@ -4919,13 +4967,38 @@ export function BattlefieldStage({
                   roofVents,
                   lightenColor(roofColor, 0.1)
                 );
+
+                if (b.id === 'spire-core') {
+                  const roofCenter = {
+                    x: (topNW.x + topNE.x + topSE.x + topSW.x) / 4,
+                    y: (topNW.y + topNE.y + topSE.y + topSW.y) / 4 - Math.max(5, roofRisePx * 0.85)
+                  };
+                  const apex = {
+                    x: roofCenter.x,
+                    y: roofCenter.y - Math.max(18, levelHeightPx * 1.35)
+                  };
+                  g.lineStyle(6, 0x08050d, isVisible ? 0.9 : 0.42);
+                  g.moveTo(roofCenter.x - anchor.x, roofCenter.y - anchor.y + 2);
+                  g.lineTo(apex.x - anchor.x, apex.y - anchor.y);
+                  g.lineStyle(2.2, 0x8f66c5, isVisible ? 0.82 : 0.36);
+                  g.moveTo(roofCenter.x - anchor.x, roofCenter.y - anchor.y + 1);
+                  g.lineTo(apex.x - anchor.x, apex.y - anchor.y);
+                  g.beginFill(0xb89aff, isVisible ? 0.34 : 0.14);
+                  g.drawCircle(apex.x - anchor.x, apex.y - anchor.y, 4.2);
+                  g.endFill();
+                  g.lineStyle(1.2, 0x5a3f83, isVisible ? 0.58 : 0.24);
+                  g.moveTo(roofCenter.x - anchor.x - 7, roofCenter.y - anchor.y + 2);
+                  g.lineTo(apex.x - anchor.x, apex.y - anchor.y + 7);
+                  g.moveTo(roofCenter.x - anchor.x + 7, roofCenter.y - anchor.y + 2);
+                  g.lineTo(apex.x - anchor.x, apex.y - anchor.y + 7);
+                }
               }}
             />
           </Container>
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, movingUnit, propTextureCache]);
+  }, [map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, targetUnitId, movingUnit, propTextureCache]);
 
   // Keyboard pan animation loop: apply velocity from Arrow keys continuously (stable, no restarts)
   useEffect(() => {
@@ -4974,6 +5047,7 @@ export function BattlefieldStage({
       {attackRangeOverlays}
       {plannedHighlights}
       {invalidMoveHighlight}
+      {objectiveOverlays}
     </>
   );
 

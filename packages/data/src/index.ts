@@ -1334,14 +1334,17 @@ const blackSpireMap = makeMap('black-spire', 11, 8, (q, r) => {
   if (r === 0 || r === 7) {
     return tile({ terrain: 'hill', elevation: 1, providesVisionBoost: true, cover: 1, movementCostModifier: 1.2 });
   }
-  if ((q === 5 || q === 6) && r >= 2 && r <= 5) {
-    return tile({ terrain: 'structure', passable: false, cover: 3, movementCostModifier: 99, destructible: true, hp: 50 });
+  if (q === 6 && r === 2) {
+    return tile({ terrain: 'structure', passable: false, cover: 3, movementCostModifier: 99, destructible: true, hp: 55 });
   }
-  if ((q === 4 || q === 7) && r === 3) {
-    return tile({ terrain: 'structure', passable: false, cover: 3, movementCostModifier: 99, destructible: true, hp: 35 });
+  if ((q === 5 || q === 7) && r === 3) {
+    return tile({ terrain: 'urban', cover: 3, movementCostModifier: 1.8, destructible: true, hp: 32 });
   }
-  if ((q === 3 || q === 8) && r === 4) {
-    return tile({ terrain: 'urban', cover: 3, movementCostModifier: 2, destructible: true, hp: 28 });
+  if (q === 6 && r === 3) {
+    return tile({ terrain: 'road', cover: 1, movementCostModifier: 0.8 });
+  }
+  if ((q >= 5 && q <= 7 && r === 4) || (q === 8 && r === 4)) {
+    return tile({ terrain: 'urban', cover: 2, movementCostModifier: 1.4, destructible: true, hp: 28 });
   }
   if (r === 2 && q >= 1 && q <= 3) {
     return tile({ terrain: 'forest', cover: 2, movementCostModifier: 2 });
@@ -1354,9 +1357,50 @@ const blackSpireMap = makeMap('black-spire', 11, 8, (q, r) => {
   }
   return {};
 }, [
-  { id: 'spire-core', kind: 'proc-building', coordinate: { q: 5, r: 2 }, w: 2, h: 4, levels: 2, roof: { kind: 'flat' }, wallColor: 0x30243a, roofColor: 0x15111d, elevationMode: 'max' },
-  { id: 'spire-guard-west', kind: 'proc-building', coordinate: { q: 4, r: 3 }, w: 1, h: 1, levels: 1, roof: { kind: 'flat' }, wallColor: 0x46304f, roofColor: 0x1f1725 },
-  { id: 'spire-guard-east', kind: 'proc-building', coordinate: { q: 7, r: 3 }, w: 1, h: 1, levels: 1, roof: { kind: 'flat' }, wallColor: 0x46304f, roofColor: 0x1f1725 },
+  {
+    id: 'spire-core',
+    kind: 'proc-building',
+    coordinate: { q: 6, r: 2 },
+    w: 1,
+    h: 1,
+    levels: 4,
+    levelHeightPx: 14,
+    roof: { kind: 'hip', pitch: 0.78 },
+    wallColor: 0x2d2233,
+    roofColor: 0x17111f,
+    elevationMode: 'max',
+    zPivot: 'centroid',
+    baseOffsetPx: { x: 0, y: -8 },
+    facade: { material: 'concrete', grime: 0.92, trimColor: 0x51415a, accentColor: 0x1e1628 },
+    windows: { rows: 2, cols: 1, widthPx: 8, heightPx: 12, glassColor: 0x6a4c84, frameColor: 0x120d16, emissive: 0.28 },
+    roofDetails: { overhangPx: 2, trimColor: 0x2a2030, ventCount: 0 }
+  },
+  {
+    id: 'spire-guard-west',
+    kind: 'proc-building',
+    coordinate: { q: 5, r: 3 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 12,
+    roof: { kind: 'flat' },
+    wallColor: 0x40324a,
+    roofColor: 0x1e1726,
+    facade: { material: 'concrete', grime: 0.9, trimColor: 0x56445f }
+  },
+  {
+    id: 'spire-guard-east',
+    kind: 'proc-building',
+    coordinate: { q: 7, r: 3 },
+    w: 1,
+    h: 1,
+    levels: 1,
+    levelHeightPx: 12,
+    roof: { kind: 'flat' },
+    wallColor: 0x40324a,
+    roofColor: 0x1e1726,
+    facade: { material: 'concrete', grime: 0.9, trimColor: 0x56445f }
+  },
   { id: 'spire-dead-tree-1', kind: 'tree', coordinate: { q: 2, r: 2 }, texture: '/props/dead_tree.png', scale: 0.48 },
   { id: 'spire-dead-tree-2', kind: 'tree', coordinate: { q: 8, r: 5 }, texture: '/props/dead_tree.png', scale: 0.5, flipX: true }
 ]);

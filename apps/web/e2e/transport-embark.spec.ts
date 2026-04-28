@@ -1,19 +1,9 @@
 import { expect, test } from '@playwright/test';
+import { retreatToHq, startBattle } from './helpers';
 
 test('transport embark and disembark flow', async ({ page }) => {
   test.setTimeout(80_000);
-  await page.addInitScript(() => window.localStorage.clear());
-  await page.goto('/');
-  try {
-    await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible({ timeout: 15000 });
-  } catch {
-    await page.reload();
-    await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible({ timeout: 15000 });
-  }
-
-  // Enter first battle
-  await page.getByRole('button', { name: /^Attack$/i }).first().click();
-  await expect(page.getByText(/Tactical/i)).toBeVisible();
+  await startBattle(page);
 
   const allies = await page.evaluate(() => (window as any).__battleControl?.allyUnits?.() ?? []);
   const carrier = allies.find((u: any) => (u.cap ?? 0) > 0) as any;
@@ -65,6 +55,5 @@ test('transport embark and disembark flow', async ({ page }) => {
   }, passenger.id);
   expect(after.embarkedOn).toBeFalsy();
 
-  await page.getByRole('button', { name: /^Retreat$/i }).click();
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
+  await retreatToHq(page);
 });

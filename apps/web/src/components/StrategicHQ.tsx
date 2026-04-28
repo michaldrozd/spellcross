@@ -453,6 +453,19 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
   const activeResearchProgress = activeResearchTopic && currentResearch
     ? Math.max(0, Math.min(100, Math.round(((activeResearchTopic.cost - currentResearch.remaining) / activeResearchTopic.cost) * 100)))
     : 0;
+  const visibleReports = popups?.slice(-3) ?? [];
+  const archivedReportCount = Math.max(0, (popups?.length ?? 0) - visibleReports.length);
+  const armyByType = useMemo(() => (
+    army.reduce<Record<string, number>>((acc, unit) => {
+      acc[unit.unitType] = (acc[unit.unitType] ?? 0) + 1;
+      return acc;
+    }, {})
+  ), [army]);
+  const woundedUnits = army.filter((unit) => unit.currentHealth < unit.maxHealth).length;
+  const readyResearchCount = researchTopics.filter((topic) => {
+    if (completedResearch.has(topic.id)) return false;
+    return (topic.requires ?? []).every((id) => completedResearch.has(id));
+  }).length;
   const activeTabStyle: React.CSSProperties = {
     background: 'rgba(255, 255, 255, 0.05)',
     borderBottomColor: 'var(--accent)',
@@ -513,16 +526,25 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
 
       {/* Content area */}
       <div className="hq-content">
-        {popups && popups.length > 0 && (
+        {visibleReports.length > 0 && (
           <div className="hq-alerts" role="alertdialog" aria-label="Operation reports">
-            {popups.map((popup, index) => (
-              <div key={`${popup.title}-${index}`} className={`hq-alert hq-alert-${popup.kind}`}>
-                <strong>{popup.title}</strong>
-                <span>{popup.body}</span>
-              </div>
-            ))}
+            <div className="hq-alerts-header">
+              <span>OPERATION REPORTS</span>
+              <b>{popups?.length ?? visibleReports.length}</b>
+            </div>
+            <div className="hq-alert-list">
+              {visibleReports.map((popup, index) => (
+                <div key={`${popup.title}-${index}`} className={`hq-alert hq-alert-${popup.kind}`}>
+                  <strong>{popup.title}</strong>
+                  <span>{popup.body}</span>
+                </div>
+              ))}
+            </div>
+            {archivedReportCount > 0 && (
+              <small className="hq-alert-archive">+{archivedReportCount} earlier reports</small>
+            )}
             {onDismissPopups && (
-              <button className="dismiss-alerts" onClick={onDismissPopups}>DISMISS</button>
+              <button className="dismiss-alerts" onClick={onDismissPopups}>CLEAR REPORTS</button>
             )}
           </div>
         )}
@@ -540,7 +562,24 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
         {activeTab === 'army' && (
           <div className="army-view">
             <div className="army-roster">
-              <h3>YOUR FORCES</h3>
+              <div className="view-heading">
+                <div>
+                  <span>FORCE ROSTER</span>
+                  <h3>YOUR FORCES</h3>
+                </div>
+                <div className="army-kpis">
+                  <span><b>{army.length}</b> ready</span>
+                  <span><b>{reserves.length}</b> transit</span>
+                  <span><b>{woundedUnits}</b> damaged</span>
+                </div>
+              </div>
+              {army.length > 0 && (
+                <div className="army-type-strip">
+                  {Object.entries(armyByType).map(([type, count]) => (
+                    <span key={type}><b>{count}</b>{type}</span>
+                  ))}
+                </div>
+              )}
               {army.length === 0 ? (
                 <p className="empty-msg">No units recruited yet</p>
               ) : (
@@ -581,7 +620,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                         <span className="unit-name">{u.name}</span>
                         <span className="unit-tier">{u.tier} · {u.unitType}</span>
                       </div>
-                    <div className="unit-stats">
+                      <div className="unit-stats">
                         <span className="stat-with-bar">
                           <b>HP</b> {u.currentHealth}/{u.maxHealth}
                           <i style={{ '--stat-percent': `${Math.max(0, Math.min(100, Math.round((u.currentHealth / u.maxHealth) * 100)))}%` } as React.CSSProperties} />
@@ -625,23 +664,30 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
         {activeTab === 'research' && (
           <div className="research-view">
             <div className="research-status">
-              {currentResearch ? (
-                <div className="active-research">
-                  <h3>CURRENTLY RESEARCHING</h3>
-                  <div className="research-progress">
-                    <span className="research-name">{activeResearchTopic?.name ?? currentResearch.topicId}</span>
-                    <span className="research-remaining">{currentResearch.remaining} RP remaining</span>
+              <div className="research-status-main">
+                {currentResearch ? (
+                  <div className="active-research">
+                    <h3>CURRENTLY RESEARCHING</h3>
+                    <div className="research-progress">
+                      <span className="research-name">{activeResearchTopic?.name ?? currentResearch.topicId}</span>
+                      <span className="research-remaining">{currentResearch.remaining} RP remaining</span>
+                    </div>
+                    <div className="research-progress-bar" aria-hidden="true">
+                      <i style={{ '--research-progress': `${activeResearchProgress}%` } as React.CSSProperties} />
+                    </div>
                   </div>
-                  <div className="research-progress-bar" aria-hidden="true">
-                    <i style={{ '--research-progress': `${activeResearchProgress}%` } as React.CSSProperties} />
+                ) : (
+                  <div className="no-research">
+                    <h3>NO ACTIVE RESEARCH</h3>
+                    <p>Select a topic below to begin research</p>
                   </div>
-                </div>
-              ) : (
-                <div className="no-research">
-                  <h3>NO ACTIVE RESEARCH</h3>
-                  <p>Select a topic below to begin research</p>
-                </div>
-              )}
+                )}
+              </div>
+              <div className="research-kpis">
+                <span><b>{Math.round(research)}</b>RP banked</span>
+                <span><b>{completedResearch.size}</b>complete</span>
+                <span><b>{readyResearchCount}</b>ready</span>
+              </div>
             </div>
             <div className="research-tree">
               <h3>RESEARCH NETWORK</h3>
@@ -666,7 +712,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                       return (
                         <div
                           key={topic.id}
-                          className={`research-card ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked-node' : ''}`}
+                          className={`research-card ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked-node' : ''} ${isWaiting ? 'waiting-node' : ''} ${!isCompleted && !isActive && !isLocked && !isWaiting ? 'ready-node' : ''}`}
                         >
                           <span className="research-node-index">{topic.id.toUpperCase()}</span>
                           <span className="research-node-state">{stateLabel}</span>

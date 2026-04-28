@@ -1,21 +1,21 @@
 import { expect, test } from '@playwright/test';
+import { endStrategicTurns, startFreshCampaign } from './helpers';
 
 test('autosave summary updates and persists across reload', async ({ page }) => {
   test.setTimeout(60_000);
-  await page.goto('/');
-  await page.getByRole('button', { name: /^Reset$/i }).click();
+  await startFreshCampaign(page);
 
-  const summary = page.getByTestId('slot-summary');
-  await expect(summary).toContainText(/Turn 1/);
+  await expect(page.getByText(/TURN 1/i)).toBeVisible();
 
-  await page.getByRole('button', { name: /^End Turn$/i }).click();
-  await expect(summary).toContainText(/Turn 2/);
+  await endStrategicTurns(page);
+  await expect(page.getByText(/TURN 2/i)).toBeVisible();
 
-  // Reload and ensure the summary still reflects turn 2
   await page.reload();
-  await expect(page.getByTestId('slot-summary')).toContainText(/Turn 2/);
+  await expect(page.getByRole('button', { name: /CONTINUE/i })).toBeVisible();
+  await expect(page.locator('.menu-intel-panel')).toContainText(/Turn 2/i);
 
-   // Popups should be dismissible and persist cleared state after dismissal
+  await page.getByRole('button', { name: /CONTINUE/i }).click();
+  await expect(page.getByRole('heading', { name: /FIELD HQ/i })).toBeVisible();
   const popupButton = page.getByRole('button', { name: /Dismiss briefings/i });
   if (await popupButton.isVisible()) {
     await popupButton.click();

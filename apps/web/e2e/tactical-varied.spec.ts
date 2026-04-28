@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { convertResearch, endStrategicTurns, launchBattle, queueResearch, retreatToHq, startFreshCampaign } from './helpers';
 
 const waitForLog = async (page: import('@playwright/test').Page, text: string) =>
   expect.poll(async () => (await page.locator('.log').textContent()) ?? '').toContain(text);
@@ -6,19 +7,15 @@ const waitForLog = async (page: import('@playwright/test').Page, text: string) =
 test('varied tactical combat: vehicle/artillery, destructibles, fog/night', async ({ page }) => {
   test.setTimeout(70_000);
 
-  // Strategic: ensure we have resources and start Optics II quickly
-  await page.goto('/');
-  await page.getByRole('button', { name: /Convert 3 SP → RP/i }).click();
-  await page.getByRole('button', { name: /Convert 3 SP → RP/i }).click();
-  const optics2 = page.locator('li', { hasText: 'Optics II' });
-  await optics2.getByRole('button', { name: /Start/i }).click();
-  await page.getByRole('button', { name: /^End Turn$/i }).click();
-  await expect(page.getByText(/Known tech:/i)).toContainText('optics-ii');
+  await startFreshCampaign(page);
+  await convertResearch(page);
+  await queueResearch(page, 'optics-ii');
+  await endStrategicTurns(page);
+  await page.getByRole('button', { name: /Research/i }).click();
+  await expect(page.locator('.research-card').filter({ hasText: 'Optics II' })).toContainText(/DONE|COMPLETED/);
+  await page.getByRole('button', { name: /Territories/i }).click();
 
-  // Attack River Bridge (has destructible tiles)
-  const bridgeTerritory = page.locator('li', { hasText: 'River Bridge' });
-  await bridgeTerritory.getByRole('button', { name: /^Attack$/i }).click();
-  await expect(page.getByText(/Tactical/i)).toBeVisible();
+  await launchBattle(page, 'sector-strasbourg');
 
   // Move forward and attempt attack (uses default unit)
   await page.evaluate(() => {
@@ -36,13 +33,9 @@ test('varied tactical combat: vehicle/artillery, destructibles, fog/night', asyn
 
   // End turn and retreat back to HQ
   await page.evaluate(() => (window as any).__battleControl?.endTurn());
-  await page.getByRole('button', { name: /^Retreat$/i }).click();
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
+  await retreatToHq(page);
 
-  // Attack Forward Outpost (night/fog enemies) to test visibility and ranged attacks
-  const outpostTerritory = page.locator('li', { hasText: 'Forward Outpost' });
-  await outpostTerritory.getByRole('button', { name: /^Attack$/i }).click();
-  await expect(page.getByText(/Tactical/i)).toBeVisible();
+  await launchBattle(page, 'sector-munich');
 
   // Move and attack in low-vision conditions
   await page.evaluate(() => (window as any).__battleControl?.moveTo(3, 2));
@@ -53,6 +46,5 @@ test('varied tactical combat: vehicle/artillery, destructibles, fog/night', asyn
 
   // End turn and retreat
   await page.evaluate(() => (window as any).__battleControl?.endTurn());
-  await page.getByRole('button', { name: /^Retreat$/i }).click();
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
+  await retreatToHq(page);
 });

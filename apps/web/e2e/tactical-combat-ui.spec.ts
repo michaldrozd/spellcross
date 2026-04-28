@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { startBattle } from './helpers';
+import { retreatToHq, startBattle } from './helpers';
 
 async function clickHex(page: import('@playwright/test').Page, q: number, r: number) {
   const pos = await page.evaluate(({ q, r }) => {
@@ -80,7 +80,5 @@ test('UI-driven tactical play: embark, move, disembark, attack, AI reacts', asyn
   await page.waitForTimeout(500);
 
   // Retreat back to HQ
-  const retreatBtn = page.getByRole('button', { name: /^Retreat$/i });
-  await retreatBtn.click({ timeout: 3000 }).catch(() => {});
-  await expect(page.getByRole('heading', { name: /FIELD HQ/i })).toBeVisible({ timeout: 10000 });
+  await retreatToHq(page);
 });

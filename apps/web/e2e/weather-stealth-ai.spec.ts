@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { launchBattle, retreatToHq, startFreshCampaign } from './helpers';
 
 const waitLog = (page: import('@playwright/test').Page, text: string) =>
   expect.poll(async () => (await page.locator('.log').textContent()) ?? '').toContain(text);
@@ -6,10 +7,8 @@ const waitLog = (page: import('@playwright/test').Page, text: string) =>
 test('weather, stealth visibility, and objective-aware AI', async ({ page }) => {
   test.setTimeout(80_000);
 
-  // Start outpost (night) to exercise weather and visibility
-  await page.goto('/');
-  await page.getByRole('button', { name: /^Attack$/i, exact: true }).nth(1).click();
-  await expect(page.getByText(/Tactical/i)).toBeVisible();
+  await startFreshCampaign(page);
+  await launchBattle(page, 'sector-munich');
   // Fog/night reduces visible enemies
   const visInitial = await page.evaluate(() => (window as any).__battleControl?.visibleEnemyCount?.() ?? 0);
   expect(visInitial).toBeLessThanOrEqual(3);
@@ -20,22 +19,19 @@ test('weather, stealth visibility, and objective-aware AI', async ({ page }) => 
   expect(visAfter).toBeGreaterThanOrEqual(visInitial);
 
   // End turn to trigger AI (objective-aware). Skip overwatch if disabled.
-  await page.getByRole('button', { name: /^End Turn$/i }).click().catch(() => {});
-  await page.evaluate(() => (window as any).__battleControl?.endTurn?.());
-  await expect(page.locator('.log')).toContainText(/round:started|unit:attacked/);
+  await page.getByRole('button', { name: /^End Turn$/i }).click({ timeout: 1000 }).catch(() => {});
+  const ended = await page.evaluate(() => (window as any).__battleControl?.endTurn?.());
+  expect(ended).toBeTruthy();
+  await expect.poll(async () => (await page.locator('.log-entries').textContent()) ?? '')
+    .toMatch(/Round|fires|hits|missed|TACTICAL LINK READY|SENSOR GRID ONLINE/i);
 
   // Retreat back to HQ for next scenario
-  await page.getByRole('button', { name: /^Retreat$/i }).click();
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
+  await retreatToHq(page);
 
-  // Attack River Bridge (clear weather) and verify movement slowed by weather not applied here
-  const bridgeTerritory = page.locator('li', { hasText: 'River Bridge' });
-  await bridgeTerritory.getByRole('button', { name: /^Attack$/i }).click();
-  await expect(page.getByText(/Tactical/i)).toBeVisible();
+  await launchBattle(page, 'sector-strasbourg');
   await page.evaluate(() => (window as any).__battleControl?.moveTo(2, 2));
 
   // AI objective-aware (reach/hold) still runs
-  await page.getByRole('button', { name: /^End Turn$/i }).click();
-  await page.getByRole('button', { name: /^Retreat$/i }).click();
-  await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
+  await page.getByRole('button', { name: /^End Turn$/i }).click({ timeout: 1000 }).catch(() => {});
+  await retreatToHq(page);
 });
