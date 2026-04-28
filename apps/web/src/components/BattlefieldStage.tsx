@@ -225,6 +225,9 @@ const directionNameForOrientation = (orientation: number) => {
 const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const UNIT_SHEET_FRAME_SIZE = 128;
 const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
+  '/assets/generated/apc_m113.png': 525,
+  '/assets/generated/artillery_mlrs.png': 870,
+  '/assets/generated/helicopter_apache.png': 742,
   '/assets/generated/infantry_squad.png': 767,
   '/assets/generated/ghoul_pack.png': 159,
   '/assets/generated/sniper_team.png': 768,
@@ -234,7 +237,8 @@ const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/ogre_brute.png': 891,
   '/assets/generated/bone_golem.png': 902,
   '/assets/generated/necromancer.png': 929,
-  '/assets/generated/death_knight.png': 820
+  '/assets/generated/death_knight.png': 820,
+  '/assets/generated/tank_m1_abrams.png': 572
 };
 const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
   '/assets/generated/apc_m113.png': 0.71,
@@ -262,15 +266,16 @@ const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
 type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
 type UnitPointerArea = { x: number; y: number; width: number; height: number };
 
-function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
+export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
   if (unitType === 'vehicle') {
-    if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.72;
-    if (definitionId.includes('truck')) return tile * 0.66;
-    return tile * 0.72;
+    if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.58;
+    if (definitionId.includes('tank') || definitionId.includes('leopard') || definitionId.includes('abrams') || definitionId.includes('m1')) return tile * 0.43;
+    if (definitionId.includes('truck') || definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return tile * 0.42;
+    return tile * 0.44;
   }
-  if (unitType === 'artillery') return tile * 0.64;
+  if (unitType === 'artillery') return tile * 0.52;
   if (unitType === 'hero') return tile * 0.58;
-  if (unitType === 'support') return definitionId.includes('truck') ? tile * 0.66 : tile * 0.52;
+  if (unitType === 'support') return definitionId.includes('truck') ? tile * 0.42 : tile * 0.52;
   if (definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead')) return tile * 0.46;
   if (definitionId.includes('golem') || definitionId.includes('ogre') || definitionId.includes('brute')) return tile * 0.74;
   if (directionalSprite === 'heavy_infantry') return tile * 0.6;
@@ -280,8 +285,9 @@ function unitVisualHeight(tile: number, unitType: string, definitionId: string, 
 }
 
 function unitContactFootprint(tile: number, unitType: string, definitionId: string): UnitVisualFootprint {
-  if (unitType === 'vehicle') return { rx: tile * 0.28, ry: tile * 0.07, alpha: 0.38, y: tile * 0.045 };
-  if (unitType === 'artillery') return { rx: tile * 0.3, ry: tile * 0.075, alpha: 0.34, y: tile * 0.045 };
+  if (unitType === 'support' && definitionId.includes('truck')) return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.07 };
+  if (unitType === 'vehicle') return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.07 };
+  if (unitType === 'artillery') return { rx: tile * 0.3, ry: tile * 0.075, alpha: 0.4, y: tile * 0.06 };
   if (unitType === 'air') return { rx: tile * 0.22, ry: tile * 0.055, alpha: 0.12, y: tile * 0.08 };
   if (definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead')) {
     return { rx: tile * 0.25, ry: tile * 0.065, alpha: 0.32, y: tile * 0.04 };
@@ -290,6 +296,58 @@ function unitContactFootprint(tile: number, unitType: string, definitionId: stri
     return { rx: tile * 0.25, ry: tile * 0.075, alpha: 0.34, y: tile * 0.045 };
   }
   return { rx: tile * 0.18, ry: tile * 0.05, alpha: 0.28, y: tile * 0.04 };
+}
+
+function orientationScreenVector(orientation: number) {
+  const normalized = ((Math.round(orientation) % 8) + 8) % 8;
+  const directions = [
+    { q: 1, r: 0 },
+    { q: 1, r: -1 },
+    { q: 0, r: -1 },
+    { q: -1, r: 0 },
+    { q: -1, r: 1 },
+    { q: 0, r: 1 },
+    { q: 1, r: 1 },
+    { q: -1, r: -1 }
+  ];
+  const dir = directions[normalized] ?? directions[0];
+  const p = toScreen(dir);
+  const len = Math.max(1, Math.hypot(p.x, p.y));
+  return { x: p.x / len, y: p.y / len };
+}
+
+function screenVectorBetween(from: HexCoordinate, to: HexCoordinate) {
+  const fromScreen = toScreen(from);
+  const toScreenPoint = toScreen(to);
+  const dx = toScreenPoint.x - fromScreen.x;
+  const dy = toScreenPoint.y - fromScreen.y;
+  const len = Math.max(1, Math.hypot(dx, dy));
+  return { x: dx / len, y: dy / len };
+}
+
+function mixScreenVectors(a: { x: number; y: number }, b: { x: number; y: number }, amount: number) {
+  const x = a.x + (b.x - a.x) * amount;
+  const y = a.y + (b.y - a.y) * amount;
+  const len = Math.max(1, Math.hypot(x, y));
+  return { x: x / len, y: y / len };
+}
+
+function normalizeRadians(angle: number) {
+  let normalized = angle;
+  while (normalized > Math.PI) normalized -= Math.PI * 2;
+  while (normalized < -Math.PI) normalized += Math.PI * 2;
+  return normalized;
+}
+
+function rasterVehiclePose(vector: { x: number; y: number }) {
+  const targetAngle = Math.atan2(vector.y, vector.x);
+  const sourceForward = Math.atan2(14, -28);
+  const mirroredSourceForward = Math.PI - sourceForward;
+  const mirrored = vector.x >= -0.05;
+  const sourceAngle = mirrored ? mirroredSourceForward : sourceForward;
+  const maxTurn = Math.PI * 0.28;
+  const rotation = Math.max(-maxTurn, Math.min(maxTurn, normalizeRadians(targetAngle - sourceAngle)));
+  return { mirrored, rotation };
 }
 
 function unitPointerArea(tile: number, unitType: string, definitionId: string, selected = false): UnitPointerArea {
@@ -3457,6 +3515,7 @@ export function BattlefieldStage({
         let animatedOrientation = unit.orientation ?? 0;
         let movementPhase = 0;
         let movingThisUnit = false;
+        let moveScreenVector = orientationScreenVector(animatedOrientation);
 
         if (movingUnit && movingUnit.unitId === unit.id && movingUnit.path.length >= 2) {
           const elapsed = now - movingUnit.startTime;
@@ -3487,6 +3546,19 @@ export function BattlefieldStage({
             else if (dq === 0 && dr > 0) animatedOrientation = 5; // S
             else if (dq > 0 && dr > 0) animatedOrientation = 6; // SE
             else if (dq < 0 && dr < 0) animatedOrientation = 7; // NW
+            moveScreenVector = screenVectorBetween(fromCoord, toCoord);
+            const turnBlendWindow = 0.64;
+            if (stepProgress > 1 - turnBlendWindow && currentStep + 2 < movingUnit.path.length) {
+              const nextVector = screenVectorBetween(toCoord, movingUnit.path[currentStep + 2]);
+              const t = (stepProgress - (1 - turnBlendWindow)) / turnBlendWindow;
+              const smoothT = t * t * (3 - 2 * t);
+              moveScreenVector = mixScreenVectors(moveScreenVector, nextVector, smoothT);
+            } else if (stepProgress < turnBlendWindow && currentStep > 0) {
+              const previousVector = screenVectorBetween(movingUnit.path[currentStep - 1], fromCoord);
+              const t = stepProgress / turnBlendWindow;
+              const smoothT = t * t * (3 - 2 * t);
+              moveScreenVector = mixScreenVectors(previousVector, moveScreenVector, smoothT);
+            }
           }
         }
 
@@ -3571,6 +3643,8 @@ export function BattlefieldStage({
         const factionAccent = isFriendly ? 0x7ec3df : 0xe05a49;
         const capHeight = unitType === 'air' ? tileSize * 0.10 : tileSize * 0.28;
         const k = unitType === 'infantry' ? 0.32 : (unitType === 'vehicle' || unitType === 'artillery') ? 0.46 : 0.40;
+        const isSupportVehicle = unitType === 'support' && definitionId.includes('truck');
+        const isGroundVehicle = unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicle;
         const pointerArea = unitPointerArea(tileSize, unitType, definitionId, isSelected || isSelectedCarrier);
         const unitHitArea = new Rectangle(pointerArea.x, pointerArea.y, pointerArea.width, pointerArea.height);
         const stopUnitEvent = (event: FederatedPointerEvent) => {
@@ -3736,13 +3810,43 @@ export function BattlefieldStage({
 	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? (isFriendly ? 0.16 : 0.24) : 0.08);
 	                    g.drawEllipse(0, footprint.y, footprint.rx * 1.22, footprint.ry * 1.35);
 	                    g.endFill();
-	                  }
+                  }
 	                  g.beginFill(0x000000, isVisible ? footprint.alpha : footprint.alpha * 0.55);
 	                  g.drawEllipse(1, footprint.y, footprint.rx, footprint.ry);
 	                  g.endFill();
 	                  g.beginFill(0x000000, isVisible ? footprint.alpha * 0.45 : footprint.alpha * 0.22);
 	                  g.drawEllipse(1, footprint.y - tileSize * 0.006, footprint.rx * 0.56, footprint.ry * 0.46);
 	                  g.endFill();
+                    if (isGroundVehicle && isVisible) {
+                      const perpX = -moveScreenVector.y;
+                      const perpY = moveScreenVector.x;
+                      const trackHalf = footprint.rx * 0.76;
+                      const trackGap = footprint.ry * 0.95;
+                      for (const sideOffset of [-1, 1]) {
+                        const ox = perpX * trackGap * sideOffset;
+                        const oy = perpY * trackGap * sideOffset;
+                        g.lineStyle(2.6, 0x050706, 0.48);
+                        g.moveTo(ox - moveScreenVector.x * trackHalf, footprint.y + oy - moveScreenVector.y * trackHalf * 0.32);
+                        g.lineTo(ox + moveScreenVector.x * trackHalf, footprint.y + oy + moveScreenVector.y * trackHalf * 0.32);
+                        g.lineStyle(1.1, isFriendly ? 0x638fa0 : 0x9c5146, 0.38);
+                        g.moveTo(ox - moveScreenVector.x * trackHalf * 0.62, footprint.y + oy - moveScreenVector.y * trackHalf * 0.2);
+                        g.lineTo(ox + moveScreenVector.x * trackHalf * 0.62, footprint.y + oy + moveScreenVector.y * trackHalf * 0.2);
+                      }
+                    }
+                    if (movingThisUnit && isGroundVehicle && isVisible) {
+                      const trailX = -moveScreenVector.x * tileSize * 0.18;
+                      const trailY = footprint.y - moveScreenVector.y * tileSize * 0.12;
+                      const phase = ((movementPhase % 1) + 1) % 1;
+                      g.lineStyle(1.1, isFriendly ? 0x8bbbd0 : 0xd06c55, 0.28);
+                      g.moveTo(trailX - footprint.rx * 0.42, trailY + footprint.ry * 0.6);
+                      g.lineTo(trailX + footprint.rx * 0.42, trailY + footprint.ry * 0.35);
+                      g.lineStyle(1, 0x0a0d09, 0.22);
+                      g.moveTo(trailX - footprint.rx * 0.36 + phase * 5, trailY - footprint.ry * 0.2);
+                      g.lineTo(trailX + footprint.rx * 0.36 + phase * 5, trailY - footprint.ry * 0.42);
+                      g.beginFill(0x1f1b13, 0.16);
+                      g.drawEllipse(trailX - moveScreenVector.y * 3, trailY + moveScreenVector.x * 2, footprint.rx * 0.34, footprint.ry * 0.48);
+                      g.endFill();
+                    }
                 } else {
                   const shadowY = tileSize * 0.16;
                   g.beginFill(0x000000, 0.2);
@@ -3759,8 +3863,8 @@ export function BattlefieldStage({
               let canMirrorForFacing = true;
               const directionalSprite = DIRECTIONAL_UNIT_SPRITES[defId];
               const spriteDirection = directionNameForOrientation(animatedOrientation);
-              const isFootUnit = unitType === 'infantry' || unitType === 'support' || unitType === 'hero';
-              const isVehicleUnit = unitType === 'vehicle' || unitType === 'artillery';
+              const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
+              const isVehicleUnit = isGroundVehicle;
               const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
               const fastWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 4) : 0;
               const sheetState = movingThisUnit && directionalSprite && isFootUnit ? 'walk' : 'idle';
@@ -3853,15 +3957,17 @@ export function BattlefieldStage({
               }
               const sourceHeight = directionalSprite ? 128 : (RASTER_UNIT_VISIBLE_HEIGHTS[texturePath] ?? 1024);
               const baseScale = desiredH / sourceHeight;
-              const facingLeft = canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
+              const vehiclePose = isVehicleUnit && canMirrorForFacing ? rasterVehiclePose(moveScreenVector) : null;
+              const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
+              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? fastWave * 0.18 : 0;
               const spriteBobY = isFootUnit ? -Math.abs(stepWave) * (directionalSprite ? 1.35 : 2.1) : unitType === 'air' ? stepWave * 1.4 : 0;
-              const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? fastWave * 0.35 : 0) + hitOffsetX + shotOffsetX;
+              const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX;
               const spriteCombatY = hitOffsetY + shotOffsetY;
-              const spriteRotation = isVehicleUnit ? fastWave * 0.012 : 0;
+              const spriteRotation = vehiclePose ? vehiclePose.rotation + fastWave * 0.004 : isVehicleUnit ? fastWave * 0.012 : 0;
               const squashX = isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1;
               const squashY = isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1;
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
-              const spriteBaseY = directionalSprite ? 0 : tileSize * 0.05;
+              const spriteBaseY = directionalSprite ? 0 : tileSize * (isVehicleUnit ? 0.082 : 0.05);
               const silhouetteAlpha = isFootUnit && isVisible ? 0.32 : 0;
               return (
                 <>

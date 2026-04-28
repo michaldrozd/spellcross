@@ -1000,6 +1000,7 @@ const BattleView: React.FC<{
           type: u.unitType,
           definitionId: u.definitionId,
           coord: u.coordinate,
+          orientation: u.orientation,
           embarkedOn: u.embarkedOn,
           carrying: u.carrying,
           cap: u.stats.transportCapacity ?? 0
@@ -1011,6 +1012,7 @@ const BattleView: React.FC<{
           id: u.id,
           type: u.unitType,
           coord: u.coordinate,
+          orientation: u.orientation,
           ap: u.actionPoints,
           stance: u.stance,
           visible: visible.has(u.coordinate.r * map.width + u.coordinate.q)
@@ -1210,7 +1212,10 @@ const BattleView: React.FC<{
 
     // Play movement sound
     const unitType = (unit as any).unitType;
-    if (unitType === 'vehicle') {
+    const isVehicleMove = unitType === 'vehicle'
+      || unitType === 'artillery'
+      || (unitType === 'support' && unit.definitionId.toLowerCase().includes('truck'));
+    if (isVehicleMove) {
       AudioManager.play('tankMove');
     } else {
       AudioManager.play('move');
@@ -1218,7 +1223,7 @@ const BattleView: React.FC<{
 
     // Start movement animation - include starting position
     const fullPath = [startCoord, ...path.path];
-    const stepDuration = unitType === 'vehicle' ? 120 : 180; // vehicles move faster
+    const stepDuration = isVehicleMove ? 230 : 180;
     setMovingUnit({
       unitId,
       path: fullPath,

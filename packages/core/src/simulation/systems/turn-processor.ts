@@ -210,9 +210,11 @@ export class TurnProcessor {
     for (const step of input.path) {
       const tile = getTile(this.#state.map, step)!;
       const stepCost = tile.movementCostModifier * movementMultiplier * weatherMoveMod;
+      const previous = { ...origin };
 
       // advance to step
       origin = { ...step };
+      unit.orientation = isIsoNeighbor(previous, step) ? isoDirectionIndex(previous, step) : directionIndex(previous, step);
       unit.coordinate = { ...origin };
       costSpent += stepCost;
 
@@ -228,10 +230,6 @@ export class TurnProcessor {
 
     // movement completed
     unit.actionPoints -= accumulatedCost;
-    if (input.path.length > 0) {
-      const lastStep = input.path[input.path.length - 1];
-      unit.orientation = isIsoNeighbor(from, lastStep) ? isoDirectionIndex(from, lastStep) : directionIndex(from, lastStep);
-    }
     this.#state.timeline.push({
       kind: 'unit:moved',
       unitId: unit.id,

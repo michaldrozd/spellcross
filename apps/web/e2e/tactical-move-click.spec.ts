@@ -111,6 +111,79 @@ test('animated movement path starts from the unit origin', async ({ page }) => {
   expect(after).toEqual(setup!.to);
 });
 
+test('vehicle movement finishes facing its last travelled step', async ({ page }) => {
+  test.setTimeout(90_000);
+  await startBattle(page);
+
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const orientationFor = (from: any, to: any) => {
+      const dq = Math.sign(to.q - from.q);
+      const dr = Math.sign(to.r - from.r);
+      if (dq > 0 && dr === 0) return 0;
+      if (dq > 0 && dr < 0) return 1;
+      if (dq === 0 && dr < 0) return 2;
+      if (dq < 0 && dr === 0) return 3;
+      if (dq < 0 && dr > 0) return 4;
+      if (dq === 0 && dr > 0) return 5;
+      if (dq > 0 && dr > 0) return 6;
+      if (dq < 0 && dr < 0) return 7;
+      return 0;
+    };
+    const ctrl = (window as any).__battleControl;
+    const allies = ctrl?.allyUnits?.() ?? [];
+    const enemies = ctrl?.enemyUnits?.() ?? [];
+    const vehicle = allies.find((unit: any) => unit.type === 'vehicle');
+    if (!vehicle) return null;
+    allies
+      .filter((unit: any) => unit.id !== vehicle.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 0, index));
+    enemies.forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 9, index));
+    ctrl.snapUnit(vehicle.id, 3, 3);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(vehicle.id);
+    for (let r = 2; r <= 6; r++) {
+      for (let q = 4; q <= 7; q++) {
+        const candidatePath = ctrl.pathForUnit(vehicle.id, q, r);
+        if (candidatePath?.success && candidatePath.path.length >= 2) {
+          const penultimate = candidatePath.path[candidatePath.path.length - 2];
+          const last = candidatePath.path[candidatePath.path.length - 1];
+          return {
+            vehicleId: vehicle.id,
+            to: last,
+            expectedOrientation: orientationFor(penultimate, last)
+          };
+        }
+      }
+    }
+    return null;
+  });
+  expect(setup).toBeTruthy();
+
+  const started = await page.evaluate(({ vehicleId, to }) => {
+    return (window as any).__battleControl?.animateUnitTo?.(vehicleId, to.q, to.r);
+  }, setup!);
+  expect(started).toBeTruthy();
+
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);
+  }).not.toBeNull();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);
+  }, { timeout: 5_000 }).toBeNull();
+
+  const after = await page.evaluate((vehicleId) => {
+    return ((window as any).__battleControl?.allyUnits?.() ?? []).find((unit: any) => unit.id === vehicleId);
+  }, setup!.vehicleId);
+  expect(after?.coord).toEqual(setup!.to);
+  expect(after?.orientation).toBe(setup!.expectedOrientation);
+});
+
 test('selecting a friendly unit near enemies preserves manual camera focus', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
