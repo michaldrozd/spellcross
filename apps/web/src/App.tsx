@@ -1461,6 +1461,7 @@ const BattleView: React.FC<{
           plannedDestination={plannedDestination ?? undefined}
           invalidMoveFeedback={invalidMoveFeedback}
           targetUnitId={previewEnemy?.id}
+          focusTargetUnitId={targetedEnemy?.id}
           targetHitChance={targetedEnemy && targetWeaponPreview ? targetWeaponPreview.hit / 100 : undefined}
           targetDamagePreview={targetedEnemy && targetWeaponPreview ? selectedUnit?.stats.weaponPower[targetWeaponPreview.weapon] : undefined}
           viewerFaction="alliance"

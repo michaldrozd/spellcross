@@ -94,6 +94,7 @@ export interface BattlefieldStageProps {
   plannedDestination?: HexCoordinate;
   invalidMoveFeedback?: InvalidMoveFeedback | null;
   targetUnitId?: string;
+  focusTargetUnitId?: string;
   targetHitChance?: number; // 0-1, hit chance to display on target
   targetDamagePreview?: number; // predicted damage to show
   selectedUnitId?: string;
@@ -924,6 +925,7 @@ export function BattlefieldStage({
   plannedDestination,
   invalidMoveFeedback,
   targetUnitId,
+  focusTargetUnitId,
   targetHitChance,
   targetDamagePreview,
   selectedUnitId,
@@ -1367,10 +1369,10 @@ export function BattlefieldStage({
     if (targetEffect) {
       fromCoord = { q: targetEffect.fromQ, r: targetEffect.fromR };
       toCoord = { q: targetEffect.toQ, r: targetEffect.toR };
-    } else if (selectedUnitId && targetUnitId) {
+    } else if (selectedUnitId && focusTargetUnitId) {
       for (const side of Object.values(battleState.sides) as any[]) {
         fromCoord ??= side.units.get(selectedUnitId)?.coordinate;
-        toCoord ??= side.units.get(targetUnitId)?.coordinate;
+        toCoord ??= side.units.get(focusTargetUnitId)?.coordinate;
       }
     }
 
@@ -1383,7 +1385,7 @@ export function BattlefieldStage({
       y: ((from.y + to.y) / 2) + tileSize * 0.2
     });
     setZoom(targetEffect ? 2.62 : 2.25);
-  }, [attackEffects, battleState.sides, selectedUnitId, targetUnitId, toScreen, tileSize]);
+  }, [attackEffects, battleState.sides, focusTargetUnitId, selectedUnitId, toScreen, tileSize]);
 
   // Camera panning control
   const PAN_SPEED = 800; // pixels per second (keyboard)

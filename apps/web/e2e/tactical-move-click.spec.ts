@@ -110,3 +110,40 @@ test('animated movement path starts from the unit origin', async ({ page }) => {
   }, setup!.unitId);
   expect(after).toEqual(setup!.to);
 });
+
+test('selecting a friendly unit near enemies preserves manual camera focus', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const ally = ctrl?.allyUnits?.().find((unit: any) => !unit.embarkedOn);
+    const enemy = ctrl?.enemyUnits?.().find((unit: any) => unit.stance !== 'destroyed');
+    if (!ally || !enemy) return null;
+    const adjacent = { q: Math.min(ally.coord.q + 1, 9), r: ally.coord.r };
+    ctrl.snapUnit(enemy.id, adjacent.q, adjacent.r);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(ally.id);
+    return { allyId: ally.id, allyCoord: ally.coord, enemyId: enemy.id, enemyCoord: adjacent };
+  });
+  expect(setup).toBeTruthy();
+
+  await page.waitForFunction(() => Boolean((window as any).__battleCamera));
+  await page.evaluate(() => (window as any).__battleCamera.centerOnCoord(8, 6));
+  await page.evaluate(() => (window as any).__battleCamera.setZoom(2.5));
+  await page.waitForTimeout(150);
+  const beforeSelect = await page.evaluate(() => (window as any).__battleCamera.metrics());
+
+  const selected = await page.evaluate((allyId) => (window as any).__battleControl.selectUnit(allyId), setup!.allyId);
+  expect(selected).toBeTruthy();
+  await page.waitForTimeout(250);
+  const afterSelect = await page.evaluate(() => (window as any).__battleCamera.metrics());
+
+  expect(afterSelect.centerX).toBeCloseTo(beforeSelect.centerX, 1);
+  expect(afterSelect.centerY).toBeCloseTo(beforeSelect.centerY, 1);
+  expect(afterSelect.scale).toBeCloseTo(beforeSelect.scale, 2);
+});
