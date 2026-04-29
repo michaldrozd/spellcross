@@ -48,7 +48,7 @@ describe('directionNameForOrientation', () => {
 });
 
 describe('vehicleSheetDirectionNameForOrientation', () => {
-  it('compensates for reversed generated vehicle sheet labels', () => {
+  it('uses the current vehicle sheet orientation metadata', () => {
     expect(vehicleSheetDirectionNameForOrientation(0, 'apc_directional')).toBe('nw');
     expect(vehicleSheetDirectionNameForOrientation(1, 'apc_directional')).toBe('w');
     expect(vehicleSheetDirectionNameForOrientation(2, 'apc_directional')).toBe('sw');

@@ -220,12 +220,21 @@ const VEHICLE_DIRECTIONAL_SPRITES = {
   apc: 'apc_directional',
   artillery: 'artillery_directional'
 } as const;
-const REVERSED_DIRECTIONAL_SHEETS = new Set<string>([
-  'tank_directional',
-  'apc_directional',
-  'artillery_directional'
-]);
-
+const OPPOSITE_DIRECTION_NAMES: Record<string, string> = {
+  n: 's',
+  ne: 'sw',
+  e: 'w',
+  se: 'nw',
+  s: 'n',
+  sw: 'ne',
+  w: 'e',
+  nw: 'se'
+};
+const VEHICLE_SHEET_DIRECTION_OVERRIDES: Record<string, Record<string, string>> = {
+  tank_directional: OPPOSITE_DIRECTION_NAMES,
+  apc_directional: OPPOSITE_DIRECTION_NAMES,
+  artillery_directional: OPPOSITE_DIRECTION_NAMES
+};
 export const directionNameForOrientation = (orientation: number) => {
   const normalized = ((Math.round(orientation) % 8) + 8) % 8;
   const directionNames = ['se', 'e', 'ne', 'nw', 'w', 'sw', 's', 'n'];
@@ -234,18 +243,7 @@ export const directionNameForOrientation = (orientation: number) => {
 
 export const vehicleSheetDirectionNameForOrientation = (orientation: number, spriteName: string) => {
   const direction = directionNameForOrientation(orientation);
-  if (!REVERSED_DIRECTIONAL_SHEETS.has(spriteName)) return direction;
-  const oppositeDirections: Record<string, string> = {
-    n: 's',
-    ne: 'sw',
-    e: 'w',
-    se: 'nw',
-    s: 'n',
-    sw: 'ne',
-    w: 'e',
-    nw: 'se'
-  };
-  return oppositeDirections[direction] ?? direction;
+  return VEHICLE_SHEET_DIRECTION_OVERRIDES[spriteName]?.[direction] ?? direction;
 };
 
 const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
@@ -4003,19 +4001,29 @@ export function BattlefieldStage({
                 g.clear();
                 if (ISO_MODE) {
 	                  const footprint = unitContactFootprint(tileSize, unitType, definitionId);
+                    const baseAlpha = isGroundVehicle
+                      ? (isFriendly ? 0.036 : 0.052)
+                      : (isFriendly ? 0.11 : 0.17);
+                    const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
+                    const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
+                    const shadowAlpha = isGroundVehicle ? footprint.alpha * 0.44 : footprint.alpha;
+                    const shadowRx = isGroundVehicle ? footprint.rx * 0.7 : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * 0.52 : footprint.ry;
 	                  const showFactionBase = isSelected || isTarget;
 	                  if (showFactionBase) {
-	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? (isFriendly ? 0.11 : 0.17) : 0.06);
-	                    g.drawEllipse(0, footprint.y, footprint.rx * 1.14, footprint.ry * 1.22);
+	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? baseAlpha : baseAlpha * 0.55);
+	                    g.drawEllipse(0, footprint.y + (isGroundVehicle ? tileSize * 0.005 : 0), baseRx, baseRy);
 	                    g.endFill();
                   }
-	                  g.beginFill(0x000000, isVisible ? footprint.alpha : footprint.alpha * 0.55);
-	                  g.drawEllipse(1, footprint.y, footprint.rx, footprint.ry);
+	                  g.beginFill(0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
+	                  g.drawEllipse(1, footprint.y, shadowRx, shadowRy);
 	                  g.endFill();
-	                  g.beginFill(0x000000, isVisible ? footprint.alpha * 0.45 : footprint.alpha * 0.22);
-	                  g.drawEllipse(1, footprint.y - tileSize * 0.006, footprint.rx * 0.56, footprint.ry * 0.46);
-	                  g.endFill();
-                    if (isGroundVehicle && isVisible) {
+                    if (!isGroundVehicle) {
+	                    g.beginFill(0x000000, isVisible ? footprint.alpha * 0.45 : footprint.alpha * 0.22);
+	                    g.drawEllipse(1, footprint.y - tileSize * 0.006, footprint.rx * 0.56, footprint.ry * 0.46);
+	                    g.endFill();
+                    }
+                    if (isGroundVehicle && isVisible && movingThisUnit) {
                       const perpX = -moveScreenVector.y;
                       const perpY = moveScreenVector.x;
                       const trackHalf = footprint.rx * 0.76;
@@ -4023,10 +4031,10 @@ export function BattlefieldStage({
                       for (const sideOffset of [-1, 1]) {
                         const ox = perpX * trackGap * sideOffset;
                         const oy = perpY * trackGap * sideOffset;
-                        g.lineStyle(2.3, 0x050706, 0.42);
+                        g.lineStyle(1.7, 0x050706, 0.28);
                         g.moveTo(ox - moveScreenVector.x * trackHalf, footprint.y + oy - moveScreenVector.y * trackHalf * 0.32);
                         g.lineTo(ox + moveScreenVector.x * trackHalf, footprint.y + oy + moveScreenVector.y * trackHalf * 0.32);
-                        g.lineStyle(0.95, isFriendly ? 0x638fa0 : 0x9c5146, 0.32);
+                        g.lineStyle(0.75, isFriendly ? 0x638fa0 : 0x9c5146, 0.2);
                         g.moveTo(ox - moveScreenVector.x * trackHalf * 0.62, footprint.y + oy - moveScreenVector.y * trackHalf * 0.2);
                         g.lineTo(ox + moveScreenVector.x * trackHalf * 0.62, footprint.y + oy + moveScreenVector.y * trackHalf * 0.2);
                       }
@@ -4041,8 +4049,8 @@ export function BattlefieldStage({
                       g.lineStyle(1.15, 0x0a0d09, 0.28);
                       g.moveTo(trailX - footprint.rx * 0.45 + phase * 7, trailY - footprint.ry * 0.16);
                       g.lineTo(trailX + footprint.rx * 0.42 + phase * 7, trailY - footprint.ry * 0.42);
-                      g.beginFill(0x1f1b13, 0.2);
-                      g.drawEllipse(trailX - moveScreenVector.y * 3.5, trailY + moveScreenVector.x * 2.5, footprint.rx * 0.4, footprint.ry * 0.52);
+                      g.beginFill(0x1f1b13, 0.12);
+                      g.drawEllipse(trailX - moveScreenVector.y * 3.5, trailY + moveScreenVector.x * 2.5, footprint.rx * 0.32, footprint.ry * 0.38);
                       g.endFill();
                     }
                 } else {
