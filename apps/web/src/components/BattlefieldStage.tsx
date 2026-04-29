@@ -305,13 +305,13 @@ type InteractionUnit = {
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
   if (unitType === 'vehicle') {
     if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.58;
+    if (definitionId.includes('truck') || definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return tile * 0.455;
     if (definitionId.includes('tank') || definitionId.includes('leopard') || definitionId.includes('abrams') || definitionId.includes('m1')) return tile * 0.43;
-    if (definitionId.includes('truck') || definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return tile * 0.42;
     return tile * 0.44;
   }
   if (unitType === 'artillery') return tile * 0.52;
   if (unitType === 'hero') return tile * 0.58;
-  if (unitType === 'support') return definitionId.includes('truck') ? tile * 0.42 : tile * 0.52;
+  if (unitType === 'support') return definitionId.includes('truck') ? tile * 0.455 : tile * 0.52;
   if (definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead')) return tile * 0.46;
   if (definitionId.includes('golem') || definitionId.includes('ogre') || definitionId.includes('brute')) return tile * 0.74;
   if (directionalSprite === 'heavy_infantry') return tile * 0.6;
@@ -4043,15 +4043,29 @@ export function BattlefieldStage({
                       const trailX = -moveScreenVector.x * tileSize * 0.18;
                       const trailY = footprint.y - moveScreenVector.y * tileSize * 0.12;
                       const phase = ((movementPhase % 1) + 1) % 1;
-                      g.lineStyle(1.15, isFriendly ? 0x8bbbd0 : 0xd06c55, 0.22);
+                      g.lineStyle(1.15, isFriendly ? 0x8bbbd0 : 0xd06c55, 0.18);
                       g.moveTo(trailX - footprint.rx * 0.48, trailY + footprint.ry * 0.62);
                       g.lineTo(trailX + footprint.rx * 0.48, trailY + footprint.ry * 0.34);
-                      g.lineStyle(1.15, 0x0a0d09, 0.28);
+                      g.lineStyle(1.15, 0x0a0d09, 0.2);
                       g.moveTo(trailX - footprint.rx * 0.45 + phase * 7, trailY - footprint.ry * 0.16);
                       g.lineTo(trailX + footprint.rx * 0.42 + phase * 7, trailY - footprint.ry * 0.42);
                       g.beginFill(0x1f1b13, 0.12);
                       g.drawEllipse(trailX - moveScreenVector.y * 3.5, trailY + moveScreenVector.x * 2.5, footprint.rx * 0.32, footprint.ry * 0.38);
                       g.endFill();
+                      const perpX = -moveScreenVector.y;
+                      const perpY = moveScreenVector.x;
+                      for (let i = 0; i < 3; i += 1) {
+                        const t = (phase + i * 0.33) % 1;
+                        const back = tileSize * (0.18 + i * 0.075);
+                        const fade = 0.18 * (1 - i * 0.24) * (0.68 + 0.32 * Math.sin(t * Math.PI));
+                        for (const sideOffset of [-1, 1]) {
+                          const cx = -moveScreenVector.x * back + perpX * footprint.ry * 0.9 * sideOffset;
+                          const cy = footprint.y - moveScreenVector.y * back + perpY * footprint.ry * 0.9 * sideOffset;
+                          g.lineStyle(1.25, 0x10140e, fade);
+                          g.moveTo(cx - moveScreenVector.x * footprint.rx * 0.18, cy - moveScreenVector.y * footprint.rx * 0.06);
+                          g.lineTo(cx + moveScreenVector.x * footprint.rx * 0.18, cy + moveScreenVector.y * footprint.rx * 0.06);
+                        }
+                      }
                     }
                 } else {
                   const shadowY = tileSize * 0.16;
@@ -4169,11 +4183,11 @@ export function BattlefieldStage({
               const baseScale = desiredH / sourceHeight;
               const vehiclePose = isVehicleUnit && canMirrorForFacing ? rasterVehiclePose(moveScreenVector) : null;
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
-              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? fastWave * 0.18 : 0;
+              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? fastWave * 0.035 : 0;
               const spriteBobY = isFootUnit ? -Math.abs(stepWave) * (directionalSprite ? 1.35 : 2.1) : unitType === 'air' ? stepWave * 1.4 : 0;
               const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX;
               const spriteCombatY = hitOffsetY + shotOffsetY;
-              const spriteRotation = vehiclePose ? vehiclePose.rotation + fastWave * 0.004 : isVehicleUnit ? fastWave * 0.012 : 0;
+              const spriteRotation = vehiclePose ? vehiclePose.rotation + fastWave * 0.004 : 0;
               const squashX = isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1;
               const squashY = isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1;
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;

@@ -14,6 +14,7 @@ describe('unitVisualHeight', () => {
     expect(unitVisualHeight(tile, 'vehicle', 'leopard-2')).toBeLessThan(tile * 0.5);
     expect(unitVisualHeight(tile, 'vehicle', 'm113')).toBeLessThan(tile * 0.5);
     expect(unitVisualHeight(tile, 'support', 'supply-truck')).toBeLessThan(tile * 0.5);
+    expect(unitVisualHeight(tile, 'vehicle', 'm113')).toBeGreaterThan(tile * 0.44);
   });
 
   it('does not tilt raster vehicles into vertical launch poses', () => {
