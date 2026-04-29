@@ -215,6 +215,11 @@ const DIRECTIONAL_UNIT_SPRITES: Record<string, string> = {
   'light-infantry': 'light_infantry',
   rangers: 'rangers'
 };
+const VEHICLE_DIRECTIONAL_SPRITES = {
+  tank: 'tank_directional',
+  apc: 'apc_directional',
+  artillery: 'artillery_directional'
+} as const;
 
 const directionNameForOrientation = (orientation: number) => {
   const normalized = ((Math.round(orientation) % 8) + 8) % 8;
@@ -258,9 +263,12 @@ const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
   '/assets/generated/zombie_horde.png': 0.97
 };
 const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
+  artillery_directional: 0.74,
   heavy_infantry: 0.92,
   light_infantry: 0.74,
-  rangers: 0.77
+  rangers: 0.77,
+  apc_directional: 0.74,
+  tank_directional: 0.74
 };
 
 type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
@@ -336,6 +344,16 @@ export function rasterVehiclePose(vector: { x: number; y: number }) {
   const mirrored = vector.x > 0.08;
   const rotation = 0;
   return { mirrored, rotation };
+}
+
+function directionalVehicleSprite(unitType: string, definitionId: string) {
+  if (unitType === 'support' && definitionId.includes('truck')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
+  if (unitType === 'artillery') return VEHICLE_DIRECTIONAL_SPRITES.artillery;
+  if (unitType !== 'vehicle') return undefined;
+  if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return undefined;
+  if (definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
+  if (definitionId.includes('artillery') || definitionId.includes('mlrs') || definitionId.includes('howitzer')) return VEHICLE_DIRECTIONAL_SPRITES.artillery;
+  return VEHICLE_DIRECTIONAL_SPRITES.tank;
 }
 
 function unitPointerArea(tile: number, unitType: string, definitionId: string, selected = false): UnitPointerArea {
@@ -3849,13 +3867,15 @@ export function BattlefieldStage({
               let desiredH = tileSize * 0.45;
               let anchorY = 0.95;
               let canMirrorForFacing = true;
-              const directionalSprite = DIRECTIONAL_UNIT_SPRITES[defId];
+              const vehicleDirectionalSprite = directionalVehicleSprite(unitType, defId);
+              const directionalSprite = DIRECTIONAL_UNIT_SPRITES[defId] ?? vehicleDirectionalSprite;
               const spriteDirection = directionNameForOrientation(animatedOrientation);
               const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
               const isVehicleUnit = isGroundVehicle;
+              const usesDirectionalMotion = Boolean(directionalSprite && (isFootUnit || isVehicleUnit));
               const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
               const fastWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 4) : 0;
-              const sheetState = movingThisUnit && directionalSprite && isFootUnit ? 'walk' : 'idle';
+              const sheetState = movingThisUnit && usesDirectionalMotion ? 'walk' : 'idle';
               const sheetFrame = sheetState === 'walk' ? Math.floor((((movementPhase % 1) + 1) % 1) * 4) : 0;
               let texture: Texture | null = null;
 
@@ -3943,7 +3963,7 @@ export function BattlefieldStage({
               if (!directionalSprite) {
                 anchorY = RASTER_UNIT_ANCHOR_Y[texturePath] ?? anchorY;
               }
-              const sourceHeight = directionalSprite ? 128 : (RASTER_UNIT_VISIBLE_HEIGHTS[texturePath] ?? 1024);
+              const sourceHeight = directionalSprite ? (isVehicleUnit ? 72 : 128) : (RASTER_UNIT_VISIBLE_HEIGHTS[texturePath] ?? 1024);
               const baseScale = desiredH / sourceHeight;
               const vehiclePose = isVehicleUnit && canMirrorForFacing ? rasterVehiclePose(moveScreenVector) : null;
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;

@@ -1,0 +1,23 @@
+{
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "frameCount": 4,
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "layout": "directions-columns-frames-rows",
+  "anchor": {
+    "x": 0.5,
+    "y": 0.74
+  },
+  "unit": "artillery_directional",
+  "state": "idle",
+  "sheet": "artillery_directional_idle_sheet.png"
+}
