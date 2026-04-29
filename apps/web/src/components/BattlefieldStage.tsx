@@ -3689,7 +3689,7 @@ export function BattlefieldStage({
               zIndex={0}
               draw={(g) => {
                 g.clear();
-                const markerScale = unitType === 'vehicle' || unitType === 'artillery' ? 1.08 : 1;
+                const markerScale = unitType === 'vehicle' || unitType === 'artillery' ? 0.96 : 1;
                 const rx = tileSize * 0.25 * markerScale;
                 const ry = tileSize * 0.095 * markerScale;
                 const strokeArc = (startDeg: number, endDeg: number, colorValue: number, alpha: number, width: number) => {
@@ -3712,12 +3712,12 @@ export function BattlefieldStage({
                 };
                 if (isFriendly) {
                   if (isSelected || isSelectedCarrier) {
-                    g.lineStyle(2.4, 0x071015, 0.74);
-                    g.drawEllipse(0, tileSize * 0.03, rx * 1.16, ry * 1.28);
-                    g.lineStyle(1.15, isSelectedCarrier ? 0xf0d17c : 0xc8edf3, 0.78);
-                    g.drawEllipse(0, tileSize * 0.03, rx * 1.08, ry * 1.18);
-                    strokeArc(192, 253, isSelectedCarrier ? 0xd8b65b : 0x7ec3df, 0.92, 1.8);
-                    strokeArc(287, 348, isSelectedCarrier ? 0xd8b65b : 0x7ec3df, 0.92, 1.8);
+                    g.lineStyle(2.1, 0x071015, 0.64);
+                    g.drawEllipse(0, tileSize * 0.035, rx * 1.1, ry * 1.2);
+                    g.lineStyle(1, isSelectedCarrier ? 0xf0d17c : 0xc8edf3, 0.7);
+                    g.drawEllipse(0, tileSize * 0.035, rx * 1.02, ry * 1.1);
+                    strokeArc(194, 251, isSelectedCarrier ? 0xd8b65b : 0x7ec3df, 0.84, 1.35);
+                    strokeArc(289, 346, isSelectedCarrier ? 0xd8b65b : 0x7ec3df, 0.84, 1.35);
                     g.lineStyle(1, isSelectedCarrier ? 0xffe6a3 : 0xd4f4f2, 0.58);
                     g.moveTo(-rx - 3, 1); g.lineTo(-rx + 3, -2);
                     g.moveTo(rx + 3, 1); g.lineTo(rx - 3, -2);
@@ -3729,17 +3729,17 @@ export function BattlefieldStage({
                       g.endFill();
                     }
                   } else {
-                    const sx = tileSize * 0.2 * markerScale;
-                    const sy = tileSize * 0.055 * markerScale;
-                    bracket(sx, sy, 0x081014, 0.3, 1.7);
-                    bracket(sx, sy, 0x75b7d3, 0.3, 0.9);
+                    const sx = tileSize * 0.19 * markerScale;
+                    const sy = tileSize * 0.05 * markerScale;
+                    bracket(sx, sy, 0x081014, 0.24, 1.45);
+                    bracket(sx, sy, 0x75b7d3, 0.26, 0.75);
                   }
                 } else {
-                  const sx = isTarget ? tileSize * 0.21 * markerScale : tileSize * 0.19 * markerScale;
-                  const sy = isTarget ? tileSize * 0.075 * markerScale : tileSize * 0.064 * markerScale;
+                  const sx = isTarget ? tileSize * 0.2 * markerScale : tileSize * 0.18 * markerScale;
+                  const sy = isTarget ? tileSize * 0.068 * markerScale : tileSize * 0.056 * markerScale;
                   const accent = isTarget ? 0xe08a54 : 0xe05a49;
-                  bracket(sx, sy, 0x160706, isTarget ? 0.54 : 0.5, isTarget ? 1.7 : 1.8);
-                  bracket(sx, sy, accent, isTarget ? 0.72 : 0.56, isTarget ? 0.8 : 0.85);
+                  bracket(sx, sy, 0x160706, isTarget ? 0.48 : 0.38, isTarget ? 1.5 : 1.45);
+                  bracket(sx, sy, accent, isTarget ? 0.66 : 0.46, isTarget ? 0.75 : 0.7);
                   if (isTarget) {
                     g.lineStyle(0.9, 0xc08a55, 0.52);
                     g.moveTo(-5, 0); g.lineTo(5, 0);
@@ -3797,10 +3797,10 @@ export function BattlefieldStage({
                       { x: -hw, y: -s / 2 }
                     ];
                   };
-                  const pts = ringShape(0.88);
-                  g.lineStyle(1, 0x090806, 0.32);
+                  const pts = ringShape(0.82);
+                  g.lineStyle(0.9, 0x090806, 0.26);
                   drawPoly(g as PixiGraphics, pts);
-                  g.lineStyle(0.65, 0xc08a55, 0.46);
+                  g.lineStyle(0.6, 0xc08a55, 0.38);
                   drawPoly(g as PixiGraphics, pts);
                 }}
               />
@@ -3813,8 +3813,8 @@ export function BattlefieldStage({
 	                  const footprint = unitContactFootprint(tileSize, unitType, definitionId);
 	                  const showFactionBase = isSelected || isTarget;
 	                  if (showFactionBase) {
-	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? (isFriendly ? 0.16 : 0.24) : 0.08);
-	                    g.drawEllipse(0, footprint.y, footprint.rx * 1.22, footprint.ry * 1.35);
+	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? (isFriendly ? 0.11 : 0.17) : 0.06);
+	                    g.drawEllipse(0, footprint.y, footprint.rx * 1.14, footprint.ry * 1.22);
 	                    g.endFill();
                   }
 	                  g.beginFill(0x000000, isVisible ? footprint.alpha : footprint.alpha * 0.55);
@@ -3831,10 +3831,10 @@ export function BattlefieldStage({
                       for (const sideOffset of [-1, 1]) {
                         const ox = perpX * trackGap * sideOffset;
                         const oy = perpY * trackGap * sideOffset;
-                        g.lineStyle(2.6, 0x050706, 0.48);
+                        g.lineStyle(2.3, 0x050706, 0.42);
                         g.moveTo(ox - moveScreenVector.x * trackHalf, footprint.y + oy - moveScreenVector.y * trackHalf * 0.32);
                         g.lineTo(ox + moveScreenVector.x * trackHalf, footprint.y + oy + moveScreenVector.y * trackHalf * 0.32);
-                        g.lineStyle(1.1, isFriendly ? 0x638fa0 : 0x9c5146, 0.38);
+                        g.lineStyle(0.95, isFriendly ? 0x638fa0 : 0x9c5146, 0.32);
                         g.moveTo(ox - moveScreenVector.x * trackHalf * 0.62, footprint.y + oy - moveScreenVector.y * trackHalf * 0.2);
                         g.lineTo(ox + moveScreenVector.x * trackHalf * 0.62, footprint.y + oy + moveScreenVector.y * trackHalf * 0.2);
                       }
@@ -3843,14 +3843,14 @@ export function BattlefieldStage({
                       const trailX = -moveScreenVector.x * tileSize * 0.18;
                       const trailY = footprint.y - moveScreenVector.y * tileSize * 0.12;
                       const phase = ((movementPhase % 1) + 1) % 1;
-                      g.lineStyle(1.1, isFriendly ? 0x8bbbd0 : 0xd06c55, 0.28);
-                      g.moveTo(trailX - footprint.rx * 0.42, trailY + footprint.ry * 0.6);
-                      g.lineTo(trailX + footprint.rx * 0.42, trailY + footprint.ry * 0.35);
-                      g.lineStyle(1, 0x0a0d09, 0.22);
-                      g.moveTo(trailX - footprint.rx * 0.36 + phase * 5, trailY - footprint.ry * 0.2);
-                      g.lineTo(trailX + footprint.rx * 0.36 + phase * 5, trailY - footprint.ry * 0.42);
-                      g.beginFill(0x1f1b13, 0.16);
-                      g.drawEllipse(trailX - moveScreenVector.y * 3, trailY + moveScreenVector.x * 2, footprint.rx * 0.34, footprint.ry * 0.48);
+                      g.lineStyle(1.15, isFriendly ? 0x8bbbd0 : 0xd06c55, 0.22);
+                      g.moveTo(trailX - footprint.rx * 0.48, trailY + footprint.ry * 0.62);
+                      g.lineTo(trailX + footprint.rx * 0.48, trailY + footprint.ry * 0.34);
+                      g.lineStyle(1.15, 0x0a0d09, 0.28);
+                      g.moveTo(trailX - footprint.rx * 0.45 + phase * 7, trailY - footprint.ry * 0.16);
+                      g.lineTo(trailX + footprint.rx * 0.42 + phase * 7, trailY - footprint.ry * 0.42);
+                      g.beginFill(0x1f1b13, 0.2);
+                      g.drawEllipse(trailX - moveScreenVector.y * 3.5, trailY + moveScreenVector.x * 2.5, footprint.rx * 0.4, footprint.ry * 0.52);
                       g.endFill();
                     }
                 } else {
