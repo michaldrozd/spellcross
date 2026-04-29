@@ -608,6 +608,67 @@ test('selected infantry marker does not steal adjacent empty tile clicks', async
   });
 });
 
+test('unselected infantry below a movement tile does not steal the tile click', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const infantry = ctrl?.allyUnits?.().filter((unit: any) => unit.type === 'infantry' && !unit.embarkedOn) ?? [];
+    const selected = infantry[0];
+    const neighbor = infantry[1];
+    if (!selected || !neighbor) return null;
+    const selectedCoord = { q: 2, r: 4 };
+    const neighborCoord = { q: 4, r: 4 };
+    const movementTile = { q: 3, r: 3 };
+    ctrl.allyUnits()
+      .filter((unit: any) => unit.id !== selected.id && unit.id !== neighbor.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 0, 6 + index));
+    ctrl.enemyUnits().forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 9, index));
+    ctrl.snapUnit(selected.id, selectedCoord.q, selectedCoord.r);
+    ctrl.snapUnit(neighbor.id, neighborCoord.q, neighborCoord.r);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(selected.id);
+    const path = ctrl.pathForUnit(selected.id, movementTile.q, movementTile.r);
+    return path?.success ? { selectedId: selected.id, neighborId: neighbor.id, selectedCoord, movementTile } : null;
+  });
+  expect(setup).toBeTruthy();
+
+  await page.waitForFunction(() => Boolean((window as any).__battleCamera));
+  await page.evaluate(({ q, r }) => (window as any).__battleCamera.centerOnCoord(q, r), setup!.movementTile);
+  await page.evaluate(() => (window as any).__battleCamera.setZoom(3));
+  await page.waitForTimeout(250);
+
+  const targetPoint = await page.evaluate(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const camera = (window as any).__battleCamera;
+    if (!canvas || !camera) return null;
+    const screen = camera.screenForCoord(q, r);
+    const scale = camera.metrics().scale;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + screen.x,
+      y: rect.top + screen.y + 8 * scale
+    };
+  }, setup!.movementTile);
+  expect(targetPoint).toBeTruthy();
+
+  await page.mouse.click(targetPoint!.x, targetPoint!.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => ({
+      selection: (window as any).__battleControl?.selectionState?.() ?? null,
+      planning: (window as any).__battleControl?.planningState?.() ?? null
+    }));
+  }).toMatchObject({
+    selection: { selectedUnitId: setup!.selectedId, targetedEnemyId: null },
+    planning: { plannedDestination: setup!.movementTile }
+  });
+});
+
 test('tight selected infantry hit area still allows own-tile selection', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
