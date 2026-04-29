@@ -220,11 +220,32 @@ const VEHICLE_DIRECTIONAL_SPRITES = {
   apc: 'apc_directional',
   artillery: 'artillery_directional'
 } as const;
+const REVERSED_DIRECTIONAL_SHEETS = new Set<string>([
+  'tank_directional',
+  'apc_directional',
+  'artillery_directional'
+]);
 
 export const directionNameForOrientation = (orientation: number) => {
   const normalized = ((Math.round(orientation) % 8) + 8) % 8;
   const directionNames = ['se', 'e', 'ne', 'nw', 'w', 'sw', 's', 'n'];
   return directionNames[normalized] ?? 'e';
+};
+
+export const vehicleSheetDirectionNameForOrientation = (orientation: number, spriteName: string) => {
+  const direction = directionNameForOrientation(orientation);
+  if (!REVERSED_DIRECTIONAL_SHEETS.has(spriteName)) return direction;
+  const oppositeDirections: Record<string, string> = {
+    n: 's',
+    ne: 'sw',
+    e: 'w',
+    se: 'nw',
+    s: 'n',
+    sw: 'ne',
+    w: 'e',
+    nw: 'se'
+  };
+  return oppositeDirections[direction] ?? direction;
 };
 
 const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
@@ -4040,9 +4061,11 @@ export function BattlefieldStage({
               let canMirrorForFacing = true;
               const vehicleDirectionalSprite = directionalVehicleSprite(unitType, defId);
               const directionalSprite = DIRECTIONAL_UNIT_SPRITES[defId] ?? vehicleDirectionalSprite;
-              const spriteDirection = directionNameForOrientation(animatedOrientation);
               const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
               const isVehicleUnit = isGroundVehicle;
+              const spriteDirection = isVehicleUnit
+                ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
+                : directionNameForOrientation(animatedOrientation);
               const usesDirectionalMotion = Boolean(directionalSprite && (isFootUnit || isVehicleUnit));
               const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
               const fastWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 4) : 0;

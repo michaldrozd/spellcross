@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { directionNameForOrientation, rasterVehiclePose, unitVisualHeight } from './BattlefieldStage.js';
+import {
+  directionNameForOrientation,
+  rasterVehiclePose,
+  unitVisualHeight,
+  vehicleSheetDirectionNameForOrientation
+} from './BattlefieldStage.js';
 
 describe('unitVisualHeight', () => {
   it('keeps ground vehicle raster sprites at tactical scale', () => {
@@ -39,5 +44,24 @@ describe('directionNameForOrientation', () => {
     expect(directionNameForOrientation(5)).toBe('sw');
     expect(directionNameForOrientation(6)).toBe('s');
     expect(directionNameForOrientation(7)).toBe('n');
+  });
+});
+
+describe('vehicleSheetDirectionNameForOrientation', () => {
+  it('compensates for reversed generated vehicle sheet labels', () => {
+    expect(vehicleSheetDirectionNameForOrientation(0, 'apc_directional')).toBe('nw');
+    expect(vehicleSheetDirectionNameForOrientation(1, 'apc_directional')).toBe('w');
+    expect(vehicleSheetDirectionNameForOrientation(2, 'apc_directional')).toBe('sw');
+    expect(vehicleSheetDirectionNameForOrientation(3, 'apc_directional')).toBe('se');
+    expect(vehicleSheetDirectionNameForOrientation(4, 'apc_directional')).toBe('e');
+    expect(vehicleSheetDirectionNameForOrientation(5, 'apc_directional')).toBe('ne');
+    expect(vehicleSheetDirectionNameForOrientation(6, 'apc_directional')).toBe('n');
+    expect(vehicleSheetDirectionNameForOrientation(7, 'apc_directional')).toBe('s');
+  });
+
+  it('leaves correctly ordered sheets unchanged', () => {
+    expect(vehicleSheetDirectionNameForOrientation(0, 'future_vehicle_directional')).toBe('se');
+    expect(vehicleSheetDirectionNameForOrientation(1, 'future_vehicle_directional')).toBe('e');
+    expect(vehicleSheetDirectionNameForOrientation(2, 'future_vehicle_directional')).toBe('ne');
   });
 });
