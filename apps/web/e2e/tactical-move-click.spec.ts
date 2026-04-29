@@ -96,12 +96,15 @@ test('animated movement path starts from the unit origin', async ({ page }) => {
   expect(started).toBeTruthy();
 
   await expect.poll(async () => {
-    return page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);
-  }).not.toBeNull();
-
-  const animationState = await page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);
-  expect(animationState?.path?.[0]).toEqual(setup!.from);
-  expect(animationState?.path?.[animationState.path.length - 1]).toEqual(setup!.to);
+    return page.evaluate(() => {
+      const animationState = (window as any).__battleControl?.animationState?.() ?? null;
+      if (!animationState?.path?.length) return null;
+      return {
+        first: animationState.path[0],
+        last: animationState.path[animationState.path.length - 1]
+      };
+    });
+  }).toEqual({ first: setup!.from, last: setup!.to });
 
   await page.waitForTimeout(900);
   const after = await page.evaluate((unitId) => {

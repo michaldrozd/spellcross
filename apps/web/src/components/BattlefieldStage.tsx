@@ -332,21 +332,9 @@ function mixScreenVectors(a: { x: number; y: number }, b: { x: number; y: number
   return { x: x / len, y: y / len };
 }
 
-function normalizeRadians(angle: number) {
-  let normalized = angle;
-  while (normalized > Math.PI) normalized -= Math.PI * 2;
-  while (normalized < -Math.PI) normalized += Math.PI * 2;
-  return normalized;
-}
-
-function rasterVehiclePose(vector: { x: number; y: number }) {
-  const targetAngle = Math.atan2(vector.y, vector.x);
-  const sourceForward = Math.atan2(14, -28);
-  const mirroredSourceForward = Math.PI - sourceForward;
-  const mirrored = vector.x >= -0.05;
-  const sourceAngle = mirrored ? mirroredSourceForward : sourceForward;
-  const maxTurn = Math.PI * 0.28;
-  const rotation = Math.max(-maxTurn, Math.min(maxTurn, normalizeRadians(targetAngle - sourceAngle)));
+export function rasterVehiclePose(vector: { x: number; y: number }) {
+  const mirrored = vector.x > 0.08;
+  const rotation = 0;
   return { mirrored, rotation };
 }
 
