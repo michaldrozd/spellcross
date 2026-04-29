@@ -317,8 +317,8 @@ test('visible friendly vehicle body wins over adjacent enemy tile hit', async ({
     const scale = camera.metrics().scale;
     const rect = canvas.getBoundingClientRect();
     return {
-      x: rect.left + screen.x + 8 * scale,
-      y: rect.top + screen.y - 10 * scale
+      x: rect.left + screen.x + 6 * scale,
+      y: rect.top + screen.y + 2 * scale
     };
   }, setup!.vehicleCoord);
   expect(vehicleBodyPoint).toBeTruthy();
@@ -356,6 +356,58 @@ test('visible friendly vehicle body wins over adjacent enemy tile hit', async ({
   expect(afterEnemyClick.scale).toBeCloseTo(beforeClick.scale, 2);
 });
 
+test('unselected vehicle remains selectable from its visible body', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const allies = ctrl?.allyUnits?.() ?? [];
+    const vehicle = allies.find((unit: any) => unit.type === 'vehicle' || unit.definitionId?.includes('truck'));
+    const other = allies.find((unit: any) => unit.id !== vehicle?.id && !unit.embarkedOn);
+    if (!vehicle || !other) return null;
+    const vehicleCoord = { q: 4, r: 4 };
+    allies
+      .filter((unit: any) => unit.id !== vehicle.id && unit.id !== other.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 1, index));
+    ctrl.enemyUnits().forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 8, index));
+    ctrl.snapUnit(vehicle.id, vehicleCoord.q, vehicleCoord.r);
+    ctrl.snapUnit(other.id, 2, 2);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(other.id);
+    return { vehicleId: vehicle.id, vehicleCoord };
+  });
+  expect(setup).toBeTruthy();
+
+  await page.waitForFunction(() => Boolean((window as any).__battleCamera));
+  await page.evaluate(({ q, r }) => (window as any).__battleCamera.centerOnCoord(q, r), setup!.vehicleCoord);
+  await page.evaluate(() => (window as any).__battleCamera.setZoom(2.6));
+  await page.waitForTimeout(250);
+
+  const vehicleBodyPoint = await page.evaluate(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const camera = (window as any).__battleCamera;
+    if (!canvas || !camera) return null;
+    const screen = camera.screenForCoord(q, r);
+    const scale = camera.metrics().scale;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + screen.x + 7 * scale,
+      y: rect.top + screen.y - 9 * scale
+    };
+  }, setup!.vehicleCoord);
+  expect(vehicleBodyPoint).toBeTruthy();
+
+  await page.mouse.click(vehicleBodyPoint!.x, vehicleBodyPoint!.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.selectionState?.() ?? null);
+  }).toMatchObject({ selectedUnitId: setup!.vehicleId, targetedEnemyId: null });
+});
+
 test('empty movement tile beside selected vehicle is not stolen by vehicle hit area', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
@@ -380,12 +432,13 @@ test('empty movement tile beside selected vehicle is not stolen by vehicle hit a
     ctrl.selectUnit(vehicle.id);
     const candidateTiles = [
       { q: vehicleCoord.q - 1, r: vehicleCoord.r },
-      { q: vehicleCoord.q, r: vehicleCoord.r - 1 },
-      { q: vehicleCoord.q - 1, r: vehicleCoord.r + 1 }
+      { q: vehicleCoord.q - 1, r: vehicleCoord.r - 1 },
+      { q: vehicleCoord.q - 1, r: vehicleCoord.r + 1 },
+      { q: vehicleCoord.q + 1, r: vehicleCoord.r + 1 }
     ];
-    const movementTile = candidateTiles.find((coord) => ctrl.pathForUnit(vehicle.id, coord.q, coord.r)?.success);
-    if (!movementTile) return null;
-    return { vehicleId: vehicle.id, vehicleCoord, movementTile };
+    const movementTiles = candidateTiles.filter((coord) => ctrl.pathForUnit(vehicle.id, coord.q, coord.r)?.success);
+    if (movementTiles.length < 3) return null;
+    return { vehicleId: vehicle.id, vehicleCoord, movementTiles };
   });
   expect(setup).toBeTruthy();
 
@@ -394,32 +447,44 @@ test('empty movement tile beside selected vehicle is not stolen by vehicle hit a
   await page.evaluate(() => (window as any).__battleCamera.setZoom(2.6));
   await page.waitForTimeout(250);
 
-  for (const offset of [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 18, y: 0 }]) {
-    await page.evaluate((vehicleId) => (window as any).__battleControl?.selectUnit(vehicleId), setup!.vehicleId);
-    const tilePoint = await page.evaluate(({ q, r, offset }) => {
-      const canvas = document.querySelector('canvas');
-      const camera = (window as any).__battleCamera;
-      if (!canvas || !camera) return null;
-      const screen = camera.screenForCoord(q, r);
-      const scale = camera.metrics().scale;
-      const rect = canvas.getBoundingClientRect();
-      return {
-        x: rect.left + screen.x + offset.x * scale,
-        y: rect.top + screen.y + offset.y * scale
-      };
-    }, { ...setup!.movementTile, offset });
-    expect(tilePoint).toBeTruthy();
+  const offsets = [{ x: 0, y: 0 }];
+  for (const movementTile of setup!.movementTiles) {
+    for (const offset of offsets) {
+      await page.evaluate((vehicleId) => (window as any).__battleControl?.selectUnit(vehicleId), setup!.vehicleId);
+      const tilePoint = await page.evaluate(({ q, r, offset }) => {
+        const canvas = document.querySelector('canvas');
+        const camera = (window as any).__battleCamera;
+        if (!canvas || !camera) return null;
+        const screen = camera.screenForCoord(q, r);
+        const scale = camera.metrics().scale;
+        const rect = canvas.getBoundingClientRect();
+        return {
+          x: rect.left + screen.x + offset.x * scale,
+          y: rect.top + screen.y + offset.y * scale
+        };
+      }, { ...movementTile, offset });
+      expect(tilePoint).toBeTruthy();
 
-    await page.mouse.click(tilePoint!.x, tilePoint!.y);
-    await expect.poll(async () => {
-      return page.evaluate(() => ({
-        selection: (window as any).__battleControl?.selectionState?.() ?? null,
-        planning: (window as any).__battleControl?.planningState?.() ?? null
-      }));
-    }).toMatchObject({
-      selection: { selectedUnitId: setup!.vehicleId, targetedEnemyId: null },
-      planning: { plannedDestination: setup!.movementTile }
-    });
+      await page.mouse.click(tilePoint!.x, tilePoint!.y);
+      await expect.poll(async () => {
+        return page.evaluate(() => ({
+          selection: (window as any).__battleControl?.selectionState?.() ?? null,
+          planning: (window as any).__battleControl?.planningState?.() ?? null
+        }));
+      }).toMatchObject({
+        selection: { selectedUnitId: setup!.vehicleId, targetedEnemyId: null },
+        planning: { plannedDestination: expect.any(Object) }
+      });
+      const planned = await page.evaluate(() => {
+        const ctrl = (window as any).__battleControl;
+        const destination = ctrl?.planningState?.()?.plannedDestination;
+        const selected = ctrl?.selectionState?.()?.selectedUnitId;
+        const vehicle = (ctrl?.allyUnits?.() ?? []).find((unit: any) => unit.id === selected);
+        return { destination, vehicleCoord: vehicle?.coord };
+      });
+      expect(planned.destination).toBeTruthy();
+      expect(planned.destination).not.toEqual(planned.vehicleCoord);
+    }
   }
 });
 

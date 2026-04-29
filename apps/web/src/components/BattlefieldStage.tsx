@@ -6,7 +6,7 @@ import { canAffordAttack } from '@spellcross/core';
 import { axialDistance } from '@spellcross/core';
 import { calculateAttackRange } from '@spellcross/core';
 import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
-import { Matrix, Texture, Rectangle, MIPMAP_MODES, SCALE_MODES, settings } from 'pixi.js';
+import { Matrix, Texture, Rectangle, Polygon, MIPMAP_MODES, SCALE_MODES, settings } from 'pixi.js';
 import type { FederatedPointerEvent, Graphics as PixiGraphics } from 'pixi.js';
 
 import { TextStyle } from 'pixi.js';
@@ -360,7 +360,7 @@ function unitPointerArea(tile: number, unitType: string, definitionId: string, s
   const isTruck = definitionId.includes('truck');
   if (unitType === 'vehicle' || (unitType === 'support' && isTruck)) {
     return selected
-      ? { x: -tile * 0.04, y: -tile * 0.3, width: tile * 0.42, height: tile * 0.42 }
+      ? { x: -tile * 0.18, y: -tile * 0.03, width: tile * 0.36, height: tile * 0.17 }
       : { x: -tile * 0.18, y: -tile * 0.34, width: tile * 0.54, height: tile * 0.52 };
   }
   if (unitType === 'artillery') {
@@ -1939,12 +1939,23 @@ export function BattlefieldStage({
         x: (cornerPoints.NW.x + cornerPoints.NE.x + cornerPoints.SE.x + cornerPoints.SW.x) / 4,
         y: (cornerPoints.NW.y + cornerPoints.NE.y + cornerPoints.SE.y + cornerPoints.SW.y) / 4
       };
+      const tileHitArea = new Polygon([
+        cornerPoints.NW.x,
+        cornerPoints.NW.y,
+        cornerPoints.NE.x,
+        cornerPoints.NE.y,
+        cornerPoints.SE.x,
+        cornerPoints.SE.y,
+        cornerPoints.SW.x,
+        cornerPoints.SW.y
+      ]);
 
       return (
         <Graphics
           key={`tile-${index}`}
           x={pos.x}
           y={pos.y - avgHeight * ELEV_Y_OFFSET}
+          hitArea={tileHitArea}
           eventMode={isExplored ? 'static' : 'none'}
           cursor={isExplored ? 'pointer' : 'not-allowed'}
           pointertap={(event: FederatedPointerEvent) => {
