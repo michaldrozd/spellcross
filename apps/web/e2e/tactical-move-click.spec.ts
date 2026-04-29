@@ -482,6 +482,119 @@ test('diagonal isometric movement tiles can be planned and committed by clicking
   }, { timeout: 4_000 }).toEqual(setup!.target);
 });
 
+test('selected infantry marker does not steal adjacent empty tile clicks', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const infantry = ctrl?.allyUnits?.().find((unit: any) => unit.type === 'infantry' && !unit.embarkedOn);
+    if (!infantry) return null;
+    ctrl.allyUnits()
+      .filter((unit: any) => unit.id !== infantry.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 0, 6 + index));
+    ctrl.enemyUnits().forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 9, index));
+    ctrl.snapUnit(infantry.id, 4, 4);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(infantry.id);
+    const candidateTiles = [
+      { q: 4, r: 3 },
+      { q: 3, r: 3 },
+      { q: 5, r: 3 },
+      { q: 3, r: 4 }
+    ];
+    const movementTile = candidateTiles.find((coord) => ctrl.pathForUnit(infantry.id, coord.q, coord.r)?.success);
+    return movementTile ? { unitId: infantry.id, unitCoord: { q: 4, r: 4 }, movementTile } : null;
+  });
+  expect(setup).toBeTruthy();
+
+  await page.waitForFunction(() => Boolean((window as any).__battleCamera));
+  await page.evaluate(({ q, r }) => (window as any).__battleCamera.centerOnCoord(q, r), setup!.unitCoord);
+  await page.evaluate(() => (window as any).__battleCamera.setZoom(3));
+  await page.waitForTimeout(250);
+
+  const targetPoint = await page.evaluate(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const camera = (window as any).__battleCamera;
+    if (!canvas || !camera) return null;
+    const screen = camera.screenForCoord(q, r);
+    const scale = camera.metrics().scale;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: rect.left + screen.x,
+      y: rect.top + screen.y + 8 * scale
+    };
+  }, setup!.movementTile);
+  expect(targetPoint).toBeTruthy();
+
+  await page.mouse.click(targetPoint!.x, targetPoint!.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => ({
+      selection: (window as any).__battleControl?.selectionState?.() ?? null,
+      planning: (window as any).__battleControl?.planningState?.() ?? null
+    }));
+  }).toMatchObject({
+    selection: { selectedUnitId: setup!.unitId, targetedEnemyId: null },
+    planning: { plannedDestination: setup!.movementTile }
+  });
+});
+
+test('tight selected infantry hit area still allows own-tile selection', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const infantry = ctrl?.allyUnits?.().find((unit: any) => unit.type === 'infantry' && !unit.embarkedOn);
+    const vehicle = ctrl?.allyUnits?.().find((unit: any) => unit.type === 'vehicle');
+    if (!infantry || !vehicle) return null;
+    ctrl.allyUnits()
+      .filter((unit: any) => unit.id !== infantry.id && unit.id !== vehicle.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 0, 6 + index));
+    ctrl.enemyUnits().forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 9, index));
+    ctrl.snapUnit(infantry.id, 4, 4);
+    ctrl.snapUnit(vehicle.id, 5, 4);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(vehicle.id);
+    return { infantryId: infantry.id, vehicleId: vehicle.id, infantryCoord: { q: 4, r: 4 } };
+  });
+  expect(setup).toBeTruthy();
+
+  await page.waitForFunction(() => Boolean((window as any).__battleCamera));
+  await page.evaluate(({ q, r }) => (window as any).__battleCamera.centerOnCoord(q, r), setup!.infantryCoord);
+  await page.evaluate(() => (window as any).__battleCamera.setZoom(3));
+  await page.waitForTimeout(250);
+
+  const ownTilePoint = await page.evaluate(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const camera = (window as any).__battleCamera;
+    if (!canvas || !camera) return null;
+    const screen = camera.screenForCoord(q, r);
+    const rect = canvas.getBoundingClientRect();
+    return { x: rect.left + screen.x, y: rect.top + screen.y };
+  }, setup!.infantryCoord);
+  expect(ownTilePoint).toBeTruthy();
+
+  await page.mouse.click(ownTilePoint!.x, ownTilePoint!.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => ({
+      selection: (window as any).__battleControl?.selectionState?.() ?? null,
+      planning: (window as any).__battleControl?.planningState?.() ?? null
+    }));
+  }).toMatchObject({
+    selection: { selectedUnitId: setup!.infantryId, targetedEnemyId: null },
+    planning: { plannedDestination: null }
+  });
+});
+
 test('invalid movement gives visible order feedback', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();

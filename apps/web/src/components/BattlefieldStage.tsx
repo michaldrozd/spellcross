@@ -366,6 +366,9 @@ function unitPointerArea(tile: number, unitType: string, definitionId: string, s
   if (unitType === 'artillery') {
     return { x: -tile * 0.38, y: -tile * 0.46, width: tile * 0.76, height: tile * 0.64 };
   }
+  if (selected && (unitType === 'infantry' || unitType === 'hero' || unitType === 'support')) {
+    return { x: -tile * 0.18, y: -tile * 0.22, width: tile * 0.36, height: tile * 0.34 };
+  }
   if (unitType === 'hero') {
     return { x: -tile * 0.26, y: -tile * 0.58, width: tile * 0.52, height: tile * 0.66 };
   }
