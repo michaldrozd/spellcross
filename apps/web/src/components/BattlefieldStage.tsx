@@ -221,9 +221,9 @@ const VEHICLE_DIRECTIONAL_SPRITES = {
   artillery: 'artillery_directional'
 } as const;
 
-const directionNameForOrientation = (orientation: number) => {
+export const directionNameForOrientation = (orientation: number) => {
   const normalized = ((Math.round(orientation) % 8) + 8) % 8;
-  const directionNames = ['e', 'ne', 'n', 'w', 'sw', 's', 'se', 'nw'];
+  const directionNames = ['se', 'e', 'ne', 'nw', 'w', 'sw', 's', 'n'];
   return directionNames[normalized] ?? 'e';
 };
 

@@ -423,6 +423,65 @@ test('empty movement tile beside selected vehicle is not stolen by vehicle hit a
   }
 });
 
+test('diagonal isometric movement tiles can be planned and committed by clicking', async ({ page }) => {
+  await startBattle(page);
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const infantry = ctrl?.allyUnits?.().find((unit: any) => unit.type === 'infantry' && !unit.embarkedOn);
+    if (!infantry) return null;
+    ctrl.allyUnits()
+      .filter((unit: any) => unit.id !== infantry.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 0, index));
+    ctrl.enemyUnits().forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 9, index));
+    ctrl.snapUnit(infantry.id, 4, 4);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(infantry.id);
+    const diagonalTiles = [
+      { q: 3, r: 3 },
+      { q: 5, r: 5 },
+      { q: 5, r: 3 },
+      { q: 3, r: 5 }
+    ];
+    const target = diagonalTiles.find((coord) => ctrl.pathForUnit(infantry.id, coord.q, coord.r)?.success);
+    return target ? { unitId: infantry.id, start: { q: 4, r: 4 }, target } : null;
+  });
+  expect(setup).toBeTruthy();
+
+  await page.waitForFunction(() => Boolean((window as any).__battleCamera));
+  await page.evaluate(({ q, r }) => (window as any).__battleCamera.centerOnCoord(q, r), setup!.start);
+  await page.evaluate(() => (window as any).__battleCamera.setZoom(2.6));
+  await page.waitForTimeout(250);
+
+  const targetPoint = await page.evaluate(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const camera = (window as any).__battleCamera;
+    if (!canvas || !camera) return null;
+    const screen = camera.screenForCoord(q, r);
+    const rect = canvas.getBoundingClientRect();
+    return { x: rect.left + screen.x, y: rect.top + screen.y };
+  }, setup!.target);
+  expect(targetPoint).toBeTruthy();
+
+  await page.mouse.click(targetPoint!.x, targetPoint!.y);
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.planningState?.() ?? null);
+  }).toMatchObject({ plannedDestination: setup!.target });
+
+  await page.mouse.click(targetPoint!.x, targetPoint!.y);
+  await expect.poll(async () => {
+    return page.evaluate((unitId) => {
+      const unit = ((window as any).__battleControl?.allyUnits?.() ?? []).find((candidate: any) => candidate.id === unitId);
+      return unit?.coord;
+    }, setup!.unitId);
+  }, { timeout: 4_000 }).toEqual(setup!.target);
+});
+
 test('invalid movement gives visible order feedback', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
