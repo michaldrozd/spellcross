@@ -4004,9 +4004,9 @@ export function BattlefieldStage({
                     const baseAlpha = isFriendly ? 0.11 : 0.17;
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
-                    const shadowAlpha = isGroundVehicle ? 0 : footprint.alpha;
-                    const shadowRx = isGroundVehicle ? footprint.rx * 0.7 : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * 0.52 : footprint.ry;
+                    const shadowAlpha = isGroundVehicle ? (movingThisUnit ? 0.18 : 0.14) : footprint.alpha;
+                    const shadowRx = isGroundVehicle ? footprint.rx * (movingThisUnit ? 0.56 : 0.5) : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * (movingThisUnit ? 0.34 : 0.3) : footprint.ry;
 	                  const showFactionBase = isSelected || isTarget;
 	                  if (showFactionBase && !isGroundVehicle) {
 	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? baseAlpha : baseAlpha * 0.55);
@@ -4014,8 +4014,8 @@ export function BattlefieldStage({
 	                    g.endFill();
                   }
                     if (shadowAlpha > 0) {
-	                    g.beginFill(0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
-	                    g.drawEllipse(1, footprint.y, shadowRx, shadowRy);
+	                    g.beginFill(isGroundVehicle ? 0x020403 : 0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
+	                    g.drawEllipse(1, footprint.y + (isGroundVehicle ? tileSize * 0.012 : 0), shadowRx, shadowRy);
 	                    g.endFill();
                     }
                     if (!isGroundVehicle) {
