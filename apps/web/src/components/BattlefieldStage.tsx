@@ -4001,23 +4001,23 @@ export function BattlefieldStage({
                 g.clear();
                 if (ISO_MODE) {
 	                  const footprint = unitContactFootprint(tileSize, unitType, definitionId);
-                    const baseAlpha = isGroundVehicle
-                      ? (isFriendly ? 0.036 : 0.052)
-                      : (isFriendly ? 0.11 : 0.17);
+                    const baseAlpha = isFriendly ? 0.11 : 0.17;
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
-                    const shadowAlpha = isGroundVehicle ? footprint.alpha * 0.44 : footprint.alpha;
+                    const shadowAlpha = isGroundVehicle ? 0 : footprint.alpha;
                     const shadowRx = isGroundVehicle ? footprint.rx * 0.7 : footprint.rx;
                     const shadowRy = isGroundVehicle ? footprint.ry * 0.52 : footprint.ry;
 	                  const showFactionBase = isSelected || isTarget;
-	                  if (showFactionBase) {
+	                  if (showFactionBase && !isGroundVehicle) {
 	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? baseAlpha : baseAlpha * 0.55);
-	                    g.drawEllipse(0, footprint.y + (isGroundVehicle ? tileSize * 0.005 : 0), baseRx, baseRy);
+	                    g.drawEllipse(0, footprint.y, baseRx, baseRy);
 	                    g.endFill();
                   }
-	                  g.beginFill(0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
-	                  g.drawEllipse(1, footprint.y, shadowRx, shadowRy);
-	                  g.endFill();
+                    if (shadowAlpha > 0) {
+	                    g.beginFill(0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
+	                    g.drawEllipse(1, footprint.y, shadowRx, shadowRy);
+	                    g.endFill();
+                    }
                     if (!isGroundVehicle) {
 	                    g.beginFill(0x000000, isVisible ? footprint.alpha * 0.45 : footprint.alpha * 0.22);
 	                    g.drawEllipse(1, footprint.y - tileSize * 0.006, footprint.rx * 0.56, footprint.ry * 0.46);
