@@ -273,6 +273,15 @@ const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
 
 type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
 type UnitPointerArea = { x: number; y: number; width: number; height: number };
+type InteractionUnit = {
+  id: string;
+  faction: FactionId;
+  coordinate: HexCoordinate;
+  hitArea: UnitPointerArea;
+  x: number;
+  y: number;
+  z: number;
+};
 
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
   if (unitType === 'vehicle') {
@@ -474,6 +483,19 @@ const drawPoly = (g: PixiGraphics, poly: Array<{ x: number; y: number }>) => {
     g.lineTo(poly[i].x, poly[i].y);
   }
   g.closePath();
+};
+
+const pointInPoly = (point: { x: number; y: number }, poly: ReadonlyArray<{ x: number; y: number }>) => {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const pi = poly[i];
+    const pj = poly[j];
+    if (!pi || !pj) continue;
+    const intersects = ((pi.y > point.y) !== (pj.y > point.y))
+      && point.x < ((pj.x - pi.x) * (point.y - pi.y)) / ((pj.y - pi.y) || 1e-9) + pi.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
 };
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
@@ -1747,6 +1769,19 @@ export function BattlefieldStage({
     return m;
   }, [battleState.sides, viewerFaction]);
 
+  const unitByCoord = useMemo(() => {
+    const m = new Map<string, any>();
+    for (const side of Object.values(battleState.sides) as any[]) {
+      for (const u of (side as any).units.values()) {
+        if (u.stance === 'destroyed' || u.embarkedOn) continue;
+        const tileIdx = u.coordinate.r * map.width + u.coordinate.q;
+        if (u.faction !== viewerFaction && !visibleTiles.has(tileIdx)) continue;
+        m.set(`${u.coordinate.q},${u.coordinate.r}`, u);
+      }
+    }
+    return m;
+  }, [battleState.sides, map.width, viewerFaction, visibleTiles]);
+
   // Precompute snapped per-vertex heights (renderer-only) derived from elevEdges
   const snappedCorners = useMemo(() => {
     const w = map.width, h = map.height;
@@ -1841,6 +1876,125 @@ export function BattlefieldStage({
     } as Record<CornerKey, { x: number; y: number }>;
     return { avgHeight: elev, P, quad: quadBase, center, inset };
   }, [map.tiles, map.width, snappedCorners]);
+
+  const tileAtWorldPoint = useCallback((point: { x: number; y: number }): HexCoordinate | null => {
+    const roughCol = ((point.y / (ISO_TILE_H / 2)) + (point.x / (ISO_TILE_W / 2))) / 2;
+    const roughRow = ((point.y / (ISO_TILE_H / 2)) - (point.x / (ISO_TILE_W / 2))) / 2;
+    const baseQ = Math.round(roughCol);
+    const baseR = Math.round(roughRow);
+    let best: { coord: HexCoordinate; distance: number } | null = null;
+
+    for (let r = baseR - 2; r <= baseR + 2; r++) {
+      for (let q = baseQ - 2; q <= baseQ + 2; q++) {
+        if (q < 0 || r < 0 || q >= map.width || r >= map.height) continue;
+        const pos = toScreen({ q, r });
+        const geom = topGeomFor(q, r);
+        const local = {
+          x: point.x - pos.x,
+          y: point.y - (pos.y - geom.avgHeight * ELEV_Y_OFFSET)
+        };
+        if (!pointInPoly(local, geom.quad)) continue;
+        const distance = Math.hypot(local.x - geom.center.x, local.y - geom.center.y);
+        if (!best || distance < best.distance) {
+          best = { coord: { q, r }, distance };
+        }
+      }
+    }
+
+    return best?.coord ?? null;
+  }, [map.height, map.width, topGeomFor]);
+
+  const interactionUnits = useMemo(() => {
+    const unitsForInteraction: InteractionUnit[] = [];
+    let selectedEmbarkedCarrierId: string | undefined;
+    if (selectedUnitId) {
+      for (const side of Object.values(battleState.sides) as any[]) {
+        const selected = (side as any).units.get(selectedUnitId);
+        if (selected?.embarkedOn) {
+          selectedEmbarkedCarrierId = selected.embarkedOn;
+          break;
+        }
+      }
+    }
+
+    for (const side of Object.values(battleState.sides) as any[]) {
+      for (const unit of (side as any).units.values()) {
+        if (unit.stance === 'destroyed' || unit.embarkedOn) continue;
+        const tileIndex = unit.coordinate.r * map.width + unit.coordinate.q;
+        const isFriendly = unit.faction === viewerFaction;
+        if (!isFriendly && !visibleTiles.has(tileIndex)) continue;
+        const pos = toScreen(unit.coordinate);
+        const geom = topGeomFor(unit.coordinate.q, unit.coordinate.r);
+        const unitType = unit.unitType as string;
+        const definitionId = String(unit.definitionId ?? '').toLowerCase();
+        const selectedForHitArea = unit.id === selectedUnitId || unit.id === selectedEmbarkedCarrierId;
+        const y = pos.y - geom.avgHeight * ELEV_Y_OFFSET;
+        unitsForInteraction.push({
+          id: unit.id,
+          faction: unit.faction,
+          coordinate: unit.coordinate,
+          hitArea: unitPointerArea(tileSize, unitType, definitionId, selectedForHitArea),
+          x: pos.x,
+          y,
+          z: Math.round(y)
+        });
+      }
+    }
+
+    return unitsForInteraction.sort((a, b) => b.z - a.z);
+  }, [battleState.sides, map.width, selectedUnitId, tileSize, topGeomFor, viewerFaction, visibleTiles]);
+
+  const handleBattlefieldTap = useCallback((event: FederatedPointerEvent) => {
+    if (minimapDragging) return;
+    event.stopPropagation();
+    const local = event.getLocalPosition?.(event.currentTarget as any) ?? event.global;
+    const worldPoint = {
+      x: (local.x - offsetX) / scale - (ISO_MODE ? isoBaseX : 0),
+      y: (local.y - offsetY) / scale
+    };
+    const tile = tileAtWorldPoint(worldPoint);
+    const unitHit = interactionUnits.find((unit) => {
+      const localX = worldPoint.x - unit.x;
+      const localY = worldPoint.y - unit.y;
+      return localX >= unit.hitArea.x
+        && localX <= unit.hitArea.x + unit.hitArea.width
+        && localY >= unit.hitArea.y
+        && localY <= unit.hitArea.y + unit.hitArea.height;
+    });
+
+    if (tile) {
+      const tileUnit = unitByCoord.get(`${tile.q},${tile.r}`);
+      if (!tileUnit) {
+        onSelectTile?.(tile);
+        return;
+      }
+      if (tileUnit.faction === viewerFaction) {
+        onSelectUnit?.(tileUnit.id);
+      } else {
+        onSelectTile?.(tileUnit.coordinate);
+      }
+      return;
+    }
+
+    if (!unitHit) return;
+    if (unitHit.faction === viewerFaction) {
+      onSelectUnit?.(unitHit.id);
+    } else {
+      onSelectTile?.(unitHit.coordinate);
+    }
+  }, [
+    interactionUnits,
+    isoBaseX,
+    minimapDragging,
+    offsetX,
+    offsetY,
+    onSelectTile,
+    onSelectUnit,
+    scale,
+    tileAtWorldPoint,
+    unitByCoord,
+    viewerFaction
+  ]);
 
 
   const battlefieldBackdrop = useMemo(() => {
@@ -5418,6 +5572,17 @@ export function BattlefieldStage({
             </Container>
           </Container>
         </Container>
+        <Graphics
+          eventMode="static"
+          cursor="pointer"
+          pointertap={handleBattlefieldTap}
+          draw={(g) => {
+            g.clear();
+            g.beginFill(0x000000, 0.001);
+            g.drawRect(0, 0, hostSize.w, hostSize.h);
+            g.endFill();
+          }}
+        />
         {/* Minimap (screen-space) */}
         {minimapVisible && (
           <Container x={10} y={10} eventMode="static"
