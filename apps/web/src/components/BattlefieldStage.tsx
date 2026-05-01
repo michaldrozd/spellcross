@@ -406,11 +406,11 @@ export function rasterVehiclePose(vector: { x: number; y: number }) {
 }
 
 function directionalVehicleSprite(unitType: string, definitionId: string) {
-  if (unitType === 'support' && definitionId.includes('truck')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
+  if (unitType === 'support' && definitionId.includes('truck')) return undefined;
   if (unitType === 'artillery') return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   if (unitType !== 'vehicle') return undefined;
   if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return undefined;
-  if (definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
+  if (definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return undefined;
   if (definitionId.includes('artillery') || definitionId.includes('mlrs') || definitionId.includes('howitzer')) return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   return VEHICLE_DIRECTIONAL_SPRITES.tank;
 }
@@ -4226,10 +4226,10 @@ export function BattlefieldStage({
               } else if (unitType === 'vehicle') {
                 desiredH = unitVisualHeight(tileSize, unitType, defId);
                 anchorY = 0.95;
-                if (defId.includes('tank') || defId.includes('abrams') || defId.includes('m1')) {
-                  texturePath = '/assets/generated/tank_m1_abrams.png';
-                } else if (defId.includes('apc') || defId.includes('ifv') || defId.includes('m113')) {
+                if (defId.includes('apc') || defId.includes('ifv') || defId.includes('m113')) {
                   texturePath = '/assets/generated/apc_m113.png';
+                } else if (defId.includes('tank') || defId.includes('abrams') || defId.includes('m1')) {
+                  texturePath = '/assets/generated/tank_m1_abrams.png';
                 } else if (defId.includes('artillery') || defId.includes('mlrs') || defId.includes('howitzer')) {
                   texturePath = '/assets/generated/artillery_mlrs.png';
                 } else if (defId.includes('heli') || defId.includes('apache') || defId.includes('chopper')) {
