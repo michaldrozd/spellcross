@@ -4195,9 +4195,9 @@ export function BattlefieldStage({
               const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
               const fastWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 4) : 0;
               const sheetState = movingThisUnit && usesDirectionalMotion ? 'walk' : 'idle';
-              const textureSheetState = directionalSprite === 'apc_directional' ? 'walk' : sheetState;
-              const animatesVehicleFrames = directionalSprite === 'apc_directional';
-              const sheetFrame = sheetState === 'walk' && (!isVehicleUnit || animatesVehicleFrames)
+              const textureSheetState = directionalSprite === 'apc_directional' ? 'idle' : sheetState;
+              const animatesVehicleFrames = isVehicleUnit && directionalSprite !== 'apc_directional';
+              const sheetFrame = textureSheetState === 'walk' && (!isVehicleUnit || animatesVehicleFrames)
                 ? Math.floor((((movementPhase % 1) + 1) % 1) * 4)
                 : 0;
               let texture: Texture | null = null;
