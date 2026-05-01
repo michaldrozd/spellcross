@@ -732,4 +732,5 @@ test('invalid movement gives visible order feedback', async ({ page }) => {
   const moved = await page.evaluate(() => (window as any).__battleControl.moveSelectedTo(99, 99));
   expect(moved).toBeFalsy();
   await expect(page.getByText(/ORDER REJECTED/i)).toBeVisible();
+  await expect(page.locator('.battle-phase-notice').getByText(/Outside battlefield/i)).toBeVisible();
 });

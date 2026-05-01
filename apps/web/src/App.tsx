@@ -50,6 +50,7 @@ const CAMPAIGN_SCHEMA_KEY = 'spellcross:campaign-schema';
 const CAMPAIGN_SCHEMA_VERSION = '2026-04-27-tactical-launch';
 const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
 const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
+const terrainLabel = (terrain: string) => terrain.charAt(0).toUpperCase() + terrain.slice(1);
 const isoTileTexture = PIXI.Texture.from('/grass_tile_128x64.png');
 const terrainTextures: Record<string, PIXI.Texture> = {
   plain: isoTileTexture,
@@ -684,6 +685,51 @@ const BattleView: React.FC<{
   useEffect(() => { targetedEnemyRef.current = targetedEnemy; }, [targetedEnemy]);
   useEffect(() => { plannedDestinationRef.current = plannedDestination; }, [plannedDestination]);
 
+  const describeMoveRejection = (unitId: string, target: HexCoordinate, fallback = 'Move blocked') => {
+    const unit =
+      battle.state.sides.alliance.units.get(unitId) ??
+      battle.state.sides.otherSide.units.get(unitId);
+    if (!unit) return 'No selected unit';
+    if (target.q < 0 || target.r < 0 || target.q >= map.width || target.r >= map.height) {
+      return 'Outside battlefield';
+    }
+
+    const targetTile = map.tiles[tileIndex(target)];
+    if (!targetTile) return 'Outside battlefield';
+
+    for (const side of Object.values(battle.state.sides)) {
+      for (const other of side.units.values()) {
+        if (other.id === unit.id || other.stance === 'destroyed' || other.embarkedOn) continue;
+        if (other.coordinate.q === target.q && other.coordinate.r === target.r) {
+          return other.faction === unit.faction ? 'Occupied by allied unit' : 'Occupied by hostile unit';
+        }
+      }
+    }
+
+    if (!targetTile.passable || targetTile.terrain === 'structure') {
+      return `Blocked by ${terrainLabel(targetTile.terrain)}`;
+    }
+    if (targetTile.terrain === 'water' && unit.unitType !== 'air') {
+      return 'Blocked by water';
+    }
+    if (targetTile.terrain === 'forest' && unit.unitType !== 'infantry' && unit.unitType !== 'hero') {
+      return 'Forest blocks this unit type';
+    }
+
+    const originalAp = unit.actionPoints;
+    unit.actionPoints = 999;
+    const unrestrictedPath = planPathForUnit(battle.state, unitId, target);
+    unit.actionPoints = originalAp;
+    if (unrestrictedPath.success && unrestrictedPath.path.length > 0 && Number.isFinite(unrestrictedPath.cost)) {
+      return `Out of range: needs ${compactNumber(unrestrictedPath.cost)} AP, has ${displayActionPoints(originalAp)}`;
+    }
+    if (unrestrictedPath.success && unrestrictedPath.path.length === 0) {
+      return 'Already at destination';
+    }
+
+    return fallback;
+  };
+
   // Clean up expired attack effects
   useEffect(() => {
     if (attackEffects.length === 0) return;
@@ -1178,7 +1224,7 @@ const BattleView: React.FC<{
     }]);
   };
 
-  const rejectMove = (coord: HexCoordinate, message = 'Move blocked or out of range') => {
+  const rejectMove = (coord: HexCoordinate, message = 'Move blocked') => {
     AudioManager.play('error');
     const time = Date.now();
     setInvalidMoveFeedback({ coordinate: { ...coord }, time, message });
@@ -1193,7 +1239,7 @@ const BattleView: React.FC<{
     if (movingUnitRef.current) return false; // Don't start new movement while animating
     const path = planPathForUnit(battle.state, unitId, target);
     if (!path.success || path.cost === undefined || path.path.length === 0) {
-      rejectMove(target);
+      rejectMove(target, describeMoveRejection(unitId, target, path.reason ?? 'Move blocked'));
       return false;
     }
 
@@ -1223,7 +1269,7 @@ const BattleView: React.FC<{
 
     // Start movement animation - include starting position
     const fullPath = [startCoord, ...path.path];
-    const stepDuration = isVehicleMove ? 230 : 180;
+    const stepDuration = isVehicleMove ? 340 : 180;
     setMovingUnit({
       unitId,
       path: fullPath,
@@ -1398,7 +1444,7 @@ const BattleView: React.FC<{
       }
       const path = planPathForUnit(battle.state, selected, coord);
       if (!path.success || path.path.length === 0) {
-        rejectMove(coord);
+        rejectMove(coord, describeMoveRejection(selected, coord, path.reason ?? 'Move blocked'));
         return;
       }
       const unit = battle.state.sides.alliance.units.get(selected);

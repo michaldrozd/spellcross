@@ -80,6 +80,60 @@ function rosterPortrait(definitionId: string, unitType: string) {
   return '/assets/generated/infantry_squad.png';
 }
 
+function researchBranch(topic: ResearchTopic) {
+  const key = `${topic.id} ${topic.name} ${(topic.unlocks ?? []).join(' ')}`.toLowerCase();
+  if (key.includes('optics') || key.includes('ranger') || key.includes('sniper')) return 'recon';
+  if (key.includes('armor') || key.includes('plating') || key.includes('leopard')) return 'armor';
+  if (key.includes('ammo') || key.includes('corps') || key.includes('infantry') || key.includes('mortar')) return 'infantry';
+  if (key.includes('supply')) return 'logistics';
+  if (key.includes('arcane') || key.includes('wyrm') || key.includes('sky')) return 'arcane';
+  if (key.includes('siege') || key.includes('artillery')) return 'artillery';
+  return 'doctrine';
+}
+
+function researchBranchLabel(branch: string) {
+  switch (branch) {
+    case 'recon':
+      return 'RECON';
+    case 'armor':
+      return 'ARMOR';
+    case 'infantry':
+      return 'INFANTRY';
+    case 'logistics':
+      return 'LOGISTICS';
+    case 'arcane':
+      return 'WARDING';
+    case 'artillery':
+      return 'SIEGE';
+    default:
+      return 'DOCTRINE';
+  }
+}
+
+function armySectionKey(unit: ArmyUnit) {
+  const key = `${unit.definitionId} ${unit.name} ${unit.unitType}`.toLowerCase();
+  if (unit.unitType === 'hero' || key.includes('captain')) return 'command';
+  if (key.includes('ranger') || key.includes('recon') || key.includes('sniper')) return 'recon';
+  if (unit.unitType === 'vehicle' || unit.unitType === 'artillery' || key.includes('m113') || key.includes('tank')) return 'vehicles';
+  if (unit.unitType === 'support' || key.includes('truck') || key.includes('medic')) return 'support';
+  return 'infantry';
+}
+
+function armySectionLabel(section: string) {
+  switch (section) {
+    case 'command':
+      return 'COMMAND';
+    case 'recon':
+      return 'RECON';
+    case 'vehicles':
+      return 'VEHICLES';
+    case 'support':
+      return 'SUPPORT';
+    default:
+      return 'INFANTRY';
+  }
+}
+
 // Strategic Map View Component with visual Europe map
 const StrategicMapView: React.FC<{
   territories: Territory[];
@@ -99,6 +153,9 @@ const StrategicMapView: React.FC<{
     territories
       .filter((t) => t.status === 'available' && t.remainingTimer != null)
       .sort((a, b) => (a.remainingTimer ?? 99) - (b.remainingTimer ?? 99))[0]
+  ), [territories]);
+  const nextLockedTerritory = useMemo(() => (
+    territories.find((t) => t.status === 'locked')
   ), [territories]);
 
   // Calculate connection lines between territories
@@ -230,6 +287,18 @@ const StrategicMapView: React.FC<{
               />
           ))}
 
+          {selected?.mapPosition && (
+            <g className="active-front-vector">
+              <line
+                x1={selected.mapPosition.x}
+                y1={selected.mapPosition.y}
+                x2="87"
+                y2="52"
+              />
+              <path d={`M ${selected.mapPosition.x + 2.2},${selected.mapPosition.y + 0.4} L ${selected.mapPosition.x + 4.6},${selected.mapPosition.y - 1.2} L ${selected.mapPosition.x + 5.4},${selected.mapPosition.y + 1.4}`} />
+            </g>
+          )}
+
           {/* Territory markers */}
           {territories.map(t => {
             if (!t.mapPosition) return null;
@@ -269,6 +338,29 @@ const StrategicMapView: React.FC<{
                     opacity="0.4"
                     className="pulse-ring"
                   />
+                )}
+
+                {isSelected && (
+                  <>
+                    <circle
+                      cx={t.mapPosition.x}
+                      cy={t.mapPosition.y}
+                      r="3.1"
+                      fill="none"
+                      stroke="#f8d56b"
+                      strokeWidth="0.22"
+                      className="selected-front-ring"
+                    />
+                    <circle
+                      cx={t.mapPosition.x}
+                      cy={t.mapPosition.y}
+                      r="4"
+                      fill="none"
+                      stroke="#f8d56b"
+                      strokeWidth="0.12"
+                      opacity="0.38"
+                    />
+                  </>
                 )}
 
                 {/* Main marker */}
@@ -345,6 +437,11 @@ const StrategicMapView: React.FC<{
               <span><b>{selected.remainingTimer ?? '-'}</b>Turns</span>
               <span><b>{selected.difficulty ?? 1}/5</b>Risk</span>
             </div>
+            <div className="territory-intel">
+              <span><b>ENTRY</b>{selected.status === 'locked' ? 'Blocked' : selected.status === 'available' ? 'Open' : 'Closed'}</span>
+              <span><b>PRESSURE</b>{selected.remainingTimer != null ? `${selected.remainingTimer} turn clock` : 'No active timer'}</span>
+              <span><b>CHAIN</b>{selected.requires?.length ? `${selected.requires.length} prerequisite` : 'Frontline sector'}</span>
+            </div>
             <p className="territory-brief">{selected.brief}</p>
 
             <div className="territory-status-badge" data-status={selected.status}>
@@ -387,6 +484,11 @@ const StrategicMapView: React.FC<{
               <div>Cleared: {territories.filter(t => t.status === 'cleared').length}</div>
               <div>Available: {territories.filter(t => t.status === 'available').length}</div>
               <div>Remaining: {territories.filter(t => t.status === 'locked').length}</div>
+            </div>
+            <div className="front-intel-grid">
+              <span><b>PRIMARY THREAT</b>{urgentTerritory?.name ?? 'No timed crisis'}</span>
+              <span><b>NEXT LOCK</b>{nextLockedTerritory?.name ?? 'All routes open'}</span>
+              <span><b>READINESS</b>{statusCounts.available} active fronts</span>
             </div>
           </div>
         )}
@@ -455,17 +557,69 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
     : 0;
   const visibleReports = popups?.slice(-3) ?? [];
   const archivedReportCount = Math.max(0, (popups?.length ?? 0) - visibleReports.length);
+  const latestOutcomeReport = [...(popups ?? [])].reverse().find((popup) => popup.kind === 'loss' || popup.kind === 'reward');
   const armyByType = useMemo(() => (
     army.reduce<Record<string, number>>((acc, unit) => {
       acc[unit.unitType] = (acc[unit.unitType] ?? 0) + 1;
       return acc;
     }, {})
   ), [army]);
+  const armySections = useMemo(() => {
+    const sections = ['command', 'infantry', 'recon', 'vehicles', 'support'].map((section) => ({
+      section,
+      units: [] as ArmyUnit[]
+    }));
+    const bySection = new Map(sections.map((section) => [section.section, section.units]));
+    army.forEach((unit) => {
+      const units = bySection.get(armySectionKey(unit)) ?? bySection.get('infantry');
+      units?.push(unit);
+    });
+    return sections.filter((section) => section.units.length > 0);
+  }, [army]);
+  const forceFocusUnit = army.find((unit) => armySectionKey(unit) === 'command')
+    ?? army.find((unit) => armySectionKey(unit) === 'vehicles')
+    ?? army[0];
+  const forceFocusHealth = forceFocusUnit
+    ? Math.max(0, Math.min(100, Math.round((forceFocusUnit.currentHealth / forceFocusUnit.maxHealth) * 100)))
+    : 0;
   const woundedUnits = army.filter((unit) => unit.currentHealth < unit.maxHealth).length;
   const readyResearchCount = researchTopics.filter((topic) => {
     if (completedResearch.has(topic.id)) return false;
     return (topic.requires ?? []).every((id) => completedResearch.has(id));
   }).length;
+  const recommendedResearchId = useMemo(() => (
+    researchTopics.find((topic) => {
+      if (completedResearch.has(topic.id)) return false;
+      if (currentResearch?.topicId === topic.id) return false;
+      return (topic.requires ?? []).every((id) => completedResearch.has(id));
+    })?.id
+  ), [completedResearch, currentResearch, researchTopics]);
+  const focusResearchTopic = activeResearchTopic
+    ?? (recommendedResearchId ? researchById.get(recommendedResearchId) : undefined)
+    ?? researchTopics.find((topic) => !completedResearch.has(topic.id))
+    ?? researchTopics[0];
+  const focusResearchBranch = focusResearchTopic ? researchBranch(focusResearchTopic) : 'doctrine';
+  const focusResearchUnlocks = focusResearchTopic?.unlocks?.length ? focusResearchTopic.unlocks.join(' / ') : 'Force multiplier';
+  const focusResearchRequires = focusResearchTopic?.requires?.length
+    ? focusResearchTopic.requires.map((id) => researchById.get(id)?.name ?? id).join(' / ')
+    : 'Baseline doctrine';
+  const focusResearchPathIds = useMemo(() => {
+    const pathIds = new Set<string>();
+    const collect = (topic?: ResearchTopic) => {
+      if (!topic || pathIds.has(topic.id)) return;
+      pathIds.add(topic.id);
+      (topic.requires ?? []).forEach((id) => collect(researchById.get(id)));
+    };
+    collect(focusResearchTopic);
+    return pathIds;
+  }, [focusResearchTopic, researchById]);
+  React.useEffect(() => {
+    if (selectedTerritory && territories.some((territory) => territory.id === selectedTerritory)) return;
+    const defaultTerritory = territories.find((territory) => territory.status === 'available')
+      ?? territories.find((territory) => territory.status === 'failed')
+      ?? territories.find((territory) => territory.status === 'locked');
+    setSelectedTerritory(defaultTerritory?.id ?? null);
+  }, [selectedTerritory, territories]);
   const activeTabStyle: React.CSSProperties = {
     background: 'rgba(255, 255, 255, 0.05)',
     borderBottomColor: 'var(--accent)',
@@ -526,6 +680,24 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
 
       {/* Content area */}
       <div className="hq-content">
+        {latestOutcomeReport && (
+          <section className={`hq-outcome hq-outcome-${latestOutcomeReport.kind}`} aria-label="Latest operation outcome">
+            <div className="hq-outcome-code">{latestOutcomeReport.kind === 'loss' ? 'RED STATUS' : 'SECURED'}</div>
+            <div>
+              <span>OPERATION RESULT</span>
+              <h2>{latestOutcomeReport.title}</h2>
+              <p>{latestOutcomeReport.body}</p>
+            </div>
+            <div className="hq-outcome-actions">
+              <b>{latestOutcomeReport.kind === 'loss' ? `${army.length} UNITS READY` : `${Math.round(money)} CR`}</b>
+              <small>{latestOutcomeReport.kind === 'loss' ? 'Open Army if force strength is low' : 'Rewards posted to HQ reserves'}</small>
+              {onDismissPopups && (
+                <button onClick={onDismissPopups}>ACKNOWLEDGE</button>
+              )}
+            </div>
+          </section>
+        )}
+
         {visibleReports.length > 0 && (
           <div className="hq-alerts" role="alertdialog" aria-label="Operation reports">
             <div className="hq-alerts-header">
@@ -580,31 +752,61 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                   ))}
                 </div>
               )}
+              {forceFocusUnit && (
+                <section className={`force-focus force-focus-${armySectionKey(forceFocusUnit)}`}>
+                  <div className={`roster-token roster-token-${forceFocusUnit.unitType}`}>
+                    <img src={rosterPortrait(forceFocusUnit.definitionId, forceFocusUnit.unitType)} alt="" />
+                    <span>{forceFocusUnit.name.slice(0, 1)}</span>
+                  </div>
+                  <div>
+                    <span>FORCE ANCHOR</span>
+                    <h4>{forceFocusUnit.name}</h4>
+                    <p>{armySectionLabel(armySectionKey(forceFocusUnit))} · {forceFocusUnit.tier} · {forceFocusHealth}% combat ready</p>
+                  </div>
+                  <div className="force-focus-meter">
+                    <b>{forceFocusUnit.currentHealth}/{forceFocusUnit.maxHealth}</b>
+                    <i style={{ '--stat-percent': `${forceFocusHealth}%` } as React.CSSProperties} />
+                  </div>
+                </section>
+              )}
               {army.length === 0 ? (
                 <p className="empty-msg">No units recruited yet</p>
               ) : (
-                army.map((u) => (
-                  <div key={u.id} className="unit-row">
-                    <div className={`roster-token roster-token-${u.unitType}`}>
-                      <img src={rosterPortrait(u.definitionId, u.unitType)} alt="" />
-                      <span>{u.name.slice(0, 1)}</span>
+                armySections.map(({ section, units }) => (
+                  <section key={section} className={`army-section army-section-${section}`}>
+                    <div className="army-section-heading">
+                      <span>{armySectionLabel(section)}</span>
+                      <b>{units.length}</b>
                     </div>
-                    <div className="unit-info">
-                      <span className="unit-name">{u.name}</span>
-                      <span className="unit-tier">{u.tier} · {u.unitType}</span>
-                    </div>
-                    <div className="unit-stats">
-                      <span className="stat-with-bar">
-                        <b>HP</b> {u.currentHealth}/{u.maxHealth}
-                        <i style={{ '--stat-percent': `${Math.max(0, Math.min(100, Math.round((u.currentHealth / u.maxHealth) * 100)))}%` } as React.CSSProperties} />
-                      </span>
-                      <span><b>XP</b> {u.experience}</span>
-                    </div>
-                    <div className="unit-actions">
-                      <button onClick={() => onRefill(u.id, 'rookie')}>REFILL</button>
-                      <button onClick={() => onDismiss(u.id)}>DISMISS</button>
-                    </div>
-                  </div>
+                    {units.map((u) => {
+                      const healthPercent = Math.max(0, Math.min(100, Math.round((u.currentHealth / u.maxHealth) * 100)));
+                      const readiness = healthPercent < 55 ? 'DAMAGED' : u.experience >= 60 ? 'VETERAN' : 'READY';
+                      return (
+                        <div key={u.id} className={`unit-row unit-row-${u.unitType} unit-row-section-${section} ${healthPercent < 70 ? 'unit-row-damaged' : ''}`}>
+                          <div className={`roster-token roster-token-${u.unitType}`}>
+                            <img src={rosterPortrait(u.definitionId, u.unitType)} alt="" />
+                            <span>{u.name.slice(0, 1)}</span>
+                          </div>
+                          <div className="unit-info">
+                            <span className="unit-name">{u.name}</span>
+                            <span className="unit-tier">{u.tier} · {u.unitType}</span>
+                          </div>
+                          <div className="unit-stats">
+                            <span className="stat-with-bar">
+                              <b>HP</b> {u.currentHealth}/{u.maxHealth}
+                              <i style={{ '--stat-percent': `${healthPercent}%` } as React.CSSProperties} />
+                            </span>
+                            <span><b>XP</b> {u.experience}</span>
+                            <span className={`readiness-chip readiness-${readiness.toLowerCase()}`}><b>{readiness}</b>{u.unitType}</span>
+                          </div>
+                          <div className="unit-actions">
+                            <button onClick={() => onRefill(u.id, 'rookie')}>REFILL</button>
+                            <button onClick={() => onDismiss(u.id)}>DISMISS</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </section>
                 ))
               )}
               {reserves.length > 0 && (
@@ -657,6 +859,12 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                   </button>
                 ))}
               </div>
+              <div className="recruit-intel">
+                <span>FORCE PLAN</span>
+                <b>{forceFocusUnit ? armySectionLabel(armySectionKey(forceFocusUnit)) : 'RESERVE'} ANCHOR</b>
+                <p>{army.length} field units · {woundedUnits} damaged · {reserves.length} in transit</p>
+                <i>Next purchase should fill the weakest section, not duplicate the anchor.</i>
+              </div>
             </div>
           </div>
         )}
@@ -690,13 +898,26 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               </div>
             </div>
             <div className="research-tree">
-              <h3>RESEARCH NETWORK</h3>
+              <div className="research-network-header">
+                <h3>RESEARCH NETWORK</h3>
+                {focusResearchTopic && (
+                  <div className={`research-focus research-focus-${focusResearchBranch}`}>
+                    <span>{currentResearch ? 'ACTIVE PROJECT' : 'RECOMMENDED NEXT'}</span>
+                    <b>{focusResearchTopic.name}</b>
+                    <small>{researchBranchLabel(focusResearchBranch)} · {focusResearchTopic.cost} RP</small>
+                    <div>
+                      <i>UNLOCKS</i><strong>{focusResearchUnlocks}</strong>
+                      <i>REQUIRES</i><strong>{focusResearchRequires}</strong>
+                    </div>
+                  </div>
+                )}
+              </div>
               <div
                 className="research-tree-board"
                 style={{ '--research-columns': researchColumns.length } as React.CSSProperties}
               >
                 {researchColumns.map((topics, tierIndex) => (
-                  <section key={tierIndex} className="research-column">
+                  <section key={tierIndex} className={`research-column research-column-tier-${tierIndex + 1}`}>
                     <div className="research-column-header">
                       <span>TIER {tierIndex + 1}</span>
                       <b>{topics.length}</b>
@@ -708,12 +929,16 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                       const isActive = currentResearch?.topicId === topic.id;
                       const isLocked = missingRequirements.length > 0;
                       const isWaiting = Boolean(currentResearch) && !isActive;
-                      const stateLabel = isCompleted ? 'DONE' : isActive ? 'ACTIVE' : isLocked ? 'LOCKED' : isWaiting ? 'WAIT' : 'READY';
+                      const isRecommended = topic.id === recommendedResearchId && !isCompleted && !isActive && !isLocked && !isWaiting;
+                      const stateLabel = isCompleted ? 'DONE' : isActive ? 'ACTIVE' : isLocked ? 'LOCKED' : isWaiting ? 'WAIT' : isRecommended ? 'PRIORITY' : 'READY';
+                      const branch = researchBranch(topic);
+                      const isPathNode = focusResearchPathIds.has(topic.id);
                       return (
                         <div
                           key={topic.id}
-                          className={`research-card ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked-node' : ''} ${isWaiting ? 'waiting-node' : ''} ${!isCompleted && !isActive && !isLocked && !isWaiting ? 'ready-node' : ''}`}
+                          className={`research-card research-branch-${branch} ${isPathNode ? 'research-path-node' : ''} ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked-node' : ''} ${isWaiting ? 'waiting-node' : ''} ${isRecommended ? 'recommended-node' : ''} ${!isCompleted && !isActive && !isLocked && !isWaiting ? 'ready-node' : ''}`}
                         >
+                          <span className="research-branch-label">{researchBranchLabel(branch)}</span>
                           <span className="research-node-index">{topic.id.toUpperCase()}</span>
                           <span className="research-node-state">{stateLabel}</span>
                           <h4>{topic.name}</h4>
@@ -733,7 +958,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                               disabled={!!currentResearch || isLocked}
                               onClick={() => onResearch(topic.id)}
                             >
-                              {isLocked ? `LOCKED: ${missingRequirements.map((id) => researchById.get(id)?.name ?? id).join(' / ')}` : 'QUEUE PROJECT'}
+                              {isLocked ? `LOCKED: ${missingRequirements.map((id) => researchById.get(id)?.name ?? id).join(' / ')}` : isRecommended ? 'QUEUE PRIORITY PROJECT' : 'QUEUE PROJECT'}
                             </button>
                           )}
                         </div>
