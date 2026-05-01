@@ -8,7 +8,8 @@ import {
   directionNameForScreenVector,
   rasterVehiclePose,
   unitVisualHeight,
-  vehicleSheetDirectionNameForOrientation
+  vehicleSheetDirectionNameForOrientation,
+  vehicleSheetDirectionNameForScreenVector
 } from './BattlefieldStage.js';
 
 const APC_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
@@ -118,15 +119,22 @@ describe('directionNameForScreenVector', () => {
     expect(directionNameForScreenVector({ x: 0, y: 1 })).toBe('s');
     expect(directionNameForScreenVector({ x: -1, y: -1 })).toBe('nw');
   });
+
+  it('avoids smeared M113 sheet cells for horizontal vehicle movement', () => {
+    expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 0 }, 'apc_directional')).toBe('se');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: -1, y: 0 }, 'apc_directional')).toBe('nw');
+    expect(vehicleSheetDirectionNameForOrientation(1, 'apc_directional')).toBe('se');
+    expect(vehicleSheetDirectionNameForOrientation(4, 'apc_directional')).toBe('nw');
+  });
 });
 
 describe('vehicleSheetDirectionNameForOrientation', () => {
-  it('uses the current vehicle sheet orientation metadata', () => {
+  it('uses the current APC sheet orientation metadata while bypassing damaged side cells', () => {
     expect(vehicleSheetDirectionNameForOrientation(0, 'apc_directional')).toBe('se');
-    expect(vehicleSheetDirectionNameForOrientation(1, 'apc_directional')).toBe('e');
+    expect(vehicleSheetDirectionNameForOrientation(1, 'apc_directional')).toBe('se');
     expect(vehicleSheetDirectionNameForOrientation(2, 'apc_directional')).toBe('ne');
     expect(vehicleSheetDirectionNameForOrientation(3, 'apc_directional')).toBe('nw');
-    expect(vehicleSheetDirectionNameForOrientation(4, 'apc_directional')).toBe('w');
+    expect(vehicleSheetDirectionNameForOrientation(4, 'apc_directional')).toBe('nw');
     expect(vehicleSheetDirectionNameForOrientation(5, 'apc_directional')).toBe('sw');
     expect(vehicleSheetDirectionNameForOrientation(6, 'apc_directional')).toBe('s');
     expect(vehicleSheetDirectionNameForOrientation(7, 'apc_directional')).toBe('n');

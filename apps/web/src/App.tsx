@@ -743,7 +743,7 @@ const BattleView: React.FC<{
   // Clean up movement animation when complete
   useEffect(() => {
     if (!movingUnit) return;
-    const totalDuration = (movingUnit.path.length - 1) * movingUnit.stepDuration;
+    const totalDuration = (movingUnit.preAlignDuration ?? 0) + (movingUnit.path.length - 1) * movingUnit.stepDuration;
     const timer = setTimeout(() => {
       setMovingUnit(null);
     }, totalDuration + 50); // small buffer
@@ -1281,7 +1281,8 @@ const BattleView: React.FC<{
         unitId,
         path: fullPath,
         startTime: Date.now(),
-        stepDuration
+        stepDuration,
+        preAlignDuration: isVehicleMove ? 130 : 0
       });
     }
 

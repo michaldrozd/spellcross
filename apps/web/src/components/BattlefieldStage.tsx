@@ -79,6 +79,7 @@ export interface MovingUnit {
   path: HexCoordinate[];
   startTime: number;
   stepDuration: number;
+  preAlignDuration?: number;
 }
 
 export interface InvalidMoveFeedback {
@@ -234,15 +235,25 @@ const VEHICLE_SHEET_DIRECTION_OVERRIDES: Record<string, Record<string, string>> 
   tank_directional: OPPOSITE_DIRECTION_NAMES,
   artillery_directional: OPPOSITE_DIRECTION_NAMES
 };
+const VEHICLE_SHEET_DIRECTION_SUBSTITUTES: Record<string, Record<string, string>> = {
+  apc_directional: {
+    e: 'se',
+    w: 'nw'
+  }
+};
 export const directionNameForOrientation = (orientation: number) => {
   const normalized = ((Math.round(orientation) % 8) + 8) % 8;
   const directionNames = ['se', 'e', 'ne', 'nw', 'w', 'sw', 's', 'n'];
   return directionNames[normalized] ?? 'e';
 };
 
+const cleanVehicleSheetDirection = (spriteName: string, direction: string) =>
+  VEHICLE_SHEET_DIRECTION_SUBSTITUTES[spriteName]?.[direction] ?? direction;
+
 export const vehicleSheetDirectionNameForOrientation = (orientation: number, spriteName: string) => {
   const direction = directionNameForOrientation(orientation);
-  return VEHICLE_SHEET_DIRECTION_OVERRIDES[spriteName]?.[direction] ?? direction;
+  const mapped = VEHICLE_SHEET_DIRECTION_OVERRIDES[spriteName]?.[direction] ?? direction;
+  return cleanVehicleSheetDirection(spriteName, mapped);
 };
 
 export const directionNameForScreenVector = (vector: { x: number; y: number }) => {
@@ -251,6 +262,9 @@ export const directionNameForScreenVector = (vector: { x: number; y: number }) =
   const sector = Math.round(Math.atan2(vector.y, vector.x) / (Math.PI / 4));
   return sectors[((sector % 8) + 8) % 8];
 };
+
+export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y: number }, spriteName: string) =>
+  cleanVehicleSheetDirection(spriteName, directionNameForScreenVector(vector));
 
 const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const UNIT_SHEET_FRAME_SIZE = 128;
@@ -3793,13 +3807,19 @@ export function BattlefieldStage({
         let movingThisUnit = false;
         let moveScreenVector = orientationScreenVector(animatedOrientation);
         let movingBaseHeight: number | undefined;
+        const unitType = (unit as any).unitType as string;
+        const definitionId = unit.definitionId.toLowerCase();
+        const isSupportVehicle = unitType === 'support' && definitionId.includes('truck');
+        const isGroundVehicle = unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicle;
 
         if (movingUnit && movingUnit.unitId === unit.id && movingUnit.path.length >= 2) {
-          const elapsed = now - movingUnit.startTime;
+          const rawElapsed = now - movingUnit.startTime;
+          const preAlignDuration = Math.max(0, movingUnit.preAlignDuration ?? 0);
+          const elapsed = Math.max(0, rawElapsed - preAlignDuration);
           const totalSteps = movingUnit.path.length - 1;
           const currentStepFloat = elapsed / movingUnit.stepDuration;
           const currentStep = Math.min(Math.max(0, Math.floor(currentStepFloat)), totalSteps - 1);
-          const stepProgress = Math.min(Math.max(0, currentStepFloat - currentStep), 1);
+          const stepProgress = rawElapsed < preAlignDuration ? 0 : Math.min(Math.max(0, currentStepFloat - currentStep), 1);
           const easedProgress = stepProgress * stepProgress * (3 - 2 * stepProgress);
 
           const fromCoord = movingUnit.path[currentStep];
@@ -3833,12 +3853,12 @@ export function BattlefieldStage({
             else if (dq < 0 && dr < 0) animatedOrientation = 7; // NW
             moveScreenVector = screenVectorBetween(fromCoord, toCoord);
             const turnBlendWindow = 0.64;
-            if (stepProgress > 1 - turnBlendWindow && currentStep + 2 < movingUnit.path.length) {
+            if (!isGroundVehicle && stepProgress > 1 - turnBlendWindow && currentStep + 2 < movingUnit.path.length) {
               const nextVector = screenVectorBetween(toCoord, movingUnit.path[currentStep + 2]);
               const t = (stepProgress - (1 - turnBlendWindow)) / turnBlendWindow;
               const smoothT = t * t * (3 - 2 * t);
               moveScreenVector = mixScreenVectors(moveScreenVector, nextVector, smoothT);
-            } else if (stepProgress < turnBlendWindow && currentStep > 0) {
+            } else if (!isGroundVehicle && stepProgress < turnBlendWindow && currentStep > 0) {
               const previousVector = screenVectorBetween(movingUnit.path[currentStep - 1], fromCoord);
               const t = stepProgress / turnBlendWindow;
               const smoothT = t * t * (3 - 2 * t);
@@ -3852,8 +3872,6 @@ export function BattlefieldStage({
         const elev = ((map.tiles[idx] as any)?.elevation ?? 0);
         const geom = ISO_MODE ? topGeomFor(Math.floor(displayCoord.q), Math.floor(displayCoord.r)) : null;
         const baseHeight = movingBaseHeight ?? (ISO_MODE && geom ? geom.avgHeight : elev);
-        const unitType = (unit as any).unitType as string;
-        const definitionId = unit.definitionId.toLowerCase();
         const isGhoulPack = definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead');
         const x = Math.round(p.x);
         const y = Math.round(p.y - baseHeight * ELEV_Y_OFFSET);
@@ -3929,8 +3947,6 @@ export function BattlefieldStage({
         const factionAccent = isFriendly ? 0x7ec3df : 0xe05a49;
         const capHeight = unitType === 'air' ? tileSize * 0.10 : tileSize * 0.28;
         const k = unitType === 'infantry' ? 0.32 : (unitType === 'vehicle' || unitType === 'artillery') ? 0.46 : 0.40;
-        const isSupportVehicle = unitType === 'support' && definitionId.includes('truck');
-        const isGroundVehicle = unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicle;
         const pointerArea = unitPointerArea(tileSize, unitType, definitionId, isSelected || isSelectedCarrier);
         const unitHitArea = new Rectangle(pointerArea.x, pointerArea.y, pointerArea.width, pointerArea.height);
         const stopUnitEvent = (event: FederatedPointerEvent) => {
@@ -4187,7 +4203,7 @@ export function BattlefieldStage({
               const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
               const isVehicleUnit = isGroundVehicle;
               const spriteDirection = isVehicleUnit && movingThisUnit
-                ? directionNameForScreenVector(moveScreenVector)
+                ? vehicleSheetDirectionNameForScreenVector(moveScreenVector, directionalSprite ?? '')
                 : isVehicleUnit
                   ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
                 : directionNameForOrientation(animatedOrientation);
