@@ -245,6 +245,13 @@ export const vehicleSheetDirectionNameForOrientation = (orientation: number, spr
   return VEHICLE_SHEET_DIRECTION_OVERRIDES[spriteName]?.[direction] ?? direction;
 };
 
+export const directionNameForScreenVector = (vector: { x: number; y: number }) => {
+  if (Math.hypot(vector.x, vector.y) < 0.01) return 'e';
+  const sectors = ['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne'];
+  const sector = Math.round(Math.atan2(vector.y, vector.x) / (Math.PI / 4));
+  return sectors[((sector % 8) + 8) % 8];
+};
+
 const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const UNIT_SHEET_FRAME_SIZE = 128;
 const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
@@ -3636,7 +3643,7 @@ export function BattlefieldStage({
       const baseHeight = ISO_MODE && geom ? geom.avgHeight : elev;
       const x = Math.round(p.x);
       const y = Math.round(p.y - baseHeight * ELEV_Y_OFFSET);
-      const z = Math.round(y);
+      const z = Math.round(y) + (m.id === selectedUnitId ? 5000 : 0);
 
       const elapsed = now - m.t;
       if (elapsed >= DEATH_TTL_MS) return;
@@ -3661,7 +3668,7 @@ export function BattlefieldStage({
       );
     });
     return els;
-  }, [deathMarkers, map.tiles, map.width, now, topGeomFor, toScreen, viewerFaction, visibleTiles]);
+  }, [deathMarkers, map.tiles, map.width, now, selectedUnitId, topGeomFor, toScreen, viewerFaction, visibleTiles]);
 
   const targetLinkOverlay = useMemo(() => {
     if (!selectedUnitId || !targetUnitId) return null;
@@ -3893,7 +3900,8 @@ export function BattlefieldStage({
         const hitElapsed = incomingHit ? now - incomingHit.startTime : 0;
         const hitPhase = incomingHit ? Math.min(Math.max((hitElapsed - 240) / 680, 0), 1) : 1;
         const hitPulse = incomingHit ? 1 - hitPhase : 0;
-        const hitJolt = incomingHit ? Math.sin(hitPhase * Math.PI * 5) * hitPulse * (unitType === 'vehicle' || unitType === 'artillery' ? 2.6 : 3.2) : 0;
+        const groundVehicleHitJolt = movingThisUnit ? 0.9 : 1.8;
+        const hitJolt = incomingHit ? Math.sin(hitPhase * Math.PI * 5) * hitPulse * (unitType === 'vehicle' || unitType === 'artillery' ? groundVehicleHitJolt : 3.2) : 0;
         const shotPulse = outgoingShot ? 1 - Math.min((now - outgoingShot.startTime) / 320, 1) : 0;
         const residualPulse = recentHitTarget ? 1 - Math.min((now - recentHitTarget.startTime - 920) / 1580, 1) : 0;
         const effectVector = (effect: AttackEffect | undefined, towardTarget: boolean) => {
@@ -3940,7 +3948,7 @@ export function BattlefieldStage({
         // Respect fog-of-war for enemies
         if (!isFriendly && !isVisible && !recentAttackSource) return [];
 
-        if (isDestroyed || isEmbarked) {
+        if ((isDestroyed && !movingThisUnit) || isEmbarked) {
           return [];
         }
 
@@ -3961,7 +3969,10 @@ export function BattlefieldStage({
               zIndex={0}
               draw={(g) => {
                 g.clear();
-                const markerScale = unitType === 'vehicle' || unitType === 'artillery' ? 0.96 : 1;
+                const movingVehicleUiDamping = movingThisUnit && isGroundVehicle ? 0.68 : 1;
+                const markerScale = unitType === 'vehicle' || unitType === 'artillery'
+                  ? (movingThisUnit && isGroundVehicle ? 0.82 : 0.96)
+                  : 1;
                 const rx = tileSize * 0.25 * markerScale;
                 const ry = tileSize * 0.095 * markerScale;
                 const strokeArc = (startDeg: number, endDeg: number, colorValue: number, alpha: number, width: number) => {
@@ -3987,12 +3998,12 @@ export function BattlefieldStage({
                     if (isGroundVehicle) {
                       const colorValue = isSelectedCarrier ? 0xd8b65b : 0x7ec3df;
                       const bright = isSelectedCarrier ? 0xffe6a3 : 0xd4f4f2;
-                      g.lineStyle(1.7, 0x071015, 0.52);
-                      strokeArc(198, 245, 0x071015, 0.52, 1.7);
-                      strokeArc(295, 342, 0x071015, 0.52, 1.7);
-                      strokeArc(198, 245, colorValue, 0.64, 1.05);
-                      strokeArc(295, 342, colorValue, 0.64, 1.05);
-                      g.lineStyle(0.75, bright, 0.32);
+                      g.lineStyle(1.7 * movingVehicleUiDamping, 0x071015, 0.52 * movingVehicleUiDamping);
+                      strokeArc(198, 245, 0x071015, 0.52 * movingVehicleUiDamping, 1.7 * movingVehicleUiDamping);
+                      strokeArc(295, 342, 0x071015, 0.52 * movingVehicleUiDamping, 1.7 * movingVehicleUiDamping);
+                      strokeArc(198, 245, colorValue, 0.64 * movingVehicleUiDamping, 1.05 * movingVehicleUiDamping);
+                      strokeArc(295, 342, colorValue, 0.64 * movingVehicleUiDamping, 1.05 * movingVehicleUiDamping);
+                      g.lineStyle(0.75 * movingVehicleUiDamping, bright, 0.32 * movingVehicleUiDamping);
                       g.moveTo(-rx - 3, 0); g.lineTo(-rx + 3, -1.5);
                       g.moveTo(rx + 3, 0); g.lineTo(rx - 3, -1.5);
                     } else {
@@ -4175,8 +4186,10 @@ export function BattlefieldStage({
               const directionalSprite = DIRECTIONAL_UNIT_SPRITES[defId] ?? vehicleDirectionalSprite;
               const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
               const isVehicleUnit = isGroundVehicle;
-              const spriteDirection = isVehicleUnit
-                ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
+              const spriteDirection = isVehicleUnit && movingThisUnit
+                ? directionNameForScreenVector(moveScreenVector)
+                : isVehicleUnit
+                  ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
                 : directionNameForOrientation(animatedOrientation);
               const usesDirectionalMotion = Boolean(directionalSprite && (isFootUnit || isVehicleUnit));
               const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
@@ -4341,7 +4354,26 @@ export function BattlefieldStage({
                       zIndex={1.18}
                     />
                   ) : null}
-                  {incomingHit ? (
+                  {incomingHit && isVehicleUnit ? (
+                    <Graphics
+                      zIndex={1.24}
+                      draw={(g) => {
+                        g.clear();
+                        const alpha = Math.max(0, Math.min(1, hitPulse));
+                        if (alpha <= 0) return;
+                        const impactX = -incomingDir.x * tileSize * 0.16;
+                        const impactY = spriteBaseY + groundOffsetY + spriteCombatY - tileSize * 0.11 - incomingDir.y * tileSize * 0.05;
+                        const spark = tileSize * (0.045 + alpha * 0.035);
+                        g.lineStyle(Math.max(1, tileSize * 0.018), incomingHit.type === 'magic' ? 0xc58cff : 0xffe3a1, 0.72 * alpha);
+                        g.moveTo(impactX - spark, impactY);
+                        g.lineTo(impactX + spark, impactY);
+                        g.moveTo(impactX, impactY - spark * 0.65);
+                        g.lineTo(impactX, impactY + spark * 0.65);
+                        g.lineStyle(Math.max(1, tileSize * 0.012), 0xffffff, 0.48 * alpha);
+                        g.drawCircle(impactX, impactY, spark * 0.34);
+                      }}
+                    />
+                  ) : incomingHit ? (
                     <Sprite
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
@@ -4469,13 +4501,14 @@ export function BattlefieldStage({
                 const mrRatio = Math.max(0, Math.min(1, (unit as any).currentMorale / 100));
                 const apRatio = Math.max(0, Math.min(1, (unit as any).actionPoints / ((unit as any).maxActionPoints ?? 10)));
                 const compactDeployStatus = deployMode && isFriendly && !isSelected && !isSelectedCarrier;
-                const detailedBar = (isSelected || isTarget) && !compactDeployStatus;
+                const movingVehicleUiDamping = movingThisUnit && isGroundVehicle ? 0.68 : 1;
+                const detailedBar = (isSelected || isTarget) && !compactDeployStatus && !(movingThisUnit && isGroundVehicle);
                 const bw = detailedBar
                   ? (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 18 : 23)
                   : (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 12 : 16);
                 const topY = unitType === 'vehicle' || unitType === 'artillery' ? -tileSize * 0.36 : -tileSize * 0.34;
-                const backplateAlpha = isSelected ? 0.8 : isTarget ? 0.72 : isFriendly ? 0.34 : 0.44;
-                const barAlpha = isSelected ? 0.94 : isTarget ? 0.88 : isFriendly ? 0.5 : 0.62;
+                const backplateAlpha = (isSelected ? 0.8 : isTarget ? 0.72 : isFriendly ? 0.34 : 0.44) * movingVehicleUiDamping;
+                const barAlpha = (isSelected ? 0.94 : isTarget ? 0.88 : isFriendly ? 0.5 : 0.62) * movingVehicleUiDamping;
                 const backplateH = detailedBar ? 6 : 4;
                 if (hpRatio <= 0.3) {
                   const criticalPulse = 0.76 + Math.sin(now / 120) * 0.2;
@@ -4503,10 +4536,10 @@ export function BattlefieldStage({
 
                 const flagY = topY - backplateH - (isFriendly ? 5 : 7);
                 if (isFriendly) {
-                  const markerW = isSelected ? 7 : 4.2;
-                  const markerDrop = isSelected ? 7 : 4.2;
-                  g.lineStyle(isSelected ? 1.3 : 0.9, isSelected ? 0xd4f4f2 : 0x071821, isSelected ? 0.88 : 0.48);
-                  g.beginFill(factionAccent, isSelected || isSelectedCarrier ? 0.96 : 0.34);
+                  const markerW = isSelected ? (movingThisUnit && isGroundVehicle ? 5.4 : 7) : 4.2;
+                  const markerDrop = isSelected ? (movingThisUnit && isGroundVehicle ? 5.4 : 7) : 4.2;
+                  g.lineStyle((isSelected ? 1.3 : 0.9) * movingVehicleUiDamping, isSelected ? 0xd4f4f2 : 0x071821, (isSelected ? 0.88 : 0.48) * movingVehicleUiDamping);
+                  g.beginFill(factionAccent, (isSelected || isSelectedCarrier ? 0.96 : 0.34) * movingVehicleUiDamping);
                   g.moveTo(0, flagY + 5);
                   g.lineTo(-markerW, flagY + 5 - markerDrop);
                   g.lineTo(markerW, flagY + 5 - markerDrop);
@@ -5057,7 +5090,11 @@ export function BattlefieldStage({
         const focusNear = focusCoords.some((coord) =>
           coord.q >= q0 - 1 && coord.q <= q0 + w && coord.r >= r0 - 1 && coord.r <= r0 + h
         );
-        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? 0.62 : 1);
+        const focusTight = focusCoords.some((coord) =>
+          coord.q >= q0 && coord.q <= q0 + w - 1 && coord.r >= r0 && coord.r <= r0 + h - 1
+        );
+        const focusAlpha = focusTight ? 0.18 : 0.34;
+        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? focusAlpha : 1);
         const fogShade = isVisible ? 0 : 0.06;
 
         const bottomNW = worldCornerOfTile(q0, r0, 'NW', topGeomFor);

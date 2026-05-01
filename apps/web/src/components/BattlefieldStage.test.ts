@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   directionalSpriteGroundOffset,
   directionNameForOrientation,
+  directionNameForScreenVector,
   rasterVehiclePose,
   unitVisualHeight,
   vehicleSheetDirectionNameForOrientation
@@ -107,6 +108,15 @@ describe('directionNameForOrientation', () => {
     expect(directionNameForOrientation(5)).toBe('sw');
     expect(directionNameForOrientation(6)).toBe('s');
     expect(directionNameForOrientation(7)).toBe('n');
+  });
+});
+
+describe('directionNameForScreenVector', () => {
+  it('maps live screen-space motion to the nearest sprite direction', () => {
+    expect(directionNameForScreenVector({ x: 1, y: 0 })).toBe('e');
+    expect(directionNameForScreenVector({ x: 1, y: 1 })).toBe('se');
+    expect(directionNameForScreenVector({ x: 0, y: 1 })).toBe('s');
+    expect(directionNameForScreenVector({ x: -1, y: -1 })).toBe('nw');
   });
 });
 

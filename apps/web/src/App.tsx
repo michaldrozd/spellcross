@@ -1267,15 +1267,23 @@ const BattleView: React.FC<{
       AudioManager.play('move');
     }
 
-    // Start movement animation - include starting position
-    const fullPath = [startCoord, ...path.path];
+    const finalCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
+    const actualPath: HexCoordinate[] = [];
+    for (const step of path.path) {
+      actualPath.push(step);
+      if (step.q === finalCoord.q && step.r === finalCoord.r) break;
+    }
+
+    const fullPath = [startCoord, ...actualPath];
     const stepDuration = isVehicleMove ? 340 : 180;
-    setMovingUnit({
-      unitId,
-      path: fullPath,
-      startTime: Date.now(),
-      stepDuration
-    });
+    if (fullPath.length >= 2) {
+      setMovingUnit({
+        unitId,
+        path: fullPath,
+        startTime: Date.now(),
+        stepDuration
+      });
+    }
 
     setSelected(unitId);
     setPlannedPath(null);
