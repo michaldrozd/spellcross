@@ -18,6 +18,5 @@ final_battle_view.png
 test-results/
 
 # Files with secrets
-AGENTS.md
 agent_config.yaml
 apps/web/scripts/generateRealisticSprites.cjs
