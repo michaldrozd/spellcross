@@ -1,0 +1,80 @@
+{
+  "assetName": "m113_apc",
+  "faction": "alliance",
+  "state": "idle",
+  "frameWidth": 192,
+  "frameHeight": 128,
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "anchor": {
+    "x": 0.5,
+    "y": 0.85
+  },
+  "spritesheet": "m113_apc_idle_sheet.png",
+  "frames": {
+    "idle_n": {
+      "x": 0,
+      "y": 0,
+      "w": 192,
+      "h": 128,
+      "file": "m113_apc_idle_n.png"
+    },
+    "idle_ne": {
+      "x": 192,
+      "y": 0,
+      "w": 192,
+      "h": 128,
+      "file": "m113_apc_idle_ne.png"
+    },
+    "idle_e": {
+      "x": 384,
+      "y": 0,
+      "w": 192,
+      "h": 128,
+      "file": "m113_apc_idle_e.png"
+    },
+    "idle_se": {
+      "x": 576,
+      "y": 0,
+      "w": 192,
+      "h": 128,
+      "file": "m113_apc_idle_se.png"
+    },
+    "idle_s": {
+      "x": 768,
+      "y": 0,
+      "w": 192,
+      "h": 128,
+      "file": "m113_apc_idle_s.png"
+    },
+    "idle_sw": {
+      "x": 960,
+      "y": 0,
+      "w": 192,
+      "h": 128,
+      "file": "m113_apc_idle_sw.png"
+    },
+    "idle_w": {
+      "x": 1152,
+      "y": 0,
+      "w": 192,
+      "h": 128,
+      "file": "m113_apc_idle_w.png"
+    },
+    "idle_nw": {
+      "x": 1344,
+      "y": 0,
+      "w": 192,
+      "h": 128,
+      "file": "m113_apc_idle_nw.png"
+    }
+  }
+}

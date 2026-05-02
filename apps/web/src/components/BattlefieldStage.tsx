@@ -218,7 +218,7 @@ const DIRECTIONAL_UNIT_SPRITES: Record<string, string> = {
 };
 const VEHICLE_DIRECTIONAL_SPRITES = {
   tank: 'tank_directional',
-  apc: 'apc_directional',
+  apc: 'm113_apc',
   artillery: 'artillery_directional'
 } as const;
 const OPPOSITE_DIRECTION_NAMES: Record<string, string> = {
@@ -268,6 +268,9 @@ export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y:
 
 const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const UNIT_SHEET_FRAME_SIZE = 128;
+const DIRECTIONAL_UNIT_FRAME_SIZES: Record<string, { width: number; height: number }> = {
+  m113_apc: { width: 192, height: 128 }
+};
 const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/apc_m113.png': 525,
   '/assets/generated/artillery_mlrs.png': 870,
@@ -305,6 +308,7 @@ const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
   artillery_directional: 0.93,
   heavy_infantry: 0.92,
   light_infantry: 0.74,
+  m113_apc: 0.85,
   rangers: 0.77,
   apc_directional: 0.98,
   tank_directional: 0.72
@@ -312,6 +316,7 @@ const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
 const DIRECTIONAL_UNIT_SOURCE_HEIGHTS: Record<string, number> = {
   artillery_directional: 110,
   apc_directional: 88,
+  m113_apc: 121,
   tank_directional: 86
 };
 const DIRECTIONAL_UNIT_GROUND_BOTTOMS: Record<string, { idle: number; walk: Record<string, number> }> = {
@@ -406,11 +411,11 @@ export function rasterVehiclePose(vector: { x: number; y: number }) {
 }
 
 function directionalVehicleSprite(unitType: string, definitionId: string) {
-  if (unitType === 'support' && definitionId.includes('truck')) return undefined;
+  if (unitType === 'support' && definitionId.includes('truck')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
   if (unitType === 'artillery') return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   if (unitType !== 'vehicle') return undefined;
   if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return undefined;
-  if (definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return undefined;
+  if (definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
   if (definitionId.includes('artillery') || definitionId.includes('mlrs') || definitionId.includes('howitzer')) return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   return VEHICLE_DIRECTIONAL_SPRITES.tank;
 }
@@ -454,9 +459,10 @@ const unitSheetTexture = (
   frame: number
 ) => {
   const sheetPath = `/assets/generated/${spriteName}_${state}_sheet.png`;
+  const frameSize = DIRECTIONAL_UNIT_FRAME_SIZES[spriteName] ?? { width: UNIT_SHEET_FRAME_SIZE, height: UNIT_SHEET_FRAME_SIZE };
   const directionIndex = Math.max(0, UNIT_SHEET_DIRECTIONS.indexOf(direction));
   const frameIndex = state === 'walk' ? Math.max(0, Math.min(3, frame)) : 0;
-  const key = `${sheetPath}:${directionIndex}:${frameIndex}`;
+  const key = `${sheetPath}:${directionIndex}:${frameIndex}:${frameSize.width}x${frameSize.height}`;
   const cached = cache.get(key);
   if (cached) return cached;
 
@@ -465,10 +471,10 @@ const unitSheetTexture = (
   const texture = crispTexture(new Texture(
     sheet.baseTexture,
     new Rectangle(
-      directionIndex * UNIT_SHEET_FRAME_SIZE,
-      frameIndex * UNIT_SHEET_FRAME_SIZE,
-      UNIT_SHEET_FRAME_SIZE,
-      UNIT_SHEET_FRAME_SIZE
+      directionIndex * frameSize.width,
+      frameIndex * frameSize.height,
+      frameSize.width,
+      frameSize.height
     )
   ));
   cache.set(key, texture);

@@ -1275,14 +1275,14 @@ const BattleView: React.FC<{
     }
 
     const fullPath = [startCoord, ...actualPath];
-    const stepDuration = isVehicleMove ? 340 : 180;
+    const stepDuration = isVehicleMove ? 420 : 180;
     if (fullPath.length >= 2) {
       setMovingUnit({
         unitId,
         path: fullPath,
         startTime: Date.now(),
         stepDuration,
-        preAlignDuration: isVehicleMove ? 130 : 0
+        preAlignDuration: isVehicleMove ? 150 : 0
       });
     }
 
