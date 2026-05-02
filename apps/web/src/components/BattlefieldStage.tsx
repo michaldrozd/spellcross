@@ -326,7 +326,7 @@ const DIRECTIONAL_UNIT_GROUND_BOTTOMS: Record<string, { idle: number; walk: Reco
   }
 };
 const DIRECTIONAL_UNIT_DIRECTION_LIFT: Record<string, Record<string, number>> = {
-  m113_apc: { n: 0.75, e: 1, s: 0.75, w: 1 }
+  m113_apc: { n: 4.5, ne: 4.5, e: 4.5, se: 4.5, s: 4.5, sw: 4.5, w: 4.5, nw: 4.5 }
 };
 
 type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
@@ -2395,8 +2395,16 @@ export function BattlefieldStage({
                 const drawSpot = (salt: number, color: number, alpha: number, rx: number, ry: number) => {
                   const px = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.56;
                   const py = (tileNoise(q, r, salt + 17) - 0.5) * ISO_TILE_H * 0.58;
-                  g.beginFill(color, alpha);
-                  g.drawEllipse(px, py, rx, ry);
+                  const angle = (tileNoise(q, r, salt + 31) - 0.5) * 0.8;
+                  const len = Math.max(2, rx * (0.8 + tileNoise(q, r, salt + 32) * 0.55));
+                  const dx = Math.cos(angle) * len * 0.5;
+                  const dy = Math.sin(angle) * Math.max(1, ry) * 0.55;
+                  g.lineStyle(1, color, alpha * 0.75);
+                  g.moveTo(px - dx, py - dy);
+                  g.lineTo(px + dx, py + dy);
+                  g.lineStyle();
+                  g.beginFill(color, alpha * 0.45);
+                  g.drawRect(Math.round(px - rx * 0.12), Math.round(py - 0.5), Math.max(1, Math.round(rx * 0.24)), 1);
                   g.endFill();
                 };
                 const drawStroke = (salt: number, color: number, alpha: number, len = 12) => {
@@ -2806,13 +2814,14 @@ export function BattlefieldStage({
                   : tile.terrain === 'forest'
                     ? 0x23411f
                     : 0x394d2d;
-              const rx = ISO_TILE_W * (0.055 + tileNoise(q, r, 212) * 0.07);
-              const ry = ISO_TILE_H * (0.02 + tileNoise(q, r, 213) * 0.035);
+              const len = ISO_TILE_W * (0.08 + tileNoise(q, r, 212) * 0.11);
               const ox = (tileNoise(q, r, 214) - 0.5) * ISO_TILE_W * 0.45;
               const oy = (tileNoise(q, r, 215) - 0.5) * ISO_TILE_H * 0.5;
-              g.beginFill(color, fog * (0.08 + tileNoise(q, r, 216) * 0.045));
-              g.drawEllipse(cx + ox, cy + oy, rx, ry);
-              g.endFill();
+              const skew = (tileNoise(q, r, 213) - 0.5) * ISO_TILE_H * 0.12;
+              g.lineStyle(1, color, fog * (0.07 + tileNoise(q, r, 216) * 0.04));
+              g.moveTo(cx + ox - len / 2, cy + oy - skew);
+              g.lineTo(cx + ox + len / 2, cy + oy + skew);
+              g.lineStyle();
             }
             if (tile.terrain !== 'water' && tileNoise(q, r, 221) > 0.34) {
               const len = ISO_TILE_W * (0.32 + tileNoise(q, r, 222) * 0.35);

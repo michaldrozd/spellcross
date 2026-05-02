@@ -98,20 +98,12 @@ describe('vehicle movement sheets', () => {
     expect(directionalSpriteGroundOffset('tank_directional', 'walk', 'e', scale)).toBe(0);
   });
 
-  it('adds only a tiny cardinal lift for the current M113 sheet', () => {
+  it('keeps the current M113 sheet visibly above the terrain plane', () => {
     const scale = 0.3;
 
-    for (const direction of ['n', 's']) {
-      expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBeCloseTo(-0.75, 4);
-      expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBeCloseTo(-0.75, 4);
-    }
-    for (const direction of ['e', 'w']) {
-      expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBeCloseTo(-1, 4);
-      expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBeCloseTo(-1, 4);
-    }
-    for (const direction of ['ne', 'se', 'sw', 'nw']) {
-      expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBe(0);
-      expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBe(0);
+    for (const direction of APC_SHEET_DIRECTIONS) {
+      expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBeCloseTo(-4.5, 4);
+      expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBeCloseTo(-4.5, 4);
     }
   });
 });
