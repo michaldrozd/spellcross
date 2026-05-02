@@ -325,6 +325,9 @@ const DIRECTIONAL_UNIT_GROUND_BOTTOMS: Record<string, { idle: number; walk: Reco
     walk: { n: 114, ne: 116, e: 116, se: 116, s: 114, sw: 117, w: 117, nw: 117 }
   }
 };
+const DIRECTIONAL_UNIT_DIRECTION_LIFT: Record<string, Record<string, number>> = {
+  m113_apc: { n: 0.75, e: 0.75, s: 0.75, w: 0.75 }
+};
 
 type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
 type UnitPointerArea = { x: number; y: number; width: number; height: number };
@@ -487,11 +490,12 @@ export const directionalSpriteGroundOffset = (
   direction: string,
   scale: number
 ) => {
-  if (state !== 'walk') return 0;
+  const directionLift = DIRECTIONAL_UNIT_DIRECTION_LIFT[spriteName]?.[direction] ?? 0;
+  if (state !== 'walk') return directionLift === 0 ? 0 : -directionLift;
   const ground = DIRECTIONAL_UNIT_GROUND_BOTTOMS[spriteName];
   const walkBottom = ground?.walk[direction];
-  if (ground === undefined || walkBottom === undefined) return 0;
-  return (ground.idle - walkBottom) * scale;
+  if (ground === undefined || walkBottom === undefined) return directionLift === 0 ? 0 : -directionLift;
+  return (ground.idle - walkBottom) * scale - directionLift;
 };
 
 const averageCornerHeight = (c: { hNW: number; hNE: number; hSE: number; hSW: number }) =>
