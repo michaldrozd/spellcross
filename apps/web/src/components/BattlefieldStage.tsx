@@ -308,7 +308,7 @@ const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
   artillery_directional: 0.93,
   heavy_infantry: 0.92,
   light_infantry: 0.74,
-  m113_apc: 0.887,
+  m113_apc: 0.94,
   rangers: 0.77,
   apc_directional: 0.98,
   tank_directional: 0.72
@@ -4133,9 +4133,9 @@ export function BattlefieldStage({
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
                     const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
-                    const shadowAlpha = isGroundVehicle ? (movingThisUnit ? 0.07 : 0.045) * (isApcContact ? 0.88 : 1) : footprint.alpha;
-                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.39 : 0.42) : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.155 : 0.18) : footprint.ry;
+                    const shadowAlpha = isGroundVehicle ? (movingThisUnit ? 0.07 : 0.045) * (isApcContact ? 0.8 : 1) : footprint.alpha;
+                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.35 : 0.42) : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.135 : 0.18) : footprint.ry;
 	                  const showFactionBase = isVisible && !isGroundVehicle;
 	                  if (showFactionBase && !isGroundVehicle) {
 	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? baseAlpha : baseAlpha * 0.55);
@@ -4152,7 +4152,7 @@ export function BattlefieldStage({
 	                    g.drawEllipse(1, footprint.y - tileSize * 0.006, footprint.rx * 0.56, footprint.ry * 0.46);
 	                    g.endFill();
                     }
-                    if (isGroundVehicle && isVisible && movingThisUnit) {
+                    if (isGroundVehicle && isVisible && movingThisUnit && !isApcContact) {
                       const perpX = -moveScreenVector.y;
                       const perpY = moveScreenVector.x;
                       const trackHalf = footprint.rx * 0.76;

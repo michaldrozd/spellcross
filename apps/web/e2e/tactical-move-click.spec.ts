@@ -187,6 +187,49 @@ test('vehicle movement finishes facing its last travelled step', async ({ page }
   expect(after?.orientation).toBe(setup!.expectedOrientation);
 });
 
+test('vehicle movement exposes animation state immediately after the move order', async ({ page }) => {
+  test.setTimeout(90_000);
+  await startBattle(page);
+
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const allies = ctrl?.allyUnits?.() ?? [];
+    const enemies = ctrl?.enemyUnits?.() ?? [];
+    const vehicle = allies.find((unit: any) => unit.type === 'vehicle');
+    if (!vehicle) return null;
+    allies
+      .filter((unit: any) => unit.id !== vehicle.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 0, index));
+    enemies.forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 9, index));
+    ctrl.snapUnit(vehicle.id, 3, 3);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(vehicle.id);
+    const path = ctrl.pathForUnit(vehicle.id, 5, 2);
+    return path?.success ? { vehicleId: vehicle.id, from: { q: 3, r: 3 }, to: { q: 5, r: 2 } } : null;
+  });
+  expect(setup).toBeTruthy();
+
+  const immediate = await page.evaluate(({ vehicleId, to }) => {
+    const started = (window as any).__battleControl?.animateUnitTo?.(vehicleId, to.q, to.r);
+    return {
+      started,
+      animationState: (window as any).__battleControl?.animationState?.() ?? null
+    };
+  }, setup!);
+
+  expect(immediate.started).toBeTruthy();
+  expect(immediate.animationState).toMatchObject({
+    unitId: setup!.vehicleId,
+    path: expect.arrayContaining([setup!.from, setup!.to])
+  });
+});
+
 test('selecting a friendly unit near enemies preserves manual camera focus', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();

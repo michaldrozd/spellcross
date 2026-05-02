@@ -1,6 +1,7 @@
 import './styles.css';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Stage, Graphics, Sprite, Text } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import type { ChangeEvent } from 'react';
@@ -745,6 +746,7 @@ const BattleView: React.FC<{
     if (!movingUnit) return;
     const totalDuration = (movingUnit.preAlignDuration ?? 0) + (movingUnit.path.length - 1) * movingUnit.stepDuration;
     const timer = setTimeout(() => {
+      movingUnitRef.current = null;
       setMovingUnit(null);
     }, totalDuration + 50); // small buffer
     return () => clearTimeout(timer);
@@ -1277,12 +1279,16 @@ const BattleView: React.FC<{
     const fullPath = [startCoord, ...actualPath];
     const stepDuration = isVehicleMove ? 420 : 180;
     if (fullPath.length >= 2) {
-      setMovingUnit({
+      const nextMovingUnit = {
         unitId,
         path: fullPath,
         startTime: Date.now(),
         stepDuration,
         preAlignDuration: isVehicleMove ? 150 : 0
+      };
+      movingUnitRef.current = nextMovingUnit;
+      flushSync(() => {
+        setMovingUnit(nextMovingUnit);
       });
     }
 
