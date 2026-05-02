@@ -2784,32 +2784,33 @@ export function BattlefieldStage({
             if (tile.terrain !== 'water' && tileNoise(q, r, 205) > 0.08) {
               const washColor =
                 tile.terrain === 'road' || tile.terrain === 'urban'
-                  ? 0x2d271e
+                  ? 0x5b513f
                   : tile.terrain === 'forest'
-                    ? 0x122712
+                    ? 0x24401f
                     : tile.terrain === 'hill'
-                      ? 0x4b5530
-                      : 0x26391f;
-              const rx = ISO_TILE_W * (0.55 + tileNoise(q, r, 206) * 0.55);
-              const ry = ISO_TILE_H * (0.22 + tileNoise(q, r, 207) * 0.32);
-              const ox = (tileNoise(q, r, 208) - 0.5) * ISO_TILE_W * 0.9;
-              const oy = (tileNoise(q, r, 209) - 0.5) * ISO_TILE_H * 0.85;
-              g.beginFill(washColor, fog * (0.018 + tileNoise(q, r, 210) * 0.026));
-              g.drawEllipse(cx + ox, cy + oy, rx, ry);
-              g.endFill();
+                      ? 0x6a7041
+                      : 0x415536;
+              const len = ISO_TILE_W * (0.12 + tileNoise(q, r, 206) * 0.18);
+              const ox = (tileNoise(q, r, 208) - 0.5) * ISO_TILE_W * 0.58;
+              const oy = (tileNoise(q, r, 209) - 0.5) * ISO_TILE_H * 0.52;
+              const skew = (tileNoise(q, r, 207) - 0.5) * ISO_TILE_H * 0.16;
+              g.lineStyle(1, washColor, fog * (0.055 + tileNoise(q, r, 210) * 0.035));
+              g.moveTo(cx + ox - len / 2, cy + oy - skew);
+              g.lineTo(cx + ox + len / 2, cy + oy + skew);
+              g.lineStyle();
             }
             if (tile.terrain !== 'water' && seed > 0.18) {
               const color =
                 tile.terrain === 'road' || tile.terrain === 'urban'
-                  ? 0x1b1713
+                  ? 0x5d503d
                   : tile.terrain === 'forest'
-                    ? 0x0c1a0d
-                    : 0x1d2517;
-              const rx = ISO_TILE_W * (0.22 + tileNoise(q, r, 212) * 0.34);
-              const ry = ISO_TILE_H * (0.1 + tileNoise(q, r, 213) * 0.18);
+                    ? 0x23411f
+                    : 0x394d2d;
+              const rx = ISO_TILE_W * (0.055 + tileNoise(q, r, 212) * 0.07);
+              const ry = ISO_TILE_H * (0.02 + tileNoise(q, r, 213) * 0.035);
               const ox = (tileNoise(q, r, 214) - 0.5) * ISO_TILE_W * 0.45;
               const oy = (tileNoise(q, r, 215) - 0.5) * ISO_TILE_H * 0.5;
-              g.beginFill(color, fog * (0.038 + tileNoise(q, r, 216) * 0.032));
+              g.beginFill(color, fog * (0.08 + tileNoise(q, r, 216) * 0.045));
               g.drawEllipse(cx + ox, cy + oy, rx, ry);
               g.endFill();
             }
