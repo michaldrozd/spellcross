@@ -101,9 +101,13 @@ describe('vehicle movement sheets', () => {
   it('adds only a tiny cardinal lift for the current M113 sheet', () => {
     const scale = 0.3;
 
-    for (const direction of ['n', 'e', 's', 'w']) {
+    for (const direction of ['n', 's']) {
       expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBeCloseTo(-0.75, 4);
       expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBeCloseTo(-0.75, 4);
+    }
+    for (const direction of ['e', 'w']) {
+      expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBeCloseTo(-1, 4);
+      expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBeCloseTo(-1, 4);
     }
     for (const direction of ['ne', 'se', 'sw', 'nw']) {
       expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBe(0);
