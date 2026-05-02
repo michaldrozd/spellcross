@@ -4128,7 +4128,7 @@ export function BattlefieldStage({
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
                     const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
-                    const shadowAlpha = isGroundVehicle ? (movingThisUnit ? 0.07 : 0.045) * (isApcContact ? 0.44 : 1) : footprint.alpha;
+                    const shadowAlpha = isGroundVehicle ? (isApcContact ? 0 : (movingThisUnit ? 0.07 : 0.045)) : footprint.alpha;
                     const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.24 : 0.42) : footprint.rx;
                     const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.075 : 0.18) : footprint.ry;
 	                  const showFactionBase = isVisible && !isGroundVehicle;
