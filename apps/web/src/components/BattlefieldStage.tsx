@@ -308,7 +308,7 @@ const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
   artillery_directional: 0.93,
   heavy_infantry: 0.92,
   light_infantry: 0.74,
-  m113_apc: 0.85,
+  m113_apc: 0.887,
   rangers: 0.77,
   apc_directional: 0.98,
   tank_directional: 0.72
@@ -4132,9 +4132,10 @@ export function BattlefieldStage({
                     const baseAlpha = isSelected || isTarget ? (isFriendly ? 0.16 : 0.24) : (isFriendly ? 0.11 : 0.18);
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
-                    const shadowAlpha = isGroundVehicle ? (movingThisUnit ? 0.07 : 0.045) : footprint.alpha;
-                    const shadowRx = isGroundVehicle ? footprint.rx * 0.42 : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * 0.18 : footprint.ry;
+                    const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
+                    const shadowAlpha = isGroundVehicle ? (movingThisUnit ? 0.07 : 0.045) * (isApcContact ? 0.88 : 1) : footprint.alpha;
+                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.39 : 0.42) : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.155 : 0.18) : footprint.ry;
 	                  const showFactionBase = isVisible && !isGroundVehicle;
 	                  if (showFactionBase && !isGroundVehicle) {
 	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? baseAlpha : baseAlpha * 0.55);
