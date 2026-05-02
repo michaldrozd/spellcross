@@ -4018,12 +4018,7 @@ export function BattlefieldStage({
                 if (isFriendly) {
                   if (isSelected || isSelectedCarrier) {
                     if (isGroundVehicle) {
-                      const colorValue = isSelectedCarrier ? 0xd8b65b : 0x7ec3df;
-                      g.lineStyle(1.25 * groundVehicleUiDamping, 0x071015, 0.38 * groundVehicleUiDamping);
-                      strokeArc(204, 238, 0x071015, 0.4 * groundVehicleUiDamping, 1.25 * groundVehicleUiDamping);
-                      strokeArc(302, 336, 0x071015, 0.4 * groundVehicleUiDamping, 1.25 * groundVehicleUiDamping);
-                      strokeArc(204, 238, colorValue, 0.34 * groundVehicleUiDamping, 0.68 * groundVehicleUiDamping);
-                      strokeArc(302, 336, colorValue, 0.34 * groundVehicleUiDamping, 0.68 * groundVehicleUiDamping);
+                      // Ground vehicles already have a large silhouette; keep selection out of the tracks.
                     } else {
                       g.lineStyle(2.1, 0x071015, 0.64);
                       g.drawEllipse(0, tileSize * 0.035, rx * 1.1, ry * 1.2);
@@ -4129,9 +4124,9 @@ export function BattlefieldStage({
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
                     const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
-                    const shadowAlpha = isGroundVehicle ? (movingThisUnit ? 0.07 : 0.045) * (isApcContact ? 0.8 : 1) : footprint.alpha;
-                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.35 : 0.42) : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.135 : 0.18) : footprint.ry;
+                    const shadowAlpha = isGroundVehicle ? (movingThisUnit ? 0.07 : 0.045) * (isApcContact ? 0.52 : 1) : footprint.alpha;
+                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.27 : 0.42) : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.09 : 0.18) : footprint.ry;
 	                  const showFactionBase = isVisible && !isGroundVehicle;
 	                  if (showFactionBase && !isGroundVehicle) {
 	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? baseAlpha : baseAlpha * 0.55);
@@ -4521,13 +4516,14 @@ export function BattlefieldStage({
                 const apRatio = Math.max(0, Math.min(1, (unit as any).actionPoints / ((unit as any).maxActionPoints ?? 10)));
                 const compactDeployStatus = deployMode && isFriendly && !isSelected && !isSelectedCarrier;
                 const movingVehicleUiDamping = movingThisUnit && isGroundVehicle ? 0.68 : 1;
-                const detailedBar = (isSelected || isTarget) && !compactDeployStatus && !(movingThisUnit && isGroundVehicle);
+                const detailedBar = (isSelected || isTarget) && !compactDeployStatus && !isGroundVehicle;
                 const bw = detailedBar
                   ? (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 18 : isGroundVehicle ? 20 : 23)
-                  : (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 12 : 16);
-                const topY = unitType === 'vehicle' || unitType === 'artillery' ? -tileSize * 0.42 : -tileSize * 0.34;
-                const backplateAlpha = (isSelected ? 0.8 : isTarget ? 0.72 : isFriendly ? 0.34 : 0.44) * movingVehicleUiDamping;
-                const barAlpha = (isSelected ? 0.94 : isTarget ? 0.88 : isFriendly ? 0.5 : 0.62) * movingVehicleUiDamping;
+                  : (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 12 : isGroundVehicle ? 13 : 16);
+                const topY = unitType === 'vehicle' || unitType === 'artillery' ? -tileSize * 0.46 : -tileSize * 0.34;
+                const vehicleStatusAlpha = isGroundVehicle ? 0.72 : 1;
+                const backplateAlpha = (isSelected ? 0.8 : isTarget ? 0.72 : isFriendly ? 0.34 : 0.44) * movingVehicleUiDamping * vehicleStatusAlpha;
+                const barAlpha = (isSelected ? 0.94 : isTarget ? 0.88 : isFriendly ? 0.5 : 0.62) * movingVehicleUiDamping * vehicleStatusAlpha;
                 const backplateH = detailedBar ? 6 : 4;
                 if (hpRatio <= 0.3) {
                   const criticalPulse = 0.76 + Math.sin(now / 120) * 0.2;
@@ -4555,10 +4551,11 @@ export function BattlefieldStage({
 
                 const flagY = topY - backplateH - (isFriendly ? 5 : 7);
                 if (isFriendly) {
-                  const markerW = isSelected ? (movingThisUnit && isGroundVehicle ? 5.4 : 7) : 4.2;
-                  const markerDrop = isSelected ? (movingThisUnit && isGroundVehicle ? 5.4 : 7) : 4.2;
-                  g.lineStyle((isSelected ? 1.3 : 0.9) * movingVehicleUiDamping, isSelected ? 0xd4f4f2 : 0x071821, (isSelected ? 0.88 : 0.48) * movingVehicleUiDamping);
-                  g.beginFill(factionAccent, (isSelected || isSelectedCarrier ? 0.96 : 0.34) * movingVehicleUiDamping);
+                  const markerW = isSelected ? (isGroundVehicle ? 4.6 : 7) : 4.2;
+                  const markerDrop = isSelected ? (isGroundVehicle ? 3.8 : 7) : 4.2;
+                  const selectedMarkerAlpha = isGroundVehicle ? 0.58 : 0.88;
+                  g.lineStyle((isSelected ? 1.3 : 0.9) * movingVehicleUiDamping, isSelected ? 0xd4f4f2 : 0x071821, (isSelected ? selectedMarkerAlpha : 0.48) * movingVehicleUiDamping);
+                  g.beginFill(factionAccent, (isSelected || isSelectedCarrier ? (isGroundVehicle ? 0.58 : 0.96) : 0.34) * movingVehicleUiDamping);
                   g.moveTo(0, flagY + 5);
                   g.lineTo(-markerW, flagY + 5 - markerDrop);
                   g.lineTo(markerW, flagY + 5 - markerDrop);
