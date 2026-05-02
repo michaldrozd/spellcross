@@ -3991,9 +3991,9 @@ export function BattlefieldStage({
               zIndex={0}
               draw={(g) => {
                 g.clear();
-                const movingVehicleUiDamping = movingThisUnit && isGroundVehicle ? 0.68 : 1;
+                const groundVehicleUiDamping = isGroundVehicle ? (movingThisUnit ? 0.58 : 0.72) : 1;
                 const markerScale = unitType === 'vehicle' || unitType === 'artillery'
-                  ? (movingThisUnit && isGroundVehicle ? 0.82 : 0.96)
+                  ? (movingThisUnit && isGroundVehicle ? 0.74 : 0.82)
                   : 1;
                 const rx = tileSize * 0.25 * markerScale;
                 const ry = tileSize * 0.095 * markerScale;
@@ -4019,15 +4019,11 @@ export function BattlefieldStage({
                   if (isSelected || isSelectedCarrier) {
                     if (isGroundVehicle) {
                       const colorValue = isSelectedCarrier ? 0xd8b65b : 0x7ec3df;
-                      const bright = isSelectedCarrier ? 0xffe6a3 : 0xd4f4f2;
-                      g.lineStyle(1.7 * movingVehicleUiDamping, 0x071015, 0.52 * movingVehicleUiDamping);
-                      strokeArc(198, 245, 0x071015, 0.52 * movingVehicleUiDamping, 1.7 * movingVehicleUiDamping);
-                      strokeArc(295, 342, 0x071015, 0.52 * movingVehicleUiDamping, 1.7 * movingVehicleUiDamping);
-                      strokeArc(198, 245, colorValue, 0.64 * movingVehicleUiDamping, 1.05 * movingVehicleUiDamping);
-                      strokeArc(295, 342, colorValue, 0.64 * movingVehicleUiDamping, 1.05 * movingVehicleUiDamping);
-                      g.lineStyle(0.75 * movingVehicleUiDamping, bright, 0.32 * movingVehicleUiDamping);
-                      g.moveTo(-rx - 3, 0); g.lineTo(-rx + 3, -1.5);
-                      g.moveTo(rx + 3, 0); g.lineTo(rx - 3, -1.5);
+                      g.lineStyle(1.25 * groundVehicleUiDamping, 0x071015, 0.38 * groundVehicleUiDamping);
+                      strokeArc(204, 238, 0x071015, 0.4 * groundVehicleUiDamping, 1.25 * groundVehicleUiDamping);
+                      strokeArc(302, 336, 0x071015, 0.4 * groundVehicleUiDamping, 1.25 * groundVehicleUiDamping);
+                      strokeArc(204, 238, colorValue, 0.34 * groundVehicleUiDamping, 0.68 * groundVehicleUiDamping);
+                      strokeArc(302, 336, colorValue, 0.34 * groundVehicleUiDamping, 0.68 * groundVehicleUiDamping);
                     } else {
                       g.lineStyle(2.1, 0x071015, 0.64);
                       g.drawEllipse(0, tileSize * 0.035, rx * 1.1, ry * 1.2);
@@ -4527,9 +4523,9 @@ export function BattlefieldStage({
                 const movingVehicleUiDamping = movingThisUnit && isGroundVehicle ? 0.68 : 1;
                 const detailedBar = (isSelected || isTarget) && !compactDeployStatus && !(movingThisUnit && isGroundVehicle);
                 const bw = detailedBar
-                  ? (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 18 : 23)
+                  ? (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 18 : isGroundVehicle ? 20 : 23)
                   : (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 12 : 16);
-                const topY = unitType === 'vehicle' || unitType === 'artillery' ? -tileSize * 0.36 : -tileSize * 0.34;
+                const topY = unitType === 'vehicle' || unitType === 'artillery' ? -tileSize * 0.42 : -tileSize * 0.34;
                 const backplateAlpha = (isSelected ? 0.8 : isTarget ? 0.72 : isFriendly ? 0.34 : 0.44) * movingVehicleUiDamping;
                 const barAlpha = (isSelected ? 0.94 : isTarget ? 0.88 : isFriendly ? 0.5 : 0.62) * movingVehicleUiDamping;
                 const backplateH = detailedBar ? 6 : 4;
