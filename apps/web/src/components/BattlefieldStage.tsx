@@ -218,7 +218,7 @@ const DIRECTIONAL_UNIT_SPRITES: Record<string, string> = {
 };
 const VEHICLE_DIRECTIONAL_SPRITES = {
   tank: 'tank_directional',
-  apc: 'm113_apc',
+  apc: 'apc_directional',
   artillery: 'artillery_directional'
 } as const;
 const OPPOSITE_DIRECTION_NAMES: Record<string, string> = {
@@ -310,7 +310,7 @@ const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
   light_infantry: 0.74,
   m113_apc: 0.955,
   rangers: 0.77,
-  apc_directional: 0.98,
+  apc_directional: 1,
   tank_directional: 0.72
 };
 const DIRECTIONAL_UNIT_SOURCE_HEIGHTS: Record<string, number> = {
@@ -343,6 +343,7 @@ type InteractionUnit = {
 
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
   if (unitType === 'vehicle') {
+    if (directionalSprite === 'apc_directional') return tile * 0.398;
     if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.58;
     if (definitionId.includes('truck') || definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return tile * 0.455;
     if (definitionId.includes('tank') || definitionId.includes('leopard') || definitionId.includes('abrams') || definitionId.includes('m1')) return tile * 0.43;
@@ -4138,9 +4139,9 @@ export function BattlefieldStage({
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
                     const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
-                    const shadowAlpha = isGroundVehicle ? (isApcContact ? 0 : (movingThisUnit ? 0.07 : 0.045)) : footprint.alpha;
-                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.24 : 0.42) : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.075 : 0.18) : footprint.ry;
+                    const shadowAlpha = isGroundVehicle ? (isApcContact ? 0.055 : (movingThisUnit ? 0.07 : 0.045)) : footprint.alpha;
+                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.34 : 0.42) : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.11 : 0.18) : footprint.ry;
 	                  const showFactionBase = isVisible && !isGroundVehicle;
 	                  if (showFactionBase && !isGroundVehicle) {
 	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? baseAlpha : baseAlpha * 0.55);
@@ -4345,6 +4346,7 @@ export function BattlefieldStage({
               const squashX = isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1;
               const squashY = isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1;
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
+              const spriteTint = directionalSprite === 'apc_directional' ? 0xd7d9b8 : 0xffffff;
               const spriteBaseY = directionalSprite ? 0 : tileSize * (isVehicleUnit ? 0.082 : 0.05);
               const silhouetteAlpha = isFootUnit && isVisible ? 0.32 : 0;
               return (
@@ -4380,6 +4382,7 @@ export function BattlefieldStage({
                     anchor={{ x: 0.5, y: anchorY }}
                     scale={{ x: scaleX, y: baseScale * squashY }}
                     alpha={isVisible ? 1 : 0.72}
+                    tint={spriteTint}
                     x={spriteSwayX}
                     y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
                     rotation={spriteRotation}
