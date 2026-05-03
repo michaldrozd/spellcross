@@ -218,7 +218,7 @@ const DIRECTIONAL_UNIT_SPRITES: Record<string, string> = {
 };
 const VEHICLE_DIRECTIONAL_SPRITES = {
   tank: 'tank_directional',
-  apc: 'apc_directional',
+  apc: 'm113_apc',
   artillery: 'artillery_directional'
 } as const;
 const OPPOSITE_DIRECTION_NAMES: Record<string, string> = {
@@ -308,7 +308,7 @@ const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
   artillery_directional: 0.93,
   heavy_infantry: 0.92,
   light_infantry: 0.74,
-  m113_apc: 0.955,
+  m113_apc: 1,
   rangers: 0.77,
   apc_directional: 1,
   tank_directional: 0.72
@@ -343,6 +343,7 @@ type InteractionUnit = {
 
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
   if (unitType === 'vehicle') {
+    if (directionalSprite === 'm113_apc') return tile * 0.43;
     if (directionalSprite === 'apc_directional') return tile * 0.398;
     if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.58;
     if (definitionId.includes('truck') || definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return tile * 0.455;
@@ -4346,7 +4347,7 @@ export function BattlefieldStage({
               const squashX = isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1;
               const squashY = isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1;
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
-              const spriteTint = directionalSprite === 'apc_directional' ? 0xd7d9b8 : 0xffffff;
+              const spriteTint = directionalSprite === 'apc_directional' || directionalSprite === 'm113_apc' ? 0xd7d9b8 : 0xffffff;
               const spriteBaseY = directionalSprite ? 0 : tileSize * (isVehicleUnit ? 0.082 : 0.05);
               const silhouetteAlpha = isFootUnit && isVisible ? 0.32 : 0;
               return (
