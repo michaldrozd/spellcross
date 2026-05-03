@@ -2,7 +2,7 @@
   "assetName": "m113_apc",
   "faction": "alliance",
   "state": "idle",
-  "frameWidth": 192,
+  "frameWidth": 128,
   "frameHeight": 128,
   "directions": [
     "n",
@@ -16,63 +16,63 @@
   ],
   "anchor": {
     "x": 0.5,
-    "y": 0.85
+    "y": 1
   },
   "spritesheet": "m113_apc_idle_sheet.png",
   "frames": {
     "idle_n": {
       "x": 0,
       "y": 0,
-      "w": 192,
+      "w": 128,
       "h": 128,
       "file": "m113_apc_idle_n.png"
     },
     "idle_ne": {
-      "x": 192,
+      "x": 128,
       "y": 0,
-      "w": 192,
+      "w": 128,
       "h": 128,
       "file": "m113_apc_idle_ne.png"
     },
     "idle_e": {
-      "x": 384,
+      "x": 256,
       "y": 0,
-      "w": 192,
+      "w": 128,
       "h": 128,
       "file": "m113_apc_idle_e.png"
     },
     "idle_se": {
-      "x": 576,
+      "x": 384,
       "y": 0,
-      "w": 192,
+      "w": 128,
       "h": 128,
       "file": "m113_apc_idle_se.png"
     },
     "idle_s": {
-      "x": 768,
+      "x": 512,
       "y": 0,
-      "w": 192,
+      "w": 128,
       "h": 128,
       "file": "m113_apc_idle_s.png"
     },
     "idle_sw": {
-      "x": 960,
+      "x": 640,
       "y": 0,
-      "w": 192,
+      "w": 128,
       "h": 128,
       "file": "m113_apc_idle_sw.png"
     },
     "idle_w": {
-      "x": 1152,
+      "x": 768,
       "y": 0,
-      "w": 192,
+      "w": 128,
       "h": 128,
       "file": "m113_apc_idle_w.png"
     },
     "idle_nw": {
-      "x": 1344,
+      "x": 896,
       "y": 0,
-      "w": 192,
+      "w": 128,
       "h": 128,
       "file": "m113_apc_idle_nw.png"
     }

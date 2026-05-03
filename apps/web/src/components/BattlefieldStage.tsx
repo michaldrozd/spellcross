@@ -268,8 +268,11 @@ export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y:
 
 const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const UNIT_SHEET_FRAME_SIZE = 128;
+const DIRECTIONAL_UNIT_ASSET_VERSION: Record<string, string> = {
+  m113_apc: 'm113-generated-20260503-1'
+};
 const DIRECTIONAL_UNIT_FRAME_SIZES: Record<string, { width: number; height: number }> = {
-  m113_apc: { width: 192, height: 128 }
+  m113_apc: { width: 128, height: 128 }
 };
 const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/apc_m113.png': 525,
@@ -463,7 +466,8 @@ const unitSheetTexture = (
   direction: string,
   frame: number
 ) => {
-  const sheetPath = `/assets/generated/${spriteName}_${state}_sheet.png`;
+  const assetVersion = DIRECTIONAL_UNIT_ASSET_VERSION[spriteName];
+  const sheetPath = `/assets/generated/${spriteName}_${state}_sheet.png${assetVersion ? `?v=${assetVersion}` : ''}`;
   const frameSize = DIRECTIONAL_UNIT_FRAME_SIZES[spriteName] ?? { width: UNIT_SHEET_FRAME_SIZE, height: UNIT_SHEET_FRAME_SIZE };
   const directionIndex = Math.max(0, UNIT_SHEET_DIRECTIONS.indexOf(direction));
   const frameIndex = state === 'walk' ? Math.max(0, Math.min(3, frame)) : 0;
