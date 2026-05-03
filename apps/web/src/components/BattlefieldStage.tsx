@@ -4147,15 +4147,31 @@ export function BattlefieldStage({
 	                    g.drawEllipse(0, footprint.y, baseRx, baseRy);
 	                    g.endFill();
                   }
-                    if (shadowAlpha > 0) {
-	                    g.beginFill(isGroundVehicle ? 0x020403 : 0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
-	                    g.drawEllipse(1, footprint.y + (isGroundVehicle ? tileSize * 0.012 : 0), shadowRx, shadowRy);
-	                    g.endFill();
+	                    if (shadowAlpha > 0) {
+		                    g.beginFill(isGroundVehicle ? 0x020403 : 0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
+		                    g.drawEllipse(1, footprint.y + (isGroundVehicle ? tileSize * 0.012 : 0), shadowRx, shadowRy);
+		                    g.endFill();
+	                    }
+                    if (isApcContact && isVisible) {
+                      const contactVector = movingThisUnit ? moveScreenVector : orientationScreenVector(animatedOrientation);
+                      const perpX = -contactVector.y;
+                      const perpY = contactVector.x;
+                      const trackHalf = footprint.rx * 0.4;
+                      const trackGap = footprint.ry * 0.74;
+                      const contactY = footprint.y + tileSize * 0.018;
+                      for (const sideOffset of [-1, 1]) {
+                        const ox = perpX * trackGap * sideOffset;
+                        const oy = perpY * trackGap * sideOffset;
+                        g.lineStyle(1.1, 0x050704, isSelected ? 0.3 : 0.24);
+                        g.moveTo(ox - contactVector.x * trackHalf, contactY + oy - contactVector.y * trackHalf * 0.2);
+                        g.lineTo(ox + contactVector.x * trackHalf, contactY + oy + contactVector.y * trackHalf * 0.2);
+                      }
+                      g.lineStyle();
                     }
                     if (!isGroundVehicle) {
-	                    g.beginFill(0x000000, isVisible ? footprint.alpha * 0.45 : footprint.alpha * 0.22);
-	                    g.drawEllipse(1, footprint.y - tileSize * 0.006, footprint.rx * 0.56, footprint.ry * 0.46);
-	                    g.endFill();
+		                    g.beginFill(0x000000, isVisible ? footprint.alpha * 0.45 : footprint.alpha * 0.22);
+		                    g.drawEllipse(1, footprint.y - tileSize * 0.006, footprint.rx * 0.56, footprint.ry * 0.46);
+		                    g.endFill();
                     }
                     if (isGroundVehicle && isVisible && movingThisUnit && !isApcContact) {
                       const perpX = -moveScreenVector.y;
