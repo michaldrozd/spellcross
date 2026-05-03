@@ -102,8 +102,8 @@ describe('vehicle movement sheets', () => {
     const scale = 0.3;
 
     for (const direction of APC_SHEET_DIRECTIONS) {
-      expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBeCloseTo(-4.5, 4);
-      expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBeCloseTo(-4.5, 4);
+      expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBeCloseTo(-7, 4);
+      expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBeCloseTo(-7, 4);
     }
   });
 });

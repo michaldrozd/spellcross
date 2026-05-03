@@ -326,7 +326,7 @@ const DIRECTIONAL_UNIT_GROUND_BOTTOMS: Record<string, { idle: number; walk: Reco
   }
 };
 const DIRECTIONAL_UNIT_DIRECTION_LIFT: Record<string, Record<string, number>> = {
-  m113_apc: { n: 4.5, ne: 4.5, e: 4.5, se: 4.5, s: 4.5, sw: 4.5, w: 4.5, nw: 4.5 }
+  m113_apc: { n: 7, ne: 7, e: 7, se: 7, s: 7, sw: 7, w: 7, nw: 7 }
 };
 
 type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
