@@ -706,9 +706,9 @@ export const starterUnits: UnitData[] = [
       armor: 1,
       morale: 70,
       ammoCapacity: 8,
-      weaponRanges: { carbine: 4 },
-      weaponPower: { carbine: 10 },
-      weaponAccuracy: { carbine: 0.6 }
+      weaponRanges: { smg: 4 },
+      weaponPower: { smg: 10 },
+      weaponAccuracy: { smg: 0.6 }
     }
   },
   {
