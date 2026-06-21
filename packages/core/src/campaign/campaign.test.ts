@@ -3,8 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { starterBundle } from '@spellcross/data';
 import {
   applyBattleOutcome,
+  convertStrategicToMoney,
+  convertStrategicToResearch,
   createCampaign,
   endStrategicTurn,
+  evaluateBattleOutcome,
   recruitUnit,
   retreatFromBattle,
   serializeCampaignState,
@@ -128,5 +131,71 @@ describe('campaign core', () => {
     expect(restored.research.completed.has('optics-i')).toBe(true);
     expect(isUnitUnlocked(restored, starterBundle, 'rangers')).toBe(true);
     expect(restored.popups?.[0]?.title).toBe('Report');
+  });
+
+  it('credits hold objectives once per round and wins after the turn limit', () => {
+    const state = createCampaign(starterBundle);
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');
+    const [unit] = battle.state.sides.alliance.units.values();
+    if (!unit) throw new Error('expected deployed unit');
+    const target = { q: 3, r: 2 };
+    battle.scenario.objectives = [
+      { id: 'hold-square', kind: 'hold', description: 'Hold the square.', target, turnLimit: 3 }
+    ];
+    battle.holdProgress = {};
+    battle.holdCountedRound = {};
+    unit.coordinate = { ...target };
+
+    // Re-evaluating within the same round must not over-count.
+    expect(evaluateBattleOutcome(battle)).toBe('ongoing');
+    evaluateBattleOutcome(battle);
+    evaluateBattleOutcome(battle);
+    expect(battle.holdProgress['hold-square']).toBe(1);
+
+    battle.state.round += 1;
+    expect(evaluateBattleOutcome(battle)).toBe('ongoing');
+    expect(battle.holdProgress['hold-square']).toBe(2);
+
+    battle.state.round += 1;
+    expect(evaluateBattleOutcome(battle)).toBe('victory');
+    expect(battle.holdProgress['hold-square']).toBe(3);
+  });
+
+  it('persists an in-progress battle through a full serialize/JSON/hydrate round-trip', () => {
+    const state = createCampaign(starterBundle);
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');
+    const [unit] = battle.state.sides.alliance.units.values();
+    if (!unit) throw new Error('expected deployed unit');
+    unit.statusEffects.add('suppressed');
+    unit.currentAmmo = Infinity;
+    battle.holdProgress['hold-square'] = 2;
+
+    // Mirror the app's persistence: serialize -> JSON string -> parse -> hydrate.
+    const roundTripped = JSON.parse(JSON.stringify(serializeCampaignState(state)));
+    const restored = hydrateCampaignState(starterBundle, roundTripped);
+
+    expect(restored.activeBattle).toBeTruthy();
+    const restoredBattle = restored.activeBattle!;
+    expect(restoredBattle.state.sides.alliance.units).toBeInstanceOf(Map);
+    const restoredUnit = restoredBattle.state.sides.alliance.units.get(unit.id);
+    expect(restoredUnit?.statusEffects).toBeInstanceOf(Set);
+    expect(restoredUnit?.statusEffects.has('suppressed')).toBe(true);
+    expect(restoredUnit?.currentAmmo).toBe(Infinity);
+    expect(restoredBattle.holdProgress['hold-square']).toBe(2);
+  });
+
+  it('converts strategic points at the documented ratios', () => {
+    const state = createCampaign(starterBundle);
+    state.resources.strategic = 20;
+    state.resources.money = 0;
+    state.resources.research = 0;
+
+    convertStrategicToMoney(state, 5);
+    expect(state.resources.money).toBe(5); // 1:1
+    expect(state.resources.strategic).toBe(15);
+
+    convertStrategicToResearch(state, 3);
+    expect(state.resources.research).toBe(9); // 1:3
+    expect(state.resources.strategic).toBe(12);
   });
 });

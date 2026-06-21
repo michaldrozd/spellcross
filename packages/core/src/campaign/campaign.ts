@@ -60,6 +60,9 @@ export interface ActiveBattle {
   deployment: Record<string, string>; // army unit id -> tactical unit id
   startTiles: HexCoordinate[];
   holdProgress: Record<string, number>;
+  // Last battle round in which each hold objective was credited, so progress
+  // counts at most once per round regardless of how often outcome is evaluated.
+  holdCountedRound: Record<string, number>;
 }
 
 export interface CampaignState {
@@ -99,6 +102,8 @@ export interface SerializedCampaignState {
   log: string[];
   events?: Array<{ turn: number; message: string }>;
   popups?: CampaignState['popups'];
+  // Tagged-encoded tactical battle (see encodeActiveBattle); absent when no battle is in progress.
+  activeBattle?: unknown;
 }
 
 const isGeneratedCounteroffensive = (territory: TerritoryState) =>
@@ -221,7 +226,7 @@ export function convertStrategicToResearch(state: CampaignState, amount: number)
   if (amount <= 0) return;
   const spend = Math.min(amount, state.resources.strategic);
   state.resources.strategic -= spend;
-  state.resources.research += spend * 10;
+  state.resources.research += spend * 3;
 }
 
 export function isUnitUnlocked(state: CampaignState, bundle: ContentBundle, unitId: string): boolean {
@@ -706,7 +711,8 @@ export function startBattleForTerritory(
     state: battleState,
     deployment,
     startTiles,
-    holdProgress: {}
+    holdProgress: {},
+    holdCountedRound: {}
   };
   state.activeBattle = activeBattle;
   return activeBattle;
@@ -740,14 +746,7 @@ const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattle): boo
       return true;
     }
     case 'hold': {
-      if (!objective.target || !objective.turnLimit) return false;
-      const key = coordinateKey(objective.target);
-      const occupant = Array.from(battle.state.sides.alliance.units.values()).find(
-        (u) => u.stance !== 'destroyed' && coordinateKey(u.coordinate) === key
-      );
-      if (occupant) {
-        battle.holdProgress[objective.id] = (battle.holdProgress[objective.id] ?? 0) + 1;
-      }
+      if (!objective.turnLimit) return false;
       return (battle.holdProgress[objective.id] ?? 0) >= objective.turnLimit;
     }
     default:
@@ -755,7 +754,28 @@ const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattle): boo
   }
 };
 
+// Credits hold objectives for the current round if their tile is occupied by a
+// surviving ally. Idempotent per round: re-evaluating outcome within the same
+// round (e.g. after every player action) never double-counts.
+function tickHoldProgress(battle: ActiveBattle) {
+  const round = battle.state.round;
+  for (const objective of battle.scenario.objectives) {
+    if (objective.kind !== 'hold' || !objective.target) continue;
+    if (battle.holdCountedRound[objective.id] === round) continue;
+    const key = coordinateKey(objective.target);
+    const held = Array.from(battle.state.sides.alliance.units.values()).some(
+      (u) => u.stance !== 'destroyed' && coordinateKey(u.coordinate) === key
+    );
+    if (held) {
+      battle.holdProgress[objective.id] = (battle.holdProgress[objective.id] ?? 0) + 1;
+      battle.holdCountedRound[objective.id] = round;
+    }
+  }
+}
+
 export function evaluateBattleOutcome(battle: ActiveBattle): 'victory' | 'defeat' | 'ongoing' {
+  tickHoldProgress(battle);
+
   const defeatByProtect = battle.scenario.objectives.some((o) => o.kind === 'protect' && !isObjectiveMet(o, battle));
   if (defeatByProtect) return 'defeat';
 
@@ -880,6 +900,48 @@ export function applyBattleOutcome(
   state.activeBattle = undefined;
 }
 
+// A tactical battle holds Maps (units per side), Sets (status effects, vision) and
+// Infinity ammo. Plain JSON drops Maps/Sets and turns Infinity into null, so we tag
+// those on the way out and rebuild them on the way back in.
+type BattleJsonTag =
+  | { __t: 'Map'; v: [unknown, unknown][] }
+  | { __t: 'Set'; v: unknown[] }
+  | { __t: 'Inf' }
+  | { __t: '-Inf' };
+
+function battleReplacer(_key: string, value: unknown): unknown {
+  if (value instanceof Map) return { __t: 'Map', v: Array.from(value.entries()) };
+  if (value instanceof Set) return { __t: 'Set', v: Array.from(value.values()) };
+  if (value === Infinity) return { __t: 'Inf' };
+  if (value === -Infinity) return { __t: '-Inf' };
+  return value;
+}
+
+function battleReviver(_key: string, value: unknown): unknown {
+  if (value && typeof value === 'object' && '__t' in (value as Record<string, unknown>)) {
+    const tagged = value as BattleJsonTag;
+    switch (tagged.__t) {
+      case 'Map':
+        return new Map(tagged.v);
+      case 'Set':
+        return new Set(tagged.v);
+      case 'Inf':
+        return Infinity;
+      case '-Inf':
+        return -Infinity;
+    }
+  }
+  return value;
+}
+
+function encodeActiveBattle(battle: ActiveBattle): unknown {
+  return JSON.parse(JSON.stringify(battle, battleReplacer));
+}
+
+function decodeActiveBattle(raw: unknown): ActiveBattle {
+  return JSON.parse(JSON.stringify(raw), battleReviver) as ActiveBattle;
+}
+
 export function serializeCampaignState(state: CampaignState): SerializedCampaignState {
   return {
     campaignId: state.campaignId,
@@ -897,7 +959,8 @@ export function serializeCampaignState(state: CampaignState): SerializedCampaign
     },
     log: [...state.log],
     events: state.events ? [...state.events] : undefined,
-    popups: state.popups ? structuredClone(state.popups) : undefined
+    popups: state.popups ? structuredClone(state.popups) : undefined,
+    activeBattle: state.activeBattle ? encodeActiveBattle(state.activeBattle) : undefined
   };
 }
 
@@ -929,7 +992,7 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
       completed: new Set(snapshot.research.completed),
       inProgress: snapshot.research.inProgress ? { ...snapshot.research.inProgress } : undefined
     },
-    activeBattle: undefined,
+    activeBattle: snapshot.activeBattle ? decodeActiveBattle(snapshot.activeBattle) : undefined,
     log: [...snapshot.log],
     events: snapshot.events ? [...snapshot.events] : [],
     popups: snapshot.popups ? structuredClone(snapshot.popups) : []
