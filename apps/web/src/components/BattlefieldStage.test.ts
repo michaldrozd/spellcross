@@ -98,12 +98,29 @@ describe('vehicle movement sheets', () => {
     expect(directionalSpriteGroundOffset('tank_directional', 'walk', 'e', scale)).toBe(0);
   });
 
-  it('keeps the current M113 sheet visibly above the terrain plane', () => {
+  it('keeps the current M113 sheet aligned to the terrain contact line', () => {
     const scale = 0.3;
 
+    const expectedOffsets = {
+      n: 2.1,
+      ne: 0.6,
+      e: 2.7,
+      se: 0.9,
+      s: 2.1,
+      sw: 1.2,
+      w: 2.7,
+      nw: 0.6
+    };
+
     for (const direction of APC_SHEET_DIRECTIONS) {
-      expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBeCloseTo(-7, 4);
-      expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBeCloseTo(-7, 4);
+      expect(directionalSpriteGroundOffset('m113_apc', 'idle', direction, scale)).toBeCloseTo(
+        expectedOffsets[direction as keyof typeof expectedOffsets],
+        4
+      );
+      expect(directionalSpriteGroundOffset('m113_apc', 'walk', direction, scale)).toBeCloseTo(
+        expectedOffsets[direction as keyof typeof expectedOffsets],
+        4
+      );
     }
   });
 });
@@ -156,7 +173,24 @@ describe('vehicleSheetDirectionNameForOrientation', () => {
   });
 
   it('keeps legacy reversed vehicle sheets corrected', () => {
+    expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 0 }, 'm113_apc')).toBe('e');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: -1, y: 0 }, 'm113_apc')).toBe('w');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 1 }, 'm113_apc')).toBe('nw');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: -1, y: -1 }, 'm113_apc')).toBe('se');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: 0, y: -1 }, 'm113_apc')).toBe('n');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: 0, y: 1 }, 'm113_apc')).toBe('s');
     expect(vehicleSheetDirectionNameForOrientation(0, 'tank_directional')).toBe('nw');
     expect(vehicleSheetDirectionNameForOrientation(4, 'artillery_directional')).toBe('e');
+  });
+
+  it('maps M113 diagonal sheet cells to their visual facing', () => {
+    expect(vehicleSheetDirectionNameForOrientation(0, 'm113_apc')).toBe('nw');
+    expect(vehicleSheetDirectionNameForOrientation(1, 'm113_apc')).toBe('e');
+    expect(vehicleSheetDirectionNameForOrientation(2, 'm113_apc')).toBe('sw');
+    expect(vehicleSheetDirectionNameForOrientation(3, 'm113_apc')).toBe('se');
+    expect(vehicleSheetDirectionNameForOrientation(4, 'm113_apc')).toBe('w');
+    expect(vehicleSheetDirectionNameForOrientation(5, 'm113_apc')).toBe('ne');
+    expect(vehicleSheetDirectionNameForOrientation(6, 'm113_apc')).toBe('s');
+    expect(vehicleSheetDirectionNameForOrientation(7, 'm113_apc')).toBe('n');
   });
 });

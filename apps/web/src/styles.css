@@ -1026,39 +1026,39 @@ body {
 
 .strategic-map-svg .region-label {
   font-size: 1.76px;
-  fill: rgba(177, 211, 204, 0.72);
+  fill: rgba(210, 232, 226, 0.86);
   font-weight: 800;
   letter-spacing: 0.075em;
   text-anchor: middle;
   pointer-events: none;
   paint-order: stroke fill;
-  stroke: rgba(2, 5, 5, 0.94);
-  stroke-width: 0.3px;
+  stroke: rgba(2, 5, 5, 0.98);
+  stroke-width: 0.38px;
   stroke-linejoin: round;
   filter: drop-shadow(0 0 0.34px rgba(0, 0, 0, 0.98));
 }
 
 .strategic-map-svg .territory-name {
-  font-size: 1.28px;
+  font-size: 1.34px;
   fill: #d3bc5d;
   text-anchor: middle;
   pointer-events: none;
   paint-order: stroke fill;
   stroke: rgba(2, 4, 4, 0.96);
-  stroke-width: 0.32px;
+  stroke-width: 0.38px;
   stroke-linejoin: round;
   font-weight: 800;
   filter: drop-shadow(0 0 0.32px rgba(0, 0, 0, 0.95));
 }
 
 .strategic-map-svg .city-label {
-  font-size: 0.95px;
-  fill: rgba(174, 189, 176, 0.82);
+  font-size: 1.02px;
+  fill: rgba(221, 230, 218, 0.92);
   text-anchor: middle;
   pointer-events: none;
   paint-order: stroke fill;
-  stroke: rgba(2, 4, 4, 0.85);
-  stroke-width: 0.22px;
+  stroke: rgba(2, 4, 4, 0.96);
+  stroke-width: 0.3px;
   stroke-linejoin: round;
 }
 
@@ -1085,7 +1085,7 @@ body {
 
 .strategic-map-svg .invasion-label {
   font-size: 1.32px;
-  fill: rgba(239, 93, 78, 0.72);
+  fill: rgba(239, 111, 96, 0.62);
   font-weight: bold;
   text-anchor: middle;
 }
@@ -2306,8 +2306,8 @@ body {
 
 .research-card {
   position: relative;
-  min-height: 154px;
-  padding: 1.62rem 0.86rem 0.76rem 1.08rem;
+  min-height: 164px;
+  padding: 1.62rem 0.9rem 0.82rem 1.08rem;
   background:
     radial-gradient(circle at 100% 0%, rgba(143, 128, 70, 0.12), transparent 38%),
     linear-gradient(115deg, transparent 0 70%, rgba(122, 139, 101, 0.07) 70.4% 100%),
@@ -2472,7 +2472,7 @@ body {
 .research-card h4 {
   margin: 0 0 0.36rem;
   color: #eef4ea;
-  font-size: 0.86rem;
+  font-size: 0.9rem;
   line-height: 1.15;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -2485,17 +2485,25 @@ body {
 .research-card p {
   display: -webkit-box;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 4;
   margin: 0 0 0.5rem;
   overflow: hidden;
   color: #d0dad4;
-  font-size: 0.72rem;
-  line-height: 1.32;
+  font-size: 0.76rem;
+  line-height: 1.36;
+}
+
+.research-card p,
+.research-requirements,
+.research-cost {
+  padding: 0.16rem 0.22rem;
+  background: rgba(2, 5, 5, 0.34);
+  box-shadow: inset 0 0 0 1px rgba(202, 213, 180, 0.035);
 }
 
 .research-card.locked-node p,
 .research-card.waiting-node p {
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
 }
 
 .research-requirements {
@@ -2505,7 +2513,7 @@ body {
   align-items: center;
   margin-bottom: 0.26rem;
   color: #9eaaa2;
-  font-size: 0.58rem;
+  font-size: 0.62rem;
   letter-spacing: 0.06em;
 }
 
@@ -2523,7 +2531,7 @@ body {
 
 .research-cost {
   color: #c0cbc1;
-  font-size: 0.64rem;
+  font-size: 0.68rem;
   margin-bottom: 0.34rem;
 }
 
@@ -2549,7 +2557,7 @@ body {
   border: 1px solid #8c7848;
   color: #e1c86e;
   font-family: "Courier New", monospace;
-  font-size: 0.64rem;
+  font-size: 0.66rem;
   letter-spacing: 0.08em;
   white-space: normal;
   line-height: 1.15;
@@ -3080,7 +3088,7 @@ header.app-header {
   border-color: #67715f #161d19 #0b0f0d #485246;
   padding: 0.78rem 0.85rem;
   border-radius: 2px;
-  max-height: 146px;
+  max-height: 158px;
   display: flex;
   flex-direction: column;
   box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0,0,0,0.45);
@@ -3142,7 +3150,8 @@ header.app-header {
 
 .log-entries {
   overflow-y: auto;
-  font-size: 0.82rem;
+  font-size: 0.84rem;
+  line-height: 1.24;
   display: flex;
   flex-direction: column;
   gap: 0.14rem;
@@ -3151,17 +3160,17 @@ header.app-header {
 }
 
 .log-line {
-  color: #b8d0ad;
+  color: #c8dfbd;
   min-height: 1.16rem;
-  padding: 0.1rem 0.3rem 0.1rem 0.46rem;
-  border-left: 2px solid rgba(105, 154, 86, 0.36);
-  background: rgba(19, 35, 19, 0.26);
+  padding: 0.12rem 0.32rem 0.12rem 0.48rem;
+  border-left: 2px solid rgba(126, 177, 100, 0.46);
+  background: rgba(18, 35, 18, 0.34);
   overflow-wrap: anywhere;
   text-shadow: 0 0 5px rgba(70, 160, 70, 0.18);
 }
 
 .log-line-muted {
-  color: #738b68;
+  color: #8da380;
   border-left-color: rgba(105, 154, 86, 0.18);
   background: rgba(12, 24, 14, 0.2);
 }

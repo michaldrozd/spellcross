@@ -230,6 +230,112 @@ test('vehicle movement exposes animation state immediately after the move order'
   });
 });
 
+test('m113 movement keeps turn-boundary animation time for multi-step paths', async ({ page }) => {
+  test.setTimeout(90_000);
+  await startBattle(page);
+
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.deployMode?.() ?? true);
+  }).toBe(false);
+  await page.evaluate(() => (window as any).__battleControl?.forceAllianceTurn?.());
+
+  const setup = await page.evaluate(() => {
+    const orientationFor = (from: any, to: any) => {
+      const dq = Math.sign(to.q - from.q);
+      const dr = Math.sign(to.r - from.r);
+      if (dq > 0 && dr === 0) return 0;
+      if (dq > 0 && dr < 0) return 1;
+      if (dq === 0 && dr < 0) return 2;
+      if (dq < 0 && dr === 0) return 3;
+      if (dq < 0 && dr > 0) return 4;
+      if (dq === 0 && dr > 0) return 5;
+      if (dq > 0 && dr > 0) return 6;
+      if (dq < 0 && dr < 0) return 7;
+      return 0;
+    };
+    const countTurns = (path: any[]) => {
+      let turns = 0;
+      for (let index = 0; index + 2 < path.length; index += 1) {
+        if (orientationFor(path[index], path[index + 1]) !== orientationFor(path[index + 1], path[index + 2])) turns += 1;
+      }
+      return turns;
+    };
+    const ctrl = (window as any).__battleControl;
+    const allies = ctrl?.allyUnits?.() ?? [];
+    const enemies = ctrl?.enemyUnits?.() ?? [];
+    const vehicle = allies.find((unit: any) => /m113/i.test(unit.definitionId ?? ''));
+    if (!vehicle) return null;
+    const start = { q: 4, r: 4 };
+    allies
+      .filter((unit: any) => unit.id !== vehicle.id)
+      .forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 0, 7 + index));
+    enemies.forEach((unit: any, index: number) => ctrl.snapUnit(unit.id, 9, index));
+    ctrl.snapUnit(vehicle.id, start.q, start.r);
+    ctrl.setActionPoints(vehicle.id, 99);
+    ctrl.forceAllianceTurn();
+    ctrl.selectUnit(vehicle.id);
+
+    for (let r = 0; r < 9; r += 1) {
+      for (let q = 0; q < 10; q += 1) {
+        const path = ctrl.pathForUnit(vehicle.id, q, r);
+        if (!path?.success || path.path.length < 3) continue;
+        const fullPath = [start, ...path.path];
+        const turns = countTurns(fullPath);
+        if (turns > 0) return { vehicleId: vehicle.id, target: path.path[path.path.length - 1], fullPath, turns };
+      }
+    }
+    return null;
+  });
+  expect(setup).toBeTruthy();
+
+  const started = await page.evaluate(({ vehicleId, target }) => {
+    return (window as any).__battleControl?.animateUnitTo?.(vehicleId, target.q, target.r);
+  }, setup!);
+  expect(started).toBeTruthy();
+
+  const state = await page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);
+  expect(state).toMatchObject({
+    unitId: setup!.vehicleId,
+    segmentTurnDuration: 90
+  });
+
+  const actualTurnCount = await page.evaluate(() => {
+    const moving = (window as any).__battleControl?.animationState?.();
+    if (!moving?.path) return 0;
+    const orientationFor = (from: any, to: any) => {
+      const dq = Math.sign(to.q - from.q);
+      const dr = Math.sign(to.r - from.r);
+      if (dq > 0 && dr === 0) return 0;
+      if (dq > 0 && dr < 0) return 1;
+      if (dq === 0 && dr < 0) return 2;
+      if (dq < 0 && dr === 0) return 3;
+      if (dq < 0 && dr > 0) return 4;
+      if (dq === 0 && dr > 0) return 5;
+      if (dq > 0 && dr > 0) return 6;
+      if (dq < 0 && dr < 0) return 7;
+      return 0;
+    };
+    let turns = 0;
+    for (let index = 0; index + 2 < moving.path.length; index += 1) {
+      if (orientationFor(moving.path[index], moving.path[index + 1]) !== orientationFor(moving.path[index + 1], moving.path[index + 2])) turns += 1;
+    }
+    return turns;
+  });
+  expect(actualTurnCount).toBeGreaterThan(0);
+
+  const waitUntilFirstTurn = await page.evaluate((targetAge) => {
+    const moving = (window as any).__battleControl?.animationState?.();
+    return moving ? Math.max(0, moving.startTime + targetAge - Date.now()) : 0;
+  }, state.stepDuration + 20);
+  await page.waitForTimeout(waitUntilFirstTurn);
+  expect(await page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null)).not.toBeNull();
+
+  await expect.poll(async () => {
+    return page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);
+  }, { timeout: 5_000 }).toBeNull();
+});
+
 test('selecting a friendly unit near enemies preserves manual camera focus', async ({ page }) => {
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
@@ -774,6 +880,6 @@ test('invalid movement gives visible order feedback', async ({ page }) => {
 
   const moved = await page.evaluate(() => (window as any).__battleControl.moveSelectedTo(99, 99));
   expect(moved).toBeFalsy();
-  await expect(page.getByText(/ORDER REJECTED/i)).toBeVisible();
-  await expect(page.locator('.battle-phase-notice').getByText(/Outside battlefield/i)).toBeVisible();
+  await expect(page.getByText(/Outside battlefield/i).first()).toBeVisible();
+  await expect(page.locator('.battle-phase-notice')).toHaveCount(0);
 });
