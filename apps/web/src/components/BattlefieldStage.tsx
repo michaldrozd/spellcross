@@ -2261,13 +2261,13 @@ export function BattlefieldStage({
         externalTerrainTextures?.water ??
         ((terrainTextures as any).water ?? tex);
       const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
-      const overlayAlpha = coloredTex ? (isVisible ? 0.62 : 0.42) : (isVisible ? 0.4 : 0.26);
+      const overlayAlpha = coloredTex ? (isVisible ? 0.92 : 0.66) : (isVisible ? 0.4 : 0.26);
       const texMatrix = new Matrix();
       if (coloredTex) {
         // Map the large painted texture continuously across the map (world-space) so the
         // ground reads as one cohesive painted surface; REPEAT wrap tiles it seamlessly.
         // u = k * world  →  matrix.scale(1/k) then translate(-graphicsOrigin).
-        const k = 2; // texels per world unit (smaller = texture spans more tiles)
+        const k = 1.4; // texels per world unit (smaller = texture spans more tiles, less repetition)
         const gx = pos.x;
         const gy = pos.y - avgHeight * ELEV_Y_OFFSET;
         texMatrix.scale(1 / k, 1 / k);
@@ -3925,27 +3925,49 @@ export function BattlefieldStage({
           const ex = to.x - ux * endGap;
           const ey = to.y - uy * endGap;
           const linkLen = Math.max(1, Math.hypot(ex - sx, ey - sy));
-          const step = explicitTarget ? 10 : 18;
-          const dash = explicitTarget ? 8 : 7;
-          g.lineStyle(explicitTarget ? 3.4 : 1.8, 0x050807, explicitTarget ? 0.68 : 0.42);
-          for (let d = 0; d < linkLen; d += step) {
-            const a = d / linkLen;
-            const b = Math.min(d + dash, linkLen) / linkLen;
-            g.moveTo(sx + (ex - sx) * a, sy + (ey - sy) * a);
-            g.lineTo(sx + (ex - sx) * b, sy + (ey - sy) * b);
+          // Thin crisp sight-line (sizes kept small in world units so the ~4.5x camera zoom
+          // doesn't blow them into chunky bars): dark base + bright core.
+          if (explicitTarget) {
+            // Short dashes near the target end give a clean "line of fire" without a heavy bar.
+            const step = 5;
+            const dash = 3;
+            g.lineStyle(1.5, 0x0a0d0a, 0.5);
+            for (let d = 0; d < linkLen; d += step) {
+              const a = d / linkLen;
+              const b = Math.min(d + dash, linkLen) / linkLen;
+              g.moveTo(sx + (ex - sx) * a, sy + (ey - sy) * a);
+              g.lineTo(sx + (ex - sx) * b, sy + (ey - sy) * b);
+            }
+            g.lineStyle(0.75, 0xffe27a, 0.92);
+            for (let d = 0; d < linkLen; d += step) {
+              const a = d / linkLen;
+              const b = Math.min(d + dash, linkLen) / linkLen;
+              g.moveTo(sx + (ex - sx) * a, sy + (ey - sy) * a);
+              g.lineTo(sx + (ex - sx) * b, sy + (ey - sy) * b);
+            }
+            // Targeting reticle: corner brackets + small crosshair around the target.
+            const cx = to.x;
+            const cy = to.y - tileSize * 0.18;
+            const R = 7.5;
+            const L = 3;
+            const reticle = () => {
+              for (const [hx, hy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+                const bx = cx + hx * R;
+                const by = cy + hy * R;
+                g.moveTo(bx, by); g.lineTo(bx - hx * L, by);
+                g.moveTo(bx, by); g.lineTo(bx, by - hy * L);
+              }
+              g.moveTo(cx - 2.2, cy); g.lineTo(cx + 2.2, cy);
+              g.moveTo(cx, cy - 2.2); g.lineTo(cx, cy + 2.2);
+            };
+            g.lineStyle(1.6, 0x0a0d0a, 0.6); reticle();
+            g.lineStyle(0.9, 0xffe27a, 0.96); reticle();
+          } else {
+            g.lineStyle(0.9, 0x0a0d0a, 0.34);
+            g.moveTo(sx, sy); g.lineTo(ex, ey);
+            g.lineStyle(0.5, 0xb0aa62, 0.5);
+            g.moveTo(sx, sy); g.lineTo(ex, ey);
           }
-          g.lineStyle(explicitTarget ? 1.65 : 0.9, explicitTarget ? 0xf1e7a8 : 0xb0aa62, explicitTarget ? 0.82 : 0.48);
-          for (let d = 0; d < linkLen; d += step) {
-            const a = d / linkLen;
-            const b = Math.min(d + dash, linkLen) / linkLen;
-            g.moveTo(sx + (ex - sx) * a, sy + (ey - sy) * a);
-            g.lineTo(sx + (ex - sx) * b, sy + (ey - sy) * b);
-          }
-          const midX = (sx + ex) / 2;
-          const midY = (sy + ey) / 2;
-          g.beginFill(explicitTarget ? 0xf1e7a8 : 0x9c9c58, explicitTarget ? 0.7 : 0.42);
-          g.drawCircle(midX, midY, explicitTarget ? 3.2 : 1.6);
-          g.endFill();
         }}
       />
     );
@@ -4959,6 +4981,17 @@ export function BattlefieldStage({
       const projX = fromX + (toX - fromX) * travel;
       const projY = fromY + (toY - fromY) * travel;
 
+      // Infantry small-arms read as a short automatic burst rather than one round:
+      // several staggered tracers + a flickering muzzle flash.
+      const BURST_ROUNDS = 5;
+      const BURST_GAP = 55; // ms between rounds
+      const BURST_FLIGHT = 150; // ms each round is in flight
+      let gunFlicker = 0;
+      for (let k = 0; k < BURST_ROUNDS; k++) {
+        const a = elapsed - k * BURST_GAP;
+        if (a >= 0 && a <= 42) gunFlicker = Math.max(gunFlicker, 1 - a / 42);
+      }
+
       const zIndex = 20000 + Math.round(Math.max(fromY, toY));
 
       return (
@@ -5003,9 +5036,11 @@ export function BattlefieldStage({
               y={fromY - tileSize * 0.15}
               draw={(g) => {
                 g.clear();
-                const fade = 1 - elapsed / 320;
-                const flashScale = effect.type === 'gunshot' ? 0.18 : effect.type === 'magic' ? 0.22 : 0.31;
-                const flashReach = effect.type === 'gunshot' ? 0.42 : 0.5;
+                // Gunshot: flicker the muzzle flash per burst round; others: single fading flash.
+                const fade = effect.type === 'gunshot' ? gunFlicker : 1 - elapsed / 320;
+                if (fade <= 0) return;
+                const flashScale = effect.type === 'gunshot' ? 0.24 : effect.type === 'magic' ? 0.22 : 0.31;
+                const flashReach = effect.type === 'gunshot' ? 0.54 : 0.5;
                 const flashTail = effect.type === 'gunshot' ? 0.32 : 0.38;
                 const flashWidth = effect.type === 'gunshot' ? 0.075 : 0.1;
                 const flashSize = tileSize * flashScale * fade;
@@ -5025,36 +5060,57 @@ export function BattlefieldStage({
                 g.lineTo(ux * tileSize * flashTail - px * tileSize * flashWidth, uy * tileSize * flashTail - py * tileSize * flashWidth);
                 g.closePath();
                 g.endFill();
-                g.beginFill(effect.type === 'magic' ? 0xaa44ff : 0xffd57a, (effect.type === 'gunshot' ? 0.84 : 0.95) * fade);
+                // soft outer glow
+                g.beginFill(effect.type === 'magic' ? 0xc779ff : 0xffcf6a, 0.42 * fade);
+                g.drawCircle(0, 0, flashSize * 1.9);
+                g.endFill();
+                g.beginFill(effect.type === 'magic' ? 0xaa44ff : 0xffd57a, 0.95 * fade);
                 g.drawCircle(0, 0, flashSize);
                 g.endFill();
-                if (effect.type !== 'gunshot') {
-                  g.beginFill(0xffffff, 0.85 * fade);
-                  g.drawCircle(0, 0, flashSize * 0.42);
-                  g.endFill();
-                }
+                // white-hot core (all weapon types)
+                g.beginFill(0xffffff, 0.92 * fade);
+                g.drawCircle(0, 0, flashSize * 0.46);
+                g.endFill();
               }}
             />
           )}
 
-          {travel < 1 && (
+          {(effect.type === 'gunshot' ? elapsed < 560 : travel < 1) && (
             <Graphics
               draw={(g) => {
                 g.clear();
+                if (effect.type === 'gunshot') {
+                  // Automatic burst: several staggered tracer rounds in flight at once.
+                  const dxb = toX - fromX;
+                  const dyb = toY - fromY;
+                  const lenb = Math.max(1, Math.hypot(dxb, dyb));
+                  const pxb = -dyb / lenb;
+                  const pyb = dxb / lenb;
+                  for (let k = 0; k < BURST_ROUNDS; k++) {
+                    const t = (elapsed - k * BURST_GAP) / BURST_FLIGHT;
+                    if (t <= 0 || t >= 1) continue;
+                    const jit = (((k * 37) % 7) - 3) * 0.7; // small per-round spread
+                    const tail = Math.max(0, t - 0.32);
+                    const hx = fromX + dxb * t + pxb * jit;
+                    const hy = fromY + dyb * t - tileSize * 0.15 + pyb * jit;
+                    const lx = fromX + dxb * tail + pxb * jit;
+                    const ly = fromY + dyb * tail - tileSize * 0.15 + pyb * jit;
+                    g.lineStyle(3, 0x15110a, 0.5); g.moveTo(lx, ly); g.lineTo(hx, hy);
+                    g.lineStyle(4.5, 0xffd166, 0.32); g.moveTo(lx, ly); g.lineTo(hx, hy); // glow
+                    g.lineStyle(1.8, 0xffe6a0, 0.96); g.moveTo(lx, ly); g.lineTo(hx, hy); // core
+                    g.beginFill(0xfff3bd, 0.95); g.drawCircle(hx, hy, 2.1); g.endFill();
+                    g.beginFill(0xffffff, 0.95); g.drawCircle(hx, hy, 1); g.endFill();
+                  }
+                  return;
+                }
                 const trailStart = Math.max(0, travel - 0.24);
                 const sx = fromX + (toX - fromX) * trailStart;
                 const sy = fromY + (toY - fromY) * trailStart - tileSize * 0.15;
                 const tx = projX;
                 const ty = projY - tileSize * 0.15;
-                g.lineStyle(effect.type === 'explosion' ? 5 : effect.type === 'gunshot' ? 3.4 : 3, 0x15110a, 0.9);
+                g.lineStyle(effect.type === 'explosion' ? 5 : 3, 0x15110a, 0.9);
                 g.moveTo(sx, sy); g.lineTo(tx, ty);
-                if (effect.type === 'gunshot') {
-                  g.lineStyle(2.6, 0xffe6a0, 0.98);
-                  g.moveTo(sx, sy); g.lineTo(tx, ty);
-                  g.beginFill(0xfff3bd, 0.95);
-                  g.drawCircle(tx, ty, 3);
-                  g.endFill();
-                } else if (effect.type === 'explosion') {
+                if (effect.type === 'explosion') {
                   g.lineStyle(2.6, 0xffcf5d, 0.98);
                   g.moveTo(sx, sy); g.lineTo(tx, ty);
                   g.beginFill(0xfff0a8, 0.95);
@@ -5080,7 +5136,7 @@ export function BattlefieldStage({
             />
           )}
 
-          {travel >= 1 && elapsed < 1050 && effect.type !== 'melee' && (
+          {travel >= 1 && elapsed < 1050 && effect.type !== 'melee' && effect.type !== 'gunshot' && (
             <Graphics
               draw={(g) => {
                 g.clear();
@@ -5190,18 +5246,27 @@ export function BattlefieldStage({
                 } else {
                   const dust = targetMaterial === 'armor' ? 0x3c3d36 : 0x514436;
                   const spark = targetMaterial === 'armor' ? 0xffe9a8 : 0xd6a26a;
+                  const sparkBright = targetMaterial === 'armor' ? 0xfff3c0 : 0xffe0a0;
                   g.beginFill(dust, hitAlpha * 0.38);
                   g.drawEllipse(0, tileSize * 0.09, hitSize * 0.86, hitSize * 0.3);
                   g.endFill();
                   g.lineStyle(3.2, 0x1a0f07, hitAlpha * 0.9);
                   g.drawCircle(0, 0, hitSize * 0.56);
-                  g.lineStyle(1.75, spark, hitAlpha);
-                  g.moveTo(-hitSize * 0.42, -hitSize * 0.1);
-                  g.lineTo(hitSize * 0.42, hitSize * 0.1);
-                  g.moveTo(-hitSize * 0.14, hitSize * 0.3);
-                  g.lineTo(hitSize * 0.2, -hitSize * 0.32);
-                  g.beginFill(spark, hitAlpha * 0.68);
-                  g.drawCircle(0, 0, hitSize * 0.18);
+                  // radiating spark streaks for a punchy impact
+                  g.lineStyle(1.5, sparkBright, hitAlpha);
+                  for (let i = 0; i < 6; i++) {
+                    const a = (Math.PI * 2 * i) / 6 + 0.4;
+                    const inner = hitSize * 0.2;
+                    const outer = hitSize * (0.55 + hitProgress * 0.8);
+                    g.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
+                    g.lineTo(Math.cos(a) * outer, Math.sin(a) * outer);
+                  }
+                  // bright hot core
+                  g.beginFill(spark, hitAlpha * 0.5);
+                  g.drawCircle(0, 0, hitSize * 0.3);
+                  g.endFill();
+                  g.beginFill(0xfff6d0, hitAlpha * 0.92);
+                  g.drawCircle(0, 0, hitSize * 0.16);
                   g.endFill();
                 }
               }}
