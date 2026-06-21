@@ -972,10 +972,10 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               <h3>CONVERT STRATEGIC POINTS</h3>
               <div className="conversion-buttons">
                 <button onClick={() => onConvertMoney(5)} disabled={strategic < 5}>
-                  5 SP → $50
+                  5 SP → $5
                 </button>
                 <button onClick={() => onConvertResearch(3)} disabled={strategic < 3}>
-                  3 SP → 30 RP
+                  3 SP → 9 RP
                 </button>
               </div>
             </div>

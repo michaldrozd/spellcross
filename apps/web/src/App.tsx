@@ -64,6 +64,34 @@ const terrainTextures: Record<string, PIXI.Texture> = {
   structure: isoTileTexture
 };
 
+const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
+  const dq = to.q - from.q;
+  const dr = to.r - from.r;
+  if (dq > 0 && dr === 0) return 0;
+  if (dq > 0 && dr < 0) return 1;
+  if (dq === 0 && dr < 0) return 2;
+  if (dq < 0 && dr === 0) return 3;
+  if (dq < 0 && dr > 0) return 4;
+  if (dq === 0 && dr > 0) return 5;
+  if (dq > 0 && dr > 0) return 6;
+  if (dq < 0 && dr < 0) return 7;
+  return 0;
+};
+
+const movingUnitDuration = (moving: MovingUnit) => {
+  const movementDuration = (moving.path.length - 1) * moving.stepDuration;
+  const segmentTurnDuration = moving.segmentTurnDuration ?? 0;
+  let turnDuration = 0;
+  if (segmentTurnDuration > 0) {
+    for (let index = 0; index + 2 < moving.path.length; index += 1) {
+      const fromOrientation = orientationForStep(moving.path[index], moving.path[index + 1]);
+      const toOrientation = orientationForStep(moving.path[index + 1], moving.path[index + 2]);
+      if (fromOrientation !== toOrientation) turnDuration += segmentTurnDuration;
+    }
+  }
+  return (moving.preAlignDuration ?? 0) + movementDuration + turnDuration;
+};
+
 const unitTextures: Record<string, PIXI.Texture> = {
   infantry: PIXI.Texture.from('/units/infantry.png'),
   vehicle: PIXI.Texture.from('/units/tank.png'),
@@ -204,13 +232,16 @@ const UnitMarker: React.FC<UnitMarkerProps> = ({ unit, size, selected, onClick }
 
 function ensureCampaignStorageSchema() {
   if (typeof window === 'undefined') return;
-  if (window.localStorage.getItem(CAMPAIGN_SCHEMA_KEY) === CAMPAIGN_SCHEMA_VERSION) return;
+  const stored = window.localStorage.getItem(CAMPAIGN_SCHEMA_KEY);
+  if (stored === CAMPAIGN_SCHEMA_VERSION) return;
 
-  for (const slot of [1, 2, 3]) {
-    window.localStorage.removeItem(`${CAMPAIGN_STORAGE_KEY}:${slot}`);
-    window.localStorage.removeItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
+  // Record the new schema version without discarding existing saves. Loading is
+  // resilient per slot (hydrate falls back to a fresh campaign on a parse failure),
+  // so a schema bump no longer wipes every slot — at worst one incompatible slot
+  // resets itself while the others survive.
+  if (stored) {
+    console.info(`Campaign save schema changed (${stored} -> ${CAMPAIGN_SCHEMA_VERSION}); existing saves preserved.`);
   }
-  window.localStorage.removeItem(CAMPAIGN_SLOT_KEY);
   window.localStorage.setItem(CAMPAIGN_SCHEMA_KEY, CAMPAIGN_SCHEMA_VERSION);
 }
 
@@ -289,6 +320,7 @@ function useCampaign() {
     ref.current = loadSavedCampaign(next);
     setSummary(loadSummary(next));
     rerender((n) => n + 1);
+    return ref.current;
   };
   return { campaign: ref.current, mutate, persist, reset, slot, changeSlot, summary };
 }
@@ -744,7 +776,7 @@ const BattleView: React.FC<{
   // Clean up movement animation when complete
   useEffect(() => {
     if (!movingUnit) return;
-    const totalDuration = (movingUnit.preAlignDuration ?? 0) + (movingUnit.path.length - 1) * movingUnit.stepDuration;
+    const totalDuration = movingUnitDuration(movingUnit);
     const timer = setTimeout(() => {
       movingUnitRef.current = null;
       setMovingUnit(null);
@@ -1239,14 +1271,15 @@ const BattleView: React.FC<{
   const actMove = (unitId: string, target: HexCoordinate) => {
     if (deployModeRef.current) return false;
     if (movingUnitRef.current) return false; // Don't start new movement while animating
+    const unit = battle.state.sides.alliance.units.get(unitId);
+    const targetInBounds = target.q >= 0 && target.r >= 0 && target.q < map.width && target.r < map.height;
+    const rejectionCoord = targetInBounds ? target : (unit?.coordinate ?? { q: 0, r: 0 });
     const path = planPathForUnit(battle.state, unitId, target);
     if (!path.success || path.cost === undefined || path.path.length === 0) {
-      rejectMove(target, describeMoveRejection(unitId, target, path.reason ?? 'Move blocked'));
+      rejectMove(rejectionCoord, describeMoveRejection(unitId, target, path.reason ?? 'Move blocked'));
       return false;
     }
 
-    // Get unit's starting position
-    const unit = battle.state.sides.alliance.units.get(unitId);
     if (!unit) return false;
     const startCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
 
@@ -1254,7 +1287,7 @@ const BattleView: React.FC<{
     if (!moveResult.success) {
       setPlannedPath(null);
       setPlannedDestination(null);
-      rejectMove(target, moveResult.error || 'Move order blocked');
+      rejectMove(rejectionCoord, moveResult.error || 'Move order blocked');
       return false;
     }
 
@@ -1278,13 +1311,15 @@ const BattleView: React.FC<{
 
     const fullPath = [startCoord, ...actualPath];
     const stepDuration = isVehicleMove ? 420 : 180;
+    const isM113Move = unit.definitionId.toLowerCase().includes('m113');
     if (fullPath.length >= 2) {
       const nextMovingUnit = {
         unitId,
         path: fullPath,
         startTime: Date.now(),
         stepDuration,
-        preAlignDuration: isVehicleMove ? 150 : 0
+        preAlignDuration: isVehicleMove ? (isM113Move ? 0 : 150) : 0,
+        segmentTurnDuration: isM113Move ? 90 : 0
       };
       movingUnitRef.current = nextMovingUnit;
       flushSync(() => {
@@ -1569,12 +1604,6 @@ const BattleView: React.FC<{
           <div className={`battle-phase-notice ${phaseNotice.tone}`}>
             <strong>{phaseNotice.title}</strong>
             <span>{phaseNotice.detail}</span>
-          </div>
-        ) : null}
-        {invalidMoveFeedback ? (
-          <div className="battle-phase-notice movement-warning">
-            <strong>ORDER REJECTED</strong>
-            <span>{invalidMoveFeedback.message}</span>
           </div>
         ) : null}
         {showRanges && selectedUnit ? (
@@ -1957,8 +1986,8 @@ export function App() {
   };
 
   const handleContinue = (continueSlot: number) => {
-    changeSlot(continueSlot);
-    setMode('strategic');
+    const loaded = changeSlot(continueSlot);
+    setMode(loaded.activeBattle ? 'battle' : 'strategic');
   };
 
   useEffect(() => {
@@ -2148,13 +2177,12 @@ export function App() {
         onRefill={(id, tier) => mutate((s) => refillUnit(s, bundle, id, tier))}
         onDismiss={(id) => mutate((s) => dismissUnit(s, id))}
         onResearch={(topic) => {
-          mutate((s) => {
-            try {
-              startResearch(s, bundle, topic);
-            } catch (err) {
-              console.error(err);
-            }
-          });
+          try {
+            mutate((s) => startResearch(s, bundle, topic));
+          } catch (err) {
+            const message = err instanceof Error ? err.message : 'Research could not be queued';
+            showToast(message, 'error');
+          }
         }}
         onConvertMoney={(amt) => mutate((s) => convertStrategicToMoney(s, amt))}
         onConvertResearch={(amt) => mutate((s) => convertStrategicToResearch(s, amt))}
