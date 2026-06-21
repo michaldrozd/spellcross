@@ -13,6 +13,10 @@ class AudioManagerClass {
   private musicVolume: number = 0.5;
   private enabled: boolean = true;
   private audioContext: AudioContext | null = null;
+  // Real SFX files dropped in /public/audio/<type>.<ext> are preferred over the procedural
+  // synthesis; missing ones fall back to generateSound so the game always has audio.
+  private fileBuffers: Map<SoundType, AudioBuffer> = new Map();
+  private filesProbed = false;
 
   constructor() {
     // Initialize audio context on first user interaction
@@ -384,10 +388,53 @@ class AudioManagerClass {
     }
   }
 
+  private async probeFiles(): Promise<void> {
+    if (this.filesProbed) return;
+    this.filesProbed = true;
+    const ctx = this.getContext();
+    const types: SoundType[] = ['gunshot', 'explosion', 'tankMove', 'infantry', 'hit', 'death', 'select', 'error', 'victory', 'defeat', 'move', 'turnStart', 'magic'];
+    const exts = ['webm', 'mp3', 'ogg', 'wav'];
+    await Promise.all(types.map(async (type) => {
+      for (const ext of exts) {
+        try {
+          const res = await fetch(`/audio/${type}.${ext}`, { cache: 'force-cache' });
+          if (!res.ok) continue;
+          const ct = res.headers.get('content-type') ?? '';
+          if (!ct.startsWith('audio/') && !ct.includes('octet-stream')) continue; // dev server 200s with html for misses
+          const decoded = await ctx.decodeAudioData(await res.arrayBuffer());
+          this.fileBuffers.set(type, decoded);
+          return;
+        } catch { /* try next extension */ }
+      }
+    }));
+  }
+
+  private playFile(type: SoundType): boolean {
+    const buffer = this.fileBuffers.get(type);
+    if (!buffer) return false;
+    const ctx = this.getContext();
+    // Infantry small-arms play as a rapid automatic burst (matches the visual tracer burst).
+    const rounds = type === 'gunshot' ? 5 : 1;
+    const gap = 0.07;
+    for (let k = 0; k < rounds; k++) {
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      if (rounds > 1) src.playbackRate.value = 0.96 + ((k * 13) % 7) * 0.012; // tiny per-round pitch variation
+      const gain = ctx.createGain();
+      gain.gain.value = this.masterVolume * this.sfxVolume * (rounds > 1 ? 0.85 : 1);
+      src.connect(gain);
+      gain.connect(ctx.destination);
+      src.start(ctx.currentTime + k * gap);
+    }
+    return true;
+  }
+
   play(type: SoundType): void {
     if (!this.enabled) return;
     try {
-      this.generateSound(type);
+      if (!this.filesProbed) void this.probeFiles();
+      if (this.playFile(type)) return; // real SFX file if present
+      this.generateSound(type); // otherwise procedural fallback
     } catch (e) {
       console.warn('Audio play failed:', e);
     }
