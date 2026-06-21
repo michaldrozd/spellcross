@@ -6,7 +6,7 @@ import { canAffordAttack } from '@spellcross/core';
 import { axialDistance } from '@spellcross/core';
 import { calculateAttackRange } from '@spellcross/core';
 import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
-import { Matrix, Texture, Rectangle, Polygon, MIPMAP_MODES, SCALE_MODES, settings } from 'pixi.js';
+import { Matrix, Texture, Rectangle, Polygon, MIPMAP_MODES, SCALE_MODES, WRAP_MODES, settings } from 'pixi.js';
 import type { FederatedPointerEvent, Graphics as PixiGraphics } from 'pixi.js';
 
 import { TextStyle } from 'pixi.js';
@@ -39,6 +39,45 @@ const crispTexture = (texture: Texture) => {
     baseTexture.update?.();
   }
   return texture;
+};
+
+// Painted iso building sprites used in place of the flat procedural boxes. keepTop crops the
+// baked-in ground base off the bottom of each 1024² asset so it sits cleanly on the terrain.
+const PAINTED_BUILDINGS: Array<{ tex: string; keepTop: number }> = [
+  { tex: 'assets/generated/concrete_bunker.png', keepTop: 0.82 },
+  { tex: 'assets/generated/hangar_building.png', keepTop: 0.97 },
+  { tex: 'assets/generated/watchtower.png', keepTop: 0.72 },
+  { tex: 'assets/generated/ruins_building.png', keepTop: 0.74 }
+];
+
+const hashStringToIndex = (s: string, mod: number) => {
+  let h = 0;
+  for (let i = 0; i < s.length; i += 1) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return mod > 0 ? h % mod : 0;
+};
+
+const croppedBuildingTextureCache = new Map<string, Texture>();
+const getCroppedBuildingTexture = (rawPath: string, keepTop: number): Texture => {
+  const key = `${rawPath}@${keepTop}`;
+  const cached = croppedBuildingTextureCache.get(key);
+  if (cached) return cached;
+  const full = crispTexture(Texture.from(rawPath.startsWith('/') ? rawPath : `/${rawPath}`));
+  const base = full.baseTexture;
+  if (keepTop >= 1) {
+    croppedBuildingTextureCache.set(key, full);
+    return full;
+  }
+  const frameFor = () =>
+    new Rectangle(0, 0, base.realWidth || 1024, Math.round((base.realHeight || 1024) * keepTop));
+  const cropped = new Texture(base, frameFor());
+  if (!base.valid) {
+    base.once('loaded', () => {
+      cropped.frame = frameFor();
+      cropped.updateUvs();
+    });
+  }
+  croppedBuildingTextureCache.set(key, cropped);
+  return cropped;
 };
 
 const tileSize = 56;
@@ -80,11 +119,13 @@ export interface MovingUnit {
   startTime: number;
   stepDuration: number;
   preAlignDuration?: number;
+  segmentTurnDuration?: number;
 }
 
 export interface InvalidMoveFeedback {
   coordinate: HexCoordinate;
   time: number;
+  message?: string;
 }
 
 export interface BattlefieldStageProps {
@@ -232,6 +273,12 @@ const OPPOSITE_DIRECTION_NAMES: Record<string, string> = {
   nw: 'se'
 };
 const VEHICLE_SHEET_DIRECTION_OVERRIDES: Record<string, Record<string, string>> = {
+  m113_apc: {
+    ne: 'sw',
+    se: 'nw',
+    sw: 'ne',
+    nw: 'se'
+  },
   tank_directional: OPPOSITE_DIRECTION_NAMES,
   artillery_directional: OPPOSITE_DIRECTION_NAMES
 };
@@ -263,8 +310,25 @@ export const directionNameForScreenVector = (vector: { x: number; y: number }) =
   return sectors[((sector % 8) + 8) % 8];
 };
 
-export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y: number }, spriteName: string) =>
-  cleanVehicleSheetDirection(spriteName, directionNameForScreenVector(vector));
+const segmentOrientation = (fromCoord: HexCoordinate, toCoord: HexCoordinate) => {
+  const dq = toCoord.q - fromCoord.q;
+  const dr = toCoord.r - fromCoord.r;
+  if (dq > 0 && dr === 0) return 0;
+  if (dq > 0 && dr < 0) return 1;
+  if (dq === 0 && dr < 0) return 2;
+  if (dq < 0 && dr === 0) return 3;
+  if (dq < 0 && dr > 0) return 4;
+  if (dq === 0 && dr > 0) return 5;
+  if (dq > 0 && dr > 0) return 6;
+  if (dq < 0 && dr < 0) return 7;
+  return 0;
+};
+
+export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y: number }, spriteName: string) => {
+  const direction = directionNameForScreenVector(vector);
+  const mapped = VEHICLE_SHEET_DIRECTION_OVERRIDES[spriteName]?.[direction] ?? direction;
+  return cleanVehicleSheetDirection(spriteName, mapped);
+};
 
 const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 const UNIT_SHEET_FRAME_SIZE = 128;
@@ -328,8 +392,12 @@ const DIRECTIONAL_UNIT_GROUND_BOTTOMS: Record<string, { idle: number; walk: Reco
     walk: { n: 114, ne: 116, e: 116, se: 116, s: 114, sw: 117, w: 117, nw: 117 }
   }
 };
-const DIRECTIONAL_UNIT_DIRECTION_LIFT: Record<string, Record<string, number>> = {
-  m113_apc: { n: 7, ne: 7, e: 7, se: 7, s: 7, sw: 7, w: 7, nw: 7 }
+const DIRECTIONAL_UNIT_ALPHA_BOTTOMS: Record<string, Record<string, number>> = {
+  m113_apc: { n: 121, ne: 126, e: 119, se: 125, s: 121, sw: 124, w: 119, nw: 126 }
+};
+const DIRECTIONAL_UNIT_DIRECTION_LIFT: Record<string, Record<string, number>> = {};
+const DIRECTIONAL_UNIT_GROUND_BIAS: Record<string, number> = {
+  m113_apc: 7
 };
 
 type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
@@ -365,8 +433,8 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
 }
 
 function unitContactFootprint(tile: number, unitType: string, definitionId: string): UnitVisualFootprint {
-  if (unitType === 'support' && definitionId.includes('truck')) return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.07 };
-  if (unitType === 'vehicle') return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.07 };
+  if (unitType === 'support' && definitionId.includes('truck')) return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.035 };
+  if (unitType === 'vehicle') return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.035 };
   if (unitType === 'artillery') return { rx: tile * 0.3, ry: tile * 0.075, alpha: 0.4, y: tile * 0.06 };
   if (unitType === 'air') return { rx: tile * 0.22, ry: tile * 0.055, alpha: 0.12, y: tile * 0.08 };
   if (definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead')) {
@@ -496,6 +564,8 @@ export const directionalSpriteGroundOffset = (
   direction: string,
   scale: number
 ) => {
+  const alphaBottom = DIRECTIONAL_UNIT_ALPHA_BOTTOMS[spriteName]?.[direction];
+  if (alphaBottom !== undefined) return (UNIT_SHEET_FRAME_SIZE - alphaBottom) * scale;
   const directionLift = DIRECTIONAL_UNIT_DIRECTION_LIFT[spriteName]?.[direction] ?? 0;
   if (state !== 'walk') return directionLift === 0 ? 0 : -directionLift;
   const ground = DIRECTIONAL_UNIT_GROUND_BOTTOMS[spriteName];
@@ -1303,10 +1373,23 @@ export function BattlefieldStage({
 
     const grass = makeCanvasTexture((ctx, w, h) => {
       ctx.fillStyle = shade(grassBase, 1.0); ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = shade(grassBase, 0.86);
-      for (let i = 0; i < 12; i++) ctx.fillRect((i * 23) % w, (i * 31) % h, 10 + (i % 5), 2);
-      for (let i = 0; i < w * h * 0.055; i++) { dot(ctx, (i*29)%w, (i*53)%h, shade(grassBase, 1.1), 0.72); }
-      for (let i = 0; i < w * h * 0.035; i++) { dot(ctx, (i*17)%w, (i*41)%h, shade(grassBase, 0.86), 0.74); }
+      // mottled patches for painterly tonal variation (lighter/darker greens)
+      for (let i = 0; i < 28; i++) {
+        const t = ((i * 37) % 100) / 100;
+        ctx.globalAlpha = 0.5;
+        ctx.fillStyle = shade(grassBase, 0.78 + t * 0.5);
+        ctx.fillRect((i * 19) % w, (i * 29) % h, 6 + (i % 9), 4 + (i % 5));
+      }
+      ctx.globalAlpha = 1;
+      // grass blades, dark then bright
+      ctx.fillStyle = shade(grassBase, 0.7);
+      for (let i = 0; i < 16; i++) ctx.fillRect((i * 23) % w, (i * 31) % h, 9 + (i % 6), 2);
+      ctx.fillStyle = shade(grassBase, 1.24);
+      for (let i = 0; i < 14; i++) ctx.fillRect((i * 13) % w, (i * 19) % h, 7 + (i % 5), 1);
+      // dry/dirt flecks + highlight speckle
+      for (let i = 0; i < w * h * 0.02; i++) { dot(ctx, (i * 41) % w, (i * 23) % h, '#6b5a3a', 0.5); }
+      for (let i = 0; i < w * h * 0.05; i++) { dot(ctx, (i * 29) % w, (i * 53) % h, shade(grassBase, 1.16), 0.7); }
+      for (let i = 0; i < w * h * 0.035; i++) { dot(ctx, (i * 17) % w, (i * 41) % h, shade(grassBase, 0.8), 0.72); }
     });
 
     const forest = makeCanvasTexture((ctx, w, h) => {
@@ -1446,7 +1529,9 @@ export function BattlefieldStage({
               const blob = await res.blob();
               await ensureImageDecodable(blob);
               const objUrl = URL.createObjectURL(blob);
-              out[n] = crispTexture(Texture.from(objUrl));
+              const loaded = crispTexture(Texture.from(objUrl));
+              (loaded.baseTexture as any).wrapMode = WRAP_MODES.REPEAT; // tile painted ground textures seamlessly
+              out[n] = loaded;
               anyLoaded = true;
               explicitColorTextures = true;
             } catch {
@@ -1798,44 +1883,6 @@ export function BattlefieldStage({
   offsetX = Math.round(offsetX);
   offsetY = Math.round(offsetY);
 
-  useEffect(() => {
-    if (typeof window === 'undefined' || !import.meta.env.DEV) return;
-    (window as any).__battleCamera = {
-      centerOnCoord: (q: number, r: number) => {
-        const p = toScreen({ q, r });
-        setFollowTargetPx({ x: p.x + (ISO_MODE ? isoBaseX : 0), y: p.y });
-        return true;
-      },
-      centerOnWorld: (x: number, y: number) => {
-        setFollowTargetPx({ x, y });
-        return true;
-      },
-      screenForCoord: (q: number, r: number) => {
-        const p = toScreen({ q, r });
-        return {
-          x: offsetX + (p.x + (ISO_MODE ? isoBaseX : 0)) * scale,
-          y: offsetY + p.y * scale
-        };
-      },
-      setZoom: (next: number) => {
-        const clamped = clampCameraScale(next);
-        zoomRef.current = clamped;
-        setZoom(clamped);
-        return clamped;
-      },
-      metrics: () => ({
-        centerX: (-offsetX + hostSize.w / 2) / scale,
-        centerY: (-offsetY + hostSize.h / 2) / scale,
-        scale,
-        stageWidth: stageDimensions.width,
-        stageHeight: stageDimensions.height
-      })
-    };
-    return () => {
-      delete (window as any).__battleCamera;
-    };
-  }, [hostSize.h, hostSize.w, offsetX, offsetY, scale, stageDimensions.height, stageDimensions.width, toScreen]);
-
   // Precompute friendly units by coordinate for quick tile-click selection
   const friendlyByCoord = useMemo(() => {
     const m = new Map<string, any>();
@@ -1956,6 +2003,51 @@ export function BattlefieldStage({
     } as Record<CornerKey, { x: number; y: number }>;
     return { avgHeight: elev, P, quad: quadBase, center, inset };
   }, [map.tiles, map.width, snappedCorners]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !import.meta.env.DEV) return;
+    const worldCenterForCoord = (q: number, r: number) => {
+      const pos = toScreen({ q, r });
+      const geom = topGeomFor(q, r);
+      return {
+        x: pos.x + (ISO_MODE ? isoBaseX : 0) + geom.center.x,
+        y: pos.y - geom.avgHeight * ELEV_Y_OFFSET + geom.center.y
+      };
+    };
+    (window as any).__battleCamera = {
+      centerOnCoord: (q: number, r: number) => {
+        setFollowTargetPx(worldCenterForCoord(q, r));
+        return true;
+      },
+      centerOnWorld: (x: number, y: number) => {
+        setFollowTargetPx({ x, y });
+        return true;
+      },
+      screenForCoord: (q: number, r: number) => {
+        const center = worldCenterForCoord(q, r);
+        return {
+          x: offsetX + center.x * scale,
+          y: offsetY + center.y * scale
+        };
+      },
+      setZoom: (next: number) => {
+        const clamped = clampCameraScale(next);
+        zoomRef.current = clamped;
+        setZoom(clamped);
+        return clamped;
+      },
+      metrics: () => ({
+        centerX: (-offsetX + hostSize.w / 2) / scale,
+        centerY: (-offsetY + hostSize.h / 2) / scale,
+        scale,
+        stageWidth: stageDimensions.width,
+        stageHeight: stageDimensions.height
+      })
+    };
+    return () => {
+      delete (window as any).__battleCamera;
+    };
+  }, [hostSize.h, hostSize.w, offsetX, offsetY, scale, stageDimensions.height, stageDimensions.width, toScreen, topGeomFor]);
 
   const tileAtWorldPoint = useCallback((point: { x: number; y: number }): HexCoordinate | null => {
     const roughCol = ((point.y / (ISO_TILE_H / 2)) + (point.x / (ISO_TILE_W / 2))) / 2;
@@ -2169,9 +2261,20 @@ export function BattlefieldStage({
         externalTerrainTextures?.water ??
         ((terrainTextures as any).water ?? tex);
       const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
-      const overlayAlpha = coloredTex ? (isVisible ? 0.42 : 0.28) : (isVisible ? 0.17 : 0.11);
+      const overlayAlpha = coloredTex ? (isVisible ? 0.62 : 0.42) : (isVisible ? 0.4 : 0.26);
       const texMatrix = new Matrix();
-      texMatrix.translate((q * 13 + r * 7) % 64, (q * 5 + r * 11) % 64);
+      if (coloredTex) {
+        // Map the large painted texture continuously across the map (world-space) so the
+        // ground reads as one cohesive painted surface; REPEAT wrap tiles it seamlessly.
+        // u = k * world  →  matrix.scale(1/k) then translate(-graphicsOrigin).
+        const k = 2; // texels per world unit (smaller = texture spans more tiles)
+        const gx = pos.x;
+        const gy = pos.y - avgHeight * ELEV_Y_OFFSET;
+        texMatrix.scale(1 / k, 1 / k);
+        texMatrix.translate(-gx, -gy);
+      } else {
+        texMatrix.translate((q * 13 + r * 7) % 64, (q * 5 + r * 11) % 64);
+      }
       const center = {
         x: (cornerPoints.NW.x + cornerPoints.NE.x + cornerPoints.SE.x + cornerPoints.SW.x) / 4,
         y: (cornerPoints.NW.y + cornerPoints.NE.y + cornerPoints.SE.y + cornerPoints.SW.y) / 4
@@ -2314,7 +2417,12 @@ export function BattlefieldStage({
                     { x: center.x - nx, y: center.y - ny }
                   ];
                   const roadTextureMatrix = new Matrix();
-                  roadTextureMatrix.translate((q * 17 + r * 5 + i * 11) % 64, (q * 3 + r * 19 + i * 7) % 32);
+                  if (coloredTex) {
+                    roadTextureMatrix.scale(0.5, 0.5);
+                    roadTextureMatrix.translate(-pos.x, -(pos.y - avgHeight * ELEV_Y_OFFSET));
+                  } else {
+                    roadTextureMatrix.translate((q * 17 + r * 5 + i * 11) % 64, (q * 3 + r * 19 + i * 7) % 32);
+                  }
                   g.beginTextureFill({ texture: roadTex, matrix: roadTextureMatrix, alpha: isVisible ? 0.32 : 0.18 });
                   drawPoly(g as unknown as PixiGraphics, poly);
                   g.endFill();
@@ -2389,7 +2497,12 @@ export function BattlefieldStage({
                     { x: center.x - nx, y: center.y - ny }
                   ];
                   const waterTextureMatrix = new Matrix();
-                  waterTextureMatrix.translate((q * 23 + r * 7 + i * 13) % 64, (q * 5 + r * 17 + i * 11) % 32);
+                  if (coloredTex) {
+                    waterTextureMatrix.scale(1 / 1.5, 1 / 1.5);
+                    waterTextureMatrix.translate(-pos.x, -(pos.y - avgHeight * ELEV_Y_OFFSET));
+                  } else {
+                    waterTextureMatrix.translate((q * 23 + r * 7 + i * 13) % 64, (q * 5 + r * 17 + i * 11) % 32);
+                  }
                   g.beginTextureFill({ texture: waterTex, matrix: waterTextureMatrix, alpha: isVisible ? 0.46 : 0.24 });
                   drawPoly(g as unknown as PixiGraphics, poly);
                   g.endFill();
@@ -2759,14 +2872,14 @@ export function BattlefieldStage({
             y={pos.y - avgHeight * ELEV_Y_OFFSET}
             draw={(g) => {
               g.clear();
-              g.lineStyle(1, 0x07140d, isVisible ? 0.11 : 0.055);
+              g.lineStyle(1, 0x0b1a12, isVisible ? 0.042 : 0.024);
               g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
               g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
               g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
               g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
               g.closePath();
               if (isVisible) {
-                g.lineStyle(1, 0xd7e2b7, 0.035);
+                g.lineStyle(1, 0xd7e2b7, 0.012);
                 g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
                 g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
                 g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
@@ -3206,17 +3319,17 @@ export function BattlefieldStage({
             g.clear();
             if (ISO_MODE && geom) {
               const shape = geom.inset(0.86);
-              g.beginFill(0x89b46f, externalTexturesAreColored ? 0.055 : 0.075);
+              g.beginFill(0x89b46f, externalTexturesAreColored ? 0.03 : 0.044);
               drawPoly(g as PixiGraphics, shape);
               g.endFill();
-              g.lineStyle(2.15, 0x10190d, 0.3);
+              g.lineStyle(1.35, 0x10190d, 0.18);
               edges.forEach(([aIdx, bIdx], edgeIndex) => {
                 const d = edgeDirs[edgeIndex];
                 if (rangeOverlayCoords.has(`${q + d.dq},${r + d.dr}`)) return;
                 g.moveTo(shape[aIdx].x, shape[aIdx].y);
                 g.lineTo(shape[bIdx].x, shape[bIdx].y);
               });
-              g.lineStyle(1.05, 0xd2c66e, 0.54);
+              g.lineStyle(0.75, 0xd2c66e, 0.3);
               edges.forEach(([aIdx, bIdx], edgeIndex) => {
                 const d = edgeDirs[edgeIndex];
                 if (rangeOverlayCoords.has(`${q + d.dq},${r + d.dr}`)) return;
@@ -3224,7 +3337,7 @@ export function BattlefieldStage({
                 g.lineTo(shape[bIdx].x, shape[bIdx].y);
               });
               if ((q * 7 + r * 11) % 3 === 0) {
-                g.lineStyle(0.75, 0xe5d98f, 0.16);
+                g.lineStyle(0.65, 0xe5d98f, 0.1);
                 g.moveTo(shape[3].x * 0.36, shape[3].y * 0.36);
                 g.lineTo(shape[1].x * 0.56, shape[1].y * 0.56);
               }
@@ -3392,7 +3505,7 @@ export function BattlefieldStage({
           key="path-polyline"
           draw={(g) => {
             g.clear();
-            g.lineStyle(2, 0x7ec8a1, 0.9);
+            g.lineStyle(2.4, 0x07110d, 0.5);
             for (let i = 0; i < steps.length - 1; i++) {
               const a = steps[i];
               const b = steps[i + 1];
@@ -3407,6 +3520,35 @@ export function BattlefieldStage({
               const pb = { x: pb0.x, y: pb0.y - geomB.avgHeight * ELEV_Y_OFFSET };
               g.moveTo(pa.x, pa.y);
               g.lineTo(pb.x, pb.y);
+            }
+            g.lineStyle(1.1, 0xa7dcc7, 0.82);
+            for (let i = 0; i < steps.length - 1; i++) {
+              const a = steps[i];
+              const b = steps[i + 1];
+              const idxA = a.r * map.width + a.q;
+              const idxB = b.r * map.width + b.q;
+              if (!visibleTiles.has(idxA) || !visibleTiles.has(idxB)) continue;
+              const pa0 = toScreen(a);
+              const pb0 = toScreen(b);
+              const geomA = topGeomFor(a.q, a.r);
+              const geomB = topGeomFor(b.q, b.r);
+              const pa = { x: pa0.x, y: pa0.y - geomA.avgHeight * ELEV_Y_OFFSET };
+              const pb = { x: pb0.x, y: pb0.y - geomB.avgHeight * ELEV_Y_OFFSET };
+              g.moveTo(pa.x, pa.y);
+              g.lineTo(pb.x, pb.y);
+            }
+            for (let i = 1; i < steps.length; i++) {
+              const step = steps[i];
+              const idx = step.r * map.width + step.q;
+              if (!visibleTiles.has(idx)) continue;
+              const p0 = toScreen(step);
+              const geom = topGeomFor(step.q, step.r);
+              const p = { x: p0.x, y: p0.y - geom.avgHeight * ELEV_Y_OFFSET };
+              const radius = i === steps.length - 1 ? 2.6 : 1.7;
+              g.beginFill(0xc7f2df, i === steps.length - 1 ? 0.7 : 0.45);
+              g.lineStyle(0.8, 0x092019, 0.42);
+              g.drawCircle(p.x, p.y, radius);
+              g.endFill();
             }
           }}
         />
@@ -3472,67 +3614,102 @@ export function BattlefieldStage({
     const p = toScreen(coord);
     const geom = topGeomFor(coord.q, coord.r);
     const pulse = 1 - elapsed / duration;
-    const scale = 0.88 + (1 - pulse) * 0.12;
+    const markerScale = 0.88 + (1 - pulse) * 0.12;
     const alpha = 0.24 + pulse * 0.42;
     const x = p.x;
     const y = p.y - geom.avgHeight * ELEV_Y_OFFSET;
 
-    return (
-      <Graphics
-        key={`invalid-move-${invalidMoveFeedback.time}`}
-        zIndex={50}
-        x={x}
-        y={y}
-        draw={(g) => {
-          g.clear();
-          const drawCross = () => {
-            g.lineStyle(4, 0x140504, Math.min(0.56, alpha));
-            g.moveTo(-tileSize * 0.26, -tileSize * 0.1);
-            g.lineTo(tileSize * 0.26, tileSize * 0.1);
-            g.moveTo(tileSize * 0.26, -tileSize * 0.1);
-            g.lineTo(-tileSize * 0.26, tileSize * 0.1);
-            g.lineStyle(1.55, 0xffd277, Math.min(0.78, alpha + 0.16));
-            g.moveTo(-tileSize * 0.22, -tileSize * 0.085);
-            g.lineTo(tileSize * 0.22, tileSize * 0.085);
-            g.moveTo(tileSize * 0.22, -tileSize * 0.085);
-            g.lineTo(-tileSize * 0.22, tileSize * 0.085);
-          };
+    const feedbackLabel = invalidMoveFeedback.message ?? 'Move blocked';
 
-          if (ISO_MODE) {
-            const ring = geom.inset(scale);
-            g.beginFill(0x6f1812, alpha * 0.075);
-            drawPoly(g as PixiGraphics, ring);
-            g.endFill();
-            g.lineStyle(3.2, 0x170706, alpha * 0.66);
-            drawPoly(g as PixiGraphics, ring);
-            g.lineStyle(1.25, 0xf05a43, Math.min(0.78, alpha + 0.12));
-            drawPoly(g as PixiGraphics, ring);
-            g.lineStyle(0.8, 0xffd277, 0.18 * alpha);
-            g.moveTo(ring[3].x * 0.5, ring[3].y * 0.5);
-            g.lineTo(ring[1].x * 0.65, ring[1].y * 0.65);
-            drawCross();
-          } else {
-            const s = (tileSize / 2) * scale;
-            const hw = (hexWidth / 2) * scale;
-            const pts = [
-              { x: 0, y: -s },
-              { x: hw, y: -s / 2 },
-              { x: hw, y: s / 2 },
-              { x: 0, y: s },
-              { x: -hw, y: s / 2 },
-              { x: -hw, y: -s / 2 }
-            ];
-            g.beginFill(0x6f1812, alpha * 0.075);
-            drawPoly(g as PixiGraphics, pts);
-            g.endFill();
-            g.lineStyle(1.4, 0xf05a43, Math.min(0.78, alpha + 0.12));
-            drawPoly(g as PixiGraphics, pts);
-            drawCross();
-          }
-        }}
-      />
+    return (
+      <Container key={`invalid-move-${invalidMoveFeedback.time}`} zIndex={60000} x={x} y={y}>
+        <Graphics
+          draw={(g) => {
+            g.clear();
+            const drawCross = () => {
+              g.lineStyle(4, 0x140504, Math.min(0.56, alpha));
+              g.moveTo(-tileSize * 0.26, -tileSize * 0.1);
+              g.lineTo(tileSize * 0.26, tileSize * 0.1);
+              g.moveTo(tileSize * 0.26, -tileSize * 0.1);
+              g.lineTo(-tileSize * 0.26, tileSize * 0.1);
+              g.lineStyle(1.55, 0xffd277, Math.min(0.78, alpha + 0.16));
+              g.moveTo(-tileSize * 0.22, -tileSize * 0.085);
+              g.lineTo(tileSize * 0.22, tileSize * 0.085);
+              g.moveTo(tileSize * 0.22, -tileSize * 0.085);
+              g.lineTo(-tileSize * 0.22, tileSize * 0.085);
+            };
+
+            if (ISO_MODE) {
+              const ring = geom.inset(markerScale);
+              g.beginFill(0x6f1812, alpha * 0.075);
+              drawPoly(g as PixiGraphics, ring);
+              g.endFill();
+              g.lineStyle(3.2, 0x170706, alpha * 0.66);
+              drawPoly(g as PixiGraphics, ring);
+              g.lineStyle(1.25, 0xf05a43, Math.min(0.78, alpha + 0.12));
+              drawPoly(g as PixiGraphics, ring);
+              g.lineStyle(0.8, 0xffd277, 0.18 * alpha);
+              g.moveTo(ring[3].x * 0.5, ring[3].y * 0.5);
+              g.lineTo(ring[1].x * 0.65, ring[1].y * 0.65);
+              drawCross();
+            } else {
+              const s = (tileSize / 2) * markerScale;
+              const hw = (hexWidth / 2) * markerScale;
+              const pts = [
+                { x: 0, y: -s },
+                { x: hw, y: -s / 2 },
+                { x: hw, y: s / 2 },
+                { x: 0, y: s },
+                { x: -hw, y: s / 2 },
+                { x: -hw, y: -s / 2 }
+              ];
+              g.beginFill(0x6f1812, alpha * 0.075);
+              drawPoly(g as PixiGraphics, pts);
+              g.endFill();
+              g.lineStyle(1.4, 0xf05a43, Math.min(0.78, alpha + 0.12));
+              drawPoly(g as PixiGraphics, pts);
+              drawCross();
+            }
+          }}
+        />
+        {/* Counter-scale the label so it stays a fixed on-screen size and renders crisp
+            (net scale ≈ 1) regardless of camera zoom; the tile marker above stays world-space. */}
+        <Container y={-tileSize * 0.78} scale={1 / scale}>
+          <Graphics
+            draw={(g) => {
+              g.clear();
+              const labelFs = 14;
+              const labelW = Math.max(96, feedbackLabel.length * labelFs * 0.62 + 18);
+              const labelH = labelFs + 10;
+              const plateAlpha = Math.min(0.86, 0.5 + pulse * 0.42);
+              g.beginFill(0x080a0b, plateAlpha);
+              g.drawRoundedRect(-labelW / 2, -labelH / 2, labelW, labelH, 4);
+              g.endFill();
+              g.lineStyle(1.2, 0xf05a43, Math.min(0.72, 0.3 + pulse * 0.42));
+              g.drawRoundedRect(-labelW / 2, -labelH / 2, labelW, labelH, 4);
+            }}
+          />
+          <Text
+            text={feedbackLabel}
+            x={0}
+            y={0}
+            anchor={{ x: 0.5, y: 0.5 }}
+            resolution={2}
+            alpha={Math.min(0.97, 0.55 + pulse * 0.42)}
+            style={new TextStyle({
+              fontFamily: 'Courier New',
+              fontSize: 14,
+              fontWeight: '700',
+              fill: 0xffe6a6,
+              stroke: 0x120604,
+              strokeThickness: 3,
+              align: 'center'
+            })}
+          />
+        </Container>
+      </Container>
     );
-  }, [invalidMoveFeedback, map.height, map.width, now, topGeomFor, toScreen]);
+  }, [invalidMoveFeedback, map.height, map.width, now, topGeomFor, toScreen, scale, tileSize]);
 
   // Elevation walls drawn above overlays for correct occlusion
   const tileWalls = useMemo(() => {
@@ -3843,21 +4020,55 @@ export function BattlefieldStage({
           const preAlignDuration = Math.max(0, movingUnit.preAlignDuration ?? 0);
           const elapsed = Math.max(0, rawElapsed - preAlignDuration);
           const totalSteps = movingUnit.path.length - 1;
-          const currentStepFloat = elapsed / movingUnit.stepDuration;
-          const currentStep = Math.min(Math.max(0, Math.floor(currentStepFloat)), totalSteps - 1);
-          const stepProgress = rawElapsed < preAlignDuration ? 0 : Math.min(Math.max(0, currentStepFloat - currentStep), 1);
-          const easedProgress = stepProgress * stepProgress * (3 - 2 * stepProgress);
+          const segmentTurnDuration = Math.max(0, movingUnit.segmentTurnDuration ?? 0);
+          let remainingElapsed = elapsed;
+          let currentStep = 0;
+          let currentStepFloat = 0;
+          let stepProgress = rawElapsed < preAlignDuration ? 0 : 1;
+          let isTurnPhase = false;
+
+          for (let stepIndex = 0; stepIndex < totalSteps; stepIndex += 1) {
+            currentStep = stepIndex;
+            if (remainingElapsed <= movingUnit.stepDuration || stepIndex === totalSteps - 1) {
+              stepProgress = rawElapsed < preAlignDuration ? 0 : Math.min(Math.max(remainingElapsed / movingUnit.stepDuration, 0), 1);
+              currentStepFloat = stepIndex + stepProgress;
+              break;
+            }
+
+            remainingElapsed -= movingUnit.stepDuration;
+            const fromOrientation = segmentOrientation(movingUnit.path[stepIndex], movingUnit.path[stepIndex + 1]);
+            const toOrientation = stepIndex + 2 < movingUnit.path.length
+              ? segmentOrientation(movingUnit.path[stepIndex + 1], movingUnit.path[stepIndex + 2])
+              : fromOrientation;
+            const turnDuration = fromOrientation !== toOrientation ? segmentTurnDuration : 0;
+            if (turnDuration > 0 && remainingElapsed <= turnDuration) {
+              currentStep = stepIndex;
+              currentStepFloat = stepIndex + 1;
+              stepProgress = 1;
+              isTurnPhase = true;
+              break;
+            }
+
+            remainingElapsed -= turnDuration;
+            if (stepIndex === totalSteps - 1) {
+              currentStepFloat = totalSteps;
+              stepProgress = 1;
+            }
+          }
 
           const fromCoord = movingUnit.path[currentStep];
           const toCoord = movingUnit.path[currentStep + 1];
 
           if (fromCoord && toCoord && currentStep < totalSteps) {
-            movingThisUnit = true;
+            const easedProgress = stepProgress * stepProgress * (3 - 2 * stepProgress);
+            movingThisUnit = !isTurnPhase;
             movementPhase = currentStepFloat;
-            displayCoord = {
-              q: fromCoord.q + (toCoord.q - fromCoord.q) * easedProgress,
-              r: fromCoord.r + (toCoord.r - fromCoord.r) * easedProgress
-            };
+            displayCoord = isTurnPhase
+              ? { ...toCoord }
+              : {
+                  q: fromCoord.q + (toCoord.q - fromCoord.q) * easedProgress,
+                  r: fromCoord.r + (toCoord.r - fromCoord.r) * easedProgress
+                };
 
             const fromIdx = fromCoord.r * map.width + fromCoord.q;
             const toIdx = toCoord.r * map.width + toCoord.q;
@@ -3865,18 +4076,15 @@ export function BattlefieldStage({
             const toGeom = ISO_MODE ? topGeomFor(toCoord.q, toCoord.r) : null;
             const fromHeight = fromGeom ? fromGeom.avgHeight : ((map.tiles[fromIdx] as any)?.elevation ?? 0);
             const toHeight = toGeom ? toGeom.avgHeight : ((map.tiles[toIdx] as any)?.elevation ?? 0);
-            movingBaseHeight = fromHeight + (toHeight - fromHeight) * easedProgress;
+            movingBaseHeight = isTurnPhase
+              ? toHeight
+              : fromHeight + (toHeight - fromHeight) * easedProgress;
 
-            const dq = toCoord.q - fromCoord.q;
-            const dr = toCoord.r - fromCoord.r;
-            if (dq > 0 && dr === 0) animatedOrientation = 0; // E
-            else if (dq > 0 && dr < 0) animatedOrientation = 1; // NE
-            else if (dq === 0 && dr < 0) animatedOrientation = 2; // N
-            else if (dq < 0 && dr === 0) animatedOrientation = 3; // W
-            else if (dq < 0 && dr > 0) animatedOrientation = 4; // SW
-            else if (dq === 0 && dr > 0) animatedOrientation = 5; // S
-            else if (dq > 0 && dr > 0) animatedOrientation = 6; // SE
-            else if (dq < 0 && dr < 0) animatedOrientation = 7; // NW
+            const currentOrientation = segmentOrientation(fromCoord, toCoord);
+            const nextOrientation = currentStep + 2 < movingUnit.path.length
+              ? segmentOrientation(toCoord, movingUnit.path[currentStep + 2])
+              : currentOrientation;
+            animatedOrientation = isTurnPhase ? nextOrientation : currentOrientation;
             moveScreenVector = screenVectorBetween(fromCoord, toCoord);
             const turnBlendWindow = 0.64;
             if (!isGroundVehicle && stepProgress > 1 - turnBlendWindow && currentStep + 2 < movingUnit.path.length) {
@@ -3993,6 +4201,10 @@ export function BattlefieldStage({
         if ((isDestroyed && !movingThisUnit) || isEmbarked) {
           return [];
         }
+
+        // Set by the sprite IIFE below (runs during JSX build), then read by the status-bar
+        // draw callback (runs later) so the bar hugs the unit's real sprite top.
+        let unitSpriteTopY = -tileSize * 0.42;
 
         return (
           <Container
@@ -4144,9 +4356,9 @@ export function BattlefieldStage({
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
                     const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
-                    const shadowAlpha = isGroundVehicle ? (isApcContact ? 0.055 : (movingThisUnit ? 0.07 : 0.045)) : footprint.alpha;
+                    const shadowAlpha = isGroundVehicle ? (isApcContact ? 0 : (movingThisUnit ? 0.07 : 0.045)) : footprint.alpha;
                     const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.34 : 0.42) : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.11 : 0.18) : footprint.ry;
+                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.1 : 0.18) : footprint.ry;
 	                  const showFactionBase = isVisible && !isGroundVehicle;
 	                  if (showFactionBase && !isGroundVehicle) {
 	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? baseAlpha : baseAlpha * 0.55);
@@ -4155,7 +4367,7 @@ export function BattlefieldStage({
                   }
 	                    if (shadowAlpha > 0) {
 		                    g.beginFill(isGroundVehicle ? 0x020403 : 0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
-		                    g.drawEllipse(1, footprint.y + (isGroundVehicle ? tileSize * 0.012 : 0), shadowRx, shadowRy);
+		                    g.drawEllipse(1, footprint.y + (isGroundVehicle && !isApcContact ? tileSize * 0.012 : 0), shadowRx, shadowRy);
 		                    g.endFill();
 	                    }
                     if (isApcContact && isVisible) {
@@ -4164,11 +4376,11 @@ export function BattlefieldStage({
                       const perpY = contactVector.x;
                       const trackHalf = footprint.rx * 0.4;
                       const trackGap = footprint.ry * 0.74;
-                      const contactY = footprint.y + tileSize * 0.018;
+                      const contactY = footprint.y - tileSize * 0.006;
                       for (const sideOffset of [-1, 1]) {
                         const ox = perpX * trackGap * sideOffset;
                         const oy = perpY * trackGap * sideOffset;
-                        g.lineStyle(1.1, 0x050704, isSelected ? 0.3 : 0.24);
+                        g.lineStyle(1.35, 0x050704, isSelected ? 0.46 : 0.4);
                         g.moveTo(ox - contactVector.x * trackHalf, contactY + oy - contactVector.y * trackHalf * 0.2);
                         g.lineTo(ox + contactVector.x * trackHalf, contactY + oy + contactVector.y * trackHalf * 0.2);
                       }
@@ -4236,11 +4448,13 @@ export function BattlefieldStage({
               const directionalSprite = DIRECTIONAL_UNIT_SPRITES[defId] ?? vehicleDirectionalSprite;
               const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
               const isVehicleUnit = isGroundVehicle;
-              const spriteDirection = isVehicleUnit && movingThisUnit
-                ? vehicleSheetDirectionNameForScreenVector(moveScreenVector, directionalSprite ?? '')
-                : isVehicleUnit
-                  ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
-                : directionNameForOrientation(animatedOrientation);
+              const spriteDirection = isVehicleUnit && directionalSprite === 'm113_apc'
+                ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite)
+                : isVehicleUnit && movingThisUnit
+                  ? vehicleSheetDirectionNameForScreenVector(moveScreenVector, directionalSprite ?? '')
+                  : isVehicleUnit
+                    ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
+                    : directionNameForOrientation(animatedOrientation);
               const usesDirectionalMotion = Boolean(directionalSprite && (isFootUnit || isVehicleUnit));
               const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
               const fastWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 4) : 0;
@@ -4339,7 +4553,7 @@ export function BattlefieldStage({
               const sourceHeight = directionalSprite ? (DIRECTIONAL_UNIT_SOURCE_HEIGHTS[directionalSprite] ?? 128) : (RASTER_UNIT_VISIBLE_HEIGHTS[texturePath] ?? 1024);
               const baseScale = desiredH / sourceHeight;
               const groundOffsetY = directionalSprite
-                ? directionalSpriteGroundOffset(directionalSprite, textureSheetState, spriteDirection, baseScale)
+                ? directionalSpriteGroundOffset(directionalSprite, textureSheetState, spriteDirection, baseScale) + (DIRECTIONAL_UNIT_GROUND_BIAS[directionalSprite] ?? 0)
                 : 0;
               const vehiclePose = isVehicleUnit && canMirrorForFacing ? rasterVehiclePose(moveScreenVector) : null;
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
@@ -4353,6 +4567,7 @@ export function BattlefieldStage({
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
               const spriteTint = directionalSprite === 'apc_directional' || directionalSprite === 'm113_apc' ? 0xd7d9b8 : 0xffffff;
               const spriteBaseY = directionalSprite ? 0 : tileSize * (isVehicleUnit ? 0.082 : 0.05);
+              unitSpriteTopY = spriteBaseY + groundOffsetY - anchorY * desiredH;
               const silhouetteAlpha = isFootUnit && isVisible ? 0.32 : 0;
               return (
                 <>
@@ -4552,27 +4767,48 @@ export function BattlefieldStage({
                 const hpRatio = Math.max(0, Math.min(1, (unit as any).currentHealth / maxHp));
                 const mrRatio = Math.max(0, Math.min(1, (unit as any).currentMorale / 100));
                 const apRatio = Math.max(0, Math.min(1, (unit as any).actionPoints / ((unit as any).maxActionPoints ?? 10)));
+                const recentlyActive = Boolean(outgoingShot || incomingHit || recentAttackSource || recentHitTarget);
+                const shouldDrawStatus = isSelected
+                  || isSelectedCarrier
+                  || isTarget
+                  || recentlyActive
+                  || hpRatio < 0.985
+                  || apRatio < 0.985
+                  || mrRatio < 0.85
+                  || stance === 'suppressed'
+                  || stance === 'routed';
+                if (!shouldDrawStatus) return;
                 const compactDeployStatus = deployMode && isFriendly && !isSelected && !isSelectedCarrier;
                 const movingVehicleUiDamping = movingThisUnit && isGroundVehicle ? 0.68 : 1;
                 const detailedBar = (isSelected || isTarget) && !compactDeployStatus && !isGroundVehicle;
                 const bw = detailedBar
                   ? (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 18 : isGroundVehicle ? 20 : 23)
                   : (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 12 : isGroundVehicle ? 13 : 16);
-                const topY = unitType === 'vehicle' || unitType === 'artillery' ? -tileSize * 0.46 : -tileSize * 0.34;
-                const vehicleStatusAlpha = isGroundVehicle ? 0.72 : 1;
-                const backplateAlpha = (isSelected ? 0.8 : isTarget ? 0.72 : isFriendly ? 0.34 : 0.44) * movingVehicleUiDamping * vehicleStatusAlpha;
-                const barAlpha = (isSelected ? 0.94 : isTarget ? 0.88 : isFriendly ? 0.5 : 0.62) * movingVehicleUiDamping * vehicleStatusAlpha;
+                // Vehicles/aircraft anchor to ground contact, so a fixed tile-center offset leaves a
+                // big gap above them — hug their actual sprite top instead. Foot units keep the
+                // hand-tuned head clearance.
+                const topY = (isGroundVehicle || unitType === 'air')
+                  ? Math.min(-tileSize * 0.18, unitSpriteTopY - tileSize * 0.04)
+                  : -tileSize * 0.34;
+                const vehicleStatusAlpha = isGroundVehicle ? 0.66 : 1;
+                const passiveStatusAlpha = recentlyActive ? 0.92 : 0.82;
+                const backplateAlpha = (isSelected ? 0.88 : isTarget ? 0.82 : isFriendly ? 0.66 : 0.68) * movingVehicleUiDamping * vehicleStatusAlpha * passiveStatusAlpha;
+                const barAlpha = (isSelected ? 0.98 : isTarget ? 0.94 : isFriendly ? 0.9 : 0.92) * movingVehicleUiDamping * vehicleStatusAlpha * passiveStatusAlpha;
                 const backplateH = detailedBar ? 6 : 4;
                 if (hpRatio <= 0.3) {
+                  // Low-health warning: amber "!" above the unit + amber danger ring.
+                  // Kept distinct (amber, above the unit) from the red enemy-faction marker.
                   const criticalPulse = 0.76 + Math.sin(now / 120) * 0.2;
                   g.lineStyle(2.4, 0x1a0706, 0.78);
                   g.drawEllipse(0, tileSize * 0.05, tileSize * 0.35, tileSize * 0.15);
-                  g.lineStyle(1.45, 0xef6a55, criticalPulse);
+                  g.lineStyle(1.45, 0xffc24a, criticalPulse);
                   g.drawEllipse(0, tileSize * 0.05, tileSize * 0.3, tileSize * 0.13);
-                  g.beginFill(0xef6a55, criticalPulse * 0.82);
+                  g.lineStyle(0.8, 0x2a1a06, 0.85);
+                  g.beginFill(0xffc24a, criticalPulse * 0.95);
                   g.drawRect(-2.5, -tileSize * 0.54, 5, 9);
                   g.drawRect(-2.5, -tileSize * 0.42, 5, 2.5);
                   g.endFill();
+                  g.lineStyle(0);
                 }
                 g.lineStyle(1, 0x050708, 0.65);
                 g.beginFill(0x101417, backplateAlpha);
@@ -4592,8 +4828,8 @@ export function BattlefieldStage({
                   const markerW = isSelected ? (isGroundVehicle ? 4.6 : 7) : 4.2;
                   const markerDrop = isSelected ? (isGroundVehicle ? 3.8 : 7) : 4.2;
                   const selectedMarkerAlpha = isGroundVehicle ? 0.58 : 0.88;
-                  g.lineStyle((isSelected ? 1.3 : 0.9) * movingVehicleUiDamping, isSelected ? 0xd4f4f2 : 0x071821, (isSelected ? selectedMarkerAlpha : 0.48) * movingVehicleUiDamping);
-                  g.beginFill(factionAccent, (isSelected || isSelectedCarrier ? (isGroundVehicle ? 0.58 : 0.96) : 0.34) * movingVehicleUiDamping);
+                  g.lineStyle((isSelected ? 1.3 : 0.8) * movingVehicleUiDamping, isSelected ? 0xd4f4f2 : 0x071821, (isSelected ? selectedMarkerAlpha : 0.28) * movingVehicleUiDamping);
+                  g.beginFill(factionAccent, (isSelected || isSelectedCarrier ? (isGroundVehicle ? 0.58 : 0.96) : 0.2) * movingVehicleUiDamping);
                   g.moveTo(0, flagY + 5);
                   g.lineTo(-markerW, flagY + 5 - markerDrop);
                   g.lineTo(markerW, flagY + 5 - markerDrop);
@@ -4609,8 +4845,8 @@ export function BattlefieldStage({
                   g.closePath();
                   g.endFill();
                 } else if (!isFriendly) {
-                  g.lineStyle(0.9, 0x1f0b09, 0.46);
-                  g.beginFill(0xad5145, 0.38);
+                  g.lineStyle(0.8, 0x1f0b09, 0.34);
+                  g.beginFill(0xad5145, 0.26);
                   g.moveTo(0, flagY + 1);
                   g.lineTo(3.6, flagY + 4.6);
                   g.lineTo(0, flagY + 8.2);
@@ -4620,26 +4856,22 @@ export function BattlefieldStage({
                 }
 
                 g.lineStyle(0);
-                g.beginFill(0x2a1c18, 0.72 * barAlpha); g.drawRect(-bw / 2, topY - (detailedBar ? 6 : 3), bw, 2); g.endFill();
-                const hpColor = hpRatio > 0.55 ? 0x758c5a : hpRatio > 0.25 ? 0xb08a45 : 0xa84a3f;
-                g.beginFill(hpColor, 0.95 * barAlpha); g.drawRect(-bw / 2, topY - (detailedBar ? 6 : 3), bw * hpRatio, 2); g.endFill();
-                if (hpRatio <= 0.3) {
-                  const pipAlpha = 0.82 + Math.sin(now / 110) * 0.18;
-                  g.beginFill(0x160504, 0.86);
-                  g.drawRect(bw / 2 - 4, topY - (detailedBar ? 8 : 5), 6, 5);
-                  g.endFill();
-                  g.beginFill(0xff6b55, pipAlpha);
-                  g.drawRect(bw / 2 - 3, topY - (detailedBar ? 7 : 4), 4, 3);
-                  g.endFill();
-                }
+                const hpBarH = detailedBar ? 2 : 3;
+                const hpBarTop = topY - (detailedBar ? 6 : 4);
+                g.beginFill(0x231512, 0.85 * barAlpha); g.drawRect(-bw / 2, hpBarTop, bw, hpBarH); g.endFill();
+                const hpColor = hpRatio > 0.55 ? 0x7ec850 : hpRatio > 0.25 ? 0xe6b13e : 0xe2503f;
+                const hpFillAlpha = hpRatio <= 0.3
+                  ? 0.98 * barAlpha * (0.6 + Math.sin(now / 120) * 0.4) // pulse the bar itself when critical
+                  : 0.98 * barAlpha;
+                g.beginFill(hpColor, Math.max(0, hpFillAlpha)); g.drawRect(-bw / 2, hpBarTop, bw * hpRatio, hpBarH); g.endFill();
 
                 if (detailedBar) {
-                  g.beginFill(0x1a1a1a, 0.62 * barAlpha); g.drawRect(-bw / 2, topY - 3, bw, 1); g.endFill();
-                  const mrColor = mrRatio > 0.55 ? 0xc0b27a : mrRatio > 0.25 ? 0x9d8a58 : 0x7a6250;
-                  g.beginFill(mrColor, 0.82 * barAlpha); g.drawRect(-bw / 2, topY - 3, bw * mrRatio, 1); g.endFill();
+                  g.beginFill(0x141414, 0.7 * barAlpha); g.drawRect(-bw / 2, topY - 3, bw, 1.4); g.endFill();
+                  const mrColor = mrRatio > 0.55 ? 0xe6d472 : mrRatio > 0.25 ? 0xc2a85e : 0x9a7a5c;
+                  g.beginFill(mrColor, 0.95 * barAlpha); g.drawRect(-bw / 2, topY - 3, bw * mrRatio, 1.4); g.endFill();
 
-                  g.beginFill(0x1a1a1a, 0.62 * barAlpha); g.drawRect(-bw / 2, topY - 1, bw, 1); g.endFill();
-                  g.beginFill(isFriendly ? 0x5f94b8 : 0x8e5042, 0.82 * barAlpha); g.drawRect(-bw / 2, topY - 1, bw * apRatio, 1); g.endFill();
+                  g.beginFill(0x141414, 0.7 * barAlpha); g.drawRect(-bw / 2, topY - 1.4, bw, 1.4); g.endFill();
+                  g.beginFill(isFriendly ? 0x6fb6e6 : 0xd06250, 0.95 * barAlpha); g.drawRect(-bw / 2, topY - 1.4, bw * apRatio, 1.4); g.endFill();
                 }
               }}
             />
@@ -4976,26 +5208,34 @@ export function BattlefieldStage({
             />
           )}
           {elapsed > 220 && elapsed < 2300 && (
-            <Text
-              text={effect.hit ? `HIT -${effect.damage ?? ''}` : 'MISS'}
-              x={toX - (effect.hit ? 30 : 18)}
+            // Counter-scaled so the combat text stays a fixed, crisp on-screen size
+            // (net scale ≈ 1) instead of being blown up ~4.5x by the camera zoom.
+            <Container
+              x={toX}
               y={toY - tileSize * 0.5 - (elapsed - 220) * 0.005}
               zIndex={zIndex + 2}
-              style={new TextStyle({
-                fontFamily: 'monospace',
-                fontSize: effect.hit ? 20 : 15,
-                fontWeight: '800',
-                fill: effect.hit ? '#f3d58a' : '#d8d1bc',
-                stroke: effect.hit ? '#3a1308' : '#17130d',
-                strokeThickness: effect.hit ? 4 : 3
-              })}
-              alpha={Math.max(0, 0.9 - (elapsed - 220) / 2300)}
-            />
+              scale={1 / scale}
+            >
+              <Text
+                text={effect.hit ? `HIT -${effect.damage ?? ''}` : 'MISS'}
+                anchor={{ x: 0.5, y: 0.5 }}
+                resolution={2}
+                style={new TextStyle({
+                  fontFamily: 'monospace',
+                  fontSize: effect.hit ? 18 : 15,
+                  fontWeight: '800',
+                  fill: effect.hit ? '#f3d58a' : '#d8d1bc',
+                  stroke: effect.hit ? '#3a1308' : '#17130d',
+                  strokeThickness: effect.hit ? 3.5 : 3
+                })}
+                alpha={Math.max(0, 0.9 - (elapsed - 220) / 2300)}
+              />
+            </Container>
           )}
         </Container>
       );
     }).filter(Boolean) as JSX.Element[];
-  }, [attackEffects, battleState.sides, now, map.width, map.tiles, topGeomFor, toScreen]);
+  }, [attackEffects, battleState.sides, now, map.width, map.tiles, topGeomFor, toScreen, scale]);
 
   const propsSprites = useMemo(() => {
     const props = (map.props ?? []).filter((prop) => prop.kind !== 'proc-building');
@@ -5114,7 +5354,7 @@ export function BattlefieldStage({
     const inBounds = (q: number, r: number) => q >= 0 && r >= 0 && q < W && r < H;
 
     return props
-      .map((b) => {
+      .map((b, i) => {
         const footprint: number[] = [];
         if (Array.isArray(b.tiles) && b.tiles.length > 0) {
           for (const t of b.tiles) {
@@ -5166,13 +5406,14 @@ export function BattlefieldStage({
             ? Math.round((bottomNW.y + bottomNE.y + bottomSE.y + bottomSW.y) / 4)
             : Math.round(Math.max(bottomSW.y, bottomSE.y));
 
-        if (b.texture) {
-          const texturePath = assetUrl(b.texture);
-          if (!propTextureCache.has(texturePath)) {
-            propTextureCache.set(texturePath, crispTexture(Texture.from(texturePath)));
-          }
-          const texture = propTextureCache.get(texturePath)!;
-          const spriteScale = b.scale ?? 0.16;
+        // Painted iso building sprite instead of the flat procedural box. Explicit b.texture wins;
+        // otherwise pick a stable painted asset per building (by id hash) with its base cropped off.
+        const painted = b.texture
+          ? { tex: b.texture, keepTop: 1 }
+          : PAINTED_BUILDINGS[hashStringToIndex(b.id, PAINTED_BUILDINGS.length)];
+        if (painted) {
+          const texture = getCroppedBuildingTexture(painted.tex, painted.keepTop);
+          const spriteScale = b.scale ?? 0.082 * Math.max(w, h, 1);
           return (
             <Container key={b.id} x={anchor.x} y={anchor.y} zIndex={zIndex} sortableChildren alpha={fogAlpha}>
               <Graphics
@@ -5198,9 +5439,9 @@ export function BattlefieldStage({
               />
               <Sprite
                 texture={texture}
-                anchor={{ x: 0.5, y: 0.88 }}
+                anchor={{ x: 0.5, y: 0.97 }}
                 scale={spriteScale}
-                tint={0x8f947c}
+                tint={isVisible ? 0xffffff : 0xc4c8bc}
                 alpha={isVisible ? 1 : 0.72}
               />
             </Container>
@@ -5329,8 +5570,25 @@ export function BattlefieldStage({
                   const shade = face.side === 'E' ? 0.18 + fogShade : 0.3 + fogShade;
                   const color = mixColor(wallColor, 0x000000, clamp(shade, 0, 0.65));
                   fillQuad(g as PixiGraphics, topA, topB, bottomB, bottomA, color, 1, anchor);
-                  lineSegment(g as PixiGraphics, topA, bottomA, darkenColor(wallColor, 0.35), 0.7, 2, anchor);
-                  lineSegment(g as PixiGraphics, topB, bottomB, darkenColor(wallColor, 0.45), 0.8, 2, anchor);
+                  // Fake ambient occlusion: darken toward the base so the wall isn't a single flat tone.
+                  const lerp = (a: { x: number; y: number }, b: { x: number; y: number }, t: number) => ({
+                    x: a.x + (b.x - a.x) * t,
+                    y: a.y + (b.y - a.y) * t
+                  });
+                  for (const aoBand of [{ f0: 0.42, f1: 0.7, a: 0.05 }, { f0: 0.7, f1: 0.88, a: 0.09 }, { f0: 0.88, f1: 1, a: 0.15 }]) {
+                    fillQuad(
+                      g as PixiGraphics,
+                      lerp(topA, bottomA, aoBand.f0),
+                      lerp(topB, bottomB, aoBand.f0),
+                      lerp(topB, bottomB, aoBand.f1),
+                      lerp(topA, bottomA, aoBand.f1),
+                      0x000000,
+                      aoBand.a,
+                      anchor
+                    );
+                  }
+                  lineSegment(g as PixiGraphics, topA, bottomA, darkenColor(wallColor, 0.35), 0.6, 1.3, anchor);
+                  lineSegment(g as PixiGraphics, topB, bottomB, darkenColor(wallColor, 0.45), 0.7, 1.3, anchor);
                   drawFacadeMaterial(
                     g as PixiGraphics,
                     bottomA,
@@ -5584,7 +5842,6 @@ export function BattlefieldStage({
       {movementRangeOverlays}
       {attackRangeOverlays}
       {plannedHighlights}
-      {invalidMoveHighlight}
       {objectiveOverlays}
     </>
   );
@@ -5716,7 +5973,7 @@ export function BattlefieldStage({
           backgroundColor: 0x061639,
           resolution: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
           autoDensity: true, // makes text and sprites crisp on retina displays
-          antialias: false
+          antialias: true // smooths the hard isometric polygon edges (buildings, tiles)
         }}
       >
         {screenBackdrop}
@@ -5822,6 +6079,7 @@ export function BattlefieldStage({
               {targetLinkOverlay}
               {units}
               {attackEffectSprites}
+              {invalidMoveHighlight}
             </Container>
           </Container>
         </Container>
