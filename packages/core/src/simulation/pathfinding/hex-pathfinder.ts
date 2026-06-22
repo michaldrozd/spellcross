@@ -17,7 +17,7 @@ interface NodeRecord {
 import { movementMultiplierForStance } from './movement.js';
 export { movementMultiplierForStance };
 
-function canUnitEnterTerrain(unitType: UnitInstance['unitType'] | undefined, tile: { terrain: string; passable: boolean }): boolean {
+export function canUnitEnterTerrain(unitType: UnitInstance['unitType'] | undefined, tile: { terrain: string; passable: boolean } | undefined): boolean {
   if (!tile || !tile.passable) return false;
   if (!unitType) return true;
   switch (tile.terrain) {

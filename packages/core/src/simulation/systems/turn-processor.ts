@@ -9,7 +9,7 @@ import {
   canWeaponTarget,
   spendAmmo
 } from '../combat/combat-resolver.js';
-import { movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
+import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import type { HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { axialDistance, coordinateKey, directionIndex, getTile, isNeighbor } from '../utils/grid.js';
 import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
@@ -342,20 +342,11 @@ export class TurnProcessor {
     return false;
   }
 
+  // Single source of truth shared with the pathfinders and the AI, so a route the planner accepts
+  // is always one moveUnit will execute (previously this allowed only infantry on forest while the
+  // pathfinders allowed heroes too, soft-locking hero moves through forest).
   #canUnitEnterTile(unit: UnitInstance, tile: { terrain: string; passable: boolean }): boolean {
-    if (!tile.passable) return false;
-    switch (tile.terrain) {
-      case 'forest':
-        return unit.unitType === 'infantry';
-      case 'water':
-        return unit.unitType === 'air';
-      case 'swamp':
-        return unit.unitType !== 'air';
-      case 'structure':
-        return false;
-      default:
-        return true;
-    }
+    return canUnitEnterTerrain(unit.unitType, tile);
   }
 
   attackUnit(input: AttackActionInput): ActionResult {

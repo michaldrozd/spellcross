@@ -1592,12 +1592,16 @@ const BattleView: React.FC<{
         aiProcessor.endTurn();
         break;
       } else if (action.type === 'move') {
-        aiProcessor.moveUnit(action);
+        // A rejected move would otherwise be re-decided identically forever (deterministic AI),
+        // spinning to the safety cap and leaving the enemy turn unfinished — end the turn instead.
+        const moveRes = aiProcessor.moveUnit(action);
+        if (!moveRes.success) { aiProcessor.endTurn(); break; }
       } else if (action.type === 'attack') {
         const attacker = findBattleUnit(action.attackerId);
         const defender = findBattleUnit(action.defenderId);
         const result = aiProcessor.attackUnit(action);
-        if (result.success && attacker && defender) {
+        if (!result.success) { aiProcessor.endTurn(); break; }
+        if (attacker && defender) {
           const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
           addAttackEffect(attacker, defender, action.weaponId, outcome, stagedAttacks * 650);
           // Enemy attacks were silent — play the firing SFX (and impact) timed to the staged visual.
@@ -1621,9 +1625,14 @@ const BattleView: React.FC<{
           }
         }
       } else if (action.type === 'attackTile') {
-        aiProcessor.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
+        const tileRes = aiProcessor.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
+        if (tileRes && tileRes.success === false) { aiProcessor.endTurn(); break; }
         AudioManager.play('explosion');
       }
+    }
+    // Backstop: never leave control stuck on the enemy turn (e.g. the safety cap tripped).
+    if (battle.state.activeFaction === 'otherSide') {
+      aiProcessor.endTurn();
     }
     persist();
     resolveOutcome();

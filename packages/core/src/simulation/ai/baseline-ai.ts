@@ -2,7 +2,7 @@ import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from
 import { axialDistance, coordinateKey, getNeighbors, getTile, orientationDelta, tileIndex } from '../utils/grid.js';
 import { isoDirectionIndex } from '../utils/grid-iso.js';
 import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange } from '../combat/combat-resolver.js';
-import { movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
+import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import { hasLineOfSight } from '../visibility/vision.js';
 
 export type AIImmediateAction =
@@ -149,7 +149,7 @@ function tryFallbackStep(
   let best: { step: HexCoordinate; score: number } | null = null;
   for (const n of getNeighbors(state.map, unit.coordinate)) {
     const tile = getTile(state.map, n);
-    if (!tile || !tile.passable) continue;
+    if (!tile || !canUnitEnterTerrain(unit.unitType, tile)) continue;
     // increase distance from nearest enemy
     const currentNearest = awayFrom.reduce((min, foe) => Math.min(min, axialDistance(unit.coordinate, foe.coordinate)), Infinity);
     const afterNearest = awayFrom.reduce((min, foe) => Math.min(min, axialDistance(n, foe.coordinate)), Infinity);
@@ -201,7 +201,7 @@ function buildThreatAwarePathToward(
       if (visited.has(k)) continue;
       if (occ.has(k)) continue;
       const tile = getTile(state.map, n);
-      if (!tile || !tile.passable) continue;
+      if (!tile || !canUnitEnterTerrain(unit.unitType, tile)) continue;
       const cost = tile.movementCostModifier * mult;
       if (cost > ap) continue;
 
@@ -272,6 +272,8 @@ function bestAttackFromHere(
 ): { defenderId: string; weaponId: string; score: number } | null {
   // Must have enough AP to attack
   if (!canAffordAttack(attacker)) return null;
+  // Routed units are rejected by attackUnit; never propose an attack for them (would soft-lock the turn).
+  if (attacker.stance === 'routed') return null;
 
   let best: { defenderId: string; weaponId: string; score: number } | null = null;
   const enemies = listEnemyUnits(state, attacker.faction);
@@ -401,6 +403,7 @@ export function decideNextAIAction(
     | { attackerId: string; defenderId: string; weaponId: string; score: number }
     | null = null;
   for (const u of units) {
+    if (u.stance === 'routed') continue; // routed units cannot attack — exclude from attack selection
     // Fast lane: shoot occupying enemies first
     for (const target of contestTargets) {
       for (const weaponId of Object.keys(u.stats.weaponRanges)) {
