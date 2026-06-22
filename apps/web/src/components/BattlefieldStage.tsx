@@ -1298,10 +1298,11 @@ export function BattlefieldStage({
     setOverlayMask(node ? { mapId: map.id, node } : null);
   }, [map.id]);
   const activeOverlayMask =
-    overlayMask?.mapId === map.id &&
+    overlayMask &&
     !overlayMask.node.destroyed &&
-    // A torn-down node (e.g. after a same-map battle restart) keeps its reference but loses its
-    // geometry; using it as a mask crashes Pixi's scissor test, so fall back to unmasked rendering.
+    // A torn-down node keeps its reference but loses its geometry; using it as a mask crashes Pixi's
+    // scissor test, so fall back to unmasked rendering. The node is no longer keyed per map (it would
+    // be destroyed mid-switch and freeze the renderer) — it persists and just redraws for each map.
     (overlayMask.node as { geometry?: unknown }).geometry
       ? overlayMask.node
       : undefined;
@@ -6130,7 +6131,6 @@ export function BattlefieldStage({
             {terrainMissingTexts}
             {/* Top-only overlay mask: punch holes for all vertical wall faces (E/S) */}
             <Graphics
-              key={`overlay-mask-${map.id}`}
               ref={setOverlayMaskNode}
               draw={(g) => {
                 g.clear();
