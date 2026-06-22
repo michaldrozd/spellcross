@@ -4818,13 +4818,10 @@ export function BattlefieldStage({
                 const barAlpha = (isSelected ? 0.98 : isTarget ? 0.94 : isFriendly ? 0.9 : 0.92) * movingVehicleUiDamping * vehicleStatusAlpha * passiveStatusAlpha;
                 const backplateH = detailedBar ? 6 : 4;
                 if (hpRatio <= 0.3) {
-                  // Low-health warning: amber "!" above the unit + amber danger ring.
-                  // Kept distinct (amber, above the unit) from the red enemy-faction marker.
+                  // Low-health warning: a small amber "!" badge above the unit. The ground ring this
+                  // used to draw sat on top of the sprite (status layer is above the unit) and read as
+                  // clutter that hid the model; the red HP bar already carries the exact value.
                   const criticalPulse = 0.76 + Math.sin(now / 120) * 0.2;
-                  g.lineStyle(2.4, 0x1a0706, 0.78);
-                  g.drawEllipse(0, tileSize * 0.05, tileSize * 0.35, tileSize * 0.15);
-                  g.lineStyle(1.45, 0xffc24a, criticalPulse);
-                  g.drawEllipse(0, tileSize * 0.05, tileSize * 0.3, tileSize * 0.13);
                   g.lineStyle(0.8, 0x2a1a06, 0.85);
                   g.beginFill(0xffc24a, criticalPulse * 0.95);
                   g.drawRect(-2.5, -tileSize * 0.54, 5, 9);
