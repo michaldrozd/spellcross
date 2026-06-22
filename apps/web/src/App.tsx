@@ -1551,6 +1551,16 @@ const BattleView: React.FC<{
         if (result.success && attacker && defender) {
           const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
           addAttackEffect(attacker, defender, action.weaponId, outcome, stagedAttacks * 650);
+          // Enemy attacks were silent — play the firing SFX (and impact) timed to the staged visual.
+          const fireDelay = stagedAttacks * 650;
+          const enemySfx = soundForAttackEffect(effectTypeForAttack(attacker, defender, action.weaponId));
+          const enemyKilled = defender.stance === 'destroyed';
+          const enemyHit = outcome.hit;
+          window.setTimeout(() => {
+            AudioManager.play(enemySfx);
+            if (enemyKilled) window.setTimeout(() => AudioManager.play('death'), 240);
+            else if (enemyHit) window.setTimeout(() => AudioManager.play('hit'), 240);
+          }, fireDelay);
           stagedAttacks += 1;
           if (!phaseUpdated) {
             phaseUpdated = true;
@@ -1563,6 +1573,7 @@ const BattleView: React.FC<{
         }
       } else if (action.type === 'attackTile') {
         aiProcessor.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
+        AudioManager.play('explosion');
       }
     }
     persist();
