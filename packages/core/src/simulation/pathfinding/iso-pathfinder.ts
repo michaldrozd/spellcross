@@ -1,8 +1,6 @@
 import type {
   BattlefieldMap,
-  EdgeDir,
   HexCoordinate,
-  MapTile,
   TacticalBattleState,
   UnitInstance
 } from '../types.js';
@@ -92,30 +90,12 @@ export function findPathOnMapIso(
       if (!tileB || !tileB.passable) continue;
       if (!canUnitEnterTerrain(options.unitType, tileB)) continue;
 
-      // Elevation-aware movement across edges (slopes vs. cliffs)
-      const tileA = getTile(map, current.coordinate);
-      const elevA = tileA?.elevation ?? 0;
-      const elevB = tileB?.elevation ?? 0;
-      const dq = neighbor.q - current.coordinate.q;
-      const dr = neighbor.r - current.coordinate.r;
-      const isDiagonal = dq !== 0 && dr !== 0;
-
-      let edgePenalty = 0;
-      if (elevA !== elevB) {
-        // Only allow orthogonal steps across elevation if the higher tile marks that edge as a slope
-        if (isDiagonal) continue;
-        const dir: EdgeDir = dq === 1 && dr === 0 ? 'E' : dq === -1 && dr === 0 ? 'W' : dq === 0 && dr === 1 ? 'S' : 'N';
-        const higherIsB = elevB > elevA;
-        const higherTile: MapTile | undefined = higherIsB ? tileB : tileA;
-        const edgeOnHigher: EdgeDir = higherIsB
-          ? (dir === 'N' ? 'S' : dir === 'S' ? 'N' : dir === 'E' ? 'W' : 'E')
-          : dir;
-        const style = higherTile?.elevEdges?.[edgeOnHigher];
-        if (style !== 'slope') continue; // sheer cliff
-        edgePenalty = higherIsB ? 0.6 : 0.3; // uphill costs more than downhill
-      }
-
-      const movementCost = (tileB.movementCostModifier + edgePenalty) * movementMultiplier;
+      // Cost must match TurnProcessor.moveUnit exactly (movementCostModifier * multiplier). The old
+      // slope/cliff model was gated on tile.elevEdges, which is never populated anywhere, so every
+      // hill edge read as a sheer cliff and hills were unreachable; it also charged an edge penalty
+      // the executor never spends. The executor enforces no elevation movement rules, so neither does
+      // the planner.
+      const movementCost = tileB.movementCostModifier * movementMultiplier;
       const tentativeCost = current.costFromStart + movementCost;
       if (tentativeCost > maxCost) continue;
 
@@ -162,7 +142,9 @@ export function planPathForUnitIso(
   const occupation = new Set<string>();
   for (const side of Object.values(state.sides)) {
     for (const other of side.units.values()) {
-      if (other.id === unit.id || other.stance === 'destroyed') continue;
+      // Skip embarked passengers: their coordinate stays frozen at the carrier's embark tile and
+      // would otherwise phantom-block that tile (the executor and hex planner skip them too).
+      if (other.id === unit.id || other.stance === 'destroyed' || other.embarkedOn) continue;
       occupation.add(hexKey(other.coordinate));
     }
   }

@@ -18,6 +18,13 @@ const wallTile = {
   terrain: 'structure'
 } as const;
 
+const hillTile = {
+  ...plainTile,
+  terrain: 'hill',
+  elevation: 1,
+  providesVisionBoost: true
+} as const;
+
 const baseSpec: CreateBattleStateOptions = {
   map: {
     id: 'iso-map',
@@ -67,6 +74,25 @@ describe('iso-pathfinder', () => {
     // Chebyshev distance 4, so minimal steps should be 4 tiles traversed
     expect(res.path.length).toBeGreaterThan(0);
     expect(res.cost).toBeGreaterThan(0);
+  });
+
+  it('lets units path onto hill (elevation) tiles', () => {
+    // Hill at (1,0) one step from the start. Previously every elevation edge read as a sheer cliff
+    // (elevEdges is never populated), so hills were unreachable movement islands.
+    const spec: CreateBattleStateOptions = {
+      ...baseSpec,
+      map: {
+        ...baseSpec.map,
+        tiles: Array.from({ length: 25 }, (_, i) => {
+          const q = i % 5, r = Math.floor(i / 5);
+          return q === 1 && r === 0 ? hillTile : plainTile;
+        })
+      }
+    };
+    const state = createBattleState(spec);
+    const res = findPathOnMapIso(state.map, { q: 0, r: 0 }, { q: 1, r: 0 }, { maxCost: 50 });
+    expect(res.success).toBe(true);
+    expect(res.path.some((p) => p.q === 1 && p.r === 0)).toBe(true);
   });
 
   it('respects impassable walls', () => {
