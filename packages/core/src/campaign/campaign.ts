@@ -810,11 +810,19 @@ export function retreatFromBattle(state: CampaignState) {
   const battle = state.activeBattle;
   if (!battle) throw new Error('No active battle');
   const startKeys = new Set(battle.startTiles.map((c) => coordinateKey(c)));
+  // Preserve never-deployed (benched) units — they didn't fight, so a retreat can't lose them.
+  const deployedRosterIds = new Set(Object.keys(battle.deployment));
   const updatedArmy: ArmyUnit[] = [];
-  for (const [rosterId, tacticalId] of Object.entries(battle.deployment)) {
-    const roster = state.army.find((u) => u.id === rosterId);
-    const unit = battle.state.sides.alliance.units.get(tacticalId);
-    if (!roster || !unit) continue;
+  for (const roster of state.army) {
+    if (!deployedRosterIds.has(roster.id)) {
+      updatedArmy.push(roster);
+      continue;
+    }
+    const unit = battle.state.sides.alliance.units.get(battle.deployment[roster.id]);
+    if (!unit) {
+      updatedArmy.push(roster);
+      continue;
+    }
     const onStartTile = startKeys.has(coordinateKey(unit.coordinate));
     if (unit.stance === 'destroyed' || !onStartTile) {
       continue; // lost during retreat
@@ -838,11 +846,22 @@ export function applyBattleOutcome(
   const territory = state.territories.find((t) => t.id === battle.territoryId);
   if (!territory) throw new Error('Territory missing');
 
+  // Rebuild the roster while PRESERVING units that were never deployed (benched because the
+  // scenario had fewer start tiles than the army). Only deployed units can become casualties;
+  // undeployed units never fought and must survive untouched. The ephemeral supply truck is not
+  // part of state.army, so it is naturally excluded.
+  const deployedRosterIds = new Set(Object.keys(battle.deployment));
   const survivors: ArmyUnit[] = [];
-  for (const [rosterId, tacticalId] of Object.entries(battle.deployment)) {
-    const roster = state.army.find((u) => u.id === rosterId);
-    const unit = battle.state.sides.alliance.units.get(tacticalId);
-    if (!roster || !unit) continue;
+  for (const roster of state.army) {
+    if (!deployedRosterIds.has(roster.id)) {
+      survivors.push(roster);
+      continue;
+    }
+    const unit = battle.state.sides.alliance.units.get(battle.deployment[roster.id]);
+    if (!unit) {
+      survivors.push(roster);
+      continue;
+    }
     if (unit.stance === 'destroyed' || unit.currentHealth <= 0) {
       continue;
     }

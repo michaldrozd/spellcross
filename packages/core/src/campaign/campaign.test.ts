@@ -106,6 +106,25 @@ describe('campaign core', () => {
     expect(territory?.status).toBe('cleared');
   });
 
+  it('preserves never-deployed (benched) army units after a victory', () => {
+    const state = createCampaign(starterBundle);
+    // Grow the army beyond the scenario's start-tile count so at least one unit is benched.
+    state.army.push({ ...structuredClone(state.army[0]), id: 'benched-unit-xyz' });
+    const armyBefore = state.army.length;
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');
+    const deployedIds = new Set(Object.keys(battle.deployment));
+    const benchedIds = state.army.filter((u) => !deployedIds.has(u.id)).map((u) => u.id);
+    expect(benchedIds.length).toBeGreaterThan(0); // the scenario has fewer start tiles than the army
+    for (const enemy of battle.state.sides.otherSide.units.values()) enemy.stance = 'destroyed';
+    applyBattleOutcome(state, starterBundle, 'victory');
+    // benched units never fought, so they must still be on the roster
+    for (const id of benchedIds) {
+      expect(state.army.find((u) => u.id === id)).toBeDefined();
+    }
+    // a clean win with no deployed casualties must not shrink the roster
+    expect(state.army.length).toBe(armyBefore);
+  });
+
   it('blocks battles that have no deployable allied units', () => {
     const state = createCampaign(starterBundle);
     state.army = [];
