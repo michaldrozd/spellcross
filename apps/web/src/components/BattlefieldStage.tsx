@@ -2267,7 +2267,7 @@ export function BattlefieldStage({
         // Map the large painted texture continuously across the map (world-space) so the
         // ground reads as one cohesive painted surface; REPEAT wrap tiles it seamlessly.
         // u = k * world  →  matrix.scale(1/k) then translate(-graphicsOrigin).
-        const k = 1.4; // texels per world unit (smaller = texture spans more tiles, less repetition)
+        const k = 2.5; // texels per world unit (higher = finer grass per tile so single tufts don't look like giant bushes when zoomed in)
         const gx = pos.x;
         const gy = pos.y - avgHeight * ELEV_Y_OFFSET;
         texMatrix.scale(1 / k, 1 / k);
