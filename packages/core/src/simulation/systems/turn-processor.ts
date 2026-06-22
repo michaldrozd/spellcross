@@ -2,6 +2,7 @@ import {
   canAffordAttack,
   calculateAttackRange,
   calculateHitChance,
+  estimateHitDamage,
   findUnitInState,
   resolveAttack,
   spendAttackCost,
@@ -50,6 +51,65 @@ export interface DisembarkActionInput {
  */
 export interface TurnProcessorOptions {
   random?: () => number;
+}
+
+export interface ReactionShot {
+  defender: UnitInstance;
+  weaponId: string;
+  hitChance: number;
+  viaOverwatch: boolean;
+}
+
+export interface ReactionThreat {
+  attackerId: string;
+  weaponId: string;
+  hitChance: number;
+  potentialDamage: number;
+  viaOverwatch: boolean;
+}
+
+// Enemies that would reaction-fire at `mover` standing at its current coordinate, with the weapon
+// each would pick (highest hit chance). This is the single source of truth shared by the engine's
+// reaction-fire step and the UI move-threat preview, so the preview can never drift from reality.
+export function reactionAttackers(state: TacticalBattleState, mover: UnitInstance): ReactionShot[] {
+  const shots: ReactionShot[] = [];
+  for (const [faction, side] of Object.entries(state.sides)) {
+    if (faction === mover.faction) continue;
+    for (const defender of side.units.values()) {
+      if (defender.stance === 'destroyed' || defender.embarkedOn) continue;
+      const viaOverwatch = defender.statusEffects.has('overwatch');
+      if (!viaOverwatch && !canAffordAttack(defender)) continue;
+      if (!hasLineOfSight(state.map, defender.coordinate, mover.coordinate)) continue;
+
+      const distance = axialDistance(defender.coordinate, mover.coordinate);
+      let bestWeapon: string | null = null;
+      let bestHit = 0;
+      for (const weaponId of Object.keys(defender.stats.weaponRanges)) {
+        const range = calculateAttackRange(defender, weaponId, state.map);
+        if (range <= 0 || distance > range) continue;
+        if (!canWeaponTarget(defender, weaponId, mover)) continue;
+        const hitChance = calculateHitChance({ attacker: defender, defender: mover, weaponId, map: state.map });
+        if (hitChance > bestHit) {
+          bestHit = hitChance;
+          bestWeapon = weaponId;
+        }
+      }
+      if (bestWeapon) shots.push({ defender, weaponId: bestWeapon, hitChance: bestHit, viaOverwatch });
+    }
+  }
+  return shots;
+}
+
+// Same selection as reactionAttackers, plus the deterministic damage each shot would deal on a hit —
+// used by the UI to decide whether a move would expose a unit to potentially lethal reaction fire.
+export function reactionThreats(state: TacticalBattleState, mover: UnitInstance): ReactionThreat[] {
+  return reactionAttackers(state, mover).map((shot) => ({
+    attackerId: shot.defender.id,
+    weaponId: shot.weaponId,
+    hitChance: shot.hitChance,
+    potentialDamage: estimateHitDamage(shot.defender, mover, shot.weaponId, state.map),
+    viaOverwatch: shot.viaOverwatch
+  }));
 }
 
 export class TurnProcessor {
@@ -259,50 +319,25 @@ export class TurnProcessor {
 
   // Returns true if the mover was destroyed by reaction fire
   #processReactionFireOnMovement(mover: UnitInstance): boolean {
-    for (const [faction, side] of Object.entries(this.#state.sides)) {
-      if (faction === mover.faction) continue;
-      for (const defender of side.units.values()) {
-        if (defender.stance === 'destroyed' || defender.embarkedOn) continue;
-        const hasOverwatch = defender.statusEffects.has('overwatch');
-        if (!hasOverwatch && !canAffordAttack(defender)) continue;
-        // require LoS at current positions
-        if (!hasLineOfSight(this.#state.map, defender.coordinate, mover.coordinate)) continue;
+    for (const shot of reactionAttackers(this.#state, mover)) {
+      const { defender } = shot;
+      if (defender.stance === 'destroyed') continue;
 
-        // choose a viable weapon with the highest hit chance
-        let bestWeapon: string | null = null;
-        let bestHit = 0;
-        const distance = axialDistance(defender.coordinate, mover.coordinate);
-        for (const weaponId of Object.keys(defender.stats.weaponRanges)) {
-          const range = calculateAttackRange(defender, weaponId, this.#state.map);
-          if (range <= 0 || distance > range) continue;
-          if (!canWeaponTarget(defender, weaponId, mover)) continue;
-          const hitChance = calculateHitChance({ attacker: defender, defender: mover, weaponId, map: this.#state.map });
-          if (hitChance > bestHit) {
-            bestHit = hitChance;
-            bestWeapon = weaponId;
-          }
-        }
-        if (!bestWeapon) continue;
-
-        const outcome = resolveAttack({ attacker: defender, defender: mover, weaponId: bestWeapon, map: this.#state.map, random: this.#random });
-        if (!hasOverwatch) {
-          spendAttackCost(defender);
-          spendAmmo(defender);
-        } else {
-          defender.statusEffects.delete('overwatch');
-          spendAmmo(defender);
-        }
-        this.#state.timeline.push(...outcome.events);
-
-        // update visions for both sides after shots
-        updateFactionVision(this.#state, defender.faction);
-        updateFactionVision(this.#state, mover.faction);
-
-        if (mover.stance === 'destroyed') {
-          return true;
-        }
-
+      const outcome = resolveAttack({ attacker: defender, defender: mover, weaponId: shot.weaponId, map: this.#state.map, random: this.#random });
+      if (shot.viaOverwatch) {
+        defender.statusEffects.delete('overwatch');
+        spendAmmo(defender);
+      } else {
+        spendAttackCost(defender);
+        spendAmmo(defender);
       }
+      this.#state.timeline.push(...outcome.events);
+
+      // update visions for both sides after shots
+      updateFactionVision(this.#state, defender.faction);
+      updateFactionVision(this.#state, mover.faction);
+
+      if (mover.stance === 'destroyed') return true;
     }
     return false;
   }

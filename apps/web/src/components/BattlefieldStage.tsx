@@ -134,6 +134,7 @@ export interface BattlefieldStageProps {
   onSelectTile?: (coordinate: HexCoordinate) => void;
   plannedPath?: HexCoordinate[];
   plannedDestination?: HexCoordinate;
+  threatenedTiles?: string[]; // coordinateKey list of planned-path tiles under enemy reaction fire
   invalidMoveFeedback?: InvalidMoveFeedback | null;
   targetUnitId?: string;
   focusTargetUnitId?: string;
@@ -1231,6 +1232,7 @@ export function BattlefieldStage({
   onSelectTile,
   plannedPath,
   plannedDestination,
+  threatenedTiles,
   invalidMoveFeedback,
   targetUnitId,
   focusTargetUnitId,
@@ -3636,10 +3638,43 @@ export function BattlefieldStage({
       }
     }
 
-
+    // Tiles along the route where the unit would take enemy reaction fire — flag them red so the
+    // player can see the danger before committing the move.
+    if (threatenedTiles && threatenedTiles.length) {
+      const threatSet = new Set(threatenedTiles);
+      for (let i = 1; i < steps.length; i++) {
+        const step = steps[i];
+        if (!threatSet.has(`${step.q},${step.r}`)) continue;
+        const idx = step.r * map.width + step.q;
+        if (!visibleTiles.has(idx)) continue;
+        const p0 = toScreen(step);
+        const geom = topGeomFor(step.q, step.r);
+        const x = p0.x;
+        const y = p0.y - geom.avgHeight * ELEV_Y_OFFSET;
+        elements.push(
+          <Graphics
+            key={`threat-${step.q}-${step.r}`}
+            x={x}
+            y={y}
+            draw={(g) => {
+              g.clear();
+              const ring = geom.inset(0.82);
+              g.beginFill(0xe0392b, 0.16);
+              drawPoly(g as PixiGraphics, ring);
+              g.endFill();
+              g.lineStyle(1.6, 0xe0392b, 0.85);
+              drawPoly(g as PixiGraphics, ring);
+              g.lineStyle(1.2, 0xffd2cc, 0.8);
+              g.moveTo(-3.4, 0); g.lineTo(3.4, 0);
+              g.moveTo(0, -3.4); g.lineTo(0, 3.4);
+            }}
+          />
+        );
+      }
+    }
 
     return elements;
-  }, [exploredTiles, map.width, plannedDestination, plannedPath, visibleTiles, topGeomFor]);
+  }, [exploredTiles, map.width, plannedDestination, plannedPath, threatenedTiles, visibleTiles, toScreen, topGeomFor]);
 
   const invalidMoveHighlight = useMemo(() => {
     if (!invalidMoveFeedback) return null;

@@ -71,6 +71,24 @@ export function calculateStrengthModifier(unit: UnitInstance): number {
   return Math.max(STRENGTH_DAMAGE_MIN_FACTOR, Math.min(1, modifier));
 }
 
+// Deterministic damage a successful hit deals (the hit roll is the only RNG in resolveAttack).
+// Exported so the move-threat preview can estimate exactly what reaction fire would do.
+export function estimateHitDamage(
+  attacker: UnitInstance,
+  defender: UnitInstance,
+  weaponId: string,
+  map: BattlefieldMap
+): number {
+  const weaponPower = attacker.stats.weaponPower[weaponId] ?? 0;
+  if (weaponPower <= 0) return 0;
+  const effectivePower = weaponPower * calculateStrengthModifier(attacker);
+  const defenderTile = getTile(map, defender.coordinate);
+  const defenderCover = (defenderTile?.cover ?? 0) + (defender.entrench ?? 0);
+  const armorReduction = defender.stats.armor * ARMOR_ABSORPTION_FACTOR;
+  const coverReduction = defenderCover * COVER_ABSORPTION_FACTOR;
+  return Math.max(0, Math.round(effectivePower - armorReduction - coverReduction));
+}
+
 export function calculateAttackRange(attacker: UnitInstance, weaponId: string, map?: BattlefieldMap): number {
   const baseRange = attacker.stats.weaponRanges[weaponId] ?? 0;
   if (!map) return baseRange;
@@ -143,9 +161,6 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
   const maxRange = calculateAttackRange(attacker, weaponId, map);
   const distance = axialDistance(attacker.coordinate, defender.coordinate);
   const weaponPower = attacker.stats.weaponPower[weaponId] ?? 0;
-  const defenderArmor = defender.stats.armor;
-  const defenderTile = getTile(map, defender.coordinate);
-  const defenderCover = (defenderTile?.cover ?? 0) + (defender.entrench ?? 0);
 
   const inRange = distance <= maxRange && maxRange > 0;
   const hitChance = inRange && weaponPower > 0 && defender.stance !== 'destroyed'
@@ -159,14 +174,8 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
   let moraleDamage = 0;
 
   if (hit) {
-    // Apply strength-based damage modifier (wounded units deal less damage)
-    const strengthMod = calculateStrengthModifier(attacker);
-    const effectivePower = weaponPower * strengthMod;
-
-    const armorReduction = defenderArmor * ARMOR_ABSORPTION_FACTOR;
-    const coverReduction = defenderCover * COVER_ABSORPTION_FACTOR;
-    const mitigatedDamage = effectivePower - armorReduction - coverReduction;
-    damage = Math.max(0, Math.round(mitigatedDamage));
+    // Wounded attackers deal less; armor and cover absorb the rest (see estimateHitDamage).
+    damage = estimateHitDamage(attacker, defender, weaponId, map);
 
     const newHealth = Math.max(0, defender.currentHealth - damage);
     defender.currentHealth = newHealth;

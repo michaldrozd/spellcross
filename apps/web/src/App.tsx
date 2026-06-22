@@ -29,6 +29,7 @@ import {
   hydrateCampaignState,
   isUnitUnlocked,
   planPathForUnitIso as planPathForUnit,
+  reactionThreats,
   recruitUnit,
   dismissUnit,
   refillUnit,
@@ -671,6 +672,29 @@ const StrategicView: React.FC<{
   );
 };
 
+// For a planned move, work out which tiles along the path expose the unit to enemy reaction fire
+// and how hard the worst tile could hit. Mirrors the engine's reaction-fire step (reactionThreats),
+// so the on-map warning matches what would actually happen.
+function analyzePathThreat(
+  state: TacticalBattleState,
+  unit: UnitInstance,
+  pathTiles: HexCoordinate[]
+): { threatenedKeys: string[]; worstTileDamage: number } {
+  const threatenedKeys: string[] = [];
+  let worstTileDamage = 0;
+  // skip index 0 — that's where the unit already stands, reaction fire only triggers on the steps it takes
+  for (let i = 1; i < pathTiles.length; i += 1) {
+    const tile = pathTiles[i];
+    const moverAtTile = { ...unit, coordinate: tile } as UnitInstance;
+    const threats = reactionThreats(state, moverAtTile);
+    if (threats.length === 0) continue;
+    threatenedKeys.push(coordinateKey(tile));
+    const tileDamage = threats.reduce((sum, threat) => sum + threat.potentialDamage, 0);
+    if (tileDamage > worstTileDamage) worstTileDamage = tileDamage;
+  }
+  return { threatenedKeys, worstTileDamage };
+}
+
 const BattleView: React.FC<{
   campaign: CampaignState;
   onVictory: () => void;
@@ -685,6 +709,7 @@ const BattleView: React.FC<{
   const [plannedPath, setPlannedPath] = useState<HexCoordinate[] | null>(null);
   const [plannedDestination, setPlannedDestination] = useState<HexCoordinate | null>(null);
   const [invalidMoveFeedback, setInvalidMoveFeedback] = useState<{ coordinate: HexCoordinate; time: number; message: string } | null>(null);
+  const [riskyMove, setRiskyMove] = useState<{ unitId: string; target: HexCoordinate; unitName: string; lethal: boolean } | null>(null);
   const [combatNotices, setCombatNotices] = useState<Array<{ id: number; message: string }>>([]);
   const [phaseNotice, setPhaseNotice] = useState<{ id: number; title: string; detail: string; tone: 'enemy' | 'alliance' } | null>(null);
   const [pendingAttack, setPendingAttack] = useState<{ id: string; time: number } | null>(null);
@@ -701,6 +726,13 @@ const BattleView: React.FC<{
   const selectedDefinition = selectedUnit ? bundle.units.find((unit) => unit.id === selectedUnit.definitionId) : undefined;
   const previewEnemy = targetedEnemy;
   const targetWeaponPreview = selectedUnit && targetedEnemy ? bestWeapon(selectedUnit, targetedEnemy, battle.state.map) : null;
+  const threatenedPathTiles = useMemo(() => {
+    if (!plannedPath || !selectedUnit) return undefined;
+    const keys = analyzePathThreat(battle.state, selectedUnit, plannedPath).threatenedKeys;
+    return keys.length ? keys : undefined;
+    // recompute when the planned route or the acting unit changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plannedPath, selectedUnit, battle.state]);
   const [showRanges, setShowRanges] = useState(false);
   const [attackEffects, setAttackEffects] = useState<AttackEffect[]>([]);
 
@@ -1268,7 +1300,7 @@ const BattleView: React.FC<{
     }, 1800);
   };
 
-  const actMove = (unitId: string, target: HexCoordinate) => {
+  const actMove = (unitId: string, target: HexCoordinate, force = false) => {
     if (deployModeRef.current) return false;
     if (movingUnitRef.current) return false; // Don't start new movement while animating
     const unit = battle.state.sides.alliance.units.get(unitId);
@@ -1281,6 +1313,23 @@ const BattleView: React.FC<{
     }
 
     if (!unit) return false;
+
+    // Warn before walking a fragile unit into enemy reaction fire — the route crosses tiles where
+    // enemies can shoot, and either the unit is already low or one tile's fire could outright kill it.
+    if (!force) {
+      const fullPath = [unit.coordinate, ...path.path];
+      const { threatenedKeys, worstTileDamage } = analyzePathThreat(battle.state, unit, fullPath);
+      if (threatenedKeys.length > 0) {
+        const lowHp = unit.currentHealth <= unit.stats.maxHealth * 0.4;
+        const lethal = unit.currentHealth <= worstTileDamage;
+        if (lowHp || lethal) {
+          const def = bundle.units.find((d) => d.id === unit.definitionId);
+          setRiskyMove({ unitId, target, unitName: def?.name ?? unit.definitionId, lethal });
+          return false;
+        }
+      }
+    }
+
     const startCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
 
     const moveResult = processor.moveUnit({ unitId, path: path.path });
@@ -1593,6 +1642,7 @@ const BattleView: React.FC<{
           selectedUnitId={selected ?? undefined}
           plannedPath={plannedPath ?? undefined}
           plannedDestination={plannedDestination ?? undefined}
+          threatenedTiles={threatenedPathTiles}
           invalidMoveFeedback={invalidMoveFeedback}
           targetUnitId={previewEnemy?.id}
           restoreCameraSignal={cameraRestoreSignal}
@@ -1615,6 +1665,35 @@ const BattleView: React.FC<{
           <div className={`battle-phase-notice ${phaseNotice.tone}`}>
             <strong>{phaseNotice.title}</strong>
             <span>{phaseNotice.detail}</span>
+          </div>
+        ) : null}
+        {riskyMove ? (
+          <div className="risky-move-backdrop" role="alertdialog" aria-label="Risky move warning">
+            <div className="risky-move-dialog">
+              <strong>⚠ Presun pod paľbou</strong>
+              <p>
+                Trasa <strong>{riskyMove.unitName}</strong> vedie cez nepriateľskú paľbu.{' '}
+                {riskyMove.lethal
+                  ? 'Reakčná paľba ju môže pri tomto presune zničiť.'
+                  : 'Jednotka je ranená a môže utrpieť ťažké straty.'}
+                {' '}Presunúť?
+              </p>
+              <div className="risky-move-actions">
+                <button
+                  className="risky-move-confirm"
+                  onClick={() => {
+                    const move = riskyMove;
+                    setRiskyMove(null);
+                    actMove(move.unitId, move.target, true);
+                  }}
+                >
+                  Presunúť
+                </button>
+                <button className="risky-move-cancel" onClick={() => setRiskyMove(null)}>
+                  Zrušiť
+                </button>
+              </div>
+            </div>
           </div>
         ) : null}
         {showRanges && selectedUnit ? (

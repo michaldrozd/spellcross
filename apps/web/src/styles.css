@@ -441,6 +441,79 @@ body {
   color: #9fc4cc;
 }
 
+.risky-move-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 6, 8, 0.5);
+  pointer-events: auto;
+}
+
+.risky-move-dialog {
+  display: grid;
+  gap: 0.5rem;
+  width: min(360px, calc(100vw - 3rem));
+  padding: 0.85rem 1rem 0.95rem;
+  border: 1px solid rgba(224, 57, 43, 0.7);
+  background:
+    repeating-linear-gradient(90deg, rgba(224, 57, 43, 0.07) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, rgba(35, 17, 15, 0.96), rgba(9, 5, 5, 0.97));
+  box-shadow: inset 1px 1px 0 rgba(255, 190, 160, 0.1), 0 14px 34px rgba(0, 0, 0, 0.6);
+  color: #eac0a9;
+  font-family: "Courier New", monospace;
+  text-align: left;
+}
+
+.risky-move-dialog strong {
+  color: #f3a24a;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.risky-move-dialog p {
+  margin: 0;
+  color: #d8b9a6;
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
+.risky-move-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.risky-move-actions button {
+  flex: 1;
+  padding: 0.42rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(20, 24, 27, 0.9);
+  color: #d6e2e6;
+  font-family: "Courier New", monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.risky-move-actions button:hover {
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.risky-move-confirm {
+  border-color: rgba(224, 57, 43, 0.78);
+  color: #ffd2cc;
+  background: linear-gradient(180deg, rgba(120, 30, 24, 0.88), rgba(60, 14, 11, 0.92));
+}
+
+.risky-move-cancel {
+  color: #c8e5e9;
+}
+
 @keyframes battlePhaseNotice {
   0% { opacity: 0; transform: translateY(4px); }
   12% { opacity: 0.96; transform: translateY(0); }

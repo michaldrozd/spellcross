@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createBattleState } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
-import { TurnProcessor } from './turn-processor.js';
+import { TurnProcessor, reactionThreats } from './turn-processor.js';
 
 const plain = {
   terrain: 'plain',
@@ -104,6 +104,23 @@ describe('Overwatch (reaction fire)', () => {
     // ensure no consolidated unit:moved event was logged
     const movedEvent = state.timeline.find(e => e.kind==='unit:moved');
     expect(movedEvent).toBeUndefined();
+  });
+
+  it('reactionThreats previews who would punish a position and the damage they would deal', () => {
+    const state = createBattleState(base);
+    const ally = Array.from(state.sides.alliance.units.values())[0];
+
+    // standing at q3 is within the archer's bow range (distance 2 <= 4)
+    ally.coordinate = { q: 3, r: 1 };
+    const threats = reactionThreats(state, ally);
+    expect(threats.length).toBe(1);
+    expect(threats[0].attackerId).toBe(Array.from(state.sides.otherSide.units.keys())[0]);
+    expect(threats[0].potentialDamage).toBe(12); // bow power 12, ally has no armor/cover
+    expect(threats[0].hitChance).toBeGreaterThan(0);
+
+    // out of range -> no threat
+    ally.coordinate = { q: 0, r: 1 }; // distance 5 > bow range 4
+    expect(reactionThreats(state, ally).length).toBe(0);
   });
 });
 
