@@ -66,7 +66,7 @@ function bestEnemyShotThreat(
     const maxRange = calculateAttackRange(enemy, weaponId, state.map) ?? 0;
     const dist = axialDistance(enemy.coordinate, defenderAt.coordinate);
     if (dist > maxRange) continue;
-    const hit = calculateHitChance({ attacker: enemy, defender: defenderAt, weaponId, map: state.map });
+    const hit = calculateHitChance({ attacker: enemy, defender: defenderAt, weaponId, map: state.map, weather: state.weather });
     if (hit <= 0) continue;
     const power = enemy.stats.weaponPower[weaponId] ?? 0;
     const score = hit * (power || 1);
@@ -256,8 +256,8 @@ function buildThreatAwarePathToward(
   return path;
 }
 
-function flankAwareAttackScore(attacker: UnitInstance, defender: UnitInstance, weaponId: string, map: TacticalBattleState['map']): number {
-  const hit = calculateHitChance({ attacker, defender, weaponId, map });
+function flankAwareAttackScore(attacker: UnitInstance, defender: UnitInstance, weaponId: string, map: TacticalBattleState['map'], weather?: TacticalBattleState['weather']): number {
+  const hit = calculateHitChance({ attacker, defender, weaponId, map, weather });
   if (hit <= 0) return 0;
   const power = attacker.stats.weaponPower[weaponId] ?? 0;
   const attackDir = isoDirectionIndex(defender.coordinate, attacker.coordinate);
@@ -280,7 +280,7 @@ function bestAttackFromHere(
   for (const enemy of enemies) {
     for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
       if (!canWeaponTarget(attacker, weaponId, enemy)) continue;
-      const score = flankAwareAttackScore(attacker, enemy, weaponId, state.map);
+      const score = flankAwareAttackScore(attacker, enemy, weaponId, state.map, state.weather);
       if (score <= 0) continue;
       if (!best || score > best.score) {
         best = { defenderId: enemy.id, weaponId, score };
@@ -408,7 +408,7 @@ export function decideNextAIAction(
     for (const target of contestTargets) {
       for (const weaponId of Object.keys(u.stats.weaponRanges)) {
         if (!canWeaponTarget(u, weaponId, target)) continue;
-        const score = flankAwareAttackScore(u, target, weaponId, state.map) + 2;
+        const score = flankAwareAttackScore(u, target, weaponId, state.map, state.weather) + 2;
         if (!bestAttack || score > bestAttack.score) {
           bestAttack = { attackerId: u.id, defenderId: target.id, weaponId, score };
         }

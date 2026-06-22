@@ -122,5 +122,24 @@ describe('Overwatch (reaction fire)', () => {
     ally.coordinate = { q: 0, r: 1 }; // distance 5 > bow range 4
     expect(reactionThreats(state, ally).length).toBe(0);
   });
+
+  it('keeps overwatch on the resting side so it can react during the enemy turn', () => {
+    const state = createBattleState(base);
+    const proc = new TurnProcessor(state, { random: () => 0 });
+    const allyId = Array.from(state.sides.alliance.units.keys())[0];
+    proc.setOverwatch(allyId);
+    expect(state.sides.alliance.units.get(allyId)!.statusEffects.has('overwatch')).toBe(true);
+    proc.endTurn(); // alliance -> otherSide; the alliance unit's reaction window is the enemy turn
+    expect(state.sides.alliance.units.get(allyId)!.statusEffects.has('overwatch')).toBe(true);
+  });
+
+  it('refreshes AP only for the side whose turn is starting', () => {
+    const state = createBattleState(base);
+    const proc = new TurnProcessor(state, { random: () => 0 });
+    const allyId = Array.from(state.sides.alliance.units.keys())[0];
+    state.sides.alliance.units.get(allyId)!.actionPoints = 0;
+    proc.endTurn(); // alliance ends -> otherSide active; the resting alliance unit keeps its AP
+    expect(state.sides.alliance.units.get(allyId)!.actionPoints).toBe(0);
+  });
 });
 

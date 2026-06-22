@@ -409,7 +409,7 @@ function soundForAttackEffect(effectType: AttackEffect['type']) {
   return effectType === 'explosion' ? 'explosion' : 'gunshot';
 }
 
-function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: BattlefieldMap): { weapon: string; hit: number } | null {
+function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: BattlefieldMap, weather?: TacticalBattleState['weather']): { weapon: string; hit: number } | null {
   let choice: { weapon: string; hit: number } | null = null;
   const distance = axialDistance(attacker.coordinate, defender.coordinate);
 
@@ -426,7 +426,7 @@ function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: Battlef
       continue;
     }
 
-    const hit = calculateHitChance({ attacker, defender, weaponId, map });
+    const hit = calculateHitChance({ attacker, defender, weaponId, map, weather });
 
     if (hit <= 0) continue;
 
@@ -442,7 +442,7 @@ function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: Battlef
     for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
       const range = attacker.stats.weaponRanges[weaponId] ?? 0;
       if (distance <= range) {
-        const hit = calculateHitChance({ attacker, defender, weaponId, map });
+        const hit = calculateHitChance({ attacker, defender, weaponId, map, weather });
         choice = { weapon: weaponId, hit: Math.max(5, Math.round(hit * 100)) }; // At least 5% chance
         break;
       }
@@ -725,7 +725,7 @@ const BattleView: React.FC<{
   const selectedUnit = selected ? battle.state.sides.alliance.units.get(selected) : undefined;
   const selectedDefinition = selectedUnit ? bundle.units.find((unit) => unit.id === selectedUnit.definitionId) : undefined;
   const previewEnemy = targetedEnemy;
-  const targetWeaponPreview = selectedUnit && targetedEnemy ? bestWeapon(selectedUnit, targetedEnemy, battle.state.map) : null;
+  const targetWeaponPreview = selectedUnit && targetedEnemy ? bestWeapon(selectedUnit, targetedEnemy, battle.state.map, battle.state.weather) : null;
   const threatenedPathTiles = useMemo(() => {
     if (!plannedPath || !selectedUnit) return undefined;
     const keys = analyzePathThreat(battle.state, selectedUnit, plannedPath).threatenedKeys;
@@ -1398,7 +1398,7 @@ const BattleView: React.FC<{
       return;
     }
 
-    const weapon = bestWeapon(attacker, defender, battle.state.map);
+    const weapon = bestWeapon(attacker, defender, battle.state.map, battle.state.weather);
     if (!weapon) {
       // Try to use any weapon
       const anyWeapon = Object.keys(attacker.stats.weaponRanges)[0];
@@ -1901,7 +1901,7 @@ const BattleView: React.FC<{
               {(() => {
                 const attacker = battle.state.sides.alliance.units.get(selected);
                 const def = bundle.units.find(d => d.id === targetedEnemy.definitionId);
-                const weapon = attacker ? bestWeapon(attacker, targetedEnemy, battle.state.map) : null;
+                const weapon = attacker ? bestWeapon(attacker, targetedEnemy, battle.state.map, battle.state.weather) : null;
                 const canAttackNow = Boolean(attacker && weapon && canAffordAttack(attacker));
                 const attackBlockReason = !weapon
                   ? 'Blocked by range'

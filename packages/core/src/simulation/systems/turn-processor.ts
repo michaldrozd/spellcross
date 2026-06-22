@@ -88,7 +88,7 @@ export function reactionAttackers(state: TacticalBattleState, mover: UnitInstanc
         const range = calculateAttackRange(defender, weaponId, state.map);
         if (range <= 0 || distance > range) continue;
         if (!canWeaponTarget(defender, weaponId, mover)) continue;
-        const hitChance = calculateHitChance({ attacker: defender, defender: mover, weaponId, map: state.map });
+        const hitChance = calculateHitChance({ attacker: defender, defender: mover, weaponId, map: state.map, weather: state.weather });
         if (hitChance > bestHit) {
           bestHit = hitChance;
           bestWeapon = weaponId;
@@ -174,25 +174,27 @@ export class TurnProcessor {
       activeFaction: next
     });
 
-    // refresh AP at the start of the new active side's turn
-    for (const side of Object.values(this.#state.sides)) {
-      for (const unit of side.units.values()) {
-        unit.actionPoints = unit.maxActionPoints;
-        // overwatch reset when AP refreshed
-        if (unit.statusEffects.has('overwatch')) {
-          unit.statusEffects.delete('overwatch');
-        }
-        // ammo resupply: small trickle, full if on supply tile
-        const cap = unit.stats.ammoCapacity;
-        if (cap !== undefined) {
-          const supplyTiles = this.#state.supplyZones?.[unit.faction] ?? [];
-          const onSupply = supplyTiles.some((c) => c.q === unit.coordinate.q && c.r === unit.coordinate.r);
-          if (onSupply) {
-            unit.currentAmmo = cap;
-          } else {
-            const trickle = Math.max(1, Math.floor(cap * 0.25));
-            unit.currentAmmo = Math.min(cap, unit.currentAmmo + trickle);
-          }
+    // Refresh AP/ammo only for the side whose turn is starting. The resting side keeps its leftover
+    // AP (so it can reaction-fire) and keeps any overwatch it set on its own turn until its next turn
+    // begins — previously both sides were refreshed every endTurn, which cleared overwatch before it
+    // could ever fire and double-regenerated ammo (twice per round).
+    const startingSide = this.#state.sides[next];
+    for (const unit of startingSide.units.values()) {
+      unit.actionPoints = unit.maxActionPoints;
+      // overwatch is reset at the start of the unit's own next turn
+      if (unit.statusEffects.has('overwatch')) {
+        unit.statusEffects.delete('overwatch');
+      }
+      // ammo resupply: small trickle, full if on supply tile
+      const cap = unit.stats.ammoCapacity;
+      if (cap !== undefined) {
+        const supplyTiles = this.#state.supplyZones?.[unit.faction] ?? [];
+        const onSupply = supplyTiles.some((c) => c.q === unit.coordinate.q && c.r === unit.coordinate.r);
+        if (onSupply) {
+          unit.currentAmmo = cap;
+        } else {
+          const trickle = Math.max(1, Math.floor(cap * 0.25));
+          unit.currentAmmo = Math.min(cap, unit.currentAmmo + trickle);
         }
       }
     }
@@ -323,7 +325,7 @@ export class TurnProcessor {
       const { defender } = shot;
       if (defender.stance === 'destroyed') continue;
 
-      const outcome = resolveAttack({ attacker: defender, defender: mover, weaponId: shot.weaponId, map: this.#state.map, random: this.#random });
+      const outcome = resolveAttack({ attacker: defender, defender: mover, weaponId: shot.weaponId, map: this.#state.map, random: this.#random, weather: this.#state.weather });
       if (shot.viaOverwatch) {
         defender.statusEffects.delete('overwatch');
         spendAmmo(defender);
