@@ -106,6 +106,18 @@ describe('campaign core', () => {
     expect(territory?.status).toBe('cleared');
   });
 
+  it('does not permanently fail a timed territory when its relief window expires', () => {
+    const state = createCampaign(starterBundle);
+    const timed = state.territories.find((t) => t.status === 'available' && t.remainingTimer != null);
+    expect(timed).toBeDefined();
+    const turns = (timed!.remainingTimer ?? 0) + 2; // well under the global war clock (25)
+    for (let i = 0; i < turns; i++) endStrategicTurn(state, starterBundle);
+    const after = state.territories.find((t) => t.id === timed!.id)!;
+    // expiry costs the relief window but must keep the sector clearable (was a campaign soft-lock)
+    expect(after.status).not.toBe('failed');
+    expect(after.status).toBe('available');
+  });
+
   it('preserves never-deployed (benched) army units after a victory', () => {
     const state = createCampaign(starterBundle);
     // Grow the army beyond the scenario's start-tile count so at least one unit is benched.

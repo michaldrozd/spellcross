@@ -277,6 +277,10 @@ function loadSummary(slot: number): SlotSummary | null {
 function useCampaign() {
   const initialSlot = typeof window === 'undefined' ? 1 : Number(window.localStorage.getItem(CAMPAIGN_SLOT_KEY) ?? 1);
   const [slot, setSlot] = useState<number>(Number.isNaN(initialSlot) ? 1 : initialSlot);
+  // Synchronous mirror of `slot`. persist()/updateSummary() must not read the async useState value:
+  // changeSlot() followed by reset() (New Game) would otherwise write the fresh campaign into the
+  // PREVIOUS slot's keys and destroy that save.
+  const slotRef = useRef<number>(Number.isNaN(initialSlot) ? 1 : initialSlot);
   const ref = useRef<CampaignState>(loadSavedCampaign(slot));
   const [, rerender] = useState(0);
   const [summary, setSummary] = useState<SlotSummary | null>(loadSummary(slot));
@@ -289,14 +293,14 @@ function useCampaign() {
       activeBattle: Boolean(ref.current.activeBattle)
     };
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`, JSON.stringify(next));
+      window.localStorage.setItem(`${CAMPAIGN_SUMMARY_KEY}:${slotRef.current}`, JSON.stringify(next));
     }
     setSummary(next);
   };
   const persist = () => {
     if (typeof window !== 'undefined') {
       try {
-        window.localStorage.setItem(`${CAMPAIGN_STORAGE_KEY}:${slot}`, JSON.stringify(serializeCampaignState(ref.current)));
+        window.localStorage.setItem(`${CAMPAIGN_STORAGE_KEY}:${slotRef.current}`, JSON.stringify(serializeCampaignState(ref.current)));
       } catch (err) {
         console.warn('Failed to persist campaign', err);
       }
@@ -314,6 +318,7 @@ function useCampaign() {
     persist();
   };
   const changeSlot = (next: number) => {
+    slotRef.current = next;
     setSlot(next);
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(CAMPAIGN_SLOT_KEY, String(next));

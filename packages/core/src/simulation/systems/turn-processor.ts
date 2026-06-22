@@ -11,7 +11,7 @@ import {
 } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import type { HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
-import { axialDistance, coordinateKey, directionIndex, getTile, isNeighbor } from '../utils/grid.js';
+import { axialDistance, coordinateKey, getTile, isNeighbor } from '../utils/grid.js';
 import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
 import { hasLineOfSight, updateAllFactionsVision, updateFactionVision } from '../visibility/vision.js';
 
@@ -276,7 +276,10 @@ export class TurnProcessor {
 
       // advance to step
       origin = { ...step };
-      unit.orientation = isIsoNeighbor(previous, step) ? isoDirectionIndex(previous, step) : directionIndex(previous, step);
+      // Always store facing in the 8-dir iso/compass space that calculateHitChance's flank/rear logic
+      // decodes; the old 6-dir directionIndex fallback was mis-read as a compass index, corrupting the
+      // flank/rear accuracy bonus. isoDirectionIndex works for any coordinate pair (sign of the delta).
+      unit.orientation = isoDirectionIndex(previous, step);
       unit.coordinate = { ...origin };
       costSpent += stepCost;
 
@@ -413,9 +416,7 @@ export class TurnProcessor {
       weather: (this.#state as any).weather ?? 'clear',
       random: this.#random
     });
-    attacker.orientation = isIsoNeighbor(attacker.coordinate, defender.coordinate)
-      ? isoDirectionIndex(attacker.coordinate, defender.coordinate)
-      : directionIndex(attacker.coordinate, defender.coordinate);
+    attacker.orientation = isoDirectionIndex(attacker.coordinate, defender.coordinate);
 
     spendAttackCost(attacker);
     spendAmmo(attacker);

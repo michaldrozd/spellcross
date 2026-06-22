@@ -1343,16 +1343,23 @@ export function BattlefieldStage({
 
 
   // Maintain a local buffer of recent death markers so they fade out even if the unit object disappears.
+  // A unit that died once must get exactly one marker: destroyed units stay in battleState forever, so
+  // keying creation on map-presence made the TTL deletion re-add the marker every 20s (corpses flashed
+  // a fresh death-cross indefinitely). Track recorded deaths in a ref so expiry can never re-create them.
+  const recordedDeathsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const next = new Map(deathMarkers);
+    let added = false;
     for (const side of Object.values(battleState.sides) as any[]) {
       for (const u of (side as any).units.values()) {
-        if (u.stance === 'destroyed' && !next.has(u.id)) {
+        if (u.stance === 'destroyed' && !recordedDeathsRef.current.has(u.id)) {
+          recordedDeathsRef.current.add(u.id);
           next.set(u.id, { id: u.id, q: u.coordinate.q, r: u.coordinate.r, t: Date.now(), faction: u.faction });
+          added = true;
         }
       }
     }
-    if (next.size !== deathMarkers.size) {
+    if (added) {
       setDeathMarkers(next);
     }
   }, [battleState.sides, deathMarkers]);

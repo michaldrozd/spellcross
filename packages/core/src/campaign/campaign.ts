@@ -307,9 +307,11 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
     if (territory.status === 'available' && territory.remainingTimer != null) {
       territory.remainingTimer -= 1;
       if (territory.remainingTimer <= 0) {
-        territory.status = 'failed';
-        state.log.push(`Territory lost: ${territory.name}`);
-        state.events?.push({ turn: state.turn, message: `Territory ${territory.name} lost.` });
+        // Timed territories sit on the only path to the final objective; a permanent 'failed' here
+        // would make the campaign unwinnable. The relief window is lost but the sector stays clearable.
+        territory.remainingTimer = undefined;
+        state.log.push(`Relief window expired at ${territory.name}; the sector remains contested.`);
+        state.events?.push({ turn: state.turn, message: `Relief window expired at ${territory.name}.` });
       }
     }
   }
@@ -746,8 +748,10 @@ const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattle): boo
       return true;
     }
     case 'hold': {
-      if (!objective.turnLimit) return false;
-      return (battle.holdProgress[objective.id] ?? 0) >= objective.turnLimit;
+      // A missing turnLimit is schema-valid; treat it as 1 so the objective stays satisfiable
+      // instead of silently impossible.
+      const limit = objective.turnLimit ?? 1;
+      return (battle.holdProgress[objective.id] ?? 0) >= limit;
     }
     default:
       return false;
