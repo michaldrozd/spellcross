@@ -1298,7 +1298,13 @@ export function BattlefieldStage({
     setOverlayMask(node ? { mapId: map.id, node } : null);
   }, [map.id]);
   const activeOverlayMask =
-    overlayMask?.mapId === map.id && !overlayMask.node.destroyed ? overlayMask.node : undefined;
+    overlayMask?.mapId === map.id &&
+    !overlayMask.node.destroyed &&
+    // A torn-down node (e.g. after a same-map battle restart) keeps its reference but loses its
+    // geometry; using it as a mask crashes Pixi's scissor test, so fall back to unmasked rendering.
+    (overlayMask.node as { geometry?: unknown }).geometry
+      ? overlayMask.node
+      : undefined;
 
   const commitSize = (w: number, h: number) => {
     setHostSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
