@@ -446,6 +446,44 @@ function unitContactFootprint(tile: number, unitType: string, definitionId: stri
   return { rx: tile * 0.18, ry: tile * 0.05, alpha: 0.28, y: tile * 0.04 };
 }
 
+// Fraction of a sprite frame's height that is transparent padding above the visible figure.
+// Sheets vary wildly (≈3% for the tank, ≈37% for the M113), so a fixed status-bar offset
+// either floats above short figures or bites into tall ones. We scan the real top of the
+// artwork once per texture frame and cache it, so bars can anchor to the visible head.
+const spriteContentTopFracCache = new Map<string, number>();
+function spriteContentTopFrac(texture: Texture | null | undefined): number {
+  if (!texture || !texture.baseTexture?.valid) return 0.12;
+  const fr = texture.frame;
+  const key = `${texture.baseTexture.uid}:${Math.round(fr.x)},${Math.round(fr.y)},${Math.round(fr.width)}x${Math.round(fr.height)}`;
+  const cached = spriteContentTopFracCache.get(key);
+  if (cached !== undefined) return cached;
+  try {
+    const source = (texture.baseTexture.resource as { source?: CanvasImageSource })?.source;
+    if (!source) return 0.12;
+    const fw = Math.max(1, Math.round(fr.width));
+    const fh = Math.max(1, Math.round(fr.height));
+    const probe = document.createElement('canvas');
+    probe.width = fw;
+    probe.height = fh;
+    const ctx = probe.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return 0.12;
+    ctx.drawImage(source, fr.x, fr.y, fw, fh, 0, 0, fw, fh);
+    const alpha = ctx.getImageData(0, 0, fw, fh).data;
+    const step = fw > 96 ? 3 : 1;
+    let topRow = -1;
+    for (let y = 0; y < fh && topRow < 0; y++) {
+      for (let x = 0; x < fw; x += step) {
+        if (alpha[(y * fw + x) * 4 + 3] > 24) { topRow = y; break; }
+      }
+    }
+    const frac = topRow < 0 ? 0.12 : topRow / fh;
+    spriteContentTopFracCache.set(key, frac);
+    return frac;
+  } catch {
+    return 0.12;
+  }
+}
+
 function orientationScreenVector(orientation: number) {
   const normalized = ((Math.round(orientation) % 8) + 8) % 8;
   const directions = [
@@ -4227,6 +4265,7 @@ export function BattlefieldStage({
         // Set by the sprite IIFE below (runs during JSX build), then read by the status-bar
         // draw callback (runs later) so the bar hugs the unit's real sprite top.
         let unitSpriteTopY = -tileSize * 0.42;
+        let unitVisibleTopY = -tileSize * 0.36;
 
         return (
           <Container
@@ -4590,6 +4629,7 @@ export function BattlefieldStage({
               const spriteTint = directionalSprite === 'apc_directional' || directionalSprite === 'm113_apc' ? 0xd7d9b8 : 0xffffff;
               const spriteBaseY = directionalSprite ? 0 : tileSize * (isVehicleUnit ? 0.082 : 0.05);
               unitSpriteTopY = spriteBaseY + groundOffsetY - anchorY * desiredH;
+              unitVisibleTopY = unitSpriteTopY + spriteContentTopFrac(texture) * desiredH;
               const silhouetteAlpha = isFootUnit && isVisible ? 0.32 : 0;
               return (
                 <>
@@ -4806,12 +4846,10 @@ export function BattlefieldStage({
                 const bw = detailedBar
                   ? (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 18 : isGroundVehicle ? 20 : 23)
                   : (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' ? 12 : isGroundVehicle ? 13 : 16);
-                // Vehicles/aircraft anchor to ground contact, so a fixed tile-center offset leaves a
-                // big gap above them — hug their actual sprite top instead. Foot units keep the
-                // hand-tuned head clearance.
-                const topY = (isGroundVehicle || unitType === 'air')
-                  ? Math.min(-tileSize * 0.18, unitSpriteTopY - tileSize * 0.04)
-                  : -tileSize * 0.34;
+                // Anchor the status bar a fixed clearance above each unit's *visible* head, which
+                // spriteContentTopFrac derives per texture — so the bar hugs every unit type the
+                // same way regardless of how much transparent padding its sheet carries on top.
+                const topY = Math.min(-tileSize * 0.13, unitVisibleTopY - tileSize * 0.06);
                 const vehicleStatusAlpha = isGroundVehicle ? 0.66 : 1;
                 const passiveStatusAlpha = recentlyActive ? 0.92 : 0.82;
                 const backplateAlpha = (isSelected ? 0.88 : isTarget ? 0.82 : isFriendly ? 0.66 : 0.68) * movingVehicleUiDamping * vehicleStatusAlpha * passiveStatusAlpha;
@@ -4877,7 +4915,7 @@ export function BattlefieldStage({
                 g.lineStyle(0);
                 const hpBarH = detailedBar ? 2 : 3;
                 const hpBarTop = topY - (detailedBar ? 6 : 4);
-                g.beginFill(0x231512, 0.85 * barAlpha); g.drawRect(-bw / 2, hpBarTop, bw, hpBarH); g.endFill();
+                g.beginFill(0x1a1d1f, 0.85 * barAlpha); g.drawRect(-bw / 2, hpBarTop, bw, hpBarH); g.endFill();
                 const hpColor = hpRatio > 0.55 ? 0x7ec850 : hpRatio > 0.25 ? 0xe6b13e : 0xe2503f;
                 const hpFillAlpha = hpRatio <= 0.3
                   ? 0.98 * barAlpha * (0.6 + Math.sin(now / 120) * 0.4) // pulse the bar itself when critical
