@@ -383,6 +383,11 @@ function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: s
   return { hit: false, damage: 0 };
 }
 
+// Monotonic id for combat notices — Date.now() collided when several notices were created in the
+// same millisecond (e.g. rapid attacks), producing duplicate React keys.
+let combatNoticeSeq = 0;
+const nextNoticeId = () => (combatNoticeSeq += 1);
+
 function effectTypeForAttack(attacker: UnitInstance, defender: UnitInstance, weaponId: string): AttackEffect['type'] {
   const definitionId = attacker.definitionId.toLowerCase();
   const weapon = weaponId.toLowerCase();
@@ -753,6 +758,9 @@ const BattleView: React.FC<{
   // Movement animation state
   const [movingUnit, setMovingUnit] = useState<MovingUnit | null>(null);
   const deployModeRef = useRef(deployMode);
+  // Pending staged enemy-turn SFX timeouts, so they can be cancelled if the battle ends mid-stagger
+  // (otherwise gunfire/explosions bleed over the victory/defeat screen).
+  const aiSfxTimeoutsRef = useRef<number[]>([]);
   const movingUnitRef = useRef<MovingUnit | null>(movingUnit);
   const selectedRef = useRef<string | null>(selected);
   const targetedEnemyRef = useRef<UnitInstance | null>(targetedEnemy);
@@ -938,7 +946,7 @@ const BattleView: React.FC<{
         const proc = new TurnProcessor(battle.state);
         const res = proc.attackUnit({ attackerId, defenderId, weaponId: weapon });
         if (!res.success) {
-          setCombatNotices((existing) => [{ id: Date.now(), message: res.error || 'Attack failed' }, ...existing].slice(0, 4));
+          setCombatNotices((existing) => [{ id: nextNoticeId(), message: res.error || 'Attack failed' }, ...existing].slice(0, 4));
         }
         persist();
         resolveOutcome();
@@ -1234,6 +1242,11 @@ const BattleView: React.FC<{
 
   const resolveOutcome = () => {
     const status = evaluateBattleOutcome(battle);
+    if (status === 'victory' || status === 'defeat') {
+      // cancel pending staged enemy SFX so gunfire/explosions don't play over the result screen
+      aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
+      aiSfxTimeoutsRef.current = [];
+    }
     if (status === 'victory') {
       applyBattleOutcome(campaign, bundle, 'victory');
       persist();
@@ -1246,7 +1259,7 @@ const BattleView: React.FC<{
   };
 
   const addCombatNotice = (message: string, ttlMs = 1800) => {
-    const id = Date.now();
+    const id = nextNoticeId(); // monotonic — Date.now() collided when several notices fired in one ms
     setCombatNotices((existing) => [{ id, message }, ...existing].slice(0, 4));
     window.setTimeout(() => {
       setCombatNotices((existing) => existing.filter((notice) => notice.id !== id));
@@ -1501,7 +1514,9 @@ const BattleView: React.FC<{
             persist();
           }
         } else {
-          // clicking outside start zone exits deployment and performs a move like classic behavior
+          // clicking outside start zone exits deployment and performs a move like classic behavior.
+          // deployModeRef must flip synchronously or actMove (which reads the ref) bails on the stale value.
+          deployModeRef.current = false;
           setDeployMode(false);
           battle.state.activeFaction = 'alliance';
           actMove(selected, coord);
@@ -1568,6 +1583,9 @@ const BattleView: React.FC<{
 
   const runAiTurn = () => {
     if (deployMode) return;
+    // drop any staged SFX still pending from a prior enemy turn
+    aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
+    aiSfxTimeoutsRef.current = [];
     const aiProcessor = new TurnProcessor(battle.state);
     aiProcessor.endTurn(); // player ends, AI starts
     showPhaseNotice('Enemy Turn', 'Hostile units are acting', 'enemy');
@@ -1626,11 +1644,11 @@ const BattleView: React.FC<{
           const enemySfx = soundForAttackEffect(effectTypeForAttack(attacker, defender, action.weaponId));
           const enemyKilled = defender.stance === 'destroyed';
           const enemyHit = outcome.hit;
-          window.setTimeout(() => {
+          aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
             AudioManager.play(enemySfx);
             if (enemyKilled) window.setTimeout(() => AudioManager.play('death'), 240);
             else if (enemyHit) window.setTimeout(() => AudioManager.play('hit'), 240);
-          }, fireDelay);
+          }, fireDelay));
           stagedAttacks += 1;
           if (!phaseUpdated) {
             phaseUpdated = true;

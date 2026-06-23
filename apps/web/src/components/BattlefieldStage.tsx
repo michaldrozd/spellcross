@@ -1767,7 +1767,10 @@ export function BattlefieldStage({
     let toCoord: any | undefined;
 
     if (targetEffect) {
-      targetCameraSnapshotRef.current = null;
+      // remember the camera the cinematic zoom is about to interrupt so we can restore it afterwards
+      if (!targetCameraSnapshotRef.current) {
+        targetCameraSnapshotRef.current = { targetId: '__cinematic__', followTargetPx, zoom: zoomRef.current };
+      }
       fromCoord = { q: targetEffect.fromQ, r: targetEffect.fromR };
       toCoord = { q: targetEffect.toQ, r: targetEffect.toR };
     } else if (selectedUnitId && focusTargetUnitId) {
@@ -1782,6 +1785,12 @@ export function BattlefieldStage({
         fromCoord ??= side.units.get(selectedUnitId)?.coordinate;
         toCoord ??= side.units.get(focusTargetUnitId)?.coordinate;
       }
+    } else if (targetCameraSnapshotRef.current?.targetId === '__cinematic__') {
+      // attack effects ended — restore the camera the cinematic zoom interrupted
+      setFollowTargetPx(targetCameraSnapshotRef.current.followTargetPx);
+      setZoom(targetCameraSnapshotRef.current.zoom);
+      targetCameraSnapshotRef.current = null;
+      return;
     }
 
     if (!fromCoord || !toCoord) return;
