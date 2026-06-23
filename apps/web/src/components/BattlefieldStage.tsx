@@ -5611,10 +5611,21 @@ export function BattlefieldStage({
           coord.q >= q0 && coord.q <= q0 + w - 1 && coord.r >= r0 && coord.r <= r0 + h - 1
         );
         const focusAlpha = focusTight ? 0.18 : 0.34;
-        // A unit standing inside the footprint or one row behind (north) it would be occluded.
-        const unitOccluded = visibleUnitCoords.some((coord) =>
-          coord.q >= q0 && coord.q <= q0 + w - 1 && coord.r >= r0 - 1 && coord.r <= r0 + h - 1
-        );
+        // In iso, screen-y = (q+r); tiles "behind" a building (up-screen) have a SMALLER q+r. A tall
+        // building therefore occludes units several rows up-screen, not just on its footprint. Fade it
+        // if a visible unit sits anywhere in that zone (footprint + on-screen height, within its
+        // horizontal q-r span) so units are never fully hidden behind it.
+        const occScale = b.scale ?? 0.082 * Math.max(w, h, 1);
+        const heightRows = Math.min(7, Math.max(2, Math.round((occScale * 870) / (ISO_TILE_H / 2))));
+        const sumMin = q0 + r0;
+        const sumMax = (q0 + w - 1) + (r0 + h - 1);
+        const diffMin = q0 - (r0 + h - 1);
+        const diffMax = (q0 + w - 1) - r0;
+        const unitOccluded = visibleUnitCoords.some((coord) => {
+          const sum = coord.q + coord.r;
+          const diff = coord.q - coord.r;
+          return sum >= sumMin - heightRows && sum <= sumMax && diff >= diffMin - 1 && diff <= diffMax + 1;
+        });
         const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? focusAlpha : unitOccluded ? 0.45 : 1);
         const fogShade = isVisible ? 0 : 0.06;
 
@@ -6316,7 +6327,7 @@ export function BattlefieldStage({
             draw={(g) => {
               g.clear();
               if (battleState.weather === 'night') {
-                g.beginFill(0x0a1733, 0.48);
+                g.beginFill(0x0c1836, 0.4);
               } else {
                 // Muted cool grey, not a bright white wash — fog should desaturate, not over-brighten.
                 g.beginFill(0x8f9aa3, 0.2);
