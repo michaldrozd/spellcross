@@ -3087,8 +3087,10 @@ header.app-header {
 
 .unit-card .unit-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.25rem 0.62rem;
+  /* max-content keeps each stat cell at least as wide as its (nowrap) text, so a 3-digit HP like
+     108/120 can't overflow into the AP column the way a plain 1fr cell allowed. */
+  grid-template-columns: repeat(3, minmax(max-content, 1fr));
+  gap: 0.25rem 0.7rem;
   margin-left: 0;
   min-width: 0;
   padding: 0.45rem 0.48rem;
