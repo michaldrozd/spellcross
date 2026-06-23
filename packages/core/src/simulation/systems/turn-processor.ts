@@ -4,6 +4,7 @@ import {
   calculateHitChance,
   estimateHitDamage,
   findUnitInState,
+  isMedicUnit,
   isSupplyUnit,
   resolveAttack,
   spendAttackCost,
@@ -51,6 +52,15 @@ export interface SupplyActionInput {
   supplierId: string;
   targetId: string;
 }
+
+export interface HealActionInput {
+  medicId: string;
+  targetId: string;
+}
+
+// HP a medic restores per action, and the AP it costs.
+const HEAL_AMOUNT = 25;
+const HEAL_AP_COST = 2;
 
 /**
  * Basic turn processor to unblock UI prototyping.
@@ -275,9 +285,12 @@ export class TurnProcessor {
       unit.entrench = 0;
     }
 
-    // Second pass: execute movement step-by-step and process reaction fire
+    // Second pass: execute movement step-by-step and process reaction fire. Each defender may react at
+    // most once per move (not once per step) — otherwise a single stationary enemy emptied its whole AP
+    // pool on one passing unit and arrived at its own turn unable to act.
     origin = { ...from };
     let costSpent = 0;
+    const reactedThisMove = new Set<string>();
     for (const step of input.path) {
       const tile = getTile(this.#state.map, step)!;
       const stepCost = tile.movementCostModifier * movementMultiplier * weatherMoveMod;
@@ -293,7 +306,7 @@ export class TurnProcessor {
       costSpent += stepCost;
 
       // process reactive fire from opposing units at the new position
-      const destroyed = this.#processReactionFireOnMovement(unit);
+      const destroyed = this.#processReactionFireOnMovement(unit, reactedThisMove);
       if (destroyed) {
         // charge spent movement, but do not log a move event
         unit.actionPoints -= costSpent;
@@ -331,11 +344,14 @@ export class TurnProcessor {
   }
 
 
-  // Returns true if the mover was destroyed by reaction fire
-  #processReactionFireOnMovement(mover: UnitInstance): boolean {
+  // Returns true if the mover was destroyed by reaction fire. `alreadyReacted` carries the set of
+  // defenders that have already fired during this move so none reacts more than once per move.
+  #processReactionFireOnMovement(mover: UnitInstance, alreadyReacted: Set<string>): boolean {
     for (const shot of reactionAttackers(this.#state, mover)) {
       const { defender } = shot;
       if (defender.stance === 'destroyed') continue;
+      if (alreadyReacted.has(defender.id)) continue;
+      alreadyReacted.add(defender.id);
 
       const outcome = resolveAttack({ attacker: defender, defender: mover, weaponId: shot.weaponId, map: this.#state.map, random: this.#random, weather: this.#state.weather });
       if (shot.viaOverwatch) {
@@ -380,9 +396,6 @@ export class TurnProcessor {
 
     if (!canAffordAttack(attacker)) {
       return { success: false, error: 'Not enough action points to attack' };
-    }
-    if (attacker.currentAmmo !== Infinity && attacker.currentAmmo <= 0) {
-      return { success: false, error: 'No ammo' };
     }
     if (attacker.currentAmmo !== Infinity && attacker.currentAmmo <= 0) {
       return { success: false, error: 'No ammo' };
@@ -557,6 +570,32 @@ export class TurnProcessor {
     return { success: true, events: this.#state.timeline };
   }
 
+  // A field medic restores HP to a wounded adjacent friendly unit for AP.
+  heal(input: HealActionInput): ActionResult {
+    const side = this.#state.sides[this.#state.activeFaction];
+    const medic = side.units.get(input.medicId);
+    const target = findUnitInState(this.#state, input.targetId);
+    if (!medic || !target) return { success: false, error: 'Unit not found' };
+    if (medic.id === target.id) return { success: false, error: 'Cannot heal self' };
+    if (medic.faction !== target.faction) return { success: false, error: 'Faction mismatch' };
+    if (medic.stance === 'destroyed' || target.stance === 'destroyed') return { success: false, error: 'Unit destroyed' };
+    if (target.embarkedOn) return { success: false, error: 'Target is embarked' };
+    if (!isMedicUnit(medic)) return { success: false, error: 'Unit cannot heal' };
+    if (
+      !isNeighbor(medic.coordinate, target.coordinate) &&
+      !isIsoNeighbor(medic.coordinate, target.coordinate)
+    ) {
+      return { success: false, error: 'Target not adjacent' };
+    }
+    if (target.currentHealth >= target.stats.maxHealth) return { success: false, error: 'Target at full health' };
+    // The medic carries ammo so canAffordAttack would also gate on it; heal only needs AP.
+    if (medic.actionPoints < HEAL_AP_COST) return { success: false, error: 'Not enough action points to heal' };
+    target.currentHealth = Math.min(target.stats.maxHealth, target.currentHealth + HEAL_AMOUNT);
+    medic.actionPoints -= HEAL_AP_COST;
+    this.#state.timeline.push({ kind: 'unit:xp', unitId: medic.id, amount: 0, reason: 'hit' });
+    return { success: true, events: this.#state.timeline };
+  }
+
   attackTile(input: { attackerId: string; target: HexCoordinate; weaponId: string }): ActionResult {
     const attackerSide = this.#state.sides[this.#state.activeFaction];
     const attacker = attackerSide.units.get(input.attackerId);
@@ -582,6 +621,8 @@ export class TurnProcessor {
 
     const power = attacker.stats.weaponPower[input.weaponId] ?? 0;
     const damage = Math.max(0, Math.round(power));
+    // Refuse a no-op demolition: it would spend AP + ammo to chip 0 HP off the tile.
+    if (damage <= 0) return { success: false, error: 'Weapon cannot damage structures' };
 
     tile.hp = Math.max(0, (tile.hp ?? 0) - damage);
 

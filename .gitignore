@@ -20,3 +20,8 @@ test-results/
 # Files with secrets
 agent_config.yaml
 apps/web/scripts/generateRealisticSprites.cjs
+
+# Local QA scratch (screenshots, audit notes) and asset-generation tooling — not for the repo
+m113-qa/
+m113-*.png
+scripts/

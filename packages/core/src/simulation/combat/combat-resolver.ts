@@ -256,6 +256,11 @@ export function isSupplyUnit(unit: UnitInstance): boolean {
   return unit.unitType === 'support' && (unit.stats.ammoCapacity ?? 0) === 0;
 }
 
+// A field medic: a support unit that restores HP to a wounded adjacent ally instead of resupplying.
+export function isMedicUnit(unit: UnitInstance): boolean {
+  return unit.unitType === 'support' && unit.definitionId.includes('medic');
+}
+
 export function spendAttackCost(attacker: UnitInstance) {
   attacker.actionPoints -= ATTACK_AP_COST;
 }

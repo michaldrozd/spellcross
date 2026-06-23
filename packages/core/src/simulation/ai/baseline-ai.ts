@@ -1,7 +1,7 @@
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { axialDistance, coordinateKey, getNeighbors, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
 import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
-import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange, isSupplyUnit } from '../combat/combat-resolver.js';
+import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange, isMedicUnit, isSupplyUnit } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import { hasLineOfSight } from '../visibility/vision.js';
 
@@ -10,6 +10,7 @@ export type AIImmediateAction =
   | { type: 'attackTile'; unitId: string; target: HexCoordinate; weaponId: string }
   | { type: 'move'; unitId: string; path: HexCoordinate[] }
   | { type: 'supply'; supplierId: string; targetId: string }
+  | { type: 'heal'; medicId: string; targetId: string }
   | { type: 'endTurn' };
 
 function isUsableUnit(u: UnitInstance): boolean {
@@ -95,6 +96,7 @@ function findDemolitionTarget(
       if (range <= 0 || axialDistance(unit.coordinate, coord) > range) continue;
       if (!hasLineOfSight(state.map, unit.coordinate, coord)) continue;
       const power = unit.stats.weaponPower[weaponId] ?? 0;
+      if (power <= 0) continue; // a zero-power weapon would spend AP+ammo to deal no damage
       const score = power + Math.max(0, 6 - distToGoal);
       if (!best || score > best.score) {
         best = { target: coord, weaponId, score };
@@ -122,6 +124,23 @@ function findSupplyTarget(state: TacticalBattleState, supplier: UnitInstance): {
     if (!best || path.length < best.path.length) {
       best = { targetId: ally.id, path };
     }
+  }
+  return best;
+}
+
+function findHealTarget(state: TacticalBattleState, medic: UnitInstance): { targetId: string; path: HexCoordinate[] } | null {
+  if (!isMedicUnit(medic)) return null;
+  const wounded = Array.from(state.sides[medic.faction].units.values()).filter(
+    (u) => u.id !== medic.id && u.stance !== 'destroyed' && !u.embarkedOn && u.currentHealth < u.stats.maxHealth
+  );
+  if (wounded.length === 0) return null;
+  // Prefer the most wounded ally; fall back to the closest among ties.
+  wounded.sort((a, b) => (a.currentHealth / a.stats.maxHealth) - (b.currentHealth / b.stats.maxHealth));
+  let best: { targetId: string; path: HexCoordinate[] } | null = null;
+  for (const ally of wounded) {
+    const path = buildThreatAwarePathToward(state, medic, ally.coordinate, { flankTarget: undefined, threatWeight: 4, flankWeight: 0, maxStepBonus: 0 });
+    if (!path) continue;
+    if (!best || path.length < best.path.length) best = { targetId: ally.id, path };
   }
   return best;
 }
@@ -471,6 +490,19 @@ export function decideNextAIAction(
         }
         if (supply.path.length) {
           return { type: 'move', unitId: u.id, path: supply.path.slice(0, 2) };
+        }
+      }
+    }
+    // medic role: heal an adjacent wounded ally, else move toward the most wounded one
+    if (isMedicUnit(u)) {
+      const heal = findHealTarget(state, u);
+      if (heal) {
+        const target = state.sides[u.faction].units.get(heal.targetId);
+        if (target && (isNeighbor(u.coordinate, target.coordinate) || isIsoNeighbor(u.coordinate, target.coordinate))) {
+          return { type: 'heal', medicId: u.id, targetId: heal.targetId };
+        }
+        if (heal.path.length) {
+          return { type: 'move', unitId: u.id, path: heal.path.slice(0, 2) };
         }
       }
     }

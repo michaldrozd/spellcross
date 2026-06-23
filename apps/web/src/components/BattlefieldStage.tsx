@@ -384,17 +384,19 @@ const DIRECTIONAL_UNIT_FRAME_SIZES: Record<string, { width: number; height: numb
 const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/apc_m113.png': 525,
   '/assets/generated/artillery_mlrs.png': 870,
-  '/assets/generated/helicopter_apache.png': 742,
+  '/assets/generated/helicopter_apache.png': 647,
   '/assets/generated/infantry_squad.png': 767,
   '/assets/generated/ghoul_pack.png': 159,
   '/assets/generated/sniper_team.png': 957,
-  '/assets/generated/medic_unit.png': 768,
+  '/assets/generated/medic_unit.png': 868,
   '/assets/generated/skeleton_warrior.png': 620,
   '/assets/generated/zombie_horde.png': 994,
   '/assets/generated/ogre_brute.png': 891,
   '/assets/generated/bone_golem.png': 902,
-  '/assets/generated/necromancer.png': 929,
-  '/assets/generated/death_knight.png': 820,
+  // Measured visible-figure heights so each renders at its intended desiredH (were stale: the death
+  // knight came out ~16% oversized, the medic/necromancer/helicopter mis-sized).
+  '/assets/generated/necromancer.png': 858,
+  '/assets/generated/death_knight.png': 981,
   '/assets/generated/tank_m1_abrams.png': 572
 };
 const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
@@ -406,7 +408,7 @@ const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
   '/assets/generated/helicopter_apache.png': 0.91,
   '/assets/generated/infantry_squad.png': 0.85,
   '/assets/generated/medic_unit.png': 0.94,
-  '/assets/generated/necromancer.png': 0.98,
+  '/assets/generated/necromancer.png': 0.91,
   '/assets/generated/ogre_brute.png': 0.95,
   '/assets/generated/skeleton_warrior.png': 0.76,
   '/assets/generated/sniper_team.png': 0.98,

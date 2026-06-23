@@ -13,6 +13,7 @@ import { ToastContainer, showToast } from './components/Toast.js';
 
 import { OverwatchButton } from './components/OverwatchButton.js';
 import { SupplyButton } from './components/SupplyButton.js';
+import { HealButton } from './components/HealButton.js';
 import {
   applyBattleOutcome,
   calculateHitChance,
@@ -767,6 +768,21 @@ const BattleView: React.FC<{
     }
     return bestId;
   })();
+  const healTargetId = (() => {
+    if (!selectedUnit || selectedUnit.unitType !== 'support' || !selectedUnit.definitionId.includes('medic')) return null;
+    let bestId: string | null = null;
+    let worstFrac = 1;
+    for (const u of battle.state.sides.alliance.units.values()) {
+      if (u.id === selectedUnit.id || u.stance === 'destroyed' || u.embarkedOn) continue;
+      if (u.currentHealth >= u.stats.maxHealth) continue;
+      const dq = Math.abs(u.coordinate.q - selectedUnit.coordinate.q);
+      const dr = Math.abs(u.coordinate.r - selectedUnit.coordinate.r);
+      if (Math.max(dq, dr) !== 1) continue; // adjacent (8-dir)
+      const frac = u.currentHealth / u.stats.maxHealth;
+      if (frac < worstFrac) { worstFrac = frac; bestId = u.id; }
+    }
+    return bestId;
+  })();
   const previewEnemy = targetedEnemy;
   const targetWeaponPreview = selectedUnit && targetedEnemy ? bestWeapon(selectedUnit, targetedEnemy, battle.state.map, battle.state.weather) : null;
   const threatenedPathTiles = useMemo(() => {
@@ -1451,6 +1467,21 @@ const BattleView: React.FC<{
     }
   };
 
+  const actHeal = (medicId: string) => {
+    if (deployModeRef.current || !healTargetId) return;
+    const proc = new TurnProcessor(battle.state);
+    const res = proc.heal({ medicId, targetId: healTargetId });
+    if (res.success) {
+      AudioManager.play('select');
+      addCombatNotice('Casualty stabilized');
+      persist();
+      resolveOutcome();
+    } else {
+      AudioManager.play('error');
+      showToast(res.error || 'Heal failed', 'error');
+    }
+  };
+
   const actAttack = (attackerId: string, defender: UnitInstance) => {
     // Exit deploy mode when attacking
     if (deployMode) {
@@ -1706,6 +1737,10 @@ const BattleView: React.FC<{
         const supRes = aiProcessor.supply({ supplierId: action.supplierId, targetId: action.targetId });
         if (!supRes.success) { failedUnitIds.add(action.supplierId); continue; }
         AudioManager.play('select');
+      } else if (action.type === 'heal') {
+        const healRes = aiProcessor.heal({ medicId: action.medicId, targetId: action.targetId });
+        if (!healRes.success) { failedUnitIds.add(action.medicId); continue; }
+        AudioManager.play('select');
       }
     }
     // Backstop: never leave control stuck on the enemy turn (e.g. the safety cap tripped).
@@ -1781,6 +1816,10 @@ const BattleView: React.FC<{
       } else if (action.type === 'supply') {
         const supRes = proc.supply({ supplierId: action.supplierId, targetId: action.targetId });
         if (!supRes.success) { failedUnitIds.add(action.supplierId); continue; }
+        AudioManager.play('select');
+      } else if (action.type === 'heal') {
+        const healRes = proc.heal({ medicId: action.medicId, targetId: action.targetId });
+        if (!healRes.success) { failedUnitIds.add(action.medicId); continue; }
         AudioManager.play('select');
       }
     }
@@ -1878,13 +1917,23 @@ const BattleView: React.FC<{
             <OverwatchButton unit={deployMode ? undefined : selectedUnit} onOverwatch={() => {
               if (!selectedUnit || deployMode) return;
               const proc = new TurnProcessor(battle.state);
-              proc.setOverwatch(selectedUnit.id);
+              const res = proc.setOverwatch(selectedUnit.id);
+              if (!res.success) {
+                AudioManager.play('error');
+                showToast(res.error || 'Cannot set overwatch', 'error');
+                return;
+              }
               persist();
             }} />
             <SupplyButton
               unit={deployMode ? undefined : selectedUnit}
               hasTarget={!!supplyTargetId}
               onSupply={() => { if (selectedUnit) actSupply(selectedUnit.id); }}
+            />
+            <HealButton
+              unit={deployMode ? undefined : selectedUnit}
+              hasTarget={!!healTargetId}
+              onHeal={() => { if (selectedUnit) actHeal(selectedUnit.id); }}
             />
             <button
               className={deployMode ? 'primary-btn' : 'end-turn-btn'}
