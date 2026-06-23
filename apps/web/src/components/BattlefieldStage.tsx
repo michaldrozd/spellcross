@@ -1379,6 +1379,12 @@ export function BattlefieldStage({
   // keying creation on map-presence made the TTL deletion re-add the marker every 20s (corpses flashed
   // a fresh death-cross indefinitely). Track recorded deaths in a ref so expiry can never re-create them.
   const recordedDeathsRef = useRef<Set<string>>(new Set());
+  // A new map/battle: drop the previous battle's death markers and recorded-deaths guard so their
+  // stale coordinates can't render onto (and crash) a different-sized map.
+  useEffect(() => {
+    recordedDeathsRef.current = new Set();
+    setDeathMarkers(new Map());
+  }, [map.id]);
   useEffect(() => {
     const next = new Map(deathMarkers);
     let added = false;
@@ -2052,12 +2058,15 @@ export function BattlefieldStage({
         V[qq][rr + 1] = Math.max(V[qq][rr + 1], c.hSW);
       }
     }
+    // Bounds-safe: a stale coordinate (e.g. a leftover marker from a larger previous map) must not
+    // index past the vertex grid and crash the whole battlefield render — fall back to flat ground.
+    const vAt = (qq: number, rr: number) => (V[qq] !== undefined && V[qq][rr] !== undefined ? V[qq][rr] : 0);
     return {
       getCorners: (qq: number, rr: number) => ({
-        hNW: V[qq][rr],
-        hNE: V[qq + 1][rr],
-        hSE: V[qq + 1][rr + 1],
-        hSW: V[qq][rr + 1]
+        hNW: vAt(qq, rr),
+        hNE: vAt(qq + 1, rr),
+        hSE: vAt(qq + 1, rr + 1),
+        hSW: vAt(qq, rr + 1)
       })
     } as const;
   }, [map.tiles, map.width, map.height]);
