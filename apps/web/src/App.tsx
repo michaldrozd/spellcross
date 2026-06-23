@@ -801,6 +801,8 @@ const BattleView: React.FC<{
   // Pending staged enemy-turn SFX timeouts, so they can be cancelled if the battle ends mid-stagger
   // (otherwise gunfire/explosions bleed over the victory/defeat screen).
   const aiSfxTimeoutsRef = useRef<number[]>([]);
+  // Guards Auto Turn against re-entry while the player's staged gunfire plays out before the enemy turn.
+  const autoTurnBusyRef = useRef(false);
   const movingUnitRef = useRef<MovingUnit | null>(movingUnit);
   const selectedRef = useRef<string | null>(selected);
   const targetedEnemyRef = useRef<UnitInstance | null>(targetedEnemy);
@@ -1754,6 +1756,7 @@ const BattleView: React.FC<{
   // "Auto Turn": let the computer play the player's turn — commit deployment, then drive every
   // alliance unit with the same planner the enemy uses, and finally hand off to the enemy turn.
   const runAutoPlayerTurn = () => {
+    if (autoTurnBusyRef.current) return;
     if (deployModeRef.current) {
       deployModeRef.current = false;
       setDeployMode(false);
@@ -1761,6 +1764,7 @@ const BattleView: React.FC<{
       updateAllFactionsVision(battle.state);
     }
     if (battle.state.activeFaction !== 'alliance') return;
+    autoTurnBusyRef.current = true;
 
     aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
     aiSfxTimeoutsRef.current = [];
@@ -1777,6 +1781,14 @@ const BattleView: React.FC<{
 
     while (battle.state.activeFaction === 'alliance' && safety < 80) {
       safety += 1;
+      // Fog of war: the squad may only fire at enemies on tiles we can currently see. Recomputed each
+      // step because advancing reveals more of the map. (Movement still seeks all enemies, to scout.)
+      const seenTiles = battle.state.vision.alliance.visibleTiles;
+      const visibleEnemyIds = new Set<string>();
+      for (const e of battle.state.sides.otherSide.units.values()) {
+        if (e.stance === 'destroyed' || e.embarkedOn) continue;
+        if (seenTiles.has(e.coordinate.r * battle.state.map.width + e.coordinate.q)) visibleEnemyIds.add(e.id);
+      }
       const action = decideNextAIAction(battle.state, 'alliance', {
         objectiveTargets,
         reachTargets,
@@ -1784,7 +1796,8 @@ const BattleView: React.FC<{
         aggression: 0.85,
         difficulty: 'hard',
         allowDemolition: false,
-        excludeUnitIds: failedUnitIds
+        excludeUnitIds: failedUnitIds,
+        visibleEnemyIds
       });
       if (action.type === 'endTurn') break;
       if (action.type === 'move') {
@@ -1828,9 +1841,17 @@ const BattleView: React.FC<{
     updateAllFactionsVision(battle.state);
     persist();
     resolveOutcome();
-    // Battle may have just been won/lost; only pass to the enemy if it is still ongoing.
+    // Let the player's staged gunfire/effects finish before the enemy turn begins. Calling runAiTurn
+    // synchronously here also wiped the SFX queue (silent Auto Turn) and made the whole round resolve in
+    // one instant, artificial-feeling tick. Delaying past the last staged shot fixes both.
     if (evaluateBattleOutcome(battle) === 'ongoing') {
-      runAiTurn();
+      const playerSfxTail = stagedAttacks > 0 ? (stagedAttacks - 1) * 500 + 650 : 300;
+      window.setTimeout(() => {
+        autoTurnBusyRef.current = false;
+        if (evaluateBattleOutcome(battle) === 'ongoing') runAiTurn();
+      }, Math.min(playerSfxTail, 4000));
+    } else {
+      autoTurnBusyRef.current = false;
     }
   };
 

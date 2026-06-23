@@ -80,6 +80,26 @@ describe('Auto Turn (computer plays the player side)', () => {
     expect(minDistToEnemies(state)).toBeLessThan(distStart); // closed the gap on turn one
   });
 
+  it('respects fog of war: never fires at an enemy outside the visible set, but does when it is visible', () => {
+    const fogSpec: CreateBattleStateOptions = {
+      map: makeMap(8, 3),
+      sides: [
+        { faction: 'alliance', units: [rifleman('ally', 'alliance', 1, 1)] }, // rifle range 4
+        { faction: 'otherSide', units: [dummy('foe', 3, 1)] } // distance 2 — in range
+      ]
+    };
+    const state = createBattleState(fogSpec);
+    const foeId = Array.from(state.sides.otherSide.units.values())[0].id;
+
+    // in range but unseen → must not attack (it advances/scouts instead)
+    const hidden = decideNextAIAction(state, 'alliance', { aggression: 0.85, difficulty: 'hard', visibleEnemyIds: new Set() });
+    expect(hidden.type).not.toBe('attack');
+
+    // same position, now visible → attacks
+    const seen = decideNextAIAction(state, 'alliance', { aggression: 0.85, difficulty: 'hard', visibleEnemyIds: new Set([foeId]) });
+    expect(seen.type).toBe('attack');
+  });
+
   it('eventually engages and eliminates the enemy over repeated auto turns', () => {
     const state = createBattleState(spec);
     let anyDamage = false;

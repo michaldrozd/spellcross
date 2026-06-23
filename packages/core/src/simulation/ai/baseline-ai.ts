@@ -193,6 +193,7 @@ function buildThreatAwarePathToward(
     threatWeight: number;
     flankWeight: number;
     maxStepBonus?: number;
+    attackEnemies?: UnitInstance[];
   }
 ): HexCoordinate[] {
   const occ = occupiedSet(state);
@@ -269,7 +270,7 @@ function buildThreatAwarePathToward(
     // if we still have enough AP to attack from here and a viable shot exists, stop moving
     if (ap >= 2) {
       const hypot = { ...unit, coordinate: current, actionPoints: ap } as UnitInstance;
-      const shot = bestAttackFromHere(state, hypot);
+      const shot = bestAttackFromHere(state, hypot, opts.attackEnemies);
       if (shot) break;
     }
 
@@ -290,7 +291,8 @@ function flankAwareAttackScore(attacker: UnitInstance, defender: UnitInstance, w
 
 function bestAttackFromHere(
   state: TacticalBattleState,
-  attacker: UnitInstance
+  attacker: UnitInstance,
+  enemiesOverride?: UnitInstance[]
 ): { defenderId: string; weaponId: string; score: number } | null {
   // Must have enough AP to attack
   if (!canAffordAttack(attacker)) return null;
@@ -298,7 +300,7 @@ function bestAttackFromHere(
   if (attacker.stance === 'routed') return null;
 
   let best: { defenderId: string; weaponId: string; score: number } | null = null;
-  const enemies = listEnemyUnits(state, attacker.faction);
+  const enemies = enemiesOverride ?? listEnemyUnits(state, attacker.faction);
   for (const enemy of enemies) {
     for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
       if (!canWeaponTarget(attacker, weaponId, enemy)) continue;
@@ -324,6 +326,9 @@ export interface AIContextOptions {
   difficulty?: AIDifficulty;
   allowDemolition?: boolean;
   excludeUnitIds?: Set<string>; // units whose action was rejected this turn; skip them when re-deciding
+  // When set, the AI only *attacks* enemies in this set (fog of war). Movement still advances on all
+  // enemies so the squad scouts toward and reveals hidden ones, but it won't shoot what it can't see.
+  visibleEnemyIds?: Set<string>;
 }
 
 /**
@@ -397,6 +402,11 @@ export function decideNextAIAction(
   if (units.length === 0) return { type: 'endTurn' };
 
   const enemiesAll = listEnemyUnits(state, faction);
+  // Enemies this side may actually shoot at. With fog of war (visibleEnemyIds set) the planner advances
+  // on every enemy but only fires at the ones it can see — matching what a human player could do.
+  const attackEnemies = options.visibleEnemyIds
+    ? enemiesAll.filter((e) => options.visibleEnemyIds!.has(e.id))
+    : enemiesAll;
 
   // 0) Fallback/retreat for fragile units
   for (const u of units) {
@@ -415,7 +425,7 @@ export function decideNextAIAction(
   const contestTargets: UnitInstance[] = [];
   const objectiveTargets = options.objectiveTargets ?? [];
   for (const obj of objectiveTargets) {
-    for (const enemy of enemiesAll) {
+    for (const enemy of attackEnemies) {
       if (coordinateKey(enemy.coordinate) === coordinateKey(obj)) {
         contestTargets.push(enemy);
       }
@@ -441,7 +451,7 @@ export function decideNextAIAction(
 
     // artillery prefers standoff: skip attack if moving closer is safer unless enemy in range
     const isArtillery = u.unitType === 'artillery' || Object.keys(u.stats.weaponRanges).some((w) => u.stats.weaponRanges[w] >= 7);
-    const choice = bestAttackFromHere(state, u);
+    const choice = bestAttackFromHere(state, u, attackEnemies);
     // conserve ammo if low unless high-priority target
     const lowAmmo = u.currentAmmo !== Infinity && u.currentAmmo <= Math.max(1, (u.stats.ammoCapacity ?? 0) * 0.25);
     if (choice && (!bestAttack || choice.score > bestAttack.score)) {
@@ -471,7 +481,7 @@ export function decideNextAIAction(
     const anchor = holdGoals[0];
     const holder = units.find((u) => axialDistance(u.coordinate, anchor) <= 2);
     if (holder) {
-      const shot = bestAttackFromHere(state, holder);
+      const shot = bestAttackFromHere(state, holder, attackEnemies);
       if (shot) {
         return { type: 'attack', attackerId: holder.id, defenderId: shot.defenderId, weaponId: shot.weaponId };
       }
@@ -534,7 +544,8 @@ export function decideNextAIAction(
         flankTarget,
         threatWeight,
         flankWeight,
-        maxStepBonus: maxStepBonus + (ranged ? 1 : 0)
+        maxStepBonus: maxStepBonus + (ranged ? 1 : 0),
+        attackEnemies
       }).filter((step) => !avoidTiles.has(coordinateKey(step)));
       if (!path || path.length === 0) continue;
       const last = path[path.length - 1];

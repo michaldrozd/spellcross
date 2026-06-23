@@ -5485,6 +5485,17 @@ export function BattlefieldStage({
       }
       return propTextureCache.get(key)!;
     };
+    // Units standing on or just up-screen of a tree get hidden by its canopy; collect on-field units so
+    // a covering tree can fade like buildings do (the player could otherwise only see a unit by selecting it).
+    const visibleUnitCoords: Array<{ q: number; r: number }> = [];
+    for (const side of Object.values(battleState.sides) as Array<{ units: Map<string, { coordinate: { q: number; r: number }; stance: string; embarkedOn?: string; faction: string }> }>) {
+      for (const u of side.units.values()) {
+        if (u.stance === 'destroyed' || u.embarkedOn) continue;
+        if (u.faction === viewerFaction || visibleTiles.has(idxAt(u.coordinate.q, u.coordinate.r))) {
+          visibleUnitCoords.push(u.coordinate);
+        }
+      }
+    }
 
     return props
       .map((prop) => {
@@ -5506,6 +5517,16 @@ export function BattlefieldStage({
         const texture = textureMissing || proceduralProp ? null : getTexture(texturePath);
         const bitmapScale = texture && texture.width >= 96 ? scale * 0.5 : scale;
         const bitmapScaleX = bitmapScale * (prop.flipX ? -1 : 1);
+        // Fade a tree to a ghost when a unit stands on it or up to ~2 rows up-screen behind its canopy
+        // (same iso column), within its horizontal span — so units are never fully hidden.
+        const treeOccluded = prop.kind === 'tree' && visibleUnitCoords.some((coord) => {
+          const sum = coord.q + coord.r;
+          const diff = coord.q - coord.r;
+          const tSum = prop.coordinate.q + prop.coordinate.r;
+          const tDiff = prop.coordinate.q - prop.coordinate.r;
+          return sum >= tSum - 2 && sum <= tSum && diff >= tDiff - 1 && diff <= tDiff + 1;
+        });
+        const occludeAlpha = treeOccluded ? 0.5 : 1;
 
         return (
           <Container key={prop.id} x={worldX} y={worldY} zIndex={zIndex} sortableChildren>
@@ -5552,14 +5573,14 @@ export function BattlefieldStage({
                 texture={texture!}
                 anchor={{ x: 0.5, y: PROP_ANCHOR_Y }}
                 scale={{ x: bitmapScaleX, y: bitmapScale }}
-                alpha={isVisible ? 1 : 0.75}
+                alpha={(isVisible ? 1 : 0.75) * occludeAlpha}
               />
             )}
           </Container>
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [map.props, map.width, exploredTiles, visibleTiles, propTextureCache, propAtlasTextures, topGeomFor, toScreen, missingPropPaths]);
+  }, [map.props, map.width, exploredTiles, visibleTiles, battleState.sides, viewerFaction, propTextureCache, propAtlasTextures, topGeomFor, toScreen, missingPropPaths]);
 
   const procBuildings = useMemo(() => {
     const props = (map.props ?? []).filter(
