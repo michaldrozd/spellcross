@@ -27,7 +27,10 @@ export interface CreateBattleStateOptions {
  * Creates a minimal tactical battle state for sandbox simulations.
  */
 export function createBattleState(options: CreateBattleStateOptions): TacticalBattleState {
-  const { map, sides, startingFaction } = options;
+  const { sides, startingFaction } = options;
+  // Deep-copy the map tiles so in-battle mutation (destructible terrain losing hp) never leaks into the
+  // shared scenario/bundle map — several scenarios reuse the same map singleton.
+  const map: BattlefieldMap = { ...options.map, tiles: options.map.tiles.map((t) => ({ ...t })) };
   const sideStates = new Map<FactionId, TacticalBattleState['sides'][FactionId]>();
   const occupied = new Set<string>();
 
@@ -55,7 +58,8 @@ export function createBattleState(options: CreateBattleStateOptions): TacticalBa
         currentMorale: unitSpec.definition.stats.morale,
         maxActionPoints: unitSpec.definition.stats.mobility,
         actionPoints: unitSpec.definition.stats.mobility,
-        stats: unitSpec.definition.stats,
+        // Clone stats so battle-time tweaks (e.g. night/fog vision penalty) never mutate the shared bundle def.
+        stats: structuredClone(unitSpec.definition.stats),
         currentAmmo: unitSpec.definition.stats.ammoCapacity ?? Infinity,
         stance: 'ready',
         experience: 0,

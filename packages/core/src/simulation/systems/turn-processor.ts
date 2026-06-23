@@ -133,6 +133,9 @@ export class TurnProcessor {
     const justEnded = this.#state.sides[current];
     for (const unit of justEnded.units.values()) {
       if (unit.stance === 'destroyed') continue;
+      // embarked passengers ride inside the carrier; their coordinate is frozen at the embark tile,
+      // so entrenching / morale-by-proximity here would use a stale position.
+      if (unit.embarkedOn) continue;
       // air cannot entrench
       if (unit.unitType === 'air') continue;
       if (!unit.movedThisRound) {
@@ -342,7 +345,10 @@ export class TurnProcessor {
       updateFactionVision(this.#state, defender.faction);
       updateFactionVision(this.#state, mover.faction);
 
-      if (mover.stance === 'destroyed') return true;
+      if (mover.stance === 'destroyed') {
+        this.#killCarriedPassengers(mover, defender.id);
+        return true;
+      }
     }
     return false;
   }
@@ -425,21 +431,28 @@ export class TurnProcessor {
     updateFactionVision(this.#state, attacker.faction);
     updateFactionVision(this.#state, defender.faction);
 
-    const destroyedNow = (defender as UnitInstance).stance === 'destroyed';
-    if (destroyedNow && defender.carrying && defender.carrying.length) {
-      for (const pid of defender.carrying) {
-        const passenger = findUnitInState(this.#state, pid);
-        if (passenger && passenger.stance !== 'destroyed') {
-          passenger.stance = 'destroyed';
-          passenger.currentHealth = 0;
-          passenger.embarkedOn = undefined;
-          this.#state.timeline.push({ kind: 'unit:defeated', unitId: passenger.id, by: attacker.id });
-        }
-      }
-      defender.carrying = [];
+    if ((defender as UnitInstance).stance === 'destroyed') {
+      this.#killCarriedPassengers(defender, attacker.id);
     }
 
     return { success: true, events: outcome.events };
+  }
+
+  // When a transport is destroyed, its embarked passengers die with it. Must run from EVERY death
+  // path (direct attack, reaction fire, tile demolition) or passengers get orphaned on a dead carrier
+  // — uncontrollable, still counted alive, and able to stall battle resolution.
+  #killCarriedPassengers(carrier: UnitInstance, byId: string) {
+    if (!carrier.carrying || carrier.carrying.length === 0) return;
+    for (const pid of carrier.carrying) {
+      const passenger = findUnitInState(this.#state, pid);
+      if (passenger && passenger.stance !== 'destroyed') {
+        passenger.stance = 'destroyed';
+        passenger.currentHealth = 0;
+        passenger.embarkedOn = undefined;
+        this.#state.timeline.push({ kind: 'unit:defeated', unitId: passenger.id, by: byId });
+      }
+    }
+    carrier.carrying = [];
   }
 
   setOverwatch(unitId: string): ActionResult {
@@ -470,7 +483,7 @@ export class TurnProcessor {
     if (passenger.unitType !== 'infantry' && passenger.unitType !== 'support' && passenger.unitType !== 'hero') {
       return { success: false, error: 'Only infantry/support can embark' };
     }
-    if (!isNeighbor(carrier.coordinate, passenger.coordinate) && coordinateKey(carrier.coordinate) !== coordinateKey(passenger.coordinate)) {
+    if (!isNeighbor(carrier.coordinate, passenger.coordinate) && !isIsoNeighbor(carrier.coordinate, passenger.coordinate) && coordinateKey(carrier.coordinate) !== coordinateKey(passenger.coordinate)) {
       return { success: false, error: 'Not adjacent to carrier' };
     }
     passenger.embarkedOn = carrier.id;
@@ -487,7 +500,7 @@ export class TurnProcessor {
     if (!passenger.embarkedOn) return { success: false, error: 'Not embarked' };
     const carrier = findUnitInState(this.#state, passenger.embarkedOn);
     if (!carrier) return { success: false, error: 'Carrier missing' };
-    if (!isNeighbor(carrier.coordinate, input.target) && coordinateKey(carrier.coordinate) !== coordinateKey(input.target)) {
+    if (!isNeighbor(carrier.coordinate, input.target) && !isIsoNeighbor(carrier.coordinate, input.target) && coordinateKey(carrier.coordinate) !== coordinateKey(input.target)) {
       return { success: false, error: 'Disembark target not adjacent' };
     }
     const tile = getTile(this.#state.map, input.target);

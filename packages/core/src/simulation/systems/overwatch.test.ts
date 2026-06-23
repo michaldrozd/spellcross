@@ -133,6 +133,60 @@ describe('Overwatch (reaction fire)', () => {
     expect(state.sides.alliance.units.get(allyId)!.statusEffects.has('overwatch')).toBe(true);
   });
 
+  it('reaction fire that destroys a transport also kills its embarked passengers', () => {
+    const spec: CreateBattleStateOptions = {
+      map: makeMap(7, 3),
+      sides: [
+        {
+          faction: 'alliance',
+          units: [
+            {
+              definition: {
+                id: 'apc', faction: 'alliance', name: 'APC', type: 'vehicle',
+                stats: { maxHealth: 40, mobility: 8, vision: 4, armor: 0, morale: 50, transportCapacity: 2,
+                  weaponRanges: { gun: 3 }, weaponPower: { gun: 6 }, weaponAccuracy: { gun: 0.7 } }
+              },
+              coordinate: { q: 0, r: 1 }
+            },
+            {
+              definition: {
+                id: 'rider', faction: 'alliance', name: 'Rider', type: 'infantry',
+                stats: { maxHealth: 30, mobility: 6, vision: 4, armor: 0, morale: 50,
+                  weaponRanges: { rifle: 3 }, weaponPower: { rifle: 8 }, weaponAccuracy: { rifle: 0.7 } }
+              },
+              coordinate: { q: 0, r: 0 }
+            }
+          ]
+        },
+        {
+          faction: 'otherSide',
+          units: [
+            {
+              definition: {
+                id: 'archer', faction: 'otherSide', name: 'Archer', type: 'infantry',
+                stats: { maxHealth: 40, mobility: 5, vision: 4, armor: 0, morale: 50,
+                  weaponRanges: { bow: 5 }, weaponPower: { bow: 999 }, weaponAccuracy: { bow: 1 } }
+              },
+              coordinate: { q: 5, r: 1 }
+            }
+          ]
+        }
+      ]
+    };
+    const state = createBattleState(spec);
+    const proc = new TurnProcessor(state, { random: () => 0 });
+    const apcId = Array.from(state.sides.alliance.units.values()).find((u) => u.unitType === 'vehicle')!.id;
+    const riderId = Array.from(state.sides.alliance.units.values()).find((u) => u.unitType === 'infantry')!.id;
+    expect(proc.embark({ carrierId: apcId, passengerId: riderId }).success).toBe(true);
+    // loaded APC drives into the archer's range; the lethal reaction shot destroys it mid-move
+    proc.moveUnit({ unitId: apcId, path: [{ q: 1, r: 1 }, { q: 2, r: 1 }] });
+    expect(state.sides.alliance.units.get(apcId)!.stance).toBe('destroyed');
+    // the passenger must die with the carrier, not be orphaned alive on a dead transport
+    const rider = state.sides.alliance.units.get(riderId)!;
+    expect(rider.stance).toBe('destroyed');
+    expect(rider.embarkedOn).toBeUndefined();
+  });
+
   it('refreshes AP only for the side whose turn is starting', () => {
     const state = createBattleState(base);
     const proc = new TurnProcessor(state, { random: () => 0 });
