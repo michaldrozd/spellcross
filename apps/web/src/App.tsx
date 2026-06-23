@@ -389,6 +389,11 @@ function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: s
 let combatNoticeSeq = 0;
 const nextNoticeId = () => (combatNoticeSeq += 1);
 
+// Same collision applies to attack-effect keys when one attacker hits the same target
+// repeatedly in a single tick — a monotonic suffix keeps each effect's React key unique.
+let attackEffectSeq = 0;
+const nextEffectId = () => (attackEffectSeq += 1);
+
 function effectTypeForAttack(attacker: UnitInstance, defender: UnitInstance, weaponId: string): AttackEffect['type'] {
   const definitionId = attacker.definitionId.toLowerCase();
   const weapon = weaponId.toLowerCase();
@@ -1324,7 +1329,7 @@ const BattleView: React.FC<{
       : `${unitDisplayName(attacker.id, battle.state)} missed ${unitDisplayName(defender.id, battle.state)}`;
     window.setTimeout(() => showPhaseNotice(noticeTitle, noticeDetail, noticeTone), delay);
     setAttackEffects(prev => [...prev, {
-      id: `${attacker.id}-${defender.id}-${Date.now()}-${delay}`,
+      id: `${attacker.id}-${defender.id}-${nextEffectId()}`,
       fromQ: attacker.coordinate.q,
       fromR: attacker.coordinate.r,
       toQ: defender.coordinate.q,

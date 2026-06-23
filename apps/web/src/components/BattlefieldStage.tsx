@@ -104,10 +104,20 @@ const getCroppedBuildingTexture = (rawPath: string, keepTop: number): Texture =>
   }
   croppedBuildingTextureCache.set(key, hardCropped);
   base.once('loaded', () => {
-    hardCropped.frame = frameFor();
-    hardCropped.updateUvs();
     const feathered = buildFeatheredCrop(base, keepTop);
-    if (feathered) croppedBuildingTextureCache.set(key, feathered);
+    if (feathered) {
+      // Repoint the already-mounted texture at the feathered canvas in place. Replacing only the cache
+      // entry left live sprites holding the hard-cropped reference until an unrelated re-render swapped it.
+      hardCropped.baseTexture = feathered.baseTexture;
+      hardCropped.frame = feathered.frame.clone();
+      hardCropped.orig = feathered.orig.clone();
+      hardCropped.updateUvs();
+      hardCropped.update();
+      croppedBuildingTextureCache.set(key, hardCropped);
+    } else {
+      hardCropped.frame = frameFor();
+      hardCropped.updateUvs();
+    }
   });
   return hardCropped;
 };
