@@ -44,10 +44,10 @@ const crispTexture = (texture: Texture) => {
 // Painted iso building sprites used in place of the flat procedural boxes. keepTop crops the
 // baked-in ground base off the bottom of each 1024² asset so it sits cleanly on the terrain.
 const PAINTED_BUILDINGS: Array<{ tex: string; keepTop: number }> = [
-  { tex: 'assets/generated/concrete_bunker.png', keepTop: 0.82 },
+  { tex: 'assets/generated/concrete_bunker.png', keepTop: 0.84 },
   { tex: 'assets/generated/hangar_building.png', keepTop: 0.97 },
-  { tex: 'assets/generated/watchtower.png', keepTop: 0.72 },
-  { tex: 'assets/generated/ruins_building.png', keepTop: 0.74 }
+  { tex: 'assets/generated/watchtower.png', keepTop: 0.86 },
+  { tex: 'assets/generated/ruins_building.png', keepTop: 0.80 }
 ];
 
 const hashStringToIndex = (s: string, mod: number) => {
@@ -57,6 +57,31 @@ const hashStringToIndex = (s: string, mod: number) => {
 };
 
 const croppedBuildingTextureCache = new Map<string, Texture>();
+// Crop the baked-in diorama base off the bottom of a building asset AND feather the cut so it blends
+// into the terrain. A plain rectangular crop left a hard horizontal line across the building's base
+// ("the image looks cut off at the bottom"); fading the bottom few percent to transparent removes it.
+const buildFeatheredCrop = (base: Texture['baseTexture'], keepTop: number): Texture | null => {
+  const src = (base.resource as { source?: CanvasImageSource })?.source;
+  if (!src) return null;
+  const w = Math.max(1, base.realWidth || 1024);
+  const fullH = Math.max(1, base.realHeight || 1024);
+  const h = Math.max(1, Math.round(fullH * keepTop));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.drawImage(src, 0, 0, w, h, 0, 0, w, h);
+  const feather = Math.max(2, Math.round(h * 0.07));
+  ctx.globalCompositeOperation = 'destination-out';
+  const grad = ctx.createLinearGradient(0, h - feather, 0, h);
+  grad.addColorStop(0, 'rgba(0,0,0,0)');
+  grad.addColorStop(1, 'rgba(0,0,0,1)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, h - feather, w, feather);
+  ctx.globalCompositeOperation = 'source-over';
+  return crispTexture(Texture.from(canvas));
+};
 const getCroppedBuildingTexture = (rawPath: string, keepTop: number): Texture => {
   const key = `${rawPath}@${keepTop}`;
   const cached = croppedBuildingTextureCache.get(key);
@@ -69,15 +94,22 @@ const getCroppedBuildingTexture = (rawPath: string, keepTop: number): Texture =>
   }
   const frameFor = () =>
     new Rectangle(0, 0, base.realWidth || 1024, Math.round((base.realHeight || 1024) * keepTop));
-  const cropped = new Texture(base, frameFor());
-  if (!base.valid) {
-    base.once('loaded', () => {
-      cropped.frame = frameFor();
-      cropped.updateUvs();
-    });
+  // Hard-cropped texture for immediate use; upgraded to the feathered version once pixels are available.
+  const hardCropped = new Texture(base, frameFor());
+  if (base.valid) {
+    const feathered = buildFeatheredCrop(base, keepTop);
+    const tex = feathered ?? hardCropped;
+    croppedBuildingTextureCache.set(key, tex);
+    return tex;
   }
-  croppedBuildingTextureCache.set(key, cropped);
-  return cropped;
+  croppedBuildingTextureCache.set(key, hardCropped);
+  base.once('loaded', () => {
+    hardCropped.frame = frameFor();
+    hardCropped.updateUvs();
+    const feathered = buildFeatheredCrop(base, keepTop);
+    if (feathered) croppedBuildingTextureCache.set(key, feathered);
+  });
+  return hardCropped;
 };
 
 const tileSize = 56;
