@@ -5562,6 +5562,20 @@ export function BattlefieldStage({
     const idxAt = (q: number, r: number) => r * W + q;
     const inBounds = (q: number, r: number) => q >= 0 && r >= 0 && q < W && r < H;
 
+    // Coordinates of units that are currently visible to the player. A building standing over one of
+    // them is faded so the unit isn't completely hidden — the focus-fade above only fires for the
+    // selected/target unit, so un-selected units behind a solid building were invisible.
+    const visibleUnitCoords: Array<{ q: number; r: number }> = [];
+    for (const side of Object.values(battleState.sides) as any[]) {
+      for (const u of side.units.values()) {
+        if (u.stance === 'destroyed' || u.embarkedOn) continue;
+        // Always reveal-through for the player's own units; for enemies only when actually visible.
+        if (u.faction === viewerFaction || visibleTiles.has(idxAt(u.coordinate.q, u.coordinate.r))) {
+          visibleUnitCoords.push(u.coordinate);
+        }
+      }
+    }
+
     return props
       .map((b, i) => {
         const footprint: number[] = [];
@@ -5597,7 +5611,11 @@ export function BattlefieldStage({
           coord.q >= q0 && coord.q <= q0 + w - 1 && coord.r >= r0 && coord.r <= r0 + h - 1
         );
         const focusAlpha = focusTight ? 0.18 : 0.34;
-        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? focusAlpha : 1);
+        // A unit standing inside the footprint or one row behind (north) it would be occluded.
+        const unitOccluded = visibleUnitCoords.some((coord) =>
+          coord.q >= q0 && coord.q <= q0 + w - 1 && coord.r >= r0 - 1 && coord.r <= r0 + h - 1
+        );
+        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? focusAlpha : unitOccluded ? 0.45 : 1);
         const fogShade = isVisible ? 0 : 0.06;
 
         const bottomNW = worldCornerOfTile(q0, r0, 'NW', topGeomFor);
@@ -6003,7 +6021,7 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, targetUnitId, movingUnit, propTextureCache]);
+  }, [map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, targetUnitId, movingUnit, propTextureCache, viewerFaction]);
 
   // Keyboard pan animation loop: apply velocity from Arrow keys continuously (stable, no restarts)
   useEffect(() => {
