@@ -387,7 +387,10 @@ const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/helicopter_apache.png': 742,
   '/assets/generated/infantry_squad.png': 767,
   '/assets/generated/ghoul_pack.png': 159,
-  '/assets/generated/sniper_team.png': 768,
+  // The sniper art is drawn tight (figure fills ~93% of the canvas), so this divisor is intentionally
+  // larger than the image to shrink the team down to the same on-screen scale as the directional foot
+  // infantry; at the literal 957px visible height it rendered taller than heavy infantry.
+  '/assets/generated/sniper_team.png': 1730,
   '/assets/generated/medic_unit.png': 768,
   '/assets/generated/skeleton_warrior.png': 620,
   '/assets/generated/zombie_horde.png': 994,
