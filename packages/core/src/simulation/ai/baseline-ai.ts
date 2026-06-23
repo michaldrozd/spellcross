@@ -1,7 +1,7 @@
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
-import { axialDistance, coordinateKey, getNeighbors, getTile, orientationDelta, tileIndex } from '../utils/grid.js';
-import { isoDirectionIndex } from '../utils/grid-iso.js';
-import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange } from '../combat/combat-resolver.js';
+import { axialDistance, coordinateKey, getNeighbors, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
+import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
+import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange, isSupplyUnit } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import { hasLineOfSight } from '../visibility/vision.js';
 
@@ -461,11 +461,17 @@ export function decideNextAIAction(
   }
   let bestMove: { unitId: string; path: HexCoordinate[]; score: number } | null = null;
   for (const u of units) {
-    // supply role: if support truck, try resupply first
-    if (u.unitType === 'support' && u.stats.ammoCapacity === 0) {
+    // supply role: a support truck resupplies an adjacent low-ammo ally, else moves toward one
+    if (isSupplyUnit(u)) {
       const supply = findSupplyTarget(state, u);
-      if (supply && supply.path.length) {
-        return { type: 'move', unitId: u.id, path: supply.path.slice(0, 2) };
+      if (supply) {
+        const target = state.sides[u.faction].units.get(supply.targetId);
+        if (target && (isNeighbor(u.coordinate, target.coordinate) || isIsoNeighbor(u.coordinate, target.coordinate))) {
+          return { type: 'supply', supplierId: u.id, targetId: supply.targetId };
+        }
+        if (supply.path.length) {
+          return { type: 'move', unitId: u.id, path: supply.path.slice(0, 2) };
+        }
       }
     }
     // ranged standoff: maintain distance while advancing

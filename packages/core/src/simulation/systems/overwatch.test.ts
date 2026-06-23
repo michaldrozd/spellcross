@@ -195,5 +195,49 @@ describe('Overwatch (reaction fire)', () => {
     proc.endTurn(); // alliance ends -> otherSide active; the resting alliance unit keeps its AP
     expect(state.sides.alliance.units.get(allyId)!.actionPoints).toBe(0);
   });
+
+  it('a supply unit refills an adjacent ally to full ammo for AP', () => {
+    const spec: CreateBattleStateOptions = {
+      map: makeMap(5, 3),
+      sides: [
+        {
+          faction: 'alliance',
+          units: [
+            {
+              definition: {
+                id: 'truck', faction: 'alliance', name: 'Truck', type: 'support',
+                stats: { maxHealth: 70, mobility: 8, vision: 4, armor: 1, morale: 60, ammoCapacity: 0,
+                  weaponRanges: { smg: 3 }, weaponPower: { smg: 8 }, weaponAccuracy: { smg: 0.55 } }
+              },
+              coordinate: { q: 1, r: 1 }
+            },
+            {
+              definition: {
+                id: 'rifleman', faction: 'alliance', name: 'Rifleman', type: 'infantry',
+                stats: { maxHealth: 40, mobility: 6, vision: 4, armor: 0, morale: 50, ammoCapacity: 8,
+                  weaponRanges: { rifle: 4 }, weaponPower: { rifle: 10 }, weaponAccuracy: { rifle: 0.7 } }
+              },
+              coordinate: { q: 2, r: 1 }
+            }
+          ]
+        },
+        { faction: 'otherSide', units: [] }
+      ]
+    };
+    const state = createBattleState(spec);
+    const proc = new TurnProcessor(state, { random: () => 0 });
+    const truckId = Array.from(state.sides.alliance.units.values()).find((u) => u.unitType === 'support')!.id;
+    const rifleId = Array.from(state.sides.alliance.units.values()).find((u) => u.unitType === 'infantry')!.id;
+    state.sides.alliance.units.get(rifleId)!.currentAmmo = 2; // depleted
+    const apBefore = state.sides.alliance.units.get(truckId)!.actionPoints;
+
+    const res = proc.supply({ supplierId: truckId, targetId: rifleId });
+    expect(res.success).toBe(true);
+    expect(state.sides.alliance.units.get(rifleId)!.currentAmmo).toBe(8); // refilled to capacity
+    expect(state.sides.alliance.units.get(truckId)!.actionPoints).toBe(apBefore - 2);
+
+    // a non-supply unit cannot resupply
+    expect(proc.supply({ supplierId: rifleId, targetId: truckId }).success).toBe(false);
+  });
 });
 

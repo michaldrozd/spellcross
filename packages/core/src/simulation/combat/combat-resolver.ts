@@ -251,6 +251,11 @@ export function canAffordAttack(attacker: UnitInstance): boolean {
   return hasAmmo && attacker.actionPoints >= ATTACK_AP_COST;
 }
 
+// A dedicated resupply unit: a support unit that carries no ammo of its own (ammoCapacity 0).
+export function isSupplyUnit(unit: UnitInstance): boolean {
+  return unit.unitType === 'support' && (unit.stats.ammoCapacity ?? 0) === 0;
+}
+
 export function spendAttackCost(attacker: UnitInstance) {
   attacker.actionPoints -= ATTACK_AP_COST;
 }

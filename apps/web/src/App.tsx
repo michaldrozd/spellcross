@@ -12,6 +12,7 @@ import { AudioManager } from './services/AudioManager.js';
 import { ToastContainer, showToast } from './components/Toast.js';
 
 import { OverwatchButton } from './components/OverwatchButton.js';
+import { SupplyButton } from './components/SupplyButton.js';
 import {
   applyBattleOutcome,
   calculateHitChance,
@@ -743,6 +744,24 @@ const BattleView: React.FC<{
   const tileIndex = (coord: HexCoordinate) => coord.r * map.width + coord.q;
   const selectedUnit = selected ? battle.state.sides.alliance.units.get(selected) : undefined;
   const selectedDefinition = selectedUnit ? bundle.units.find((unit) => unit.id === selectedUnit.definitionId) : undefined;
+  // For a selected supply truck, the best adjacent friendly unit that needs ammo (computed fresh each
+  // render so the Resupply button enables/disables correctly as ammo and positions change).
+  const supplyTargetId = (() => {
+    if (!selectedUnit || selectedUnit.unitType !== 'support' || (selectedUnit.stats.ammoCapacity ?? 0) !== 0) return null;
+    let bestId: string | null = null;
+    let bestDeficit = 0;
+    for (const u of battle.state.sides.alliance.units.values()) {
+      if (u.id === selectedUnit.id || u.stance === 'destroyed' || u.embarkedOn) continue;
+      const cap = u.stats.ammoCapacity;
+      if (cap === undefined || cap === Infinity || u.currentAmmo >= cap) continue;
+      const dq = Math.abs(u.coordinate.q - selectedUnit.coordinate.q);
+      const dr = Math.abs(u.coordinate.r - selectedUnit.coordinate.r);
+      if (Math.max(dq, dr) !== 1) continue; // adjacent (8-dir)
+      const deficit = cap - u.currentAmmo;
+      if (deficit > bestDeficit) { bestDeficit = deficit; bestId = u.id; }
+    }
+    return bestId;
+  })();
   const previewEnemy = targetedEnemy;
   const targetWeaponPreview = selectedUnit && targetedEnemy ? bestWeapon(selectedUnit, targetedEnemy, battle.state.map, battle.state.weather) : null;
   const threatenedPathTiles = useMemo(() => {
@@ -1412,6 +1431,21 @@ const BattleView: React.FC<{
     return true;
   };
 
+  const actSupply = (supplierId: string) => {
+    if (deployModeRef.current || !supplyTargetId) return;
+    const proc = new TurnProcessor(battle.state);
+    const res = proc.supply({ supplierId, targetId: supplyTargetId });
+    if (res.success) {
+      AudioManager.play('select');
+      addCombatNotice('Ammunition resupplied');
+      persist();
+      resolveOutcome();
+    } else {
+      AudioManager.play('error');
+      showToast(res.error || 'Resupply failed', 'error');
+    }
+  };
+
   const actAttack = (attackerId: string, defender: UnitInstance) => {
     // Exit deploy mode when attacking
     if (deployMode) {
@@ -1663,6 +1697,10 @@ const BattleView: React.FC<{
         const tileRes = aiProcessor.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
         if (tileRes && tileRes.success === false) { failedUnitIds.add(action.unitId); continue; }
         AudioManager.play('explosion');
+      } else if (action.type === 'supply') {
+        const supRes = aiProcessor.supply({ supplierId: action.supplierId, targetId: action.targetId });
+        if (!supRes.success) { failedUnitIds.add(action.supplierId); continue; }
+        AudioManager.play('select');
       }
     }
     // Backstop: never leave control stuck on the enemy turn (e.g. the safety cap tripped).
@@ -1759,6 +1797,11 @@ const BattleView: React.FC<{
               proc.setOverwatch(selectedUnit.id);
               persist();
             }} />
+            <SupplyButton
+              unit={deployMode ? undefined : selectedUnit}
+              hasTarget={!!supplyTargetId}
+              onSupply={() => { if (selectedUnit) actSupply(selectedUnit.id); }}
+            />
             <button
               className={deployMode ? 'primary-btn' : 'end-turn-btn'}
               onClick={() => {

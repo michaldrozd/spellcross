@@ -4,6 +4,7 @@ import {
   calculateHitChance,
   estimateHitDamage,
   findUnitInState,
+  isSupplyUnit,
   resolveAttack,
   spendAttackCost,
   canWeaponTarget,
@@ -44,6 +45,11 @@ export interface EmbarkActionInput {
 export interface DisembarkActionInput {
   passengerId: string;
   target: HexCoordinate;
+}
+
+export interface SupplyActionInput {
+  supplierId: string;
+  targetId: string;
 }
 
 /**
@@ -521,6 +527,34 @@ export class TurnProcessor {
     }
     updateFactionVision(this.#state, passenger.faction);
     return { success: true };
+  }
+
+  // A supply unit (e.g. the supply truck) refills an adjacent friendly unit's ammo to full for AP.
+  supply(input: SupplyActionInput): ActionResult {
+    const SUPPLY_AP_COST = 2;
+    const side = this.#state.sides[this.#state.activeFaction];
+    const supplier = side.units.get(input.supplierId);
+    const target = findUnitInState(this.#state, input.targetId);
+    if (!supplier || !target) return { success: false, error: 'Unit not found' };
+    if (supplier.id === target.id) return { success: false, error: 'Cannot resupply self' };
+    if (supplier.faction !== target.faction) return { success: false, error: 'Faction mismatch' };
+    if (supplier.stance === 'destroyed' || target.stance === 'destroyed') return { success: false, error: 'Unit destroyed' };
+    if (target.embarkedOn) return { success: false, error: 'Target is embarked' };
+    if (!isSupplyUnit(supplier)) return { success: false, error: 'Unit cannot resupply' };
+    if (
+      !isNeighbor(supplier.coordinate, target.coordinate) &&
+      !isIsoNeighbor(supplier.coordinate, target.coordinate)
+    ) {
+      return { success: false, error: 'Target not adjacent' };
+    }
+    const cap = target.stats.ammoCapacity;
+    if (cap === undefined || cap === Infinity) return { success: false, error: 'Target has no ammo store' };
+    if (target.currentAmmo >= cap) return { success: false, error: 'Target ammo already full' };
+    // Supply doesn't consume the supplier's own ammo (it carries none), so check AP directly.
+    if (supplier.actionPoints < SUPPLY_AP_COST) return { success: false, error: 'Not enough action points to resupply' };
+    target.currentAmmo = cap;
+    supplier.actionPoints -= SUPPLY_AP_COST;
+    return { success: true, events: this.#state.timeline };
   }
 
   attackTile(input: { attackerId: string; target: HexCoordinate; weaponId: string }): ActionResult {
