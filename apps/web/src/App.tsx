@@ -411,7 +411,16 @@ function effectTypeForAttack(attacker: UnitInstance, defender: UnitInstance, wea
 }
 
 function soundForAttackEffect(effectType: AttackEffect['type']) {
-  return effectType === 'explosion' ? 'explosion' : 'gunshot';
+  switch (effectType) {
+    case 'explosion':
+      return 'explosion';
+    case 'magic':
+      return 'magic'; // spellcasters were wrongly playing a rifle shot
+    case 'melee':
+      return 'hit'; // a single thud, not the 5-round gunshot burst
+    default:
+      return 'gunshot';
+  }
 }
 
 function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: BattlefieldMap, weather?: TacticalBattleState['weather']): { weapon: string; hit: number } | null {
@@ -1445,11 +1454,9 @@ const BattleView: React.FC<{
       const effectType = effectTypeForAttack(attacker, defender, weapon.weapon);
       AudioManager.play(soundForAttackEffect(effectType));
       addAttackEffect(attacker, defender, weapon.weapon, attackOutcome);
-      // Play hit/death sound based on result
-      if (defender.currentHealth <= 0) {
-        AudioManager.play('death');
-      } else {
-        AudioManager.play('hit');
+      // Impact sound only when the shot actually connects (was playing "hit" even on a miss).
+      if (attackOutcome.hit) {
+        AudioManager.play(defender.currentHealth <= 0 ? 'death' : 'hit');
       }
     }
 

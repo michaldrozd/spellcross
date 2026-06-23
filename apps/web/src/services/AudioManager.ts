@@ -37,6 +37,11 @@ class AudioManagerClass {
     if (!this.audioContext) {
       this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
+    // Browsers suspend the context when the tab is backgrounded / on mobile sleep (and iOS may create
+    // it already suspended); scheduled sounds then silently never fire. Re-arm it on every access.
+    if (this.audioContext.state === 'suspended') {
+      this.audioContext.resume().catch(() => {});
+    }
     return this.audioContext;
   }
 
