@@ -387,10 +387,7 @@ const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/helicopter_apache.png': 742,
   '/assets/generated/infantry_squad.png': 767,
   '/assets/generated/ghoul_pack.png': 159,
-  // The sniper art is drawn tight (figure fills ~93% of the canvas), so this divisor is intentionally
-  // larger than the image to shrink the team down to the same on-screen scale as the directional foot
-  // infantry; at the literal 957px visible height it rendered taller than heavy infantry.
-  '/assets/generated/sniper_team.png': 1730,
+  '/assets/generated/sniper_team.png': 957,
   '/assets/generated/medic_unit.png': 768,
   '/assets/generated/skeleton_warrior.png': 620,
   '/assets/generated/zombie_horde.png': 994,
@@ -472,8 +469,14 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
   if (unitType === 'support') return definitionId.includes('truck') ? tile * 0.455 : tile * 0.52;
   if (definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead')) return tile * 0.46;
   if (definitionId.includes('golem') || definitionId.includes('ogre') || definitionId.includes('brute')) return tile * 0.74;
-  if (directionalSprite === 'heavy_infantry') return tile * 0.6;
+  // The heavy_infantry sheet draws a single power-armoured trooper that fills ~82% of its frame
+  // (vs ~46% for light infantry), so a like-for-like desiredH rendered it nearly 2x taller. A lower
+  // cell keeps it clearly the bulkiest foot unit (~1.45x light) without towering as a giant.
+  if (directionalSprite === 'heavy_infantry') return tile * 0.45;
   if (directionalSprite === 'rangers') return tile * 0.56;
+  // The sniper raster is drawn tight (figure ≈ the whole canvas); a smaller cell brings the team in
+  // line with the other foot infantry instead of rendering larger than the heavy trooper.
+  if (definitionId.includes('sniper') || definitionId.includes('scout')) return tile * 0.31;
   if (unitType === 'infantry') return tile * 0.56;
   return tile * 0.54;
 }
