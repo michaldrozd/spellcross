@@ -1568,6 +1568,10 @@ const BattleView: React.FC<{
     let stagedAttacks = 0;
     let phaseUpdated = false;
     const maxEnemyAttacks = campaign.turn > 6 ? 3 : 2;
+    // Units whose chosen action the engine rejected this turn. We skip only those when re-deciding so a
+    // single bad action doesn't forfeit the rest of the AI's units (decideNextAIAction returns one
+    // globally-best action, so without this the turn would end on the first rejection).
+    const failedUnitIds = new Set<string>();
     while (battle.state.activeFaction === 'otherSide' && safety < 50) {
       safety += 1;
       const objectiveTargets = battle.scenario.objectives
@@ -1591,21 +1595,22 @@ const BattleView: React.FC<{
         aggression: 0.6,
         avoidTiles: avoid,
         allowDemolition: true,
-        difficulty: campaign.turn > 10 ? 'brutal' : campaign.turn > 6 ? 'hard' : 'normal'
+        difficulty: campaign.turn > 10 ? 'brutal' : campaign.turn > 6 ? 'hard' : 'normal',
+        excludeUnitIds: failedUnitIds
       });
       if (action.type === 'endTurn') {
         aiProcessor.endTurn();
         break;
       } else if (action.type === 'move') {
-        // A rejected move would otherwise be re-decided identically forever (deterministic AI),
-        // spinning to the safety cap and leaving the enemy turn unfinished — end the turn instead.
+        // A rejected action would otherwise be re-decided identically forever (deterministic AI);
+        // skip just this unit so the remaining units still act this turn.
         const moveRes = aiProcessor.moveUnit(action);
-        if (!moveRes.success) { aiProcessor.endTurn(); break; }
+        if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }
       } else if (action.type === 'attack') {
         const attacker = findBattleUnit(action.attackerId);
         const defender = findBattleUnit(action.defenderId);
         const result = aiProcessor.attackUnit(action);
-        if (!result.success) { aiProcessor.endTurn(); break; }
+        if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
         if (attacker && defender) {
           const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
           addAttackEffect(attacker, defender, action.weaponId, outcome, stagedAttacks * 650);
@@ -1631,7 +1636,7 @@ const BattleView: React.FC<{
         }
       } else if (action.type === 'attackTile') {
         const tileRes = aiProcessor.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
-        if (tileRes && tileRes.success === false) { aiProcessor.endTurn(); break; }
+        if (tileRes && tileRes.success === false) { failedUnitIds.add(action.unitId); continue; }
         AudioManager.play('explosion');
       }
     }

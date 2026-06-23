@@ -177,7 +177,10 @@ function buildThreatAwarePathToward(
   }
 ): HexCoordinate[] {
   const occ = occupiedSet(state);
-  const mult = movementMultiplierForStance(unit.stance);
+  // Match moveUnit's per-step cost, which multiplies by weather (fog 1.2 / night 1.1). Without this
+  // the AI plans paths up to its AP that the executor then rejects as too expensive on fog/night maps.
+  const weatherMoveMod = state.weather === 'fog' ? 1.2 : state.weather === 'night' ? 1.1 : 1;
+  const mult = movementMultiplierForStance(unit.stance) * weatherMoveMod;
   const anyVisible = isAnyEnemyVisible(state, unit.faction);
   // scouting when early or far from enemies or nothing seen
   let nearestDist = Infinity;
@@ -301,6 +304,7 @@ export interface AIContextOptions {
   avoidTiles?: Set<string>; // tiles to avoid (e.g., destructible chokepoints)
   difficulty?: AIDifficulty;
   allowDemolition?: boolean;
+  excludeUnitIds?: Set<string>; // units whose action was rejected this turn; skip them when re-deciding
 }
 
 /**
@@ -369,7 +373,8 @@ export function decideNextAIAction(
     // Skip directly to movement phase
   }
   const side = state.sides[faction];
-  const units = Array.from(side.units.values()).filter(isUsableUnit);
+  const exclude = options.excludeUnitIds;
+  const units = Array.from(side.units.values()).filter((u) => isUsableUnit(u) && !(exclude && exclude.has(u.id)));
   if (units.length === 0) return { type: 'endTurn' };
 
   const enemiesAll = listEnemyUnits(state, faction);
