@@ -1013,7 +1013,7 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Arcane Shielding',
     description: 'Reinforced plating and wards for late-war artillery and SAM cover.',
     cost: 110,
-    unlocks: ['paladin-acs', 'sky-lance'],
+    unlocks: ['paladin-acs'],
     requires: ['siege-ops']
   },
   {
@@ -1532,7 +1532,7 @@ export const starterScenarios: TacticalScenario[] = [
   {
     id: 'bridgehead',
     name: 'Bridgehead Raid',
-    brief: 'Demolish the enemy bridge or rout their guard before reinforcements arrive.',
+    brief: 'Plant charges on the bridge span or rout its guard before the assault window closes.',
     map: bridgeMap,
     startZones: {
       alliance: [
