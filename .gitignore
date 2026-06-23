@@ -25,3 +25,4 @@ apps/web/scripts/generateRealisticSprites.cjs
 m113-qa/
 m113-*.png
 scripts/
+qa-*.png
