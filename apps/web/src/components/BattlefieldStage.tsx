@@ -6318,7 +6318,8 @@ export function BattlefieldStage({
               if (battleState.weather === 'night') {
                 g.beginFill(0x0a1733, 0.48);
               } else {
-                g.beginFill(0xc6cfd8, 0.3);
+                // Muted cool grey, not a bright white wash — fog should desaturate, not over-brighten.
+                g.beginFill(0x8f9aa3, 0.2);
               }
               g.drawRect(0, 0, hostSize.w, hostSize.h);
               g.endFill();
