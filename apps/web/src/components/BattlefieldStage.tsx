@@ -1168,7 +1168,7 @@ const drawRoofVents = (
 
 const PROP_BASE_Y_OFFSET = 0;
 const PROP_SHADOW_Y = 4;
-const PROP_ANCHOR_Y = 0.9;
+const PROP_ANCHOR_Y = 0.97; // base sits on the tile surface; 0.9 sank ~10% of each prop into the ground
 const missingLabelStyle = new TextStyle({
   fontSize: 9,
   fill: 0xffffff,
