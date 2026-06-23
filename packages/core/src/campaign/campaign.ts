@@ -602,6 +602,12 @@ const buildArmySide = (
     const pick = transports[0];
     rosterUnits = [pick, ...rosterUnits.filter((u) => u.id !== pick.id)];
   }
+  // Guarantee the auto-attached supply truck a deployment slot — otherwise on small maps with a large
+  // roster it sorts out of the deployed set and the resupply feature is unreachable.
+  const truck = rosterUnits.find((u) => u.definitionId === 'supply-truck');
+  if (truck) {
+    rosterUnits = [truck, ...rosterUnits.filter((u) => u.id !== truck.id)];
+  }
   const apc = rosterUnits.find((u) => u.definitionId === 'm113');
   if (apc) {
     rosterUnits = [apc, ...rosterUnits.filter((u) => u.id !== apc.id)];
