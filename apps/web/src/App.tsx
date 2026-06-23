@@ -1716,6 +1716,85 @@ const BattleView: React.FC<{
     resolveOutcome();
   };
 
+  // "Auto Turn": let the computer play the player's turn — commit deployment, then drive every
+  // alliance unit with the same planner the enemy uses, and finally hand off to the enemy turn.
+  const runAutoPlayerTurn = () => {
+    if (deployModeRef.current) {
+      deployModeRef.current = false;
+      setDeployMode(false);
+      battle.state.activeFaction = 'alliance';
+      updateAllFactionsVision(battle.state);
+    }
+    if (battle.state.activeFaction !== 'alliance') return;
+
+    aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
+    aiSfxTimeoutsRef.current = [];
+    const proc = new TurnProcessor(battle.state);
+    // Only evac/reach tiles are passed as goals. We deliberately do NOT pass hold tiles or enemy
+    // coordinates: hold tiles park the squad, and enemy coordinates trip the planner's "contest" lane
+    // into proposing out-of-range attacks that fail and burn the turn. With no goals the planner falls
+    // back to advancing on the nearest enemy and shooting once in range — exactly seek-and-destroy.
+    const reachTargets = battle.scenario.objectives.filter((o) => o.kind === 'reach').map((o) => o.target).filter(Boolean) as HexCoordinate[];
+    const objectiveTargets = reachTargets;
+    const failedUnitIds = new Set<string>();
+    let safety = 0;
+    let stagedAttacks = 0;
+
+    while (battle.state.activeFaction === 'alliance' && safety < 80) {
+      safety += 1;
+      const action = decideNextAIAction(battle.state, 'alliance', {
+        objectiveTargets,
+        reachTargets,
+        defendBias: false,
+        aggression: 0.85,
+        difficulty: 'hard',
+        allowDemolition: false,
+        excludeUnitIds: failedUnitIds
+      });
+      if (action.type === 'endTurn') break;
+      if (action.type === 'move') {
+        const moveRes = proc.moveUnit(action);
+        if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }
+      } else if (action.type === 'attack') {
+        const attacker = findBattleUnit(action.attackerId);
+        const defender = findBattleUnit(action.defenderId);
+        const result = proc.attackUnit(action);
+        if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
+        if (attacker && defender) {
+          const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
+          const fireDelay = stagedAttacks * 500;
+          addAttackEffect(attacker, defender, action.weaponId, outcome, fireDelay);
+          const sfx = soundForAttackEffect(effectTypeForAttack(attacker, defender, action.weaponId));
+          const killed = defender.stance === 'destroyed';
+          const hit = outcome.hit;
+          aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
+            AudioManager.play(sfx);
+            if (killed) window.setTimeout(() => AudioManager.play('death'), 240);
+            else if (hit) window.setTimeout(() => AudioManager.play('hit'), 240);
+          }, fireDelay));
+          stagedAttacks += 1;
+        }
+      } else if (action.type === 'attackTile') {
+        const tileRes = proc.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
+        if (tileRes && tileRes.success === false) { failedUnitIds.add(action.unitId); continue; }
+        AudioManager.play('explosion');
+      } else if (action.type === 'supply') {
+        const supRes = proc.supply({ supplierId: action.supplierId, targetId: action.targetId });
+        if (!supRes.success) { failedUnitIds.add(action.supplierId); continue; }
+        AudioManager.play('select');
+      }
+    }
+    clearTargeting(true);
+    setSelected(null);
+    updateAllFactionsVision(battle.state);
+    persist();
+    resolveOutcome();
+    // Battle may have just been won/lost; only pass to the enemy if it is still ongoing.
+    if (evaluateBattleOutcome(battle) === 'ongoing') {
+      runAiTurn();
+    }
+  };
+
   return (
     <div className="battle-screen">
       <div className="battle-map-layer">
@@ -1820,6 +1899,13 @@ const BattleView: React.FC<{
               }}
             >
               {deployMode ? 'Start Battle' : 'End Turn'}
+            </button>
+            <button
+              className="auto-turn-btn"
+              title="Let the computer deploy and play this turn for you"
+              onClick={runAutoPlayerTurn}
+            >
+              {deployMode ? 'Auto Deploy & Play' : 'Auto Turn'}
             </button>
             <button
               className="secondary-btn"

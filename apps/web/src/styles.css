@@ -3690,6 +3690,15 @@ button:disabled {
   background: #a16207;
 }
 
+.auto-turn-btn {
+  background: #3730a3; /* Indigo — distinct from the gold End Turn */
+  border-color: #818cf8;
+  color: #eef;
+}
+.auto-turn-btn:hover {
+  background: #312e81;
+}
+
 .secondary-btn {
   background: #7f1d1d; /* Dark Red */
   border-color: #f87171;
