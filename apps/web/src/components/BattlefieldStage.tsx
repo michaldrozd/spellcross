@@ -2249,6 +2249,23 @@ export function BattlefieldStage({
           g.beginFill(0x0b150b, 0.1);
           drawPoly(g as unknown as PixiGraphics, middle);
           g.endFill();
+          // Plateau thickness: give the map a solid side along its camera-facing (lower) edges so it
+          // reads as a slab with depth instead of a flat cutout floating on the void — the hard
+          // grass-to-dark edge is what made props near the boundary look like they drop off.
+          const corners = [nw, ne, se, sw];
+          const SLAB_D = Math.max(18, Math.round(tileSize * 0.5));
+          for (let i = 0; i < 4; i += 1) {
+            const a = corners[i];
+            const b = corners[(i + 1) % 4];
+            if ((a.y + b.y) / 2 <= cy + 1) continue; // only lower (camera-facing) edges
+            // soil band just under the rim, then a darker face fading into the void
+            g.beginFill(0x20301c, 0.9);
+            g.drawPolygon([a.x, a.y, b.x, b.y, b.x, b.y + SLAB_D * 0.32, a.x, a.y + SLAB_D * 0.32]);
+            g.endFill();
+            g.beginFill(0x0c140c, 0.92);
+            g.drawPolygon([a.x, a.y + SLAB_D * 0.32, b.x, b.y + SLAB_D * 0.32, b.x, b.y + SLAB_D, a.x, a.y + SLAB_D]);
+            g.endFill();
+          }
           for (let i = 0; i < 18; i++) {
             const salt = 810 + i * 3;
             const u = tileNoise(i, map.width, salt);
