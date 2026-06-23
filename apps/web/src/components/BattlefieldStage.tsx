@@ -6233,6 +6233,22 @@ export function BattlefieldStage({
             </Container>
           </Container>
         </Container>
+        {/* Weather atmosphere (screen-space, above the world, below the minimap/HUD). Night scenarios
+            read as bright day without this; fog gets a light haze. Kept non-interactive. */}
+        {battleState.weather && battleState.weather !== 'clear' ? (
+          <Graphics
+            draw={(g) => {
+              g.clear();
+              if (battleState.weather === 'night') {
+                g.beginFill(0x0a1733, 0.48);
+              } else {
+                g.beginFill(0xc6cfd8, 0.3);
+              }
+              g.drawRect(0, 0, hostSize.w, hostSize.h);
+              g.endFill();
+            }}
+          />
+        ) : null}
         <Graphics
           eventMode="static"
           cursor="pointer"
