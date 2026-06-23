@@ -45,7 +45,7 @@ const crispTexture = (texture: Texture) => {
 // baked-in ground base off the bottom of each 1024² asset so it sits cleanly on the terrain.
 const PAINTED_BUILDINGS: Array<{ tex: string; keepTop: number }> = [
   { tex: 'assets/generated/concrete_bunker.png', keepTop: 0.84 },
-  { tex: 'assets/generated/hangar_building.png', keepTop: 0.97 },
+  { tex: 'assets/generated/hangar_building.png', keepTop: 0.84 },
   { tex: 'assets/generated/watchtower.png', keepTop: 0.86 },
   { tex: 'assets/generated/ruins_building.png', keepTop: 0.80 }
 ];
