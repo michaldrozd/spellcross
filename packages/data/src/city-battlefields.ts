@@ -61,27 +61,6 @@ const TERRAIN_TILE: Record<string, (rng: () => number) => MapTile> = {
   rubble: () => tileOf('structure', { cover: 2, movementCostModifier: 1.6, destructible: true, hp: 20 })
 };
 
-// Per-theme weighting of the open (non-feature) ground so each city reads differently underfoot.
-const GROUND_BY_THEME: Record<Theme, Array<[string, number]>> = {
-  urban: [['plain', 6], ['urban', 3], ['road', 1]],
-  industrial: [['plain', 6], ['urban', 2], ['road', 2]],
-  river: [['plain', 8], ['forest', 2]],
-  forest: [['forest', 5], ['plain', 4], ['hill', 1]],
-  alpine: [['hill', 5], ['plain', 4], ['forest', 1]],
-  canal: [['plain', 7], ['urban', 3]],
-  coast: [['plain', 6], ['swamp', 2], ['forest', 2]],
-  oldtown: [['urban', 5], ['plain', 3], ['road', 2]],
-  ruins: [['plain', 5], ['urban', 3], ['rubble', 2]],
-  rift: [['swamp', 5], ['plain', 3], ['rubble', 2]]
-};
-
-function weightedPick(rng: () => number, weights: Array<[string, number]>): string {
-  const total = weights.reduce((s, w) => s + w[1], 0);
-  let x = rng() * total;
-  for (const [k, w] of weights) { if ((x -= w) <= 0) return k; }
-  return weights[0][0];
-}
-
 const inB = (q: number, r: number, w: number, h: number) => q >= 0 && q < w && r >= 0 && r < h;
 
 // Paint a theme's signature terrain feature (a river, a coast, alpine ridges, a rift scar, …) onto the
@@ -132,21 +111,71 @@ interface Generated {
   passable: Coord[]; // all passable tiles (no buildings), for picking objective/spawn anchors
 }
 
+// Smooth value-noise field on a coarse lattice (bilinear, smoothstep) → contiguous regions, not
+// per-tile salt-and-pepper. `cells` is the feature size in tiles.
+function makeNoise(rng: () => number, w: number, h: number, cells: number) {
+  const gx = Math.ceil(w / cells) + 2, gy = Math.ceil(h / cells) + 2;
+  const lat: number[][] = Array.from({ length: gy }, () => Array.from({ length: gx }, () => rng()));
+  const ss = (t: number) => t * t * (3 - 2 * t);
+  return (x: number, y: number) => {
+    const fx = x / cells, fy = y / cells;
+    const x0 = Math.floor(fx), y0 = Math.floor(fy);
+    const tx = ss(fx - x0), ty = ss(fy - y0);
+    const a = lat[y0][x0], b = lat[y0][x0 + 1], c = lat[y0 + 1][x0], d = lat[y0 + 1][x0 + 1];
+    return (a * (1 - tx) + b * tx) * (1 - ty) + (c * (1 - tx) + d * tx) * ty;
+  };
+}
+
+// Map a noise value to a coherent biome per theme (regions, not noise). Returns a terrain key.
+function biomeFor(theme: Theme, n: number, n2: number): string {
+  switch (theme) {
+    case 'forest': return n > 0.58 ? 'forest' : n2 > 0.82 ? 'hill' : 'plain';
+    case 'alpine': return n2 > 0.7 ? 'hill' : n > 0.62 ? 'forest' : 'plain';
+    case 'urban': return n > 0.62 ? 'urban' : 'plain';
+    case 'industrial': return n > 0.6 ? 'urban' : n2 > 0.7 ? 'urban' : 'plain';
+    case 'oldtown': return n > 0.55 ? 'urban' : 'plain';
+    case 'ruins': return n > 0.62 ? 'rubble' : n > 0.42 ? 'urban' : 'plain';
+    case 'rift': return n > 0.6 ? 'swamp' : n > 0.46 ? 'rubble' : 'plain';
+    case 'river': return n > 0.66 ? 'forest' : 'plain';
+    case 'canal': return n > 0.66 ? 'urban' : 'plain';
+    case 'coast': return n > 0.66 ? 'forest' : n < 0.3 ? 'swamp' : 'plain';
+    default: return 'plain';
+  }
+}
+
 function generate(cfg: CityConfig): Generated {
   const { width: w, height: h, theme } = cfg;
   const rng = makeRng(`${cfg.territoryId}:${theme}:${w}x${h}`);
   const kind: string[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 'ground'));
 
-  // 1) signature feature
-  paintFeature(theme, kind, w, h, rng);
-  // 2) framing border of hills (vision + a contained arena), but never on the player/enemy home rows
-  for (let q = 0; q < w; q++) {
-    if (kind[0][q] === 'ground' && rng() < 0.85) kind[0][q] = 'hill';
-    if (kind[h - 1][q] === 'ground' && rng() < 0.85) kind[h - 1][q] = 'hill';
-  }
-  // 3) fill remaining ground from the theme palette
+  // 1) coherent biome regions from smooth noise (contiguous forests, urban districts, ridges, …)
+  const noiseA = makeNoise(rng, w, h, 4);
+  const noiseB = makeNoise(rng, w, h, 5);
   for (let r = 0; r < h; r++) for (let q = 0; q < w; q++) {
-    if (kind[r][q] === 'ground') kind[r][q] = weightedPick(rng, GROUND_BY_THEME[theme]);
+    kind[r][q] = biomeFor(theme, noiseA(q, r), noiseB(q, r));
+  }
+  // 2) signature feature carved over the biomes (river+bridge, coastline, alpine pass, rift scar)
+  paintFeature(theme, kind, w, h, rng);
+  // 3) framing ridge of hills along the long edges (vision + a contained arena)
+  for (let q = 0; q < w; q++) {
+    if (kind[0][q] !== 'water' && noiseB(q, 0) > 0.3) kind[0][q] = 'hill';
+    if (kind[h - 1][q] !== 'water' && noiseB(q, h - 1) > 0.3) kind[h - 1][q] = 'hill';
+  }
+  // 4) a coherent road spine from the player edge to the enemy edge, wandering past the centre — gives
+  //    the map intent (a route to fight over) and guarantees a passable corridor between the deploy zones.
+  const roadPath: Coord[] = [];
+  {
+    let cq = 2, cr = h - 3;
+    const tq = w - 3, tr = 2;
+    let guard = 0;
+    while ((cq !== tq || cr !== tr) && guard++ < w * h) {
+      roadPath.push({ q: cq, r: cr });
+      const dq = Math.sign(tq - cq), dr = Math.sign(tr - cr);
+      // bias toward the target but wander a little for a natural curve
+      if (rng() < 0.7 && dq !== 0) cq += dq; else if (dr !== 0) cr += dr; else cq += dq;
+    }
+    roadPath.push({ q: tq, r: tr });
+    for (const c of roadPath) if (inB(c.q, c.r, w, h)) kind[c.r][c.q] = kind[c.r][c.q] === 'water' ? 'road' : 'road';
   }
 
   // build tiles
@@ -157,8 +186,8 @@ function generate(cfg: CityConfig): Generated {
   }
   const tileAt = (q: number, r: number) => tiles[r * w + q];
 
-  // 4) home corners: the player deploys SW (low q, high r), the enemy holds NE (high q, low r). Force
-  // those clusters to clean open ground so deployment and spawns are always valid.
+  // 5) home corners: player deploys SW (low q, high r), enemy holds NE (high q, low r). Force those
+  // clusters to clean open ground so deployment and spawns are always valid.
   const homeCells: Coord[] = [];
   const enemyCells: Coord[] = [];
   for (let r = h - 2; r >= h - 4; r--) for (let q = 0; q < 4; q++) {
@@ -168,19 +197,19 @@ function generate(cfg: CityConfig): Generated {
     if (inB(q, r, w, h)) { tiles[r * w + q] = TERRAIN_TILE.plain(rng); enemyCells.push({ q, r }); }
   }
 
-  // 5) buildings: a themed landmark plus a scatter of structures (footprints become impassable)
   const props: MapProp[] = [];
   const occupied = new Set<string>(); // tiles taken by a building footprint
   const key = (q: number, r: number) => `${q},${r}`;
-  const homeR = h - 1;
   const isReserved = (q: number, r: number) =>
     (q < 4 && r > h - 5) || (q > w - 5 && r < 4); // keep home corners clear of buildings
+  const isRoad = new Set(roadPath.map((c) => key(c.q, c.r)));
 
   const placeBuilding = (q: number, r: number, bw: number, bh: number, opt: Partial<MapProp> = {}) => {
     for (let dr = 0; dr < bh; dr++) for (let dq = 0; dq < bw; dq++) {
       const cq = q + dq, cr = r + dr;
       if (!inB(cq, cr, w, h) || occupied.has(key(cq, cr)) || isReserved(cq, cr)) return false;
-      if (!tileAt(cq, cr).passable) return false; // don't build on water
+      if (isRoad.has(key(cq, cr))) return false;          // keep the road clear
+      if (!tileAt(cq, cr).passable) return false;          // don't build on water
     }
     for (let dr = 0; dr < bh; dr++) for (let dq = 0; dq < bw; dq++) {
       const cq = q + dq, cr = r + dr;
@@ -193,53 +222,64 @@ function generate(cfg: CityConfig): Generated {
     return true;
   };
 
-  // landmark near the centre (tall, multi-tile) — the visual signature of the city
+  // 6) landmark near the centre (tall, multi-tile) — the visual signature of the city
   const lcq = Math.floor(w / 2) + (rng() < 0.5 ? -1 : 0);
   const lcr = Math.floor(h / 2);
-  const landmarkSize = cfg.difficulty >= 4 ? { bw: 2, bh: 2, levels: 4 } : { bw: 1, bh: 2, levels: 3 };
-  placeBuilding(lcq, lcr, landmarkSize.bw, landmarkSize.bh, { levels: landmarkSize.levels, scale: 0.16, wallColor: 0x4b5563, roofColor: 0x1f2937 });
+  const landmarkSize = cfg.difficulty >= 4 ? { bw: 2, bh: 2, levels: 4 } : { bw: 2, bh: 2, levels: 3 };
+  placeBuilding(lcq, lcr, landmarkSize.bw, landmarkSize.bh, { levels: landmarkSize.levels, scale: 0.2, wallColor: 0x4b5563, roofColor: 0x1f2937 });
 
-  // scattered smaller structures, more for urban/oldtown/ruins themes
-  const structureBudget = { urban: 7, oldtown: 8, ruins: 7, industrial: 6, rift: 4, river: 4, canal: 5, forest: 3, alpine: 3, coast: 4 }[theme];
-  for (let i = 0, tries = 0; i < structureBudget && tries < 80; tries++) {
-    const q = 1 + Math.floor(rng() * (w - 2));
-    const r = 2 + Math.floor(rng() * (h - 4));
-    const bw = rng() < 0.3 ? 2 : 1;
-    const bh = rng() < 0.4 ? 2 : 1;
-    if (placeBuilding(q, r, bw, bh, { levels: 1 + (rng() < 0.4 ? 1 : 0) })) i++;
+  // 7) a coherent settlement: a short row of buildings strung ALONG the road (a district/hamlet) rather
+  //    than scattered boxes, plus a few satellites. Denser for built-up themes.
+  const builtUp = theme === 'urban' || theme === 'oldtown' || theme === 'ruins' || theme === 'industrial' || theme === 'canal';
+  const clusterCount = builtUp ? 9 : 5;
+  let placed = 0;
+  for (let i = 0; i < roadPath.length && placed < clusterCount; i += 2) {
+    const base = roadPath[i];
+    for (const side of [-1, 1]) {
+      if (placed >= clusterCount) break;
+      const q = base.q + side, r = base.r;
+      const bw = rng() < 0.3 ? 2 : 1;
+      const bh = rng() < 0.3 ? 2 : 1;
+      if (rng() < (builtUp ? 0.7 : 0.4) && placeBuilding(q, r, bw, bh, { levels: 1 + (rng() < 0.45 ? 1 : 0) })) placed++;
+    }
   }
 
-  // 6) decorative props (trees/rocks/bushes) on open passable tiles — density tuned per theme so maps
-  // never feel bare. Themed mix: forest/alpine lean trees, ruins/rift lean rocks.
-  const decoBudget = Math.round(w * h * 0.22);
-  const treeBias = { forest: 0.7, alpine: 0.55, coast: 0.4, river: 0.4, canal: 0.35, urban: 0.18, industrial: 0.2, oldtown: 0.2, ruins: 0.25, rift: 0.2 }[theme];
-  for (let i = 0, tries = 0; i < decoBudget && tries < decoBudget * 4; tries++) {
-    const q = Math.floor(rng() * w);
-    const r = Math.floor(rng() * h);
-    if (occupied.has(key(q, r)) || isReserved(q, r)) continue;
-    const t = tileAt(q, r);
-    if (!t.passable || t.terrain === 'water') continue;
-    const roll = rng();
-    const kindProp: MapProp['kind'] = roll < treeBias ? 'tree' : roll < treeBias + 0.45 * (1 - treeBias) + 0.2 ? 'bush' : 'rock';
+  // 8) decorative props that FOLLOW the terrain (groves on forest, rocks on hills/rubble, bushes at
+  //    forest edges) so the map reads as designed, not as random scatter.
+  const isForestNear = (q: number, r: number) => {
+    for (let dr = -1; dr <= 1; dr++) for (let dq = -1; dq <= 1; dq++) {
+      const t = inB(q + dq, r + dr, w, h) ? tileAt(q + dq, r + dr) : null;
+      if (t && t.terrain === 'forest') return true;
+    }
+    return false;
+  };
+  const addProp = (q: number, r: number, kindProp: MapProp['kind']) => {
+    occupied.add(key(q, r));
     props.push({
-      id: `${cfg.territoryId}-deco-${i}`,
+      id: `${cfg.territoryId}-deco-${props.length}`,
       kind: kindProp,
       coordinate: { q, r },
-      u: 0.3 + rng() * 0.4, v: 0.3 + rng() * 0.4,
-      scale: 0.5 + rng() * 0.5,
+      u: 0.32 + rng() * 0.36, v: 0.32 + rng() * 0.36,
+      scale: 0.55 + rng() * 0.5,
       ...(kindProp === 'tree' ? { texture: '/props/tree1.png' } : {})
     });
-    occupied.add(key(q, r)); // one decorative prop per tile
-    i++;
+  };
+  for (let r = 0; r < h; r++) for (let q = 0; q < w; q++) {
+    if (occupied.has(key(q, r)) || isReserved(q, r) || isRoad.has(key(q, r))) continue;
+    const t = tileAt(q, r);
+    if (!t.passable || t.terrain === 'water') continue;
+    if (t.terrain === 'forest') { if (rng() < 0.55) addProp(q, r, 'tree'); }
+    else if (t.terrain === 'hill') { if (rng() < 0.3) addProp(q, r, 'rock'); }
+    else if (t.terrain === 'structure' || t.terrain === 'swamp') { if (rng() < 0.28) addProp(q, r, 'rock'); }
+    else if (t.terrain === 'plain' && isForestNear(q, r)) { if (rng() < 0.35) addProp(q, r, 'bush'); }
+    else if (t.terrain === 'plain' && rng() < 0.06) addProp(q, r, rng() < 0.5 ? 'bush' : 'rock');
   }
 
-  // 7) collect passable, building-free tiles for choosing zones/objectives/spawns
+  // 9) collect passable, building-free tiles for choosing zones/objectives/spawns
   const passable: Coord[] = [];
   for (let r = 0; r < h; r++) for (let q = 0; q < w; q++) {
     if (tileAt(q, r).passable && !occupied.has(key(q, r))) passable.push({ q, r });
   }
-
-  // home / enemy zones = the cleared corner cells, filtered to anything not later blocked
   const free = (c: Coord) => tileAt(c.q, c.r).passable && !occupied.has(key(c.q, c.r));
   const allianceZone = homeCells.filter(free);
   const otherSideZone = enemyCells.filter(free);
@@ -338,23 +378,23 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
 
 // === the 17 sectors, each with a distinct theme/size/weather tuned to its lore and difficulty ===
 const CITY_CONFIGS: CityConfig[] = [
-  { territoryId: 'sector-paris', name: 'Paris Outskirts', brief: 'Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.', theme: 'urban', gameplay: 'evac', width: 14, height: 10, weather: 'clear', difficulty: 1 },
-  { territoryId: 'sector-lyon', name: 'Lyon Industrial Zone', brief: 'Hold the factory strongpoint against the demonic raid on the arms works.', theme: 'industrial', gameplay: 'hold', width: 13, height: 10, weather: 'clear', difficulty: 1 },
-  { territoryId: 'sector-strasbourg', name: 'Strasbourg Crossing', brief: 'Force the Rhine: rout the bridge guard or plant charges before the assault window closes.', theme: 'river', gameplay: 'bridgehead', width: 14, height: 10, weather: 'clear', difficulty: 2 },
-  { territoryId: 'sector-munich', name: 'Munich Defensive Line', brief: 'Raid the forward line under cover of darkness and silence the enemy sorcery.', theme: 'forest', gameplay: 'raid-night', width: 13, height: 10, weather: 'night', difficulty: 2 },
-  { territoryId: 'sector-zurich', name: 'Alpine Fortress', brief: 'Hold the mountain pass strongpoint while the bunkers are cleared.', theme: 'alpine', gameplay: 'hold', width: 13, height: 11, weather: 'clear', difficulty: 2 },
-  { territoryId: 'sector-vienna', name: 'Vienna Siege', brief: 'Break the siege of the old city: rout the besiegers and breach to the inner ring.', theme: 'oldtown', gameplay: 'bridgehead', width: 15, height: 11, weather: 'clear', difficulty: 3 },
-  { territoryId: 'sector-brussels', name: 'Brussels Command', brief: 'Extract the classified intel to the evac point before the HQ falls.', theme: 'urban', gameplay: 'evac', width: 14, height: 10, weather: 'clear', difficulty: 1 },
-  { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Fight across the canals and seize the far quay through the harbor fog.', theme: 'canal', gameplay: 'bridgehead', width: 14, height: 11, weather: 'fog', difficulty: 2 },
-  { territoryId: 'sector-copenhagen', name: 'Copenhagen Strait', brief: 'Hold the coastal strongpoint and deny the Baltic flanking approach.', theme: 'coast', gameplay: 'hold', width: 14, height: 11, weather: 'clear', difficulty: 2 },
-  { territoryId: 'sector-prague', name: 'Prague Old Town', brief: 'Raid the old-town warren by night and disrupt the dark ritual.', theme: 'oldtown', gameplay: 'raid-night', width: 14, height: 11, weather: 'night', difficulty: 3 },
-  { territoryId: 'sector-berlin', name: 'Berlin Ruins', brief: 'Storm the ruined capital through the fog and break the ritual guardians.', theme: 'ruins', gameplay: 'spire', width: 15, height: 12, weather: 'fog', difficulty: 4 },
-  { territoryId: 'sector-warsaw', name: 'Warsaw Front', brief: 'Break the eastern line through the rubble and seize the far strongpoint.', theme: 'ruins', gameplay: 'bridgehead', width: 15, height: 11, weather: 'clear', difficulty: 4 },
-  { territoryId: 'sector-krakow', name: 'Krakow Citadel', brief: 'Assault the citadel turned portal-nexus and hold its grounds to seal it.', theme: 'oldtown', gameplay: 'spire', width: 15, height: 12, weather: 'fog', difficulty: 4 },
-  { territoryId: 'sector-kyiv', name: 'Kyiv Siege', brief: 'Night raid through the ruined metropolis to silence the coven and hold the relay.', theme: 'ruins', gameplay: 'raid-night', width: 17, height: 13, weather: 'night', difficulty: 5 },
-  { territoryId: 'sector-carpathian', name: 'Carpathian Pass', brief: 'Hold the high pass strongpoint and clear the patrol-ridden ridges.', theme: 'alpine', gameplay: 'hold', width: 15, height: 12, weather: 'clear', difficulty: 4 },
-  { territoryId: 'sector-blacksea', name: 'Black Sea Coast', brief: 'Push along the foggy coast, rout the shore-spawn and seize the far cape.', theme: 'coast', gameplay: 'bridgehead', width: 15, height: 12, weather: 'fog', difficulty: 4 },
-  { territoryId: 'sector-rift', name: 'The Eastern Rift', brief: 'Cross the scorched rift, destroy the guardians and hold the portal grounds.', theme: 'rift', gameplay: 'spire', width: 17, height: 13, weather: 'fog', difficulty: 5 }
+  { territoryId: 'sector-paris', name: 'Paris Outskirts', brief: 'Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.', theme: 'urban', gameplay: 'evac', width: 18, height: 13, weather: 'clear', difficulty: 1 },
+  { territoryId: 'sector-lyon', name: 'Lyon Industrial Zone', brief: 'Hold the factory strongpoint against the demonic raid on the arms works.', theme: 'industrial', gameplay: 'hold', width: 18, height: 13, weather: 'clear', difficulty: 1 },
+  { territoryId: 'sector-strasbourg', name: 'Strasbourg Crossing', brief: 'Force the Rhine: rout the bridge guard or plant charges before the assault window closes.', theme: 'river', gameplay: 'bridgehead', width: 19, height: 14, weather: 'clear', difficulty: 2 },
+  { territoryId: 'sector-munich', name: 'Munich Defensive Line', brief: 'Raid the forward line under cover of darkness and silence the enemy sorcery.', theme: 'forest', gameplay: 'raid-night', width: 19, height: 14, weather: 'night', difficulty: 2 },
+  { territoryId: 'sector-zurich', name: 'Alpine Fortress', brief: 'Hold the mountain pass strongpoint while the bunkers are cleared.', theme: 'alpine', gameplay: 'hold', width: 19, height: 14, weather: 'clear', difficulty: 2 },
+  { territoryId: 'sector-vienna', name: 'Vienna Siege', brief: 'Break the siege of the old city: rout the besiegers and breach to the inner ring.', theme: 'oldtown', gameplay: 'bridgehead', width: 20, height: 14, weather: 'clear', difficulty: 3 },
+  { territoryId: 'sector-brussels', name: 'Brussels Command', brief: 'Extract the classified intel to the evac point before the HQ falls.', theme: 'urban', gameplay: 'evac', width: 18, height: 13, weather: 'clear', difficulty: 1 },
+  { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Fight across the canals and seize the far quay through the harbor fog.', theme: 'canal', gameplay: 'bridgehead', width: 19, height: 14, weather: 'fog', difficulty: 2 },
+  { territoryId: 'sector-copenhagen', name: 'Copenhagen Strait', brief: 'Hold the coastal strongpoint and deny the Baltic flanking approach.', theme: 'coast', gameplay: 'hold', width: 19, height: 14, weather: 'clear', difficulty: 2 },
+  { territoryId: 'sector-prague', name: 'Prague Old Town', brief: 'Raid the old-town warren by night and disrupt the dark ritual.', theme: 'oldtown', gameplay: 'raid-night', width: 20, height: 14, weather: 'night', difficulty: 3 },
+  { territoryId: 'sector-berlin', name: 'Berlin Ruins', brief: 'Storm the ruined capital through the fog and break the ritual guardians.', theme: 'ruins', gameplay: 'spire', width: 22, height: 15, weather: 'fog', difficulty: 4 },
+  { territoryId: 'sector-warsaw', name: 'Warsaw Front', brief: 'Break the eastern line through the rubble and seize the far strongpoint.', theme: 'ruins', gameplay: 'bridgehead', width: 22, height: 15, weather: 'clear', difficulty: 4 },
+  { territoryId: 'sector-krakow', name: 'Krakow Citadel', brief: 'Assault the citadel turned portal-nexus and hold its grounds to seal it.', theme: 'oldtown', gameplay: 'spire', width: 22, height: 15, weather: 'fog', difficulty: 4 },
+  { territoryId: 'sector-kyiv', name: 'Kyiv Siege', brief: 'Night raid through the ruined metropolis to silence the coven and hold the relay.', theme: 'ruins', gameplay: 'raid-night', width: 24, height: 17, weather: 'night', difficulty: 5 },
+  { territoryId: 'sector-carpathian', name: 'Carpathian Pass', brief: 'Hold the high pass strongpoint and clear the patrol-ridden ridges.', theme: 'alpine', gameplay: 'hold', width: 22, height: 15, weather: 'clear', difficulty: 4 },
+  { territoryId: 'sector-blacksea', name: 'Black Sea Coast', brief: 'Push along the foggy coast, rout the shore-spawn and seize the far cape.', theme: 'coast', gameplay: 'bridgehead', width: 22, height: 15, weather: 'fog', difficulty: 4 },
+  { territoryId: 'sector-rift', name: 'The Eastern Rift', brief: 'Cross the scorched rift, destroy the guardians and hold the portal grounds.', theme: 'rift', gameplay: 'spire', width: 24, height: 17, weather: 'fog', difficulty: 5 }
 ];
 
 export const cityScenarios: TacticalScenario[] = CITY_CONFIGS.map(buildScenario);
