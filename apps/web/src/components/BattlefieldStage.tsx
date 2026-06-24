@@ -1767,7 +1767,9 @@ export function BattlefieldStage({
     };
   }, []);
 
-  // Auto-center camera on first friendly unit at start
+  // Auto-center camera on the friendly deploy area at start (the only lit region under fog — centring on
+  // the map middle would just frame darkness). The wide initial zoom then shows that area plus a big
+  // swath of the surrounding battlefield, so even a large map reads as large rather than cramped.
   const didAutoCenterRef = useRef(false);
   useEffect(() => {
     if (didAutoCenterRef.current) return;
@@ -1951,7 +1953,9 @@ export function BattlefieldStage({
     hostSize.h > 0 ? hostSize.h / contentHeight : 1
   );
   const fitScale = snapCameraScale(fitScaleRaw);
-  const initialFollowZoom = clampCameraScale(Math.max(2.35, snapCameraScale(fitScaleRaw * 1.95)));
+  // Start wide enough to take in a large swath of the battlefield (was a tight 2.35 that cropped to the
+  // home corner and made big maps feel small); the player can still wheel-zoom in to ~4.5.
+  const initialFollowZoom = clampCameraScale(Math.max(1.6, snapCameraScale(fitScaleRaw * 1.5)));
   const didSetInitialZoomRef = useRef(false);
   useEffect(() => {
     if (cameraMode === 'follow' && !didSetInitialZoomRef.current) {
@@ -2352,6 +2356,42 @@ export function BattlefieldStage({
       />
     );
   }, [map.height, map.width, topGeomFor]);
+
+  // A skirt of dark out-of-bounds terrain diamonds ringing the playable map, fading into the backdrop.
+  // Without it the battlefield is a lit cut-out floating in black and reads as a tiny arena; the skirt
+  // makes it sit inside a larger darkened landscape (the requested "part of a world", not an island).
+  const voidSkirt = useMemo(() => {
+    const M = 12;
+    const hw = ISO_TILE_W / 2;
+    const hh = ISO_TILE_H / 2;
+    const diamonds: { x: number; y: number; color: number; alpha: number }[] = [];
+    for (let r = -M; r < map.height + M; r += 1) {
+      for (let q = -M; q < map.width + M; q += 1) {
+        if (q >= 0 && q < map.width && r >= 0 && r < map.height) continue; // skip the real map
+        const dq = q < 0 ? -q : q >= map.width ? q - (map.width - 1) : 0;
+        const dr = r < 0 ? -r : r >= map.height ? r - (map.height - 1) : 0;
+        const t = Math.min(1, Math.max(dq, dr) / M);
+        const alpha = (1 - t) * (1 - t) * 0.92; // ease-out fade so the ring melts into the dark
+        if (alpha <= 0.02) continue;
+        const p = toScreen({ q, r });
+        const n = tileNoise(q + 100, r + 100, 41);
+        const base = n > 0.72 ? 0x241d12 : n > 0.4 ? 0x18260f : 0x14210f;
+        diamonds.push({ x: p.x, y: p.y, color: darkenColor(base, t * 0.55), alpha });
+      }
+    }
+    return (
+      <Graphics
+        draw={(g) => {
+          g.clear();
+          for (const d of diamonds) {
+            g.beginFill(d.color, d.alpha);
+            g.drawPolygon([d.x, d.y - hh, d.x + hw, d.y, d.x, d.y + hh, d.x - hw, d.y]);
+            g.endFill();
+          }
+        }}
+      />
+    );
+  }, [map.width, map.height, toScreen]);
 
 
   const tileGraphics = useMemo(() => {
@@ -6278,6 +6318,7 @@ export function BattlefieldStage({
         <Container x={offsetX} y={offsetY} scale={scale}>
           {/* World container. In HEX mode we fake tilt; in ISO mode it's identity. */}
           <Container x={ISO_MODE ? isoBaseX : 0} scale={{ x: 1, y: ISO_MODE ? 1 : 0.72 }} skew={{ x: ISO_MODE ? 0 : -0.28, y: 0 }}>
+            {voidSkirt}
             {battlefieldBackdrop}
             {tileGraphics}
             {terrainGrimeLayer}
