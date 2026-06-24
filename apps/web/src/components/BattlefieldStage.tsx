@@ -5616,13 +5616,17 @@ export function BattlefieldStage({
     // Coordinates of units that are currently visible to the player. A building standing over one of
     // them is faded so the unit isn't completely hidden — the focus-fade above only fires for the
     // selected/target unit, so un-selected units behind a solid building were invisible.
-    const visibleUnitCoords: Array<{ q: number; r: number }> = [];
+    const visibleUnitCoords: Array<{ q: number; r: number; sx: number; sy: number }> = [];
     for (const side of Object.values(battleState.sides) as any[]) {
       for (const u of side.units.values()) {
         if (u.stance === 'destroyed' || u.embarkedOn) continue;
         // Always reveal-through for the player's own units; for enemies only when actually visible.
         if (u.faction === viewerFaction || visibleTiles.has(idxAt(u.coordinate.q, u.coordinate.r))) {
-          visibleUnitCoords.push(u.coordinate);
+          // Front-edge screen centre of the unit's tile, same convention buildings anchor on, so the
+          // occlusion test below can compare unit position against a building's real sprite rectangle.
+          const sw = worldCornerOfTile(u.coordinate.q, u.coordinate.r, 'SW', topGeomFor);
+          const se = worldCornerOfTile(u.coordinate.q, u.coordinate.r, 'SE', topGeomFor);
+          visibleUnitCoords.push({ q: u.coordinate.q, r: u.coordinate.r, sx: (sw.x + se.x) / 2, sy: (sw.y + se.y) / 2 });
         }
       }
     }
@@ -5662,24 +5666,6 @@ export function BattlefieldStage({
           coord.q >= q0 && coord.q <= q0 + w - 1 && coord.r >= r0 && coord.r <= r0 + h - 1
         );
         const focusAlpha = focusTight ? 0.18 : 0.34;
-        // In iso, screen-y = (q+r); tiles "behind" a building (up-screen) have a SMALLER q+r. A tall
-        // building therefore occludes units several rows up-screen, not just on its footprint. Fade it
-        // if a visible unit sits anywhere in that zone (footprint + on-screen height, within its
-        // horizontal q-r span) so units are never fully hidden behind it.
-        const occScale = b.scale ?? 0.082 * Math.max(w, h, 1);
-        const heightRows = Math.min(7, Math.max(2, Math.round((occScale * 870) / (ISO_TILE_H / 2))));
-        const sumMin = q0 + r0;
-        const sumMax = (q0 + w - 1) + (r0 + h - 1);
-        const diffMin = q0 - (r0 + h - 1);
-        const diffMax = (q0 + w - 1) - r0;
-        const unitOccluded = visibleUnitCoords.some((coord) => {
-          const sum = coord.q + coord.r;
-          const diff = coord.q - coord.r;
-          return sum >= sumMin - heightRows && sum <= sumMax && diff >= diffMin - 1 && diff <= diffMax + 1;
-        });
-        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? focusAlpha : unitOccluded ? 0.45 : 1);
-        const fogShade = isVisible ? 0 : 0.06;
-
         const bottomNW = worldCornerOfTile(q0, r0, 'NW', topGeomFor);
         const bottomNE = worldCornerOfTile(q0 + w - 1, r0, 'NE', topGeomFor);
         const bottomSE = worldCornerOfTile(q0 + w - 1, r0 + h - 1, 'SE', topGeomFor);
@@ -5700,9 +5686,27 @@ export function BattlefieldStage({
         const painted = b.texture
           ? { tex: b.texture, keepTop: 1 }
           : PAINTED_BUILDINGS[hashStringToIndex(b.id, PAINTED_BUILDINGS.length)];
+        const spriteScale = b.scale ?? 0.082 * Math.max(w, h, 1);
+
+        // Geometric occlusion: fade the building when a visible unit actually sits under its drawn sprite
+        // rectangle. This works for ANY height/width (a tall, wide watchtower included) — the old q-r
+        // row/column heuristic missed units one column to the side or 8+ rows up-screen behind a big tower.
+        const spriteH = 1024 * (painted ? painted.keepTop : 1) * spriteScale; // painted assets are 1024² cropped by keepTop
+        const spriteW = 1024 * spriteScale;
+        const sprTop = anchor.y - 0.97 * spriteH; // sprite anchor is (0.5, 0.97)
+        const sprLeft = anchor.x - 0.5 * spriteW;
+        const sprRight = anchor.x + 0.5 * spriteW;
+        const occMargin = ISO_TILE_W * 0.3;
+        const unitOccluded = visibleUnitCoords.some((u) =>
+          u.sy <= anchor.y + 2 &&                       // unit is at/behind the building base (up-screen)
+          u.sy >= sprTop - occMargin &&                 // within the sprite's vertical reach
+          u.sx >= sprLeft - occMargin && u.sx <= sprRight + occMargin
+        );
+        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? focusAlpha : unitOccluded ? 0.4 : 1);
+        const fogShade = isVisible ? 0 : 0.06;
+
         if (painted) {
           const texture = getCroppedBuildingTexture(painted.tex, painted.keepTop);
-          const spriteScale = b.scale ?? 0.082 * Math.max(w, h, 1);
           return (
             <Container key={b.id} x={anchor.x} y={anchor.y} zIndex={zIndex} sortableChildren alpha={fogAlpha}>
               <Graphics
