@@ -86,8 +86,8 @@ describe('campaign core', () => {
     const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');
     const [firstUnit] = battle.state.sides.alliance.units.values();
     if (!firstUnit) throw new Error('expected deployed unit');
-    // Move first unit off start tile to simulate overextension
-    firstUnit.coordinate = { q: firstUnit.coordinate.q + 1, r: firstUnit.coordinate.r };
+    // Move first unit well clear of the (SW) alliance deploy zone to simulate overextension.
+    firstUnit.coordinate = { q: battle.state.map.width - 1, r: 0 };
     retreatFromBattle(state);
     // Unit off the start tile should be lost
     const stillThere = state.army.find((u) => u.id === Object.keys(battle.deployment)[0]);
@@ -120,8 +120,8 @@ describe('campaign core', () => {
 
   it('preserves never-deployed (benched) army units after a victory', () => {
     const state = createCampaign(starterBundle);
-    // Grow the army beyond the scenario's start-tile count so at least one unit is benched.
-    state.army.push({ ...structuredClone(state.army[0]), id: 'benched-unit-xyz' });
+    // Grow the army well beyond any scenario's start-tile count so several units are guaranteed benched.
+    for (let i = 0; i < 24; i++) state.army.push({ ...structuredClone(state.army[0]), id: `benched-unit-${i}` });
     const armyBefore = state.army.length;
     const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');
     const deployedIds = new Set(Object.keys(battle.deployment));

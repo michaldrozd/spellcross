@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { cityScenarios, cityScenarioIdByTerritory } from './city-battlefields.js';
+
 export type FactionId = 'alliance' | 'otherSide';
 export type TerrainType =
   | 'plain'
@@ -1637,14 +1639,16 @@ export const starterScenarios: TacticalScenario[] = [
       { id: 'eliminate-portal', kind: 'eliminate', description: 'Destroy the ritual guardians.' },
       { id: 'hold-spire', kind: 'hold', description: 'Hold the spire grounds for 3 rounds.', target: { q: 6, r: 3 }, turnLimit: 3 }
     ]
-  }
+  },
+  // Per-city unique battlefields — one generated map per sector (see city-battlefields.ts).
+  ...cityScenarios
 ];
 
 /** Strategic Campaign Map - Central Europe Theatre
  * The invasion started from the East. We must push back sector by sector.
  * Map covers: Western front (Spain/France) through Central Europe to Eastern front (Poland/Ukraine)
  */
-export const starterTerritories: TerritorySpec[] = [
+const baseTerritories: TerritorySpec[] = [
   // === STARTING SECTORS (Western Front - Already partially secured) ===
   {
     id: 'sector-paris',
@@ -1850,6 +1854,13 @@ export const starterTerritories: TerritorySpec[] = [
     difficulty: 5
   }
 ];
+
+// Each sector now plays on its own unique generated battlefield (city-battlefields.ts); the strategic
+// lore brief stays, the in-battle scenario carries the tactical brief/objectives for that map.
+export const starterTerritories: TerritorySpec[] = baseTerritories.map((t) => ({
+  ...t,
+  scenarioId: cityScenarioIdByTerritory[t.id] ?? t.scenarioId
+}));
 
 export const starterCampaign: CampaignSpec = {
   id: 'starter',
