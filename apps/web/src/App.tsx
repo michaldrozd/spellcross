@@ -95,6 +95,8 @@ const movingUnitDuration = (moving: MovingUnit) => {
   return (moving.preAlignDuration ?? 0) + movementDuration + turnDuration;
 };
 
+const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+
 const unitTextures: Record<string, PIXI.Texture> = {
   infantry: PIXI.Texture.from('/units/infantry.png'),
   vehicle: PIXI.Texture.from('/units/tank.png'),
@@ -803,6 +805,9 @@ const BattleView: React.FC<{
   const aiSfxTimeoutsRef = useRef<number[]>([]);
   // Guards Auto Turn against re-entry while the player's staged gunfire plays out before the enemy turn.
   const autoTurnBusyRef = useRef(false);
+  // True while the enemy turn animates. Together with autoTurnBusyRef it locks out player orders so a
+  // stray click can't move a unit (or hijack activeFaction) mid-CPU-turn now that those turns are async.
+  const enemyTurnBusyRef = useRef(false);
   const movingUnitRef = useRef<MovingUnit | null>(movingUnit);
   const selectedRef = useRef<string | null>(selected);
   const targetedEnemyRef = useRef<UnitInstance | null>(targetedEnemy);
@@ -1370,6 +1375,7 @@ const BattleView: React.FC<{
   };
 
   const actMove = (unitId: string, target: HexCoordinate, force = false) => {
+    if (autoTurnBusyRef.current || enemyTurnBusyRef.current) return false; // CPU is acting
     if (deployModeRef.current) return false;
     if (movingUnitRef.current) return false; // Don't start new movement while animating
     const unit = battle.state.sides.alliance.units.get(unitId);
@@ -1474,6 +1480,41 @@ const BattleView: React.FC<{
     return true;
   };
 
+  // Glide a unit's sprite along its path after the engine has already committed the move, and return the
+  // animation length in ms so a scripted (auto/AI) loop can await it. Mirrors actMove's visual setup —
+  // without it, auto-played and enemy moves snap the sprite straight to the destination (teleport).
+  const beginMoveAnimation = (unitId: string, startCoord: HexCoordinate, path: HexCoordinate[]): number => {
+    const unit = findBattleUnit(unitId);
+    if (!unit || path.length === 0) return 0;
+    const finalCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
+    const actualPath: HexCoordinate[] = [];
+    for (const step of path) {
+      actualPath.push(step);
+      if (step.q === finalCoord.q && step.r === finalCoord.r) break;
+    }
+    const fullPath = [startCoord, ...actualPath];
+    if (fullPath.length < 2) return 0;
+    const unitType = (unit as any).unitType;
+    const isVehicleMove = unitType === 'vehicle'
+      || unitType === 'artillery'
+      || (unitType === 'support' && unit.definitionId.toLowerCase().includes('truck'));
+    AudioManager.play(isVehicleMove ? 'tankMove' : 'move');
+    const isM113Move = unit.definitionId.toLowerCase().includes('m113');
+    const moving: MovingUnit = {
+      unitId,
+      path: fullPath,
+      startTime: Date.now(),
+      stepDuration: isVehicleMove ? 420 : 180,
+      preAlignDuration: isVehicleMove ? (isM113Move ? 0 : 150) : 0,
+      segmentTurnDuration: isM113Move ? 90 : 0
+    };
+    movingUnitRef.current = moving;
+    flushSync(() => {
+      setMovingUnit(moving);
+    });
+    return movingUnitDuration(moving);
+  };
+
   const actSupply = (supplierId: string) => {
     if (deployModeRef.current || !supplyTargetId) return;
     const proc = new TurnProcessor(battle.state);
@@ -1505,6 +1546,7 @@ const BattleView: React.FC<{
   };
 
   const actAttack = (attackerId: string, defender: UnitInstance) => {
+    if (autoTurnBusyRef.current || enemyTurnBusyRef.current) return; // CPU is acting
     // Exit deploy mode when attacking
     if (deployMode) {
       setDeployMode(false);
@@ -1570,6 +1612,7 @@ const BattleView: React.FC<{
   };
 
   const handleHexClick = (coord: HexCoordinate) => {
+    if (autoTurnBusyRef.current || enemyTurnBusyRef.current) return; // ignore clicks while the CPU plays
     // Clear targeted enemy when clicking elsewhere. Only enemies on a CURRENTLY VISIBLE tile count as a
     // target — you can't target (or attack) a unit hidden in fog, which would otherwise put a reticle and
     // a "HIT" number on an apparently empty tile.
@@ -1676,8 +1719,9 @@ const BattleView: React.FC<{
     }
   };
 
-  const runAiTurn = () => {
-    if (deployMode) return;
+  const runAiTurn = async () => {
+    if (deployMode || enemyTurnBusyRef.current) return;
+    enemyTurnBusyRef.current = true;
     // drop any staged SFX still pending from a prior enemy turn
     aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
     aiSfxTimeoutsRef.current = [];
@@ -1685,111 +1729,121 @@ const BattleView: React.FC<{
     aiProcessor.endTurn(); // player ends, AI starts
     showPhaseNotice('Enemy Turn', 'Hostile units are acting', 'enemy');
     let safety = 0;
-    let stagedAttacks = 0;
+    let attacksMade = 0;
     let phaseUpdated = false;
     const maxEnemyAttacks = campaign.turn > 6 ? 3 : 2;
     // Units whose chosen action the engine rejected this turn. We skip only those when re-deciding so a
     // single bad action doesn't forfeit the rest of the AI's units (decideNextAIAction returns one
     // globally-best action, so without this the turn would end on the first rejection).
     const failedUnitIds = new Set<string>();
-    while (battle.state.activeFaction === 'otherSide' && safety < 50) {
-      safety += 1;
-      const objectiveTargets = battle.scenario.objectives
-        .map((o) => o.target)
-        .filter((t): t is HexCoordinate => Boolean(t));
-      const holdTargets = battle.scenario.objectives.filter((o) => o.kind === 'hold').map((o) => o.target).filter(Boolean) as HexCoordinate[];
-      const reachTargets = battle.scenario.objectives.filter((o) => o.kind === 'reach').map((o) => o.target).filter(Boolean) as HexCoordinate[];
-      const avoid = new Set<string>();
-      battle.state.map.tiles.forEach((tile, idx) => {
-        if (tile.destructible && (tile.hp ?? 0) > 0) {
-          const q = idx % battle.state.map.width;
-          const r = Math.floor(idx / battle.state.map.width);
-          avoid.add(`${q},${r}`);
+    try {
+      while (battle.state.activeFaction === 'otherSide' && safety < 50) {
+        safety += 1;
+        const objectiveTargets = battle.scenario.objectives
+          .map((o) => o.target)
+          .filter((t): t is HexCoordinate => Boolean(t));
+        const holdTargets = battle.scenario.objectives.filter((o) => o.kind === 'hold').map((o) => o.target).filter(Boolean) as HexCoordinate[];
+        const reachTargets = battle.scenario.objectives.filter((o) => o.kind === 'reach').map((o) => o.target).filter(Boolean) as HexCoordinate[];
+        const avoid = new Set<string>();
+        battle.state.map.tiles.forEach((tile, idx) => {
+          if (tile.destructible && (tile.hp ?? 0) > 0) {
+            const q = idx % battle.state.map.width;
+            const r = Math.floor(idx / battle.state.map.width);
+            avoid.add(`${q},${r}`);
+          }
+        });
+        // Fog-fair: the enemy only fires at player units its own side can see (movement still advances on
+        // all). Symmetric with the player's Auto Turn, and required now that the engine rejects attacks on
+        // unseen targets — otherwise the AI would keep proposing rejected shots at fogged players.
+        const foeSeen = battle.state.vision.otherSide.visibleTiles;
+        const foeVisibleIds = new Set<string>();
+        for (const u of battle.state.sides.alliance.units.values()) {
+          if (u.stance === 'destroyed' || u.embarkedOn) continue;
+          if (foeSeen.has(u.coordinate.r * battle.state.map.width + u.coordinate.q)) foeVisibleIds.add(u.id);
         }
-      });
-      // Fog-fair: the enemy only fires at player units its own side can see (movement still advances on
-      // all). Symmetric with the player's Auto Turn, and required now that the engine rejects attacks on
-      // unseen targets — otherwise the AI would keep proposing rejected shots at fogged players.
-      const foeSeen = battle.state.vision.otherSide.visibleTiles;
-      const foeVisibleIds = new Set<string>();
-      for (const u of battle.state.sides.alliance.units.values()) {
-        if (u.stance === 'destroyed' || u.embarkedOn) continue;
-        if (foeSeen.has(u.coordinate.r * battle.state.map.width + u.coordinate.q)) foeVisibleIds.add(u.id);
-      }
-      const action = decideNextAIAction(battle.state, 'otherSide', {
-        objectiveTargets,
-        holdTargets,
-        reachTargets,
-        defendBias: true,
-        aggression: 0.6,
-        avoidTiles: avoid,
-        allowDemolition: true,
-        difficulty: campaign.turn > 10 ? 'brutal' : campaign.turn > 6 ? 'hard' : 'normal',
-        excludeUnitIds: failedUnitIds,
-        visibleEnemyIds: foeVisibleIds
-      });
-      if (action.type === 'endTurn') {
-        aiProcessor.endTurn();
-        break;
-      } else if (action.type === 'move') {
-        // A rejected action would otherwise be re-decided identically forever (deterministic AI);
-        // skip just this unit so the remaining units still act this turn.
-        const moveRes = aiProcessor.moveUnit(action);
-        if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }
-      } else if (action.type === 'attack') {
-        const attacker = findBattleUnit(action.attackerId);
-        const defender = findBattleUnit(action.defenderId);
-        const result = aiProcessor.attackUnit(action);
-        if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
-        if (attacker && defender) {
-          const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
-          addAttackEffect(attacker, defender, action.weaponId, outcome, stagedAttacks * 650);
-          // Enemy attacks were silent — play the firing SFX (and impact) timed to the staged visual.
-          const fireDelay = stagedAttacks * 650;
-          const enemySfx = soundForAttackEffect(effectTypeForAttack(attacker, defender, action.weaponId));
-          const enemyKilled = defender.stance === 'destroyed';
-          const enemyHit = outcome.hit;
-          aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
+        const action = decideNextAIAction(battle.state, 'otherSide', {
+          objectiveTargets,
+          holdTargets,
+          reachTargets,
+          defendBias: true,
+          aggression: 0.6,
+          avoidTiles: avoid,
+          allowDemolition: true,
+          difficulty: campaign.turn > 10 ? 'brutal' : campaign.turn > 6 ? 'hard' : 'normal',
+          excludeUnitIds: failedUnitIds,
+          visibleEnemyIds: foeVisibleIds
+        });
+        if (action.type === 'endTurn') {
+          aiProcessor.endTurn();
+          break;
+        } else if (action.type === 'move') {
+          // A rejected action would otherwise be re-decided identically forever (deterministic AI);
+          // skip just this unit so the remaining units still act this turn.
+          const mover = findBattleUnit(action.unitId);
+          const startCoord = mover ? { q: mover.coordinate.q, r: mover.coordinate.r } : null;
+          const moveRes = aiProcessor.moveUnit(action);
+          if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }
+          if (startCoord) {
+            const dur = beginMoveAnimation(action.unitId, startCoord, action.path);
+            if (dur > 0) await sleep(dur + 90);
+          }
+        } else if (action.type === 'attack') {
+          const attacker = findBattleUnit(action.attackerId);
+          const defender = findBattleUnit(action.defenderId);
+          const result = aiProcessor.attackUnit(action);
+          if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
+          if (attacker && defender) {
+            const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
+            addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
+            const enemySfx = soundForAttackEffect(effectTypeForAttack(attacker, defender, action.weaponId));
+            const enemyKilled = defender.stance === 'destroyed';
+            const enemyHit = outcome.hit;
             AudioManager.play(enemySfx);
-            if (enemyKilled) window.setTimeout(() => AudioManager.play('death'), 240);
-            else if (enemyHit) window.setTimeout(() => AudioManager.play('hit'), 240);
-          }, fireDelay));
-          stagedAttacks += 1;
-          if (!phaseUpdated) {
-            phaseUpdated = true;
-            showPhaseNotice('Enemy Phase', `${unitDisplayName(action.attackerId, battle.state)} attacking`, 'enemy');
+            if (enemyKilled) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('death'), 240));
+            else if (enemyHit) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('hit'), 240));
+            attacksMade += 1;
+            if (!phaseUpdated) {
+              phaseUpdated = true;
+              showPhaseNotice('Enemy Phase', `${unitDisplayName(action.attackerId, battle.state)} attacking`, 'enemy');
+            }
+            await sleep(700);
+            if (attacksMade >= maxEnemyAttacks) {
+              aiProcessor.endTurn();
+              break;
+            }
           }
-          if (stagedAttacks >= maxEnemyAttacks) {
-            aiProcessor.endTurn();
-            break;
-          }
+        } else if (action.type === 'attackTile') {
+          const tileRes = aiProcessor.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
+          if (tileRes && tileRes.success === false) { failedUnitIds.add(action.unitId); continue; }
+          AudioManager.play('explosion');
+          await sleep(650);
+        } else if (action.type === 'supply') {
+          const supRes = aiProcessor.supply({ supplierId: action.supplierId, targetId: action.targetId });
+          if (!supRes.success) { failedUnitIds.add(action.supplierId); continue; }
+          AudioManager.play('select');
+          await sleep(250);
+        } else if (action.type === 'heal') {
+          const healRes = aiProcessor.heal({ medicId: action.medicId, targetId: action.targetId });
+          if (!healRes.success) { failedUnitIds.add(action.medicId); continue; }
+          AudioManager.play('select');
+          await sleep(250);
         }
-      } else if (action.type === 'attackTile') {
-        const tileRes = aiProcessor.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
-        if (tileRes && tileRes.success === false) { failedUnitIds.add(action.unitId); continue; }
-        AudioManager.play('explosion');
-      } else if (action.type === 'supply') {
-        const supRes = aiProcessor.supply({ supplierId: action.supplierId, targetId: action.targetId });
-        if (!supRes.success) { failedUnitIds.add(action.supplierId); continue; }
-        AudioManager.play('select');
-      } else if (action.type === 'heal') {
-        const healRes = aiProcessor.heal({ medicId: action.medicId, targetId: action.targetId });
-        if (!healRes.success) { failedUnitIds.add(action.medicId); continue; }
-        AudioManager.play('select');
       }
+      // Backstop: never leave control stuck on the enemy turn (e.g. the safety cap tripped).
+      if (battle.state.activeFaction === 'otherSide') {
+        aiProcessor.endTurn();
+      }
+      persist();
+      resolveOutcome();
+    } finally {
+      enemyTurnBusyRef.current = false;
     }
-    // Backstop: never leave control stuck on the enemy turn (e.g. the safety cap tripped).
-    if (battle.state.activeFaction === 'otherSide') {
-      aiProcessor.endTurn();
-    }
-    persist();
-    resolveOutcome();
   };
 
   // "Auto Turn": let the computer play the player's turn — commit deployment, then drive every
   // alliance unit with the same planner the enemy uses, and finally hand off to the enemy turn.
-  const runAutoPlayerTurn = () => {
-    if (autoTurnBusyRef.current) return;
+  const runAutoPlayerTurn = async () => {
+    if (autoTurnBusyRef.current || enemyTurnBusyRef.current) return;
     if (deployModeRef.current) {
       deployModeRef.current = false;
       setDeployMode(false);
@@ -1810,7 +1864,6 @@ const BattleView: React.FC<{
     const objectiveTargets = reachTargets;
     const failedUnitIds = new Set<string>();
     let safety = 0;
-    let stagedAttacks = 0;
 
     while (battle.state.activeFaction === 'alliance' && safety < 80) {
       safety += 1;
@@ -1834,39 +1887,47 @@ const BattleView: React.FC<{
       });
       if (action.type === 'endTurn') break;
       if (action.type === 'move') {
+        const mover = findBattleUnit(action.unitId);
+        const startCoord = mover ? { q: mover.coordinate.q, r: mover.coordinate.r } : null;
         const moveRes = proc.moveUnit(action);
         if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }
+        setSelected(action.unitId);
+        if (startCoord) {
+          const dur = beginMoveAnimation(action.unitId, startCoord, action.path);
+          if (dur > 0) await sleep(dur + 90);
+        }
       } else if (action.type === 'attack') {
         const attacker = findBattleUnit(action.attackerId);
         const defender = findBattleUnit(action.defenderId);
         const result = proc.attackUnit(action);
         if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
         if (attacker && defender) {
+          setSelected(action.attackerId);
           const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
-          const fireDelay = stagedAttacks * 500;
-          addAttackEffect(attacker, defender, action.weaponId, outcome, fireDelay);
+          addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
           const sfx = soundForAttackEffect(effectTypeForAttack(attacker, defender, action.weaponId));
           const killed = defender.stance === 'destroyed';
           const hit = outcome.hit;
-          aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
-            AudioManager.play(sfx);
-            if (killed) window.setTimeout(() => AudioManager.play('death'), 240);
-            else if (hit) window.setTimeout(() => AudioManager.play('hit'), 240);
-          }, fireDelay));
-          stagedAttacks += 1;
+          AudioManager.play(sfx);
+          if (killed) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('death'), 240));
+          else if (hit) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('hit'), 240));
+          await sleep(700);
         }
       } else if (action.type === 'attackTile') {
         const tileRes = proc.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
         if (tileRes && tileRes.success === false) { failedUnitIds.add(action.unitId); continue; }
         AudioManager.play('explosion');
+        await sleep(650);
       } else if (action.type === 'supply') {
         const supRes = proc.supply({ supplierId: action.supplierId, targetId: action.targetId });
         if (!supRes.success) { failedUnitIds.add(action.supplierId); continue; }
         AudioManager.play('select');
+        await sleep(250);
       } else if (action.type === 'heal') {
         const healRes = proc.heal({ medicId: action.medicId, targetId: action.targetId });
         if (!healRes.success) { failedUnitIds.add(action.medicId); continue; }
         AudioManager.play('select');
+        await sleep(250);
       }
     }
     clearTargeting(true);
@@ -1874,17 +1935,11 @@ const BattleView: React.FC<{
     updateAllFactionsVision(battle.state);
     persist();
     resolveOutcome();
-    // Let the player's staged gunfire/effects finish before the enemy turn begins. Calling runAiTurn
-    // synchronously here also wiped the SFX queue (silent Auto Turn) and made the whole round resolve in
-    // one instant, artificial-feeling tick. Delaying past the last staged shot fixes both.
+    // Hand off to the enemy turn (also animated) once the player's last shot has read on screen.
+    autoTurnBusyRef.current = false;
     if (evaluateBattleOutcome(battle) === 'ongoing') {
-      const playerSfxTail = stagedAttacks > 0 ? (stagedAttacks - 1) * 500 + 650 : 300;
-      window.setTimeout(() => {
-        autoTurnBusyRef.current = false;
-        if (evaluateBattleOutcome(battle) === 'ongoing') runAiTurn();
-      }, Math.min(playerSfxTail, 4000));
-    } else {
-      autoTurnBusyRef.current = false;
+      await sleep(400);
+      if (evaluateBattleOutcome(battle) === 'ongoing') await runAiTurn();
     }
   };
 
