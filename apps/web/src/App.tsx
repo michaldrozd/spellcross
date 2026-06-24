@@ -1550,9 +1550,12 @@ const BattleView: React.FC<{
   };
 
   const handleHexClick = (coord: HexCoordinate) => {
-    // Clear targeted enemy when clicking elsewhere
+    // Clear targeted enemy when clicking elsewhere. Only enemies on a CURRENTLY VISIBLE tile count as a
+    // target — you can't target (or attack) a unit hidden in fog, which would otherwise put a reticle and
+    // a "HIT" number on an apparently empty tile.
     const foe = Array.from(battle.state.sides.otherSide.units.values()).find(
       (u) => u.coordinate.q === coord.q && u.coordinate.r === coord.r && u.stance !== 'destroyed'
+        && visibleTiles.has(coord.r * battle.state.map.width + coord.q)
     );
     if (!foe) {
       clearTargeting(true);
@@ -1684,6 +1687,15 @@ const BattleView: React.FC<{
           avoid.add(`${q},${r}`);
         }
       });
+      // Fog-fair: the enemy only fires at player units its own side can see (movement still advances on
+      // all). Symmetric with the player's Auto Turn, and required now that the engine rejects attacks on
+      // unseen targets — otherwise the AI would keep proposing rejected shots at fogged players.
+      const foeSeen = battle.state.vision.otherSide.visibleTiles;
+      const foeVisibleIds = new Set<string>();
+      for (const u of battle.state.sides.alliance.units.values()) {
+        if (u.stance === 'destroyed' || u.embarkedOn) continue;
+        if (foeSeen.has(u.coordinate.r * battle.state.map.width + u.coordinate.q)) foeVisibleIds.add(u.id);
+      }
       const action = decideNextAIAction(battle.state, 'otherSide', {
         objectiveTargets,
         holdTargets,
@@ -1693,7 +1705,8 @@ const BattleView: React.FC<{
         avoidTiles: avoid,
         allowDemolition: true,
         difficulty: campaign.turn > 10 ? 'brutal' : campaign.turn > 6 ? 'hard' : 'normal',
-        excludeUnitIds: failedUnitIds
+        excludeUnitIds: failedUnitIds,
+        visibleEnemyIds: foeVisibleIds
       });
       if (action.type === 'endTurn') {
         aiProcessor.endTurn();

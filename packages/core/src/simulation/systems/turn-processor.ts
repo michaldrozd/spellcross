@@ -433,6 +433,17 @@ export class TurnProcessor {
       return { success: false, error: 'Target out of range' };
     }
 
+    // Fog of war: you can't deliberately fire on an enemy your side cannot currently see. Without this
+    // the engine resolved hits on fogged, un-rendered enemies, leaving a "HIT" number floating on an
+    // apparently empty tile. (Reaction fire uses resolveAttack directly and is intentionally not gated.)
+    const vision = this.#state.vision?.[attacker.faction];
+    if (vision) {
+      const defIdx = defender.coordinate.r * this.#state.map.width + defender.coordinate.q;
+      if (!vision.visibleTiles.has(defIdx)) {
+        return { success: false, error: 'Target not visible' };
+      }
+    }
+
     const outcome = resolveAttack({
       attacker,
       defender,
