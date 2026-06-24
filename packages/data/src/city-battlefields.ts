@@ -245,6 +245,30 @@ function generate(cfg: CityConfig): Generated {
     }
   }
 
+  // 7b) Fill the urban / ruined districts with real building blocks laid on a street lattice, so a
+  //     "city" actually reads as one — dense blocks with streets between them — instead of a bare grey
+  //     plain. Streets fall on every third row/col, which (with the road spine and the cleared home
+  //     corners) keeps the two deploy zones connected; the connectivity unit test guards this.
+  if (builtUp) {
+    const districtTerrain = theme === 'ruins' ? 'structure' : 'urban';
+    for (let r = 1; r < h - 1; r++) for (let q = 1; q < w - 1; q++) {
+      if (q % 3 === 0 || r % 3 === 0) continue;               // keep a through-street grid open
+      if (tileAt(q, r).terrain !== districtTerrain) continue; // only inside the district biome
+      if (occupied.has(key(q, r)) || isReserved(q, r) || isRoad.has(key(q, r))) continue;
+      if (rng() < 0.16) continue;                             // gaps become courtyards/plazas — break the grid
+      // taller, denser cores for old towns; squat ruined shells for ruins
+      const levels = theme === 'oldtown'
+        ? 2 + (rng() < 0.5 ? 1 : 0) + (rng() < 0.15 ? 1 : 0)
+        : theme === 'ruins'
+          ? 1
+          : 1 + (rng() < 0.5 ? 1 : 0) + (rng() < 0.12 ? 1 : 0);
+      const block = rng() < 0.18 ? 2 : 1; // the occasional larger block punctures the grid
+      placeBuilding(q, r, block, block, theme === 'ruins'
+        ? { levels, wallColor: 0x3b352f, roofColor: 0x23201c }
+        : { levels });
+    }
+  }
+
   // 8) decorative props that FOLLOW the terrain (groves on forest, rocks on hills/rubble, bushes at
   //    forest edges) so the map reads as designed, not as random scatter.
   const isForestNear = (q: number, r: number) => {
@@ -269,11 +293,11 @@ function generate(cfg: CityConfig): Generated {
     if (occupied.has(key(q, r)) || isReserved(q, r) || isRoad.has(key(q, r))) continue;
     const t = tileAt(q, r);
     if (!t.passable || t.terrain === 'water') continue;
-    if (t.terrain === 'forest') { if (rng() < 0.55) addProp(q, r, 'tree'); }
-    else if (t.terrain === 'hill') { if (rng() < 0.3) addProp(q, r, 'rock'); }
-    else if (t.terrain === 'structure' || t.terrain === 'swamp') { if (rng() < 0.28) addProp(q, r, 'rock'); }
-    else if (t.terrain === 'plain' && isForestNear(q, r)) { if (rng() < 0.35) addProp(q, r, 'bush'); }
-    else if (t.terrain === 'plain' && rng() < 0.06) addProp(q, r, rng() < 0.5 ? 'bush' : 'rock');
+    if (t.terrain === 'forest') { if (rng() < 0.66) addProp(q, r, 'tree'); }
+    else if (t.terrain === 'hill') { if (rng() < 0.4) addProp(q, r, 'rock'); }
+    else if (t.terrain === 'structure' || t.terrain === 'swamp') { if (rng() < 0.34) addProp(q, r, 'rock'); }
+    else if (t.terrain === 'plain' && isForestNear(q, r)) { if (rng() < 0.45) addProp(q, r, 'bush'); }
+    else if (t.terrain === 'plain' && rng() < 0.1) addProp(q, r, rng() < 0.5 ? 'bush' : 'rock');
   }
 
   // 9) collect passable, building-free tiles for choosing zones/objectives/spawns
@@ -401,23 +425,23 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
 
 // === the 17 sectors, each with a distinct theme/size/weather tuned to its lore and difficulty ===
 const CITY_CONFIGS: CityConfig[] = [
-  { territoryId: 'sector-paris', name: 'Paris Outskirts', brief: 'Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.', theme: 'urban', gameplay: 'evac', width: 18, height: 13, weather: 'clear', difficulty: 1 },
-  { territoryId: 'sector-lyon', name: 'Lyon Industrial Zone', brief: 'Hold the factory strongpoint against the demonic raid on the arms works.', theme: 'industrial', gameplay: 'hold', width: 18, height: 13, weather: 'clear', difficulty: 1 },
-  { territoryId: 'sector-strasbourg', name: 'Strasbourg Crossing', brief: 'Force the Rhine: rout the bridge guard or plant charges before the assault window closes.', theme: 'river', gameplay: 'bridgehead', width: 19, height: 14, weather: 'clear', difficulty: 2 },
-  { territoryId: 'sector-munich', name: 'Munich Defensive Line', brief: 'Raid the forward line under cover of darkness and silence the enemy sorcery.', theme: 'forest', gameplay: 'raid-night', width: 19, height: 14, weather: 'night', difficulty: 2 },
-  { territoryId: 'sector-zurich', name: 'Alpine Fortress', brief: 'Hold the mountain pass strongpoint while the bunkers are cleared.', theme: 'alpine', gameplay: 'hold', width: 19, height: 14, weather: 'clear', difficulty: 2 },
-  { territoryId: 'sector-vienna', name: 'Vienna Siege', brief: 'Break the siege of the old city: rout the besiegers and breach to the inner ring.', theme: 'oldtown', gameplay: 'bridgehead', width: 20, height: 14, weather: 'clear', difficulty: 3 },
-  { territoryId: 'sector-brussels', name: 'Brussels Command', brief: 'Extract the classified intel to the evac point before the HQ falls.', theme: 'urban', gameplay: 'evac', width: 18, height: 13, weather: 'clear', difficulty: 1 },
-  { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Fight across the canals and seize the far quay through the harbor fog.', theme: 'canal', gameplay: 'bridgehead', width: 19, height: 14, weather: 'fog', difficulty: 2 },
-  { territoryId: 'sector-copenhagen', name: 'Copenhagen Strait', brief: 'Hold the coastal strongpoint and deny the Baltic flanking approach.', theme: 'coast', gameplay: 'hold', width: 19, height: 14, weather: 'clear', difficulty: 2 },
-  { territoryId: 'sector-prague', name: 'Prague Old Town', brief: 'Raid the old-town warren by night and disrupt the dark ritual.', theme: 'oldtown', gameplay: 'raid-night', width: 20, height: 14, weather: 'night', difficulty: 3 },
-  { territoryId: 'sector-berlin', name: 'Berlin Ruins', brief: 'Storm the ruined capital through the fog and break the ritual guardians.', theme: 'ruins', gameplay: 'spire', width: 22, height: 15, weather: 'fog', difficulty: 4 },
-  { territoryId: 'sector-warsaw', name: 'Warsaw Front', brief: 'Break the eastern line through the rubble and seize the far strongpoint.', theme: 'ruins', gameplay: 'bridgehead', width: 22, height: 15, weather: 'clear', difficulty: 4 },
-  { territoryId: 'sector-krakow', name: 'Krakow Citadel', brief: 'Assault the citadel turned portal-nexus and hold its grounds to seal it.', theme: 'oldtown', gameplay: 'spire', width: 22, height: 15, weather: 'fog', difficulty: 4 },
-  { territoryId: 'sector-kyiv', name: 'Kyiv Siege', brief: 'Night raid through the ruined metropolis to silence the coven and hold the relay.', theme: 'ruins', gameplay: 'raid-night', width: 24, height: 17, weather: 'night', difficulty: 5 },
-  { territoryId: 'sector-carpathian', name: 'Carpathian Pass', brief: 'Hold the high pass strongpoint and clear the patrol-ridden ridges.', theme: 'alpine', gameplay: 'hold', width: 22, height: 15, weather: 'clear', difficulty: 4 },
-  { territoryId: 'sector-blacksea', name: 'Black Sea Coast', brief: 'Push along the foggy coast, rout the shore-spawn and seize the far cape.', theme: 'coast', gameplay: 'bridgehead', width: 22, height: 15, weather: 'fog', difficulty: 4 },
-  { territoryId: 'sector-rift', name: 'The Eastern Rift', brief: 'Cross the scorched rift, destroy the guardians and hold the portal grounds.', theme: 'rift', gameplay: 'spire', width: 24, height: 17, weather: 'fog', difficulty: 5 }
+  { territoryId: 'sector-paris', name: 'Paris Outskirts', brief: 'Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.', theme: 'urban', gameplay: 'evac', width: 24, height: 16, weather: 'clear', difficulty: 1 },
+  { territoryId: 'sector-lyon', name: 'Lyon Industrial Zone', brief: 'Hold the factory strongpoint against the demonic raid on the arms works.', theme: 'industrial', gameplay: 'hold', width: 24, height: 16, weather: 'clear', difficulty: 1 },
+  { territoryId: 'sector-strasbourg', name: 'Strasbourg Crossing', brief: 'Force the Rhine: rout the bridge guard or plant charges before the assault window closes.', theme: 'river', gameplay: 'bridgehead', width: 26, height: 17, weather: 'clear', difficulty: 2 },
+  { territoryId: 'sector-munich', name: 'Munich Defensive Line', brief: 'Raid the forward line under cover of darkness and silence the enemy sorcery.', theme: 'forest', gameplay: 'raid-night', width: 26, height: 17, weather: 'night', difficulty: 2 },
+  { territoryId: 'sector-zurich', name: 'Alpine Fortress', brief: 'Hold the mountain pass strongpoint while the bunkers are cleared.', theme: 'alpine', gameplay: 'hold', width: 26, height: 17, weather: 'clear', difficulty: 2 },
+  { territoryId: 'sector-vienna', name: 'Vienna Siege', brief: 'Break the siege of the old city: rout the besiegers and breach to the inner ring.', theme: 'oldtown', gameplay: 'bridgehead', width: 28, height: 18, weather: 'clear', difficulty: 3 },
+  { territoryId: 'sector-brussels', name: 'Brussels Command', brief: 'Extract the classified intel to the evac point before the HQ falls.', theme: 'urban', gameplay: 'evac', width: 24, height: 16, weather: 'clear', difficulty: 1 },
+  { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Fight across the canals and seize the far quay through the harbor fog.', theme: 'canal', gameplay: 'bridgehead', width: 26, height: 17, weather: 'fog', difficulty: 2 },
+  { territoryId: 'sector-copenhagen', name: 'Copenhagen Strait', brief: 'Hold the coastal strongpoint and deny the Baltic flanking approach.', theme: 'coast', gameplay: 'hold', width: 26, height: 17, weather: 'clear', difficulty: 2 },
+  { territoryId: 'sector-prague', name: 'Prague Old Town', brief: 'Raid the old-town warren by night and disrupt the dark ritual.', theme: 'oldtown', gameplay: 'raid-night', width: 28, height: 18, weather: 'night', difficulty: 3 },
+  { territoryId: 'sector-berlin', name: 'Berlin Ruins', brief: 'Storm the ruined capital through the fog and break the ritual guardians.', theme: 'ruins', gameplay: 'spire', width: 30, height: 20, weather: 'fog', difficulty: 4 },
+  { territoryId: 'sector-warsaw', name: 'Warsaw Front', brief: 'Break the eastern line through the rubble and seize the far strongpoint.', theme: 'ruins', gameplay: 'bridgehead', width: 30, height: 20, weather: 'clear', difficulty: 4 },
+  { territoryId: 'sector-krakow', name: 'Krakow Citadel', brief: 'Assault the citadel turned portal-nexus and hold its grounds to seal it.', theme: 'oldtown', gameplay: 'spire', width: 30, height: 20, weather: 'fog', difficulty: 4 },
+  { territoryId: 'sector-kyiv', name: 'Kyiv Siege', brief: 'Night raid through the ruined metropolis to silence the coven and hold the relay.', theme: 'ruins', gameplay: 'raid-night', width: 34, height: 22, weather: 'night', difficulty: 5 },
+  { territoryId: 'sector-carpathian', name: 'Carpathian Pass', brief: 'Hold the high pass strongpoint and clear the patrol-ridden ridges.', theme: 'alpine', gameplay: 'hold', width: 30, height: 20, weather: 'clear', difficulty: 4 },
+  { territoryId: 'sector-blacksea', name: 'Black Sea Coast', brief: 'Push along the foggy coast, rout the shore-spawn and seize the far cape.', theme: 'coast', gameplay: 'bridgehead', width: 30, height: 20, weather: 'fog', difficulty: 4 },
+  { territoryId: 'sector-rift', name: 'The Eastern Rift', brief: 'Cross the scorched rift, destroy the guardians and hold the portal grounds.', theme: 'rift', gameplay: 'spire', width: 34, height: 22, weather: 'fog', difficulty: 5 }
 ];
 
 export const cityScenarios: TacticalScenario[] = CITY_CONFIGS.map(buildScenario);
