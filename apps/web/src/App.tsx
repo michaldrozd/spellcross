@@ -1401,12 +1401,32 @@ const BattleView: React.FC<{
 
     const startCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
 
+    const timelineBefore = battle.state.timeline.length;
     const moveResult = processor.moveUnit({ unitId, path: path.path });
     if (!moveResult.success) {
       setPlannedPath(null);
       setPlannedDestination(null);
       rejectMove(rejectionCoord, moveResult.error || 'Move order blocked');
       return false;
+    }
+
+    // Visualize any reaction fire the move provoked. Without this an enemy that reaction-fires from fog
+    // damages the mover with no muzzle flash and no sprite (it stays hidden) — "a unit I can't see shoots
+    // me". The effect reveals the shooter (recentAttackSource) and shows the HIT/MISS.
+    let reactionShots = 0;
+    for (const ev of battle.state.timeline.slice(timelineBefore)) {
+      if (ev.kind !== 'unit:attacked' || ev.defenderId !== unitId) continue;
+      const shooter = findBattleUnit(ev.attackerId);
+      const target = findBattleUnit(ev.defenderId);
+      if (!shooter || !target) continue;
+      const sfx = soundForAttackEffect(effectTypeForAttack(shooter, target, ev.weapon));
+      const delay = 200 + reactionShots * 450;
+      addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay);
+      aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
+        AudioManager.play(sfx);
+        if (ev.hit !== false) window.setTimeout(() => AudioManager.play('hit'), 240);
+      }, delay));
+      reactionShots += 1;
     }
 
     // Play movement sound
