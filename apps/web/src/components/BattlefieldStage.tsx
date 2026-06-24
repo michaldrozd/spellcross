@@ -4467,8 +4467,8 @@ export function BattlefieldStage({
                   } else {
                     const sx = tileSize * 0.19 * markerScale;
                     const sy = tileSize * 0.05 * markerScale;
-                    bracket(sx, sy, 0x081014, 0.18, 1.35);
-                    bracket(sx, sy, 0x75b7d3, 0.18, 0.7);
+                    bracket(sx, sy, 0x081014, 0.3, 1.35);
+                    bracket(sx, sy, 0x75b7d3, 0.34, 0.7);
                   }
                 } else {
                   const sx = isTarget ? tileSize * 0.2 * markerScale : tileSize * 0.18 * markerScale;
@@ -4964,7 +4964,8 @@ export function BattlefieldStage({
                 const mrRatio = Math.max(0, Math.min(1, (unit as any).currentMorale / 100));
                 const apRatio = Math.max(0, Math.min(1, (unit as any).actionPoints / ((unit as any).maxActionPoints ?? 10)));
                 const recentlyActive = Boolean(outgoingShot || incomingHit || recentAttackSource || recentHitTarget);
-                const shouldDrawStatus = isSelected
+                const shouldDrawStatus = isFriendly // always mark our own units so they're locatable on busy terrain
+                  || isSelected
                   || isSelectedCarrier
                   || isTarget
                   || recentlyActive
@@ -5018,11 +5019,13 @@ export function BattlefieldStage({
 
                 const flagY = topY - backplateH - (isFriendly ? 5 : 7);
                 if (isFriendly) {
-                  const markerW = isSelected ? (isGroundVehicle ? 4.6 : 7) : 4.2;
-                  const markerDrop = isSelected ? (isGroundVehicle ? 3.8 : 7) : 4.2;
+                  const markerW = isSelected ? (isGroundVehicle ? 4.6 : 7) : 5;
+                  const markerDrop = isSelected ? (isGroundVehicle ? 3.8 : 7) : 5;
                   const selectedMarkerAlpha = isGroundVehicle ? 0.58 : 0.88;
-                  g.lineStyle((isSelected ? 1.3 : 0.8) * movingVehicleUiDamping, isSelected ? 0xd4f4f2 : 0x071821, (isSelected ? selectedMarkerAlpha : 0.28) * movingVehicleUiDamping);
-                  g.beginFill(factionAccent, (isSelected || isSelectedCarrier ? (isGroundVehicle ? 0.58 : 0.96) : 0.2) * movingVehicleUiDamping);
+                  // Idle/unselected friendlies still get a clearly-visible faction chevron above the head
+                  // (was alpha 0.2 ≈ invisible) so units never vanish into busy terrain or faded buildings.
+                  g.lineStyle((isSelected ? 1.3 : 0.9) * movingVehicleUiDamping, isSelected ? 0xd4f4f2 : 0x06222c, (isSelected ? selectedMarkerAlpha : 0.62) * movingVehicleUiDamping);
+                  g.beginFill(factionAccent, (isSelected || isSelectedCarrier ? (isGroundVehicle ? 0.58 : 0.96) : 0.7) * movingVehicleUiDamping);
                   g.moveTo(0, flagY + 5);
                   g.lineTo(-markerW, flagY + 5 - markerDrop);
                   g.lineTo(markerW, flagY + 5 - markerDrop);
