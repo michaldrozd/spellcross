@@ -4389,10 +4389,15 @@ export function BattlefieldStage({
           }
         };
 
-        // Respect fog-of-war for enemies
-        if (!isFriendly && !isVisible && !recentAttackSource) return [];
+        // Respect fog-of-war for enemies — but never hide one that's actively taking a visible hit,
+        // otherwise a killing blow on a tile that fogs over leaves the "HIT -N" floating over bare ground.
+        if (!isFriendly && !isVisible && !recentAttackSource && !incomingHit && !recentHitTarget) return [];
 
-        if ((isDestroyed && !movingThisUnit) || isEmbarked) {
+        // Keep a just-killed unit on screen (faded, darkened) while its hit effect is still playing, so
+        // the "HIT -N" always overlays the dying enemy instead of bare ground — otherwise a killing blow
+        // culls the sprite the same frame the number appears ("I shot something but nothing is there").
+        const dyingShown = isDestroyed && !isEmbarked && Boolean(incomingHit || recentHitTarget);
+        if ((isDestroyed && !movingThisUnit && !dyingShown) || isEmbarked) {
           return [];
         }
 
@@ -4797,8 +4802,8 @@ export function BattlefieldStage({
                     texture={texture}
                     anchor={{ x: 0.5, y: anchorY }}
                     scale={{ x: scaleX, y: baseScale * squashY }}
-                    alpha={isVisible ? 1 : 0.72}
-                    tint={spriteTint}
+                    alpha={(isVisible ? 1 : 0.72) * (dyingShown ? 0.55 : 1)}
+                    tint={dyingShown ? 0x6b5a52 : spriteTint}
                     x={spriteSwayX}
                     y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
                     rotation={spriteRotation}
