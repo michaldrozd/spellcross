@@ -108,7 +108,8 @@ interface Generated {
   map: BattlefieldMap;
   allianceZone: Coord[];
   otherSideZone: Coord[];
-  passable: Coord[]; // all passable tiles (no buildings), for picking objective/spawn anchors
+  passable: Coord[]; // all passable tiles (no buildings)
+  reachable: Coord[]; // passable tiles reachable from the alliance zone — enemies/objectives go here only
 }
 
 // Smooth value-noise field on a coarse lattice (bilinear, smoothstep) → contiguous regions, not
@@ -284,8 +285,27 @@ function generate(cfg: CityConfig): Generated {
   const allianceZone = homeCells.filter(free);
   const otherSideZone = enemyCells.filter(free);
 
+  // reachable component from the alliance zone (8-neighbour BFS over passable, building-free tiles), so
+  // enemies/objectives are never stranded on an isolated pocket the player can't get to.
+  const reachable: Coord[] = [];
+  {
+    const okTile = (q: number, r: number) => inB(q, r, w, h) && tileAt(q, r).passable && !occupied.has(key(q, r));
+    const seen = new Set<string>();
+    const queue: Coord[] = allianceZone.length ? allianceZone.slice() : [{ q: 0, r: h - 2 }];
+    queue.forEach((c) => seen.add(key(c.q, c.r)));
+    while (queue.length) {
+      const cur = queue.shift()!;
+      reachable.push(cur);
+      for (let dq = -1; dq <= 1; dq++) for (let dr = -1; dr <= 1; dr++) {
+        if (dq === 0 && dr === 0) continue;
+        const nq = cur.q + dq, nr = cur.r + dr, k = key(nq, nr);
+        if (!seen.has(k) && okTile(nq, nr)) { seen.add(k); queue.push({ q: nq, r: nr }); }
+      }
+    }
+  }
+
   const map: BattlefieldMap = { id: `city-${cfg.territoryId}`, width: w, height: h, tiles, props };
-  return { map, allianceZone, otherSideZone, passable };
+  return { map, allianceZone, otherSideZone, passable, reachable };
 }
 
 // --- enemy rosters: scale composition with difficulty, and finally put the four otherwise-unused
@@ -313,12 +333,12 @@ function pickSpread(pool: Coord[], n: number, rng: () => number): Coord[] {
 
 function buildObjectives(cfg: CityConfig, g: Generated, rng: () => number): { objectives: TacticalObjective[]; weather?: 'clear' | 'night' | 'fog' } {
   const id = cfg.territoryId;
-  // objective anchor: a passable tile deep in enemy territory (top-right region)
-  const deep = g.passable.filter((c) => c.r <= cfg.height * 0.4 && c.q >= cfg.width * 0.45);
+  // objective anchor: a REACHABLE tile deep in enemy territory (top-right region)
+  const deep = g.reachable.filter((c) => c.r <= cfg.height * 0.4 && c.q >= cfg.width * 0.45);
   const anchor = (deep.length ? pickSpread(deep, 1, rng)[0] : g.otherSideZone[0]) ?? { q: cfg.width - 2, r: 1 };
-  // hold tile: the passable tile nearest map centre (the centre itself is the impassable landmark).
+  // hold tile: the reachable tile nearest map centre (the centre itself is the impassable landmark).
   const cx = cfg.width / 2, cy = cfg.height / 2;
-  const hold = g.passable.slice().sort((a, b) =>
+  const hold = g.reachable.slice().sort((a, b) =>
     (Math.abs(a.q - cx) + Math.abs(a.r - cy)) - (Math.abs(b.q - cx) + Math.abs(b.r - cy))
   )[0] ?? { q: Math.floor(cx), r: Math.floor(cy) };
   const objs: TacticalObjective[] = [];
@@ -351,11 +371,14 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
   const rng = makeRng(`${cfg.territoryId}:forces`);
   const g = generate(cfg);
 
-  // enemies: count scales with difficulty, placed spread across the enemy half (not just the home zone)
+  // enemies: count scales with difficulty (the starter army of 6 stomped the old 3-4), placed spread
+  // across the REACHABLE enemy half so the player can engage every one (no forced timeouts). Units cycle
+  // through the roster so a count above the roster size still fields varied foes.
   const roster = ROSTER_BY_DIFFICULTY[cfg.difficulty] ?? ROSTER_BY_DIFFICULTY[3];
-  const enemyCount = Math.min(roster.length, 3 + Math.floor(cfg.difficulty / 1.5));
-  const enemyArea = g.passable.filter((c) => c.r <= cfg.height * 0.55);
-  const spots = pickSpread(enemyArea.length >= enemyCount ? enemyArea : g.passable, enemyCount, rng);
+  const enemyCount = 4 + cfg.difficulty; // diff1=5 … diff5=9
+  const enemyArea = g.reachable.filter((c) => c.r <= cfg.height * 0.6);
+  const pool = enemyArea.length >= enemyCount ? enemyArea : g.reachable;
+  const spots = pickSpread(pool, enemyCount, rng);
   const otherSideForces: ScenarioUnit[] = spots.map((c, i) => ({
     id: `${cfg.territoryId}-foe-${i}`,
     definitionId: roster[i % roster.length],

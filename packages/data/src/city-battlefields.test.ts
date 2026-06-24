@@ -45,6 +45,24 @@ describe('Per-city battlefields', () => {
         }
       });
 
+      it('spawns every enemy on a tile reachable from the alliance zone', () => {
+        // BFS the passable component from the alliance zone; every enemy must be inside it (no stranded
+        // foes the player can never reach — which previously caused forced timeouts).
+        const seen = new Set<string>(sc.startZones.alliance.map((c) => `${c.q},${c.r}`));
+        const queue = sc.startZones.alliance.slice();
+        while (queue.length) {
+          const cur = queue.shift()!;
+          for (let dq = -1; dq <= 1; dq++) for (let dr = -1; dr <= 1; dr++) {
+            if (dq === 0 && dr === 0) continue;
+            const nq = cur.q + dq, nr = cur.r + dr, k = `${nq},${nr}`;
+            if (!seen.has(k) && passable(nq, nr)) { seen.add(k); queue.push({ q: nq, r: nr }); }
+          }
+        }
+        for (const u of sc.otherSideForces) {
+          expect(seen.has(`${u.coordinate.q},${u.coordinate.r}`), `${u.id} @ ${u.coordinate.q},${u.coordinate.r} unreachable`).toBe(true);
+        }
+      });
+
       it('keeps the two deploy zones connected (not walled off)', () => {
         // 8-neighbour BFS over passable tiles from the alliance zone; must reach an otherSide tile.
         const start = sc.startZones.alliance[0];
