@@ -1783,7 +1783,12 @@ const BattleView: React.FC<{
           const startCoord = mover ? { q: mover.coordinate.q, r: mover.coordinate.r } : null;
           const moveRes = aiProcessor.moveUnit(action);
           if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }
-          if (startCoord) {
+          // Only animate + sound an enemy move whose DESTINATION the player can see — this mirrors the
+          // sprite's fog cull, which keys on the destination tile. A move that ends in fog is already
+          // committed by moveUnit; play nothing and don't stall, otherwise the player hears movement
+          // with no unit on screen ("hear, not see"). mover.coordinate is now the post-move destination.
+          if (mover && startCoord
+            && battle.state.vision.alliance.visibleTiles.has(mover.coordinate.r * battle.state.map.width + mover.coordinate.q)) {
             const dur = beginMoveAnimation(action.unitId, startCoord, action.path);
             if (dur > 0) await sleep(dur + 90);
           }
@@ -1813,19 +1818,20 @@ const BattleView: React.FC<{
             }
           }
         } else if (action.type === 'attackTile') {
+          // Snapshot visibility BEFORE the demolition — destroying the tile recomputes vision. Only the
+          // blast on a tile the player can see should boom (and the destroyed structure is the visual).
+          const tileVisible = battle.state.vision.alliance.visibleTiles.has(action.target.r * battle.state.map.width + action.target.q);
           const tileRes = aiProcessor.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
           if (tileRes && tileRes.success === false) { failedUnitIds.add(action.unitId); continue; }
-          AudioManager.play('explosion');
-          await sleep(650);
+          if (tileVisible) { AudioManager.play('explosion'); await sleep(650); }
         } else if (action.type === 'supply') {
           const supRes = aiProcessor.supply({ supplierId: action.supplierId, targetId: action.targetId });
           if (!supRes.success) { failedUnitIds.add(action.supplierId); continue; }
-          AudioManager.play('select');
+          // Enemy resupply has no on-screen effect, so the 'select' blip was audio with nothing to see.
           await sleep(250);
         } else if (action.type === 'heal') {
           const healRes = aiProcessor.heal({ medicId: action.medicId, targetId: action.targetId });
           if (!healRes.success) { failedUnitIds.add(action.medicId); continue; }
-          AudioManager.play('select');
           await sleep(250);
         }
       }
