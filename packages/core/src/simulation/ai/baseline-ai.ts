@@ -1,6 +1,6 @@
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
-import { axialDistance, coordinateKey, getNeighbors, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
-import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
+import { coordinateKey, getNeighbors, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
+import { isIsoNeighbor, isoDirectionIndex, isoDistance } from '../utils/grid-iso.js';
 import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange, isMedicUnit, isSupplyUnit } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import { hasLineOfSight } from '../visibility/vision.js';
@@ -65,7 +65,7 @@ function bestEnemyShotThreat(
   for (const weaponId of Object.keys(enemy.stats.weaponRanges)) {
     if (!canWeaponTarget(enemy, weaponId, defenderAt)) continue;
     const maxRange = calculateAttackRange(enemy, weaponId, state.map) ?? 0;
-    const dist = axialDistance(enemy.coordinate, defenderAt.coordinate);
+    const dist = isoDistance(enemy.coordinate, defenderAt.coordinate);
     if (dist > maxRange) continue;
     const hit = calculateHitChance({ attacker: enemy, defender: defenderAt, weaponId, map: state.map, weather: state.weather });
     if (hit <= 0) continue;
@@ -89,11 +89,11 @@ function findDemolitionTarget(
     if ((tile.hp ?? 0) <= 0) continue;
     const coord: HexCoordinate = { q: idx % state.map.width, r: Math.floor(idx / state.map.width) };
     const distToGoal = goals.length
-      ? Math.min(...goals.map((g) => axialDistance(coord, g)))
-      : axialDistance(coord, unit.coordinate);
+      ? Math.min(...goals.map((g) => isoDistance(coord, g)))
+      : isoDistance(coord, unit.coordinate);
     for (const weaponId of Object.keys(unit.stats.weaponRanges)) {
       const range = calculateAttackRange(unit, weaponId, state.map);
-      if (range <= 0 || axialDistance(unit.coordinate, coord) > range) continue;
+      if (range <= 0 || isoDistance(unit.coordinate, coord) > range) continue;
       if (!hasLineOfSight(state.map, unit.coordinate, coord)) continue;
       const power = unit.stats.weaponPower[weaponId] ?? 0;
       if (power <= 0) continue; // a zero-power weapon would spend AP+ammo to deal no damage
@@ -170,8 +170,8 @@ function tryFallbackStep(
     const tile = getTile(state.map, n);
     if (!tile || !canUnitEnterTerrain(unit.unitType, tile)) continue;
     // increase distance from nearest enemy
-    const currentNearest = awayFrom.reduce((min, foe) => Math.min(min, axialDistance(unit.coordinate, foe.coordinate)), Infinity);
-    const afterNearest = awayFrom.reduce((min, foe) => Math.min(min, axialDistance(n, foe.coordinate)), Infinity);
+    const currentNearest = awayFrom.reduce((min, foe) => Math.min(min, isoDistance(unit.coordinate, foe.coordinate)), Infinity);
+    const afterNearest = awayFrom.reduce((min, foe) => Math.min(min, isoDistance(n, foe.coordinate)), Infinity);
     if (afterNearest <= currentNearest) continue;
     const threat = computeTileThreat(state, unit.faction, n, unit);
     const score = afterNearest - threat;
@@ -205,7 +205,7 @@ function buildThreatAwarePathToward(
   // scouting when early or far from enemies or nothing seen
   let nearestDist = Infinity;
   for (const e of listEnemyUnits(state, unit.faction)) {
-    const d = axialDistance(unit.coordinate, e.coordinate);
+    const d = isoDistance(unit.coordinate, e.coordinate);
     if (d < nearestDist) nearestDist = d;
   }
   const scouting = state.round <= 2 || !anyVisible || nearestDist > 8;
@@ -218,7 +218,7 @@ function buildThreatAwarePathToward(
 
   for (let steps = 0; steps < maxStepsCap; steps++) {
     let best: { step: HexCoordinate; score: number; cost: number } | null = null;
-    const baseDist = axialDistance(current, goal);
+    const baseDist = isoDistance(current, goal);
     for (const n of getNeighbors(state.map, current)) {
       const k = coordinateKey(n);
       if (visited.has(k)) continue;
@@ -228,12 +228,12 @@ function buildThreatAwarePathToward(
       const cost = tile.movementCostModifier * mult;
       if (cost > ap) continue;
 
-      const distGain = baseDist - axialDistance(n, goal);
+      const distGain = baseDist - isoDistance(n, goal);
       const threat = computeTileThreat(state, unit.faction, n, unit);
       let cohesionBonus = 0;
       for (const ally of state.sides[unit.faction].units.values()) {
         if (ally.id === unit.id || ally.stance === 'destroyed') continue;
-        const dist = axialDistance(ally.coordinate, n);
+        const dist = isoDistance(ally.coordinate, n);
         if (dist <= 2) {
           cohesionBonus += 0.25;
         }
@@ -257,7 +257,7 @@ function buildThreatAwarePathToward(
     if (!best) break;
 
     // stop if the chosen step is clearly disadvantageous (no progress and high threat)
-    const distGainChosen = axialDistance(current, goal) - axialDistance(best.step, goal);
+    const distGainChosen = isoDistance(current, goal) - isoDistance(best.step, goal);
     const threatChosen = computeTileThreat(state, unit.faction, best.step, unit);
     if (distGainChosen <= 0 && threatChosen > 0.5) break;
 
@@ -414,7 +414,7 @@ export function decideNextAIAction(
     const rattled = u.currentMorale <= (aggression > 0.7 ? 20 : 30);
     const rangedStandoff =
       maxRange(u) >= 6 &&
-      enemiesAll.some((e) => axialDistance(u.coordinate, e.coordinate) < Math.max(2, maxRange(u) - 2));
+      enemiesAll.some((e) => isoDistance(u.coordinate, e.coordinate) < Math.max(2, maxRange(u) - 2));
     if (lowHealth || rattled || rangedStandoff) {
       const step = tryFallbackStep(state, u, enemiesAll);
       if (step && step.length) return { type: 'move', unitId: u.id, path: step };
@@ -460,7 +460,7 @@ export function decideNextAIAction(
       const weightedScore = choice.score * priority;
       if (lowAmmo && priority < 2) {
         // hold fire to conserve ammo
-      } else if (isArtillery && defender && axialDistance(u.coordinate, defender.coordinate) <= 2) {
+      } else if (isArtillery && defender && isoDistance(u.coordinate, defender.coordinate) <= 2) {
         // avoid point-blank for artillery; let movement handle reposition
       } else if (!bestAttack || weightedScore > bestAttack.score) {
         bestAttack = { attackerId: u.id, defenderId: choice.defenderId, weaponId: choice.weaponId, score: weightedScore };
@@ -479,7 +479,7 @@ export function decideNextAIAction(
   const avoidTiles = options.avoidTiles ?? new Set<string>();
   if (defendBias && holdGoals.length > 0) {
     const anchor = holdGoals[0];
-    const holder = units.find((u) => axialDistance(u.coordinate, anchor) <= 2);
+    const holder = units.find((u) => isoDistance(u.coordinate, anchor) <= 2);
     if (holder) {
       const shot = bestAttackFromHere(state, holder, attackEnemies);
       if (shot) {
@@ -529,7 +529,7 @@ export function decideNextAIAction(
       let nearest: UnitInstance | null = null;
       let nearestDist = Infinity;
       for (const e of enemiesAll) {
-        const d = axialDistance(u.coordinate, e.coordinate);
+        const d = isoDistance(u.coordinate, e.coordinate);
         if (d < nearestDist) { nearest = e; nearestDist = d; }
       }
       if (nearest) targets.push(nearest.coordinate);
@@ -539,7 +539,7 @@ export function decideNextAIAction(
     for (const tgt of targets) {
       const flankTarget =
         enemiesAll.find((e) => coordinateKey(e.coordinate) === coordinateKey(tgt)) ??
-        enemiesAll.sort((a, b) => axialDistance(u.coordinate, a.coordinate) - axialDistance(u.coordinate, b.coordinate))[0];
+        enemiesAll.sort((a, b) => isoDistance(u.coordinate, a.coordinate) - isoDistance(u.coordinate, b.coordinate))[0];
       const path = buildThreatAwarePathToward(state, u, tgt, {
         flankTarget,
         threatWeight,
@@ -549,7 +549,7 @@ export function decideNextAIAction(
       }).filter((step) => !avoidTiles.has(coordinateKey(step)));
       if (!path || path.length === 0) continue;
       const last = path[path.length - 1];
-      const distReduction = axialDistance(u.coordinate, tgt) - axialDistance(last, tgt);
+      const distReduction = isoDistance(u.coordinate, tgt) - isoDistance(last, tgt);
       const threatSum = path.reduce((acc, step) => acc + computeTileThreat(state, u.faction, step, u), 0);
       const isObjectiveStep = objectiveGoals.some((o) => coordinateKey(o) === coordinateKey(tgt));
       const flankIncentive = flankTarget ? flankWeight * 0.6 : 0;

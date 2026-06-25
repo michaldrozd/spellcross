@@ -1,4 +1,5 @@
-import { axialDistance, getTile, orientationDelta } from '../utils/grid.js';
+import { getTile, orientationDelta } from '../utils/grid.js';
+import { isoDistance } from '../utils/grid-iso.js';
 import { isoDirectionIndex } from '../utils/grid-iso.js';
 import type {
   BattlefieldMap,
@@ -116,7 +117,7 @@ export function calculateHitChance(input: {
     return 0;
   }
 
-  const distance = axialDistance(attacker.coordinate, defender.coordinate);
+  const distance = isoDistance(attacker.coordinate, defender.coordinate);
   if (distance > maxRange) {
     return 0;
   }
@@ -159,7 +160,7 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
 
   const events: BattleEvent[] = [];
   const maxRange = calculateAttackRange(attacker, weaponId, map);
-  const distance = axialDistance(attacker.coordinate, defender.coordinate);
+  const distance = isoDistance(attacker.coordinate, defender.coordinate);
   const weaponPower = attacker.stats.weaponPower[weaponId] ?? 0;
 
   const inRange = distance <= maxRange && maxRange > 0;

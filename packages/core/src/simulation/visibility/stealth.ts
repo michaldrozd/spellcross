@@ -1,5 +1,6 @@
 import type { BattlefieldMap, FactionId, TacticalBattleState, UnitInstance } from '../types.js';
-import { axialDistance, getTile, tileIndex } from '../utils/grid.js';
+import { getTile, tileIndex } from '../utils/grid.js';
+import { isoDistance } from '../utils/grid-iso.js';
 
 export function isUnitDetected(
   state: TacticalBattleState,
@@ -13,7 +14,7 @@ export function isUnitDetected(
   for (const viewer of viewerUnits.values()) {
     if (viewer.stance === 'destroyed') continue;
     const range = viewer.stats.vision;
-    const dist = axialDistance(viewer.coordinate, target.coordinate);
+    const dist = isoDistance(viewer.coordinate, target.coordinate);
     if (dist > range) continue;
     const targetTile = getTile(map, target.coordinate);
     const concealBonus = target.stats.concealmentBonus ?? 0;

@@ -366,7 +366,12 @@ function pickSpread(pool: Coord[], n: number, rng: () => number): Coord[] {
     if (out.length >= n) break;
     if (out.every((o) => Math.abs(o.q - c.q) + Math.abs(o.r - c.r) > 1)) out.push(c);
   }
-  while (out.length < n && copy.length) out.push(copy[out.length]); // fallback if spread couldn't fill
+  // fallback if spread couldn't fill: add remaining UNIQUE tiles (never re-select, or two enemies share
+  // a coordinate and createBattleState throws on the collision — battle never starts).
+  for (const c of copy) {
+    if (out.length >= n) break;
+    if (!out.some((o) => o.q === c.q && o.r === c.r)) out.push(c);
+  }
   return out.slice(0, n);
 }
 
@@ -384,11 +389,11 @@ function buildObjectives(cfg: CityConfig, g: Generated, rng: () => number): { ob
   switch (cfg.gameplay) {
     case 'evac':
       objs.push({ id: `${id}-reach`, kind: 'reach', description: 'Move any unit to the extraction flare.', target: anchor });
-      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Do not lose Captain Alexander.' });
+      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Do not lose Captain Alexander.', unitIds: ['captain'] });
       break;
     case 'hold':
       objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Hold the central strongpoint for 3 rounds.', target: hold, turnLimit: 3 });
-      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Keep Captain Alexander alive.' });
+      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Keep Captain Alexander alive.', unitIds: ['captain'] });
       break;
     case 'bridgehead':
       objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Destroy or rout the defenders.' });

@@ -83,6 +83,9 @@ export interface CampaignState {
   log: string[];
   events?: Array<{ turn: number; message: string }>;
   popups?: Array<{ turn: number; title: string; body: string; kind: 'briefing' | 'warning' | 'reward' | 'loss' }>;
+  // Terminal campaign state: set once the last sector is cleared (victory) or the war clock runs out
+  // (defeat). The UI shows a game-over screen; without it both ends were silent no-ops.
+  outcome?: 'victory' | 'defeat';
 }
 
 export interface SerializedCampaignState {
@@ -102,6 +105,7 @@ export interface SerializedCampaignState {
   log: string[];
   events?: Array<{ turn: number; message: string }>;
   popups?: CampaignState['popups'];
+  outcome?: 'victory' | 'defeat';
   // Tagged-encoded tactical battle (see encodeActiveBattle); absent when no battle is in progress.
   activeBattle?: unknown;
 }
@@ -274,9 +278,10 @@ export function progressResearch(state: CampaignState, bundle: ContentBundle) {
 }
 
 export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
-  // Income from cleared territories
+  // Income from cleared territories. Generated raids/counterattacks pay only their one-shot victory
+  // reward (applyBattleOutcome); letting them pay recurring income too lets you farm an endless economy.
   const income = state.territories
-    .filter((t) => t.status === 'cleared')
+    .filter((t) => t.status === 'cleared' && !isGeneratedCounteroffensive(t))
     .reduce(
       (acc, t) => {
         acc.money += t.reward.money;
@@ -317,11 +322,12 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
   }
 
   state.globalTimer -= 1;
-  if (state.globalTimer <= 0) {
-    state.log.push('War clock expired: strategic defeat imminent.');
-    for (const t of state.territories) {
-      if (t.status === 'available') t.status = 'failed';
-    }
+  if (state.globalTimer <= 0 && !state.outcome) {
+    // War clock ran out: strategic defeat. Don't permanently flip path sectors to 'failed' (that left
+    // the campaign silently unwinnable); instead declare a terminal outcome the UI renders as game-over.
+    state.outcome = 'defeat';
+    state.log.push('War clock expired: strategic defeat.');
+    state.popups?.push({ turn: state.turn, title: 'Strategic Defeat', body: 'The war clock has run out. The invasion has overwhelmed the front.', kind: 'loss' });
   }
   if (state.globalTimer === 5) {
     const title = 'War Clock Critical';
@@ -913,6 +919,14 @@ export function applyBattleOutcome(
         }
       }
     }
+
+    // Campaign victory: every real sector (excluding generated raids/counterattacks) is cleared.
+    const realSectors = state.territories.filter((t) => !isGeneratedCounteroffensive(t));
+    if (!state.outcome && realSectors.length > 0 && realSectors.every((t) => t.status === 'cleared')) {
+      state.outcome = 'victory';
+      state.log.push('All sectors secured — the front is broken. Campaign won.');
+      state.popups?.push({ turn: state.turn, title: 'Campaign Won', body: 'Every sector is under control. The invasion corridor is shattered.', kind: 'reward' });
+    }
   } else {
     territory.status = territory.status === 'available' ? 'available' : 'failed';
     state.log.push(`Defeat at ${territory.name}`);
@@ -989,6 +1003,7 @@ export function serializeCampaignState(state: CampaignState): SerializedCampaign
     log: [...state.log],
     events: state.events ? [...state.events] : undefined,
     popups: state.popups ? structuredClone(state.popups) : undefined,
+    outcome: state.outcome,
     activeBattle: state.activeBattle ? encodeActiveBattle(state.activeBattle) : undefined
   };
 }
@@ -1024,7 +1039,8 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     activeBattle: snapshot.activeBattle ? decodeActiveBattle(snapshot.activeBattle) : undefined,
     log: [...snapshot.log],
     events: snapshot.events ? [...snapshot.events] : [],
-    popups: snapshot.popups ? structuredClone(snapshot.popups) : []
+    popups: snapshot.popups ? structuredClone(snapshot.popups) : [],
+    outcome: snapshot.outcome
   };
 
   return state;

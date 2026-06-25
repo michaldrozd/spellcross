@@ -28,7 +28,8 @@ export function canUnitEnterTerrain(unitType: UnitInstance['unitType'] | undefin
     case 'swamp':
       return unitType !== 'air';
     case 'structure':
-      return false;
+      // Impassable buildings already rejected by the !tile.passable guard; walkable rubble is enterable.
+      return true;
     default:
       return true;
   }

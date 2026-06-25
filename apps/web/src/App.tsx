@@ -1728,7 +1728,9 @@ const BattleView: React.FC<{
   };
 
   const runAiTurn = async () => {
-    if (deployMode || enemyTurnBusyRef.current) return;
+    // Also bail if Auto Turn is mid-flight or a unit is still animating — otherwise clicking End Turn
+    // during Auto Turn starts a second concurrent enemy turn over the same state (double round/AP).
+    if (deployMode || enemyTurnBusyRef.current || autoTurnBusyRef.current || movingUnitRef.current) return;
     enemyTurnBusyRef.current = true;
     // drop any staged SFX still pending from a prior enemy turn
     aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
@@ -2590,6 +2592,25 @@ export function App() {
   return (
     <>
       <ToastContainer />
+      {campaign.outcome ? (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(2,6,4,0.92)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, fontFamily: 'monospace', color: '#dfe7df' }}>
+          <h1 style={{ fontSize: 44, letterSpacing: 2, color: campaign.outcome === 'victory' ? '#8ee06a' : '#e0604a', margin: 0 }}>
+            {campaign.outcome === 'victory' ? 'CAMPAIGN WON' : 'CAMPAIGN LOST'}
+          </h1>
+          <p style={{ maxWidth: 520, textAlign: 'center', opacity: 0.85, lineHeight: 1.5 }}>
+            {campaign.outcome === 'victory'
+              ? 'Every sector is secured — the invasion corridor is shattered. The front holds.'
+              : 'The war clock ran out and the front collapsed. The invasion has overrun the continent.'}
+          </p>
+          <p style={{ opacity: 0.6, fontSize: 13 }}>
+            Sectors cleared: {campaign.territories.filter((t) => t.status === 'cleared').length} · Turn {campaign.turn}
+          </p>
+          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+            <button className="primary-btn" onClick={() => { reset(); }}>New Campaign</button>
+            <button className="secondary-btn" onClick={() => setMode('menu')}>Main Menu</button>
+          </div>
+        </div>
+      ) : null}
       <StrategicHQ
         turn={campaign.turn}
         warClock={campaign.globalTimer}

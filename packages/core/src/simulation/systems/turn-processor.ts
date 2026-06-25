@@ -13,7 +13,8 @@ import {
 } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import type { HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
-import { axialDistance, coordinateKey, getTile, isNeighbor } from '../utils/grid.js';
+import { coordinateKey, getTile, isNeighbor } from '../utils/grid.js';
+import { isoDistance } from '../utils/grid-iso.js';
 import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
 import { hasLineOfSight, updateAllFactionsVision, updateFactionVision } from '../visibility/vision.js';
 
@@ -92,12 +93,14 @@ export function reactionAttackers(state: TacticalBattleState, mover: UnitInstanc
   for (const [faction, side] of Object.entries(state.sides)) {
     if (faction === mover.faction) continue;
     for (const defender of side.units.values()) {
-      if (defender.stance === 'destroyed' || defender.embarkedOn) continue;
+      // Routed units may not attack on their own turn (attackUnit + AI both block them); they must not
+      // get free reaction fire either, or the move-threat preview predicts phantom shots from routed foes.
+      if (defender.stance === 'destroyed' || defender.stance === 'routed' || defender.embarkedOn) continue;
       const viaOverwatch = defender.statusEffects.has('overwatch');
       if (!viaOverwatch && !canAffordAttack(defender)) continue;
       if (!hasLineOfSight(state.map, defender.coordinate, mover.coordinate)) continue;
 
-      const distance = axialDistance(defender.coordinate, mover.coordinate);
+      const distance = isoDistance(defender.coordinate, mover.coordinate);
       let bestWeapon: string | null = null;
       let bestHit = 0;
       for (const weaponId of Object.keys(defender.stats.weaponRanges)) {
@@ -164,7 +167,7 @@ export class TurnProcessor {
       let nearbyEnemy = false;
       for (const enemy of enemySide.units.values()) {
         if (enemy.stance === 'destroyed') continue;
-        if (axialDistance(enemy.coordinate, unit.coordinate) <= 1) { nearbyEnemy = true; break; }
+        if (isoDistance(enemy.coordinate, unit.coordinate) <= 1) { nearbyEnemy = true; break; }
       }
       const baseRecovery = 3 + (unit.entrench ?? 0);
       const penalty = nearbyEnemy ? 2 : 0;
@@ -175,7 +178,7 @@ export class TurnProcessor {
       const hasCommanderNearby = (() => {
         for (const f of justEnded.units.values()) {
           if (f.stance === 'destroyed') continue;
-          if (f.unitType === 'hero' && axialDistance(f.coordinate, unit.coordinate) <= 2) return true;
+          if (f.unitType === 'hero' && isoDistance(f.coordinate, unit.coordinate) <= 2) return true;
         }
         return false;
       })();
@@ -427,7 +430,7 @@ export class TurnProcessor {
     }
 
     const maxRange = calculateAttackRange(attacker, input.weaponId, this.#state.map);
-    const distance = axialDistance(attacker.coordinate, defender.coordinate);
+    const distance = isoDistance(attacker.coordinate, defender.coordinate);
 
     if (distance > maxRange) {
       return { success: false, error: 'Target out of range' };
@@ -623,7 +626,7 @@ export class TurnProcessor {
     }
 
     // Range and LoS check against the tile
-    const distance = axialDistance(attacker.coordinate, input.target);
+    const distance = isoDistance(attacker.coordinate, input.target);
     const maxRange = calculateAttackRange(attacker, input.weaponId, this.#state.map);
     if (distance > maxRange) return { success: false, error: 'Target out of range' };
     if (!hasLineOfSight(this.#state.map, attacker.coordinate, input.target)) {

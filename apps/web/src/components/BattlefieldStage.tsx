@@ -4083,6 +4083,10 @@ export function BattlefieldStage({
       const isFriendly = m.faction === viewerFaction;
       const isVisible = visibleTiles.has(idx);
       if (!isFriendly && !isVisible) return;
+      // While the killing hit is still playing, the dying corpse sprite is still shown on this tile
+      // (dyingShown, ~2.5s). Hold the death cross back until then so it doesn't draw under the corpse.
+      const hitInFlight = attackEffects.some((e) => e.toQ === m.q && e.toR === m.r && e.hit !== false && now - e.startTime <= 2500);
+      if (hitInFlight) return;
 
       const p = toScreen({ q: m.q, r: m.r });
       const tile = map.tiles[idx] as any;
@@ -4116,7 +4120,7 @@ export function BattlefieldStage({
       );
     });
     return els;
-  }, [deathMarkers, map.tiles, map.width, now, selectedUnitId, topGeomFor, toScreen, viewerFaction, visibleTiles]);
+  }, [deathMarkers, map.tiles, map.width, now, selectedUnitId, topGeomFor, toScreen, viewerFaction, visibleTiles, attackEffects]);
 
   const targetLinkOverlay = useMemo(() => {
     if (!selectedUnitId || !targetUnitId) return null;
@@ -4366,7 +4370,11 @@ export function BattlefieldStage({
         const isSelected = unit.id === selectedUnitId;
         const isSelectedCarrier = unit.id === selectedEmbarkedCarrierId;
         const isTarget = unit.id === targetUnitId;
-        const worldZ = Math.round(y) + (isSelected || isSelectedCarrier || isTarget || movingThisUnit ? 5000 : 0);
+        // Sort by real screen-Y so units/buildings interleave by true depth; a tiny tie-break keeps a
+        // selected/moving/targeted unit above same-tile clutter (death marker, prop) without the old
+        // +5000 that made it punch through everything down-screen. Reveal-through behind buildings is
+        // still handled by the unitOccluded alpha fade below.
+        const worldZ = Math.round(y) + (isSelected || isSelectedCarrier || isTarget || movingThisUnit ? 2 : 0);
         const tileIndex = unit.coordinate.r * map.width + unit.coordinate.q;
         const isVisible = visibleTiles.has(tileIndex);
         const isFriendly = unit.faction === viewerFaction;

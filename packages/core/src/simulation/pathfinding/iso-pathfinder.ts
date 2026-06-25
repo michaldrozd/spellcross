@@ -28,7 +28,10 @@ function canUnitEnterTerrain(unitType: UnitInstance['unitType'] | undefined, til
     case 'swamp':
       return unitType !== 'air';
     case 'structure':
-      return false;
+      // Impassable buildings are already rejected by the !tile.passable guard above; reaching here
+      // means walkable rubble (cover terrain), which ground units may cross. Returning false stranded
+      // enemies spawned on rubble (ruins/rift maps) as unreachable, soft-locking the eliminate goal.
+      return true;
     default:
       return true;
   }
