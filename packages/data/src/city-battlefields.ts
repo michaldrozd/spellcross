@@ -223,6 +223,17 @@ function generate(cfg: CityConfig): Generated {
     return true;
   };
 
+  // True when the footprint AND a one-tile border around it are free of other buildings. Each building
+  // is a free-standing sprite on its own diorama base, so two on touching tiles look glued together —
+  // this keeps at least one empty tile (a gap/alley) between every pair, like real streets.
+  const ringClear = (q: number, r: number, bw: number, bh: number) => {
+    for (let dr = -1; dr <= bh; dr++) for (let dq = -1; dq <= bw; dq++) {
+      const cq = q + dq, cr = r + dr;
+      if (inB(cq, cr, w, h) && occupied.has(key(cq, cr))) return false;
+    }
+    return true;
+  };
+
   // 6) landmark near the centre (tall, multi-tile) — the visual signature of the city
   const lcq = Math.floor(w / 2) + (rng() < 0.5 ? -1 : 0);
   const lcr = Math.floor(h / 2);
@@ -239,9 +250,7 @@ function generate(cfg: CityConfig): Generated {
     for (const side of [-1, 1]) {
       if (placed >= clusterCount) break;
       const q = base.q + side, r = base.r;
-      const bw = rng() < 0.3 ? 2 : 1;
-      const bh = rng() < 0.3 ? 2 : 1;
-      if (rng() < (builtUp ? 0.7 : 0.4) && placeBuilding(q, r, bw, bh, { levels: 1 + (rng() < 0.45 ? 1 : 0) })) placed++;
+      if (rng() < (builtUp ? 0.7 : 0.4) && ringClear(q, r, 1, 1) && placeBuilding(q, r, 1, 1, { levels: 1 + (rng() < 0.45 ? 1 : 0) })) placed++;
     }
   }
 
@@ -251,19 +260,20 @@ function generate(cfg: CityConfig): Generated {
   //     corners) keeps the two deploy zones connected; the connectivity unit test guards this.
   if (builtUp) {
     const districtTerrain = theme === 'ruins' ? 'structure' : 'urban';
+    // Greedy spaced fill: drop a free-standing building wherever its one-tile ring is still clear, so
+    // the district packs in densely yet every building keeps an empty alley tile around it (no glued
+    // bases). The empty gaps double as the street grid; connectivity is asserted by the unit tests.
     for (let r = 1; r < h - 1; r++) for (let q = 1; q < w - 1; q++) {
-      if (q % 3 === 0 || r % 3 === 0) continue;               // keep a through-street grid open
       if (tileAt(q, r).terrain !== districtTerrain) continue; // only inside the district biome
       if (occupied.has(key(q, r)) || isReserved(q, r) || isRoad.has(key(q, r))) continue;
-      if (rng() < 0.16) continue;                             // gaps become courtyards/plazas — break the grid
-      // taller, denser cores for old towns; squat ruined shells for ruins
+      if (!ringClear(q, r, 1, 1)) continue;                  // keep a gap to every neighbouring building
+      if (rng() < 0.18) continue;                            // organic courtyards / missing teeth
       const levels = theme === 'oldtown'
         ? 2 + (rng() < 0.5 ? 1 : 0) + (rng() < 0.15 ? 1 : 0)
         : theme === 'ruins'
           ? 1
           : 1 + (rng() < 0.5 ? 1 : 0) + (rng() < 0.12 ? 1 : 0);
-      const block = rng() < 0.18 ? 2 : 1; // the occasional larger block punctures the grid
-      placeBuilding(q, r, block, block, theme === 'ruins'
+      placeBuilding(q, r, 1, 1, theme === 'ruins'
         ? { levels, wallColor: 0x3b352f, roofColor: 0x23201c }
         : { levels });
     }
