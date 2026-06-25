@@ -47,7 +47,25 @@ const PAINTED_BUILDINGS: Array<{ tex: string; keepTop: number }> = [
   { tex: 'assets/generated/concrete_bunker.png', keepTop: 0.84 },
   { tex: 'assets/generated/hangar_building.png', keepTop: 0.84 },
   { tex: 'assets/generated/watchtower.png', keepTop: 0.86 },
-  { tex: 'assets/generated/ruins_building.png', keepTop: 0.80 }
+  { tex: 'assets/generated/ruins_building.png', keepTop: 0.80 },
+  // 16 additional building variants so dense districts don't repeat the same few sprites. These are
+  // normalised with the diorama base flush at the bottom (no tall plinth), so they keep the full frame.
+  { tex: 'assets/generated/building_01.png', keepTop: 1 }, // brick apartment block
+  { tex: 'assets/generated/building_02.png', keepTop: 1 }, // concrete apartment tower
+  { tex: 'assets/generated/building_03.png', keepTop: 1 }, // brick townhouse
+  { tex: 'assets/generated/building_04.png', keepTop: 1 }, // red-tile cottage
+  { tex: 'assets/generated/building_05.png', keepTop: 1 }, // thatched cottage
+  { tex: 'assets/generated/building_06.png', keepTop: 1 }, // corner shop
+  { tex: 'assets/generated/building_07.png', keepTop: 1 }, // stone church
+  { tex: 'assets/generated/building_08.png', keepTop: 1 }, // factory with chimney
+  { tex: 'assets/generated/building_09.png', keepTop: 1 }, // warehouse
+  { tex: 'assets/generated/building_10.png', keepTop: 1 }, // wooden barn
+  { tex: 'assets/generated/building_11.png', keepTop: 1 }, // water tower
+  { tex: 'assets/generated/building_12.png', keepTop: 1 }, // grain silos
+  { tex: 'assets/generated/building_13.png', keepTop: 1 }, // ruined apartment block
+  { tex: 'assets/generated/building_14.png', keepTop: 1 }, // ruined house
+  { tex: 'assets/generated/building_15.png', keepTop: 1 }, // ruined factory shell
+  { tex: 'assets/generated/building_16.png', keepTop: 1 }  // command post / bunker HQ
 ];
 
 const hashStringToIndex = (s: string, mod: number) => {
@@ -5728,9 +5746,12 @@ export function BattlefieldStage({
 
         // Painted iso building sprite instead of the flat procedural box. Explicit b.texture wins;
         // otherwise pick a stable painted asset per building (by id hash) with its base cropped off.
+        // Pick a painted asset per building. Mix the id hash with the tile position so two buildings that
+        // happen to hash alike still differ when they sit side by side (q±1 / r±1 shift the index) — this
+        // is what stops the "same 2-3 sprites repeating next to each other" look in dense districts.
         const painted = b.texture
           ? { tex: b.texture, keepTop: 1 }
-          : PAINTED_BUILDINGS[hashStringToIndex(b.id, PAINTED_BUILDINGS.length)];
+          : PAINTED_BUILDINGS[(hashStringToIndex(b.id, PAINTED_BUILDINGS.length) + q0 + r0 * 7) % PAINTED_BUILDINGS.length];
         const spriteScale = b.scale ?? 0.082 * Math.max(w, h, 1);
 
         // Geometric occlusion: fade the building when a visible unit actually sits under its drawn sprite
