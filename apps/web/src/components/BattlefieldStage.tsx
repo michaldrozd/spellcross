@@ -5779,20 +5779,20 @@ export function BattlefieldStage({
                 zIndex={-1}
                 draw={(g) => {
                   g.clear();
-                  const localBase = basePoly.map((p) => ({
-                    x: p.x - anchor.x,
-                    y: p.y - anchor.y
-                  }));
-                  const centroid = localBase.reduce(
-                    (acc, p) => ({ x: acc.x + p.x / localBase.length, y: acc.y + p.y / localBase.length }),
-                    { x: 0, y: 0 }
-                  );
-                  const skirt = localBase.map((p) => ({
-                    x: centroid.x + (p.x - centroid.x) * 1.18,
-                    y: centroid.y + (p.y - centroid.y) * 1.22 + 2
-                  }));
-                  g.beginFill(0x080806, isVisible ? 0.34 : 0.16);
-                  drawPoly(g as PixiGraphics, skirt);
+                  const localBase = basePoly.map((p) => ({ x: p.x - anchor.x, y: p.y - anchor.y }));
+                  const cxc = localBase.reduce((a, p) => a + p.x, 0) / localBase.length;
+                  const cyc = localBase.reduce((a, p) => a + p.y, 0) / localBase.length;
+                  const bw = Math.max(...localBase.map((p) => p.x)) - Math.min(...localBase.map((p) => p.x));
+                  const bh = Math.max(...localBase.map((p) => p.y)) - Math.min(...localBase.map((p) => p.y));
+                  // Soft ground shadow cast toward the lower-right (light comes from the upper-left), drawn
+                  // as an offset ellipse rather than a centred copy of the square base — otherwise the hard
+                  // footprint-shaped patch reads as a slab/platform and the building looks like it floats.
+                  const a0 = isVisible ? 1 : 0.5;
+                  g.beginFill(0x070907, 0.12 * a0);
+                  g.drawEllipse(cxc + bw * 0.16, cyc + bh * 0.18, bw * 0.58, bh * 0.64);
+                  g.endFill();
+                  g.beginFill(0x070907, 0.22 * a0);
+                  g.drawEllipse(cxc + bw * 0.1, cyc + bh * 0.12, bw * 0.46, bh * 0.52);
                   g.endFill();
                 }}
               />
