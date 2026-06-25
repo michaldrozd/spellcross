@@ -397,7 +397,10 @@ function buildObjectives(cfg: CityConfig, g: Generated, rng: () => number): { ob
       break;
     case 'bridgehead':
       objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Destroy or rout the defenders.' });
-      objs.push({ id: `${id}-reach`, kind: 'reach', description: 'Plant charges at the far objective.', target: anchor, turnLimit: 6 + cfg.difficulty });
+      // No hard turn limit on the far objective: a timed reach across the enlarged maps defeated the
+      // player even while they were winning by elimination (army intact, foes nearly cleared, lost on
+      // the deadline). Win by reaching the charge point OR routing the defenders — reach is the fast lane.
+      objs.push({ id: `${id}-reach`, kind: 'reach', description: 'Plant charges at the far objective.', target: anchor });
       break;
     case 'raid-night':
       objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Silence the enemy coven leaders.' });

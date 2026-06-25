@@ -882,6 +882,13 @@ const BattleView: React.FC<{
     return () => clearInterval(timer);
   }, [attackEffects.length]);
 
+  // Cancel any staged SFX timeouts when the battle view unmounts (e.g. retreat mid-Auto-Turn), so
+  // gunfire/impact sounds don't play over the strategic screen.
+  useEffect(() => () => {
+    aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
+    aiSfxTimeoutsRef.current = [];
+  }, []);
+
   // Clean up movement animation when complete
   useEffect(() => {
     if (!movingUnit) return;
@@ -1330,7 +1337,8 @@ const BattleView: React.FC<{
   }
 
   const showPhaseNotice = (title: string, detail: string, tone: 'enemy' | 'alliance' = 'alliance') => {
-    const id = Date.now();
+    const id = nextNoticeId(); // monotonic — Date.now() collided when several notices fired in one ms
+
     setPhaseNotice({ id, title, detail, tone });
     window.setTimeout(() => {
       setPhaseNotice((current) => current?.id === id ? null : current);
@@ -1580,11 +1588,10 @@ const BattleView: React.FC<{
           const effectType = effectTypeForAttack(attacker, defender, anyWeapon);
           AudioManager.play(soundForAttackEffect(effectType));
           addAttackEffect(attacker, defender, anyWeapon, attackOutcome);
-          // Play hit/death sound based on result
-          if (defender.currentHealth <= 0) {
-            AudioManager.play('death');
-          } else {
-            AudioManager.play('hit');
+          // Impact sound only when the shot actually connects (matches the primary attack branch);
+          // keying off raw currentHealth played 'hit' even on a clean miss.
+          if (attackOutcome.hit) {
+            AudioManager.play(defender.currentHealth <= 0 ? 'death' : 'hit');
           }
           persist();
           resolveOutcome();
@@ -1873,9 +1880,9 @@ const BattleView: React.FC<{
     aiSfxTimeoutsRef.current = [];
     const proc = new TurnProcessor(battle.state);
     // Only evac/reach tiles are passed as goals. We deliberately do NOT pass hold tiles or enemy
-    // coordinates: hold tiles park the squad, and enemy coordinates trip the planner's "contest" lane
-    // into proposing out-of-range attacks that fail and burn the turn. With no goals the planner falls
-    // back to advancing on the nearest enemy and shooting once in range — exactly seek-and-destroy.
+    // coordinates: passing hold tiles parks the squad defensively (verified: hold sectors then time out
+    // instead of winning by elimination), and enemy coordinates trip the planner's "contest" lane into
+    // out-of-range attacks. With no goal the planner advances on the nearest enemy — seek-and-destroy.
     const reachTargets = battle.scenario.objectives.filter((o) => o.kind === 'reach').map((o) => o.target).filter(Boolean) as HexCoordinate[];
     const objectiveTargets = reachTargets;
     const failedUnitIds = new Set<string>();
