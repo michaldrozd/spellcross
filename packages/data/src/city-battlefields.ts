@@ -220,18 +220,23 @@ function generate(cfg: CityConfig): Generated {
       t.destructible = true; t.hp = 40;
     }
     props.push({ id: `${cfg.territoryId}-bld-${props.length}`, kind: 'proc-building', coordinate: { q, r }, w: bw, h: bh, levels: opt.levels ?? 1, roof: { kind: 'flat' }, ...opt });
+    buildingCenters.push({ q: q + (bw - 1) / 2, r: r + (bh - 1) / 2 });
     return true;
   };
 
-  // True when the footprint AND a one-tile border around it are free of other buildings. Each building
-  // is a free-standing sprite on its own diorama base, so two on touching tiles look glued together —
-  // this keeps at least one empty tile (a gap/alley) between every pair, like real streets.
-  const ringClear = (q: number, r: number, bw: number, bh: number) => {
-    for (let dr = -1; dr <= bh; dr++) for (let dq = -1; dq <= bw; dq++) {
-      const cq = q + dq, cr = r + dr;
-      if (inB(cq, cr, w, h) && occupied.has(key(cq, cr))) return false;
-    }
-    return true;
+  // Each building is a free-standing sprite whose diorama base is ~1.2 tiles wide, so a one-empty-tile
+  // gap still lets two bases overlap and look glued. Instead we enforce a minimum ON-SCREEN distance
+  // between building centres. The 28/14 are the renderer's half-tile pixels (ISO_TILE_W/2, ISO_TILE_H/2);
+  // MIN_SEP is just over the widest base so neighbours always show a sliver of ground between them.
+  const buildingCenters: Array<{ q: number; r: number }> = [];
+  const MIN_SEP = 74;
+  const tooClose = (q: number, r: number, bw: number, bh: number) => {
+    const cq = q + (bw - 1) / 2, cr = r + (bh - 1) / 2;
+    return buildingCenters.some((a) => {
+      const dx = ((cq - cr) - (a.q - a.r)) * 28;
+      const dy = ((cq + cr) - (a.q + a.r)) * 14;
+      return dx * dx + dy * dy < MIN_SEP * MIN_SEP;
+    });
   };
 
   // 6) landmark near the centre (tall, multi-tile) — the visual signature of the city
@@ -250,7 +255,7 @@ function generate(cfg: CityConfig): Generated {
     for (const side of [-1, 1]) {
       if (placed >= clusterCount) break;
       const q = base.q + side, r = base.r;
-      if (rng() < (builtUp ? 0.7 : 0.4) && ringClear(q, r, 1, 1) && placeBuilding(q, r, 1, 1, { levels: 1 + (rng() < 0.45 ? 1 : 0) })) placed++;
+      if (rng() < (builtUp ? 0.7 : 0.4) && !tooClose(q, r, 1, 1) && placeBuilding(q, r, 1, 1, { levels: 1 + (rng() < 0.45 ? 1 : 0) })) placed++;
     }
   }
 
@@ -266,7 +271,7 @@ function generate(cfg: CityConfig): Generated {
     for (let r = 1; r < h - 1; r++) for (let q = 1; q < w - 1; q++) {
       if (tileAt(q, r).terrain !== districtTerrain) continue; // only inside the district biome
       if (occupied.has(key(q, r)) || isReserved(q, r) || isRoad.has(key(q, r))) continue;
-      if (!ringClear(q, r, 1, 1)) continue;                  // keep a gap to every neighbouring building
+      if (tooClose(q, r, 1, 1)) continue;                    // keep a real on-screen gap to every building
       if (rng() < 0.18) continue;                            // organic courtyards / missing teeth
       const levels = theme === 'oldtown'
         ? 2 + (rng() < 0.5 ? 1 : 0) + (rng() < 0.15 ? 1 : 0)

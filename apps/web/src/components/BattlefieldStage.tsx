@@ -5752,7 +5752,7 @@ export function BattlefieldStage({
         const painted = b.texture
           ? { tex: b.texture, keepTop: 1 }
           : PAINTED_BUILDINGS[(hashStringToIndex(b.id, PAINTED_BUILDINGS.length) + q0 + r0 * 7) % PAINTED_BUILDINGS.length];
-        const spriteScale = b.scale ?? 0.082 * Math.max(w, h, 1);
+        const spriteScale = b.scale ?? 0.07 * Math.max(w, h, 1);
 
         // Geometric occlusion: fade the building when a visible unit actually sits under its drawn sprite
         // rectangle. This works for ANY height/width (a tall, wide watchtower included) — the old q-r
