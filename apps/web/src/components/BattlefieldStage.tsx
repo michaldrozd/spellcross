@@ -6452,8 +6452,9 @@ export function BattlefieldStage({
               if (battleState.weather === 'night') {
                 g.beginFill(0x0c1836, 0.4);
               } else {
-                // Muted cool grey, not a bright white wash — fog should desaturate, not over-brighten.
-                g.beginFill(0x8f9aa3, 0.2);
+                // Dim cool haze. A lighter grey at higher alpha brightened the (dark) terrain and made
+                // fog maps look washed-out/over-lit; this darker, subtler tone reads as mist without it.
+                g.beginFill(0x4d5860, 0.16);
               }
               g.drawRect(0, 0, hostSize.w, hostSize.h);
               g.endFill();
