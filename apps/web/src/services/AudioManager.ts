@@ -393,6 +393,186 @@ class AudioManagerClass {
     }
   }
 
+  private noiseSource(duration: number): AudioBufferSourceNode {
+    const ctx = this.getContext();
+    const src = ctx.createBufferSource();
+    src.buffer = this.createNoiseBuffer(Math.max(0.02, duration));
+    return src;
+  }
+
+  // One boot-on-ground footstep: a short low body thump + a gravelly bandpassed-noise crunch.
+  private scheduleFootstep(at: number, vol: number, dest: AudioNode, idx: number): void {
+    const ctx = this.getContext();
+    const body = ctx.createOscillator();
+    const bg = ctx.createGain();
+    body.type = 'sine';
+    const f0 = 95 + (idx % 2) * 16; // alternate left/right weight for a natural gait
+    body.frequency.setValueAtTime(f0, at);
+    body.frequency.exponentialRampToValueAtTime(46, at + 0.07);
+    bg.gain.setValueAtTime(0.0001, at);
+    bg.gain.exponentialRampToValueAtTime(vol * 0.5, at + 0.006);
+    bg.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+    body.connect(bg); bg.connect(dest);
+    body.start(at); body.stop(at + 0.13);
+
+    const n = this.noiseSource(0.09);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1700 + (idx % 3) * 280;
+    bp.Q.value = 0.7;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.0001, at);
+    ng.gain.exponentialRampToValueAtTime(vol * 0.32, at + 0.004);
+    ng.gain.exponentialRampToValueAtTime(0.0001, at + 0.06);
+    n.connect(bp); bp.connect(ng); ng.connect(dest);
+    n.start(at); n.stop(at + 0.09);
+  }
+
+  // One metallic track-link clank (tank tracks slapping the ground).
+  private scheduleClank(at: number, vol: number, dest: AudioNode, salt: number): void {
+    const ctx = this.getContext();
+    const n = this.noiseSource(0.05);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = 1900 + (salt % 5) * 130;
+    bp.Q.value = 1.5;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(vol, at + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + 0.05);
+    n.connect(bp); bp.connect(g); g.connect(dest);
+    n.start(at); n.stop(at + 0.055);
+  }
+
+  // Realistic movement loop that lasts the whole glide: engine + tracks (tank), engine + tyre roll
+  // (wheeled), boot footsteps (infantry), or rotor chop (air). Replaces the old one-shot beep/rumble.
+  playMovement(profile: 'foot' | 'track' | 'wheel' | 'rotor', durationMs: number): void {
+    if (!this.enabled) return;
+    try {
+      const ctx = this.getContext();
+      const vol = this.masterVolume * this.sfxVolume;
+      const dur = Math.max(0.3, Math.min(2.6, (durationMs || 400) / 1000));
+      const t = ctx.currentTime;
+      const stop = t + dur + 0.06;
+
+      // soft limiter so the stacked layers never clip, then a global fade-in/out envelope
+      const comp = ctx.createDynamicsCompressor();
+      comp.threshold.setValueAtTime(-9, t);
+      comp.ratio.setValueAtTime(4, t);
+      comp.attack.setValueAtTime(0.004, t);
+      comp.release.setValueAtTime(0.15, t);
+      comp.connect(ctx.destination);
+      const fade = ctx.createGain();
+      fade.gain.setValueAtTime(0.0001, t);
+      fade.gain.exponentialRampToValueAtTime(1, t + 0.07);
+      fade.gain.setValueAtTime(1, Math.max(t + 0.09, t + dur - 0.14));
+      fade.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      fade.connect(comp);
+
+      if (profile === 'track' || profile === 'wheel') {
+        const isTrack = profile === 'track';
+        const base = isTrack ? 46 : 72; // heavy diesel idle vs lighter, higher truck engine
+
+        // diesel "chug" amplitude modulation that the engine oscillators pass through
+        const am = ctx.createGain();
+        am.gain.setValueAtTime(isTrack ? 0.55 : 0.7, t);
+        const amLfo = ctx.createOscillator();
+        amLfo.type = isTrack ? 'square' : 'sine';
+        amLfo.frequency.setValueAtTime(isTrack ? 9 : 24, t);
+        const amDepth = ctx.createGain();
+        amDepth.gain.setValueAtTime(isTrack ? 0.45 : 0.3, t);
+        amLfo.connect(amDepth); amDepth.connect(am.gain);
+        amLfo.start(t); amLfo.stop(stop);
+
+        const engineLp = ctx.createBiquadFilter();
+        engineLp.type = 'lowpass';
+        engineLp.frequency.setValueAtTime(isTrack ? 320 : 620, t);
+        const engineGain = ctx.createGain();
+        engineGain.gain.setValueAtTime(vol * (isTrack ? 0.34 : 0.27), t);
+        am.connect(engineLp); engineLp.connect(engineGain); engineGain.connect(fade);
+
+        // detuned sawtooth oscillators with a slow rev wobble = a thick engine tone
+        [0, 0.6, 1.7].forEach((det, i) => {
+          const o = ctx.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.setValueAtTime(base + det, t);
+          const rev = ctx.createOscillator();
+          rev.type = 'sine';
+          rev.frequency.setValueAtTime(0.6 + i * 0.25, t);
+          const revDepth = ctx.createGain();
+          revDepth.gain.setValueAtTime(base * 0.05, t);
+          rev.connect(revDepth); revDepth.connect(o.frequency);
+          const og = ctx.createGain();
+          og.gain.setValueAtTime(1 / 3, t);
+          o.connect(og); og.connect(am);
+          o.start(t); o.stop(stop); rev.start(t); rev.stop(stop);
+        });
+
+        // sub-bass weight
+        const sub = ctx.createOscillator();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(isTrack ? 28 : 38, t);
+        const subG = ctx.createGain();
+        subG.gain.setValueAtTime(vol * (isTrack ? 0.2 : 0.13), t);
+        sub.connect(subG); subG.connect(fade);
+        sub.start(t); sub.stop(stop);
+
+        if (isTrack) {
+          // rhythmic metallic track clatter across the whole move
+          const rate = 13;
+          let k = 0;
+          for (let ti = 0.02; ti < dur - 0.05; ti += 1 / rate) {
+            const jitter = (Math.sin(ti * 91.7) * 0.5) / rate * 0.35;
+            this.scheduleClank(t + ti + jitter, vol * 0.12, fade, k++);
+          }
+        } else {
+          // tyre roll = steady low-passed noise
+          const n = this.noiseSource(dur);
+          const lp = ctx.createBiquadFilter();
+          lp.type = 'lowpass';
+          lp.frequency.setValueAtTime(900, t);
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(vol * 0.1, t);
+          n.connect(lp); lp.connect(g); g.connect(fade);
+          n.start(t); n.stop(stop);
+        }
+      } else if (profile === 'rotor') {
+        // helicopter: a strong low "whomp-whomp" chop (noise gated by a low LFO) + a faint turbine whine
+        const body = this.noiseSource(dur);
+        const lp = ctx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.setValueAtTime(440, t);
+        const am = ctx.createGain();
+        am.gain.setValueAtTime(vol * 0.2, t);
+        const lfo = ctx.createOscillator();
+        lfo.type = 'sawtooth';
+        lfo.frequency.setValueAtTime(15, t);
+        const lfoG = ctx.createGain();
+        lfoG.gain.setValueAtTime(vol * 0.5, t);
+        lfo.connect(lfoG); lfoG.connect(am.gain);
+        body.connect(lp); lp.connect(am); am.connect(fade);
+        body.start(t); body.stop(stop); lfo.start(t); lfo.stop(stop);
+
+        const whine = ctx.createOscillator();
+        whine.type = 'triangle';
+        whine.frequency.setValueAtTime(960, t);
+        const wg = ctx.createGain();
+        wg.gain.setValueAtTime(vol * 0.045, t);
+        whine.connect(wg); wg.connect(fade);
+        whine.start(t); whine.stop(stop);
+      } else {
+        // infantry: a sequence of footsteps spread across the move duration
+        const interval = 0.27;
+        let i = 0;
+        for (let ti = 0.0; ti < dur - 0.04; ti += interval) {
+          this.scheduleFootstep(t + ti, vol * 0.55, fade, i++);
+        }
+      }
+    } catch (e) {
+      console.warn('Movement audio failed:', e);
+    }
+  }
+
   private async probeFiles(): Promise<void> {
     if (this.filesProbed) return;
     this.filesProbed = true;

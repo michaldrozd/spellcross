@@ -97,6 +97,14 @@ const movingUnitDuration = (moving: MovingUnit) => {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
+// Pick the realistic movement-audio profile for a unit: air = rotor chop, supply trucks = wheeled
+// engine + tyres, tanks/APCs/artillery = diesel engine + track clatter, everything else = footsteps.
+const movementProfileFor = (unitType: string, isTruck: boolean): 'foot' | 'track' | 'wheel' | 'rotor' =>
+  unitType === 'air' ? 'rotor'
+    : isTruck ? 'wheel'
+      : (unitType === 'vehicle' || unitType === 'artillery') ? 'track'
+        : 'foot';
+
 const unitTextures: Record<string, PIXI.Texture> = {
   infantry: PIXI.Texture.from('/units/infantry.png'),
   vehicle: PIXI.Texture.from('/units/tank.png'),
@@ -1435,16 +1443,10 @@ const BattleView: React.FC<{
       reactionShots += 1;
     }
 
-    // Play movement sound
     const unitType = (unit as any).unitType;
-    const isVehicleMove = unitType === 'vehicle'
-      || unitType === 'artillery'
-      || (unitType === 'support' && unit.definitionId.toLowerCase().includes('truck'));
-    if (isVehicleMove) {
-      AudioManager.play('tankMove');
-    } else {
-      AudioManager.play('move');
-    }
+    const isTruck = unitType === 'support' && unit.definitionId.toLowerCase().includes('truck');
+    const isVehicleMove = unitType === 'vehicle' || unitType === 'artillery' || isTruck;
+    const moveProfile = movementProfileFor(unitType, isTruck);
 
     const finalCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
     const actualPath: HexCoordinate[] = [];
@@ -1465,10 +1467,14 @@ const BattleView: React.FC<{
         preAlignDuration: isVehicleMove ? (isM113Move ? 0 : 150) : 0,
         segmentTurnDuration: isM113Move ? 90 : 0
       };
+      // realistic engine/track/footstep audio matched to how long this glide actually takes
+      AudioManager.playMovement(moveProfile, movingUnitDuration(nextMovingUnit));
       movingUnitRef.current = nextMovingUnit;
       flushSync(() => {
         setMovingUnit(nextMovingUnit);
       });
+    } else {
+      AudioManager.playMovement(moveProfile, stepDuration);
     }
 
     setSelected(unitId);
@@ -1495,11 +1501,11 @@ const BattleView: React.FC<{
     const fullPath = [startCoord, ...actualPath];
     if (fullPath.length < 2) return 0;
     const unitType = (unit as any).unitType;
-    const isVehicleMove = unitType === 'vehicle'
-      || unitType === 'artillery'
-      || (unitType === 'support' && unit.definitionId.toLowerCase().includes('truck'));
-    AudioManager.play(isVehicleMove ? 'tankMove' : 'move');
-    const isM113Move = unit.definitionId.toLowerCase().includes('m113');
+    const def = unit.definitionId.toLowerCase();
+    const isTruck = unitType === 'support' && def.includes('truck');
+    const isVehicleMove = unitType === 'vehicle' || unitType === 'artillery' || isTruck;
+    const moveProfile = movementProfileFor(unitType, isTruck);
+    const isM113Move = def.includes('m113');
     const moving: MovingUnit = {
       unitId,
       path: fullPath,
@@ -1508,11 +1514,13 @@ const BattleView: React.FC<{
       preAlignDuration: isVehicleMove ? (isM113Move ? 0 : 150) : 0,
       segmentTurnDuration: isM113Move ? 90 : 0
     };
+    const dur = movingUnitDuration(moving);
+    AudioManager.playMovement(moveProfile, dur); // realistic engine/track/footstep for the whole glide
     movingUnitRef.current = moving;
     flushSync(() => {
       setMovingUnit(moving);
     });
-    return movingUnitDuration(moving);
+    return dur;
   };
 
   const actSupply = (supplierId: string) => {
