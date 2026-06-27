@@ -94,6 +94,29 @@ describe('campaign core', () => {
     expect(stillThere).toBeUndefined();
   });
 
+  it('lets Optics II soften fog for the alliance only', () => {
+    const sumVision = (battle: ReturnType<typeof startBattleForTerritory>, faction: 'alliance' | 'otherSide') =>
+      Array.from(battle.state.sides[faction].units.values()).reduce((sum, u) => sum + u.stats.vision, 0);
+
+    const unlockFog = (state: ReturnType<typeof createCampaign>) => {
+      const fog = state.territories.find((t) => t.id === 'sector-amsterdam');
+      if (fog) fog.status = 'available';
+    };
+
+    const plain = createCampaign(starterBundle);
+    unlockFog(plain);
+    const fogged = startBattleForTerritory(plain, starterBundle, 'sector-amsterdam'); // fog scenario
+
+    const teched = createCampaign(starterBundle);
+    unlockFog(teched);
+    teched.research.completed.add('optics-ii');
+    const foggedWithOptics = startBattleForTerritory(teched, starterBundle, 'sector-amsterdam');
+
+    // Optics II restores a point of alliance vision in fog; the enemy gets no such relief.
+    expect(sumVision(foggedWithOptics, 'alliance')).toBeGreaterThan(sumVision(fogged, 'alliance'));
+    expect(sumVision(foggedWithOptics, 'otherSide')).toBe(sumVision(fogged, 'otherSide'));
+  });
+
   it('stores casualties and rewards after a victory', () => {
     const state = createCampaign(starterBundle);
     const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');

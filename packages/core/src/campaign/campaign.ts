@@ -430,7 +430,7 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
           scenarioId: 'enemy-counterstrike',
           timer: 2,
           remainingTimer: 2,
-          reward: { money: 90, research: 20, strategic: 10 },
+          reward: { money: 60, research: 15, strategic: 8 },
           status: 'available'
         });
         state.log.push(`Enemy raid threatens ${target.name}; rapid response required.`);
@@ -685,25 +685,30 @@ export function startBattleForTerritory(
     startingFaction: 'alliance'
   });
 
+  // Optics II (thermal/low-light sights) lets our forces shrug off poor visibility; the enemy never does,
+  // so researching it turns night/fog from a flat penalty into a real edge.
+  const hasOptics = state.research.completed.has('optics-ii');
   if (scenario.weather === 'night') {
-    for (const side of Object.values(battleState.sides)) {
+    for (const [faction, side] of Object.entries(battleState.sides)) {
+      const loss = faction === 'alliance' && hasOptics ? 0 : 1;
       for (const unit of side.units.values()) {
-        unit.stats.vision = Math.max(1, unit.stats.vision - 1);
+        unit.stats.vision = Math.max(1, unit.stats.vision - loss);
       }
     }
     updateAllFactionsVision(battleState);
-    state.log.push('Night op: visibility reduced for all forces.');
-    state.events?.push({ turn: state.turn, message: 'Night conditions: vision reduced by 1.' });
+    state.log.push(hasOptics ? 'Night op: thermal sights keep our forces seeing clearly.' : 'Night op: visibility reduced for all forces.');
+    state.events?.push({ turn: state.turn, message: hasOptics ? 'Optics II: thermal sights offset the night.' : 'Night conditions: vision reduced by 1.' });
   }
   if (scenario.weather === 'fog') {
-    for (const side of Object.values(battleState.sides)) {
+    for (const [faction, side] of Object.entries(battleState.sides)) {
+      const loss = faction === 'alliance' && hasOptics ? 1 : 2;
       for (const unit of side.units.values()) {
-        unit.stats.vision = Math.max(1, unit.stats.vision - 2);
+        unit.stats.vision = Math.max(1, unit.stats.vision - loss);
       }
     }
     updateAllFactionsVision(battleState);
-    state.log.push('Fog: vision severely reduced.');
-    state.events?.push({ turn: state.turn, message: 'Fog banks cut visibility (-2).' });
+    state.log.push(hasOptics ? 'Fog: thermal optics keep our forces partially sighted.' : 'Fog: vision severely reduced.');
+    state.events?.push({ turn: state.turn, message: hasOptics ? 'Optics II: thermal sights cut through the fog.' : 'Fog banks cut visibility (-2).' });
   }
 
   const deployment: Record<string, string> = {};

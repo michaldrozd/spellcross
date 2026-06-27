@@ -354,7 +354,7 @@ const ROSTER_BY_DIFFICULTY: Record<number, string[]> = {
   2: ['orc-warband', 'ghoul-pack', 'wolf-rider', 'necromancer'],
   3: ['ogre-brute', 'wolf-rider', 'necromancer', 'specter', 'arrow-tower'],
   4: ['ogre-brute', 'hell-rider', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde'],
-  5: ['demon-engine', 'hell-rider', 'lich-lord', 'void-drake', 'warlock', 'salamander', 'arrow-tower']
+  5: ['demon-engine', 'hell-rider', 'lich-lord', 'void-drake', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde', 'specter']
 };
 
 function pickSpread(pool: Coord[], n: number, rng: () => number): Coord[] {
@@ -423,7 +423,8 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
   // through the roster so a count above the roster size still fields varied foes.
   const roster = ROSTER_BY_DIFFICULTY[cfg.difficulty] ?? ROSTER_BY_DIFFICULTY[3];
   // scale with both difficulty and map area so the enlarged battlefields don't feel empty (diff1 ~7 … diff5 ~13)
-  const enemyCount = 4 + cfg.difficulty + Math.floor((cfg.width * cfg.height) / 260);
+  // Cap the area term so big Rift maps no longer stack both a swarm of bodies AND the heavies on top.
+  const enemyCount = 3 + cfg.difficulty + Math.min(3, Math.floor((cfg.width * cfg.height) / 320));
   const enemyArea = g.reachable.filter((c) => c.r <= cfg.height * 0.6);
   const pool = enemyArea.length >= enemyCount ? enemyArea : g.reachable;
   const spots = pickSpread(pool, enemyCount, rng);
