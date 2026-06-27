@@ -157,9 +157,9 @@ const terrainPalette: Record<string, number> = {
   road: 0x756650,
   forest: 0x203b1c,
   urban: 0x625f57,
-  hill: 0x6b7040,
+  hill: 0x7a7038,
   water: 0x226480,
-  swamp: 0x3a5437,
+  swamp: 0x33483a,
   structure: 0x62584b
 };
 
@@ -217,7 +217,7 @@ export interface BattlefieldStageProps {
   movingUnit?: MovingUnit | null;
 }
 
-type DeathMarker = { id: string; q: number; r: number; t: number; faction: FactionId };
+type DeathMarker = { id: string; q: number; r: number; t: number; faction: FactionId; unitType?: string };
 
 const axialToPixel = ({ q, r }: { q: number; r: number }) => {
   const x = (hexWidth * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r)) / Math.sqrt(3);
@@ -265,6 +265,15 @@ function mixColor(source: number, target: number, t: number) {
   const tb = target & 0xff;
   const lerp = (a: number, b: number) => Math.round(a + (b - a) * t);
   return (lerp(sr, tr) << 16) | (lerp(sg, tg) << 8) | lerp(sb, tb);
+}
+
+// Explored-but-not-visible ("remembered") ground: desaturate toward its own luminance and cool-tint it,
+// so memory tiles read as a blue-grey recollection rather than just a dimmer version of live terrain.
+function memoryColor(c: number) {
+  const r = (c >> 16) & 0xff, g = (c >> 8) & 0xff, b = c & 0xff;
+  const lum = Math.round(0.3 * r + 0.59 * g + 0.11 * b);
+  const grey = (lum << 16) | (lum << 8) | lum;
+  return mixColor(mixColor(c, grey, 0.5), 0x1c2a3a, 0.2);
 }
 
 const lightenColor = (color: number, amount: number) => mixColor(color, 0xffffff, amount);
@@ -1436,7 +1445,7 @@ export function BattlefieldStage({
       for (const u of (side as any).units.values()) {
         if (u.stance === 'destroyed' && !recordedDeathsRef.current.has(u.id)) {
           recordedDeathsRef.current.add(u.id);
-          next.set(u.id, { id: u.id, q: u.coordinate.q, r: u.coordinate.r, t: Date.now(), faction: u.faction });
+          next.set(u.id, { id: u.id, q: u.coordinate.q, r: u.coordinate.r, t: Date.now(), faction: u.faction, unitType: u.unitType });
           added = true;
         }
       }
@@ -2514,7 +2523,8 @@ export function BattlefieldStage({
         externalTerrainTextures?.water ??
         ((terrainTextures as any).water ?? tex);
       const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
-      const overlayAlpha = coloredTex ? (isVisible ? 0.92 : 0.66) : (isVisible ? 0.4 : 0.26);
+      // Memory tiles lean on the desaturated base color, so the texture sits back further when not visible.
+      const overlayAlpha = coloredTex ? (isVisible ? 0.92 : 0.45) : (isVisible ? 0.4 : 0.18);
       const texMatrix = new Matrix();
       if (coloredTex) {
         // Map the large painted texture continuously across the map (world-space) so the
@@ -2588,9 +2598,11 @@ export function BattlefieldStage({
                 g.closePath();
                 return;
               }
+              const fillCol = isVisible ? baseColor : memoryColor(baseColor);
+              const fillA = isVisible ? 0.98 : 0.66;
               for (const tri of tris) {
                 const [a, b, c] = tri;
-                g.beginFill(baseColor, isVisible ? 0.98 : 0.58);
+                g.beginFill(fillCol, fillA);
                 g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
                 g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
                 g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
@@ -3192,7 +3204,7 @@ export function BattlefieldStage({
               const ox = (tileNoise(q, r, 208) - 0.5) * ISO_TILE_W * 0.58;
               const oy = (tileNoise(q, r, 209) - 0.5) * ISO_TILE_H * 0.52;
               const skew = (tileNoise(q, r, 207) - 0.5) * ISO_TILE_H * 0.16;
-              g.lineStyle(1, washColor, fog * (0.055 + tileNoise(q, r, 210) * 0.035));
+              g.lineStyle(1, visible ? washColor : memoryColor(washColor), fog * (0.055 + tileNoise(q, r, 210) * 0.035));
               g.moveTo(cx + ox - len / 2, cy + oy - skew);
               g.lineTo(cx + ox + len / 2, cy + oy + skew);
               g.lineStyle();
@@ -4179,14 +4191,43 @@ export function BattlefieldStage({
           <Graphics
             draw={(g) => {
               g.clear();
+              const isVehicleWreck = m.unitType === 'vehicle' || m.unitType === 'artillery';
               g.beginFill(0x000000, 0.20 + 0.25 * fade);
-              g.drawCircle(0, 0, tileSize * 0.26);
+              g.drawCircle(0, 0, tileSize * (isVehicleWreck ? 0.32 : 0.26));
               g.endFill();
-              g.lineStyle(2, 0x5f3328, 0.72 * fade);
-              g.moveTo(-tileSize * 0.16, tileSize * 0.02);
-              g.lineTo(tileSize * 0.16, tileSize * 0.02);
-              g.moveTo(-tileSize * 0.11, -tileSize * 0.07);
-              g.lineTo(tileSize * 0.09, tileSize * 0.1);
+              if (isVehicleWreck) {
+                // burnt-out hull, a few flickering embers, and slow smoke rising for a while after death
+                g.beginFill(0x1a1712, 0.8 * fade);
+                g.drawRoundedRect(-tileSize * 0.2, -tileSize * 0.12, tileSize * 0.4, tileSize * 0.2, 3);
+                g.endFill();
+                g.lineStyle(1.4, 0x0a0805, 0.6 * fade);
+                g.drawRoundedRect(-tileSize * 0.2, -tileSize * 0.12, tileSize * 0.4, tileSize * 0.2, 3);
+                g.lineStyle();
+                const emberLife = Math.max(0, 1 - elapsed / 6000);
+                if (emberLife > 0) {
+                  for (const [ex, ey, ph] of [[-0.06, -0.02, 0], [0.05, 0.01, 1.7], [0.0, -0.06, 3.1]] as const) {
+                    const flick = 0.5 + 0.5 * Math.sin(now / 120 + ph);
+                    g.beginFill(0xff7a2a, emberLife * flick * 0.8 * fade);
+                    g.drawCircle(ex * tileSize, ey * tileSize, Math.max(0.8, tileSize * 0.02 * flick));
+                    g.endFill();
+                  }
+                }
+                for (let s = 0; s < 3; s++) {
+                  const rise = ((now / 1400) + s * 0.33) % 1;
+                  const sa = (1 - rise) * 0.22 * fade;
+                  if (sa <= 0.01) continue;
+                  const sx = Math.sin((now / 700) + s * 2.1) * tileSize * 0.06;
+                  g.beginFill(0x3a3631, sa);
+                  g.drawEllipse(sx, -tileSize * (0.1 + rise * 0.5), tileSize * (0.1 + rise * 0.14), tileSize * (0.07 + rise * 0.1));
+                  g.endFill();
+                }
+              } else {
+                g.lineStyle(2, 0x5f3328, 0.72 * fade);
+                g.moveTo(-tileSize * 0.16, tileSize * 0.02);
+                g.lineTo(tileSize * 0.16, tileSize * 0.02);
+                g.moveTo(-tileSize * 0.11, -tileSize * 0.07);
+                g.lineTo(tileSize * 0.09, tileSize * 0.1);
+              }
             }}
           />
         </Container>
@@ -4726,9 +4767,9 @@ export function BattlefieldStage({
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
                     const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
-                    const shadowAlpha = isGroundVehicle ? (isApcContact ? 0 : (movingThisUnit ? 0.07 : 0.045)) : footprint.alpha;
-                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.34 : 0.42) : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.1 : 0.18) : footprint.ry;
+                    const shadowAlpha = isGroundVehicle ? (isApcContact ? 0 : (movingThisUnit ? 0.07 : 0.10)) : footprint.alpha;
+                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.34 : 0.55) : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.1 : 0.24) : footprint.ry;
 	                  const showFactionBase = isVisible;
 	                  if (showFactionBase) {
 	                    // Ground vehicles get the team disc too (their large silhouette dilutes it, so 0.7x);
@@ -5573,6 +5614,14 @@ export function BattlefieldStage({
                   g.beginFill(dust, hitAlpha * 0.4);
                   g.drawEllipse(1, tileSize * 0.08, hitSize * 1.04, hitSize * 0.4);
                   g.endFill();
+                  if (effect.type === 'explosion') {
+                    // ground shockwave: a hot inner ring and a faster dusty outer ring race outward
+                    const ringP = hitProgress;
+                    g.lineStyle(3 * (1 - ringP) + 0.6, 0xfff0c0, hitAlpha * (1 - ringP));
+                    g.drawEllipse(0, tileSize * 0.08, hitSize * (0.6 + ringP * 1.8), hitSize * (0.24 + ringP * 0.7));
+                    g.lineStyle(2 * (1 - ringP) + 0.5, 0x6b5a3a, hitAlpha * (1 - ringP) * 0.8);
+                    g.drawEllipse(0, tileSize * 0.08, hitSize * (0.45 + ringP * 2.2), hitSize * (0.18 + ringP * 0.86));
+                  }
                   g.lineStyle(3.6, primary, hitAlpha * 0.94);
                   g.drawCircle(0, 0, hitSize);
                   g.lineStyle(1.9, secondary, hitAlpha * 0.9);
@@ -5583,13 +5632,25 @@ export function BattlefieldStage({
                     g.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
                     g.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
                   }
-                  for (let i = 0; i < 5; i++) {
-                    const angle = -0.9 + i * 0.45;
-                    const px = Math.cos(angle) * hitSize * (0.45 + hitProgress * 0.35);
-                    const py = Math.sin(angle) * hitSize * (0.26 + hitProgress * 0.25);
-                    g.beginFill(secondary, hitAlpha * 0.75);
-                    g.drawCircle(px, py, Math.max(1.4, 3.2 * hitAlpha));
-                    g.endFill();
+                  const debrisCount = effect.type === 'explosion' ? 7 : 5;
+                  const debrisTint = targetMaterial === 'armor' ? 0x6f6a60 : targetMaterial === 'undead' ? 0x6f7164 : 0x5b4b36;
+                  for (let i = 0; i < debrisCount; i++) {
+                    const angle = -0.9 + i * (1.8 / (debrisCount - 1));
+                    if (effect.type === 'explosion') {
+                      // ballistic clods: thrown out and up, then dragged back down under gravity
+                      const tt = hitProgress;
+                      const px = Math.cos(angle) * hitSize * 1.6 * tt;
+                      const py = Math.sin(angle) * hitSize * 1.6 * tt - hitSize * 1.4 * tt + hitSize * 2.6 * tt * tt;
+                      g.beginFill(debrisTint, hitAlpha * 0.8);
+                      g.drawCircle(px, py, Math.max(1.2, 2.8 * hitAlpha));
+                      g.endFill();
+                    } else {
+                      const px = Math.cos(angle) * hitSize * (0.45 + hitProgress * 0.35);
+                      const py = Math.sin(angle) * hitSize * (0.26 + hitProgress * 0.25);
+                      g.beginFill(secondary, hitAlpha * 0.75);
+                      g.drawCircle(px, py, Math.max(1.4, 3.2 * hitAlpha));
+                      g.endFill();
+                    }
                   }
                   const edgeX = -ux * tileSize * 0.12;
                   const edgeY = -uy * tileSize * 0.1;
