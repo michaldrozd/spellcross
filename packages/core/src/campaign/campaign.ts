@@ -732,7 +732,7 @@ export function startBattleForTerritory(
   return activeBattle;
 }
 
-const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattle): boolean => {
+export const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattle): boolean => {
   switch (objective.kind) {
     case 'eliminate': {
       const remaining = Array.from(battle.state.sides.otherSide.units.values()).filter(

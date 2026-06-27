@@ -441,6 +441,54 @@ body {
   color: #9fc4cc;
 }
 
+.deploy-banner {
+  position: absolute;
+  bottom: 4.2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 48;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.18rem;
+  max-width: min(440px, calc(100vw - 2rem));
+  padding: 0.5rem 1rem;
+  text-align: center;
+  border: 1px solid rgba(79, 208, 192, 0.6);
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(90deg, rgba(79, 208, 192, 0.06) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, rgba(12, 32, 30, 0.92), rgba(5, 11, 10, 0.94));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  color: #cdeae4;
+  font-family: "Courier New", monospace;
+  pointer-events: none;
+  animation: deployBannerPulse 2.4s ease-in-out infinite;
+}
+
+.deploy-banner strong {
+  font-size: 0.8rem;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #8ff0e2;
+}
+
+.deploy-banner span {
+  font-size: 0.7rem;
+  line-height: 1.3;
+  color: #a9c8c2;
+}
+
+.deploy-banner .deploy-count {
+  font-size: 0.64rem;
+  color: #6fa39a;
+}
+
+@keyframes deployBannerPulse {
+  0%, 100% { border-color: rgba(79, 208, 192, 0.42); }
+  50% { border-color: rgba(143, 240, 226, 0.85); }
+}
+
 .risky-move-backdrop {
   position: absolute;
   inset: 0;
@@ -2736,6 +2784,135 @@ header.app-header {
   color: #b8c0ad;
   font-family: "Courier New", monospace;
   font-size: 0.78rem;
+}
+
+.objective-hud {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  max-width: 360px;
+  background: rgba(10, 14, 12, 0.7);
+  border: 1px solid var(--panel-border);
+  border-left: 2px solid var(--accent);
+  border-radius: 3px;
+  font-family: "Courier New", monospace;
+}
+
+.objective-hud h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.66rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.objective-hud ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.objective-hud li {
+  display: grid;
+  grid-template-columns: 0.9rem 1fr auto;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  color: #c6cdbb;
+}
+
+.objective-hud li.met { color: #8ee06a; }
+.objective-hud li.failed { color: #e0604a; }
+
+.objective-hud .obj-dot {
+  text-align: center;
+  opacity: 0.9;
+}
+
+.objective-hud .obj-status {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.objective-hud li.met .obj-status { color: #79b85e; }
+.objective-hud li.failed .obj-status { color: #c46a58; }
+
+.gameover-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 4, 0.92);
+  backdrop-filter: blur(2px);
+}
+
+.gameover-panel {
+  min-width: 420px;
+  max-width: 560px;
+  padding: 2rem 2.4rem;
+  text-align: center;
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  font-family: "Courier New", monospace;
+  color: var(--text);
+}
+
+.gameover-panel.victory {
+  border-color: var(--accent);
+  box-shadow: 0 0 38px rgba(244, 197, 32, 0.18);
+}
+
+.gameover-panel.defeat {
+  border-color: var(--danger);
+  box-shadow: 0 0 38px rgba(196, 48, 48, 0.18);
+}
+
+.gameover-panel h1 {
+  margin: 0;
+  font-size: 2.5rem;
+  letter-spacing: 3px;
+}
+
+.gameover-panel.victory h1 { color: var(--accent-glow); }
+.gameover-panel.defeat h1 { color: #e0604a; }
+
+.gameover-flavor {
+  margin: 0.9rem 0 1.4rem;
+  line-height: 1.55;
+  font-size: 0.86rem;
+  color: var(--text-dim);
+}
+
+.gameover-summary {
+  margin: 0 0 1.6rem;
+  padding: 0.9rem 0;
+  border-top: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--panel-border);
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem 1.4rem;
+}
+
+.gameover-stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+}
+
+.gameover-stat dt { color: var(--text-dim); }
+.gameover-stat dd { margin: 0; color: var(--text); font-weight: 600; }
+
+.gameover-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
 }
 
 .battle-controls {

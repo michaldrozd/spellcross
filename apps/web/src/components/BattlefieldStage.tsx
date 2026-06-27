@@ -212,6 +212,7 @@ export interface BattlefieldStageProps {
   showAttackOverlay?: boolean;
   rangeOverlayCoords?: Set<string>;
   objectiveCoords?: HexCoordinate[];
+  startZoneCoords?: HexCoordinate[];
   attackEffects?: AttackEffect[];
   movingUnit?: MovingUnit | null;
 }
@@ -1318,6 +1319,7 @@ export function BattlefieldStage({
   showAttackOverlay,
   rangeOverlayCoords,
   objectiveCoords = [],
+  startZoneCoords = [],
   attackEffects = [],
   movingUnit
 }: BattlefieldStageProps) {
@@ -4317,6 +4319,35 @@ export function BattlefieldStage({
     }).filter(Boolean) as JSX.Element[];
   }, [objectiveCoords, map.width, exploredTiles, visibleTiles, now, toScreen, topGeomFor]);
 
+  // Deployment start zone: a cool pulsing tint so "click a glowing tile" is literally true.
+  const startZoneOverlays = useMemo(() => {
+    if (startZoneCoords.length === 0) return [];
+    const pulse = (Math.sin(now / 360) + 1) / 2;
+    return startZoneCoords.map((coord, index) => {
+      const pos = toScreen(coord);
+      const geom = topGeomFor(coord.q, coord.r);
+      const y = pos.y - geom.avgHeight * ELEV_Y_OFFSET;
+      return (
+        <Graphics
+          key={`startzone-${coord.q}-${coord.r}-${index}`}
+          x={pos.x}
+          y={y}
+          draw={(g) => {
+            g.clear();
+            const ring = geom.inset(0.88);
+            g.beginFill(0x4fd0c0, 0.12 + pulse * 0.07);
+            drawPoly(g as PixiGraphics, ring);
+            g.endFill();
+            g.lineStyle(2.4, 0x06120f, 0.42);
+            drawPoly(g as PixiGraphics, ring);
+            g.lineStyle(1.3, 0x8ff0e2, 0.5 + pulse * 0.3);
+            drawPoly(g as PixiGraphics, ring);
+          }}
+        />
+      );
+    });
+  }, [startZoneCoords, now, toScreen, topGeomFor]);
+
 
   const units = useMemo(() => {
     let selectedEmbarkedCarrierId: string | undefined;
@@ -6297,6 +6328,7 @@ export function BattlefieldStage({
       {attackRangeOverlays}
       {plannedHighlights}
       {objectiveOverlays}
+      {startZoneOverlays}
     </>
   );
 
@@ -6353,22 +6385,33 @@ export function BattlefieldStage({
       />
 
 
-      {/* Help toggle button (fallback to keyboard) */}
+      {/* Minimap + help toggles (top-right; mirror the keyboard shortcuts for discoverability) */}
+      <button data-testid="minimap-toggle" onClick={() => setMinimapVisible((v) => !v)}
+        style={{ position: 'absolute', top: 8, right: 42, height: 28, padding: '0 9px', borderRadius: 4, border: '1px solid #2a3b55', background: minimapVisible ? '#1d3a57' : '#112238', color: '#e6eefc', cursor: 'pointer', fontSize: 12 }}
+        title="Toggle minimap (Tab)"
+      >Map</button>
       <button data-testid="keyboard-help-toggle" onClick={() => setHelpVisible((v) => !v)}
-        style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 4, border: '1px solid #2a3b55', background: '#112238', color: '#e6eefc', cursor: 'pointer' }}
+        style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 4, border: '1px solid #2a3b55', background: helpVisible ? '#1d3a57' : '#112238', color: '#e6eefc', cursor: 'pointer' }}
         title="Toggle help (H / F1 / ?)"
       >?</button>
 
       {helpVisible && (
-        <div data-testid="keyboard-help" style={{ position: 'absolute', top: 40, right: 8, background: 'rgba(11,26,43,0.9)', color: '#fefefe', padding: '8px 10px', borderRadius: 6, fontSize: 12, lineHeight: 1.4, maxWidth: 260 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6 }}>Hotkeys</div>
+        <div data-testid="keyboard-help" style={{ position: 'absolute', top: 40, right: 8, background: 'rgba(11,26,43,0.94)', color: '#fefefe', padding: '10px 12px', borderRadius: 6, fontSize: 12, lineHeight: 1.45, maxWidth: 282 }}>
+          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>How to play</div>
+          <ul style={{ margin: '0 0 8px', paddingLeft: 16 }}>
+            <li>Click a unit to select it</li>
+            <li>Click a highlighted tile to move</li>
+            <li>Click an enemy to attack it</li>
+            <li>Overwatch holds fire until an enemy moves</li>
+            <li>Start Battle ends deployment</li>
+            <li>End Turn, or Auto Turn to let the AI play</li>
+          </ul>
+          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>Hotkeys</div>
           <ul style={{ margin: 0, paddingLeft: 16 }}>
-            <li>E - End Turn</li>
-            <li>A - Advance</li>
-            <li>F - Fire</li>
-
-            <li>Tab - Toggle Minimap</li>
-            <li>H / F1 / ? - Toggle Help</li>
+            <li>Arrow keys — Pan camera</li>
+            <li>Mouse wheel — Zoom</li>
+            <li>Tab — Toggle minimap</li>
+            <li>H / F1 / ? — Toggle help</li>
           </ul>
         </div>
       )}

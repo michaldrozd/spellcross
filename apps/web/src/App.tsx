@@ -14,6 +14,7 @@ import { ToastContainer, showToast } from './components/Toast.js';
 import { OverwatchButton } from './components/OverwatchButton.js';
 import { SupplyButton } from './components/SupplyButton.js';
 import { HealButton } from './components/HealButton.js';
+import { ObjectiveHud } from './components/ObjectiveHud.js';
 import {
   applyBattleOutcome,
   calculateHitChance,
@@ -1999,6 +2000,7 @@ const BattleView: React.FC<{
           cameraMode="follow"
           rangeOverlayCoords={showRanges ? globalRangeTiles : undefined}
           objectiveCoords={battle.scenario.objectives.map((objective) => objective.target).filter((coord): coord is HexCoordinate => Boolean(coord))}
+          startZoneCoords={deployMode ? battle.startTiles : undefined}
           attackEffects={attackEffects}
           movingUnit={movingUnit}
         />
@@ -2009,6 +2011,15 @@ const BattleView: React.FC<{
           <div className={`battle-phase-notice ${phaseNotice.tone}`}>
             <strong>{phaseNotice.title}</strong>
             <span>{phaseNotice.detail}</span>
+          </div>
+        ) : null}
+        {deployMode ? (
+          <div className="deploy-banner">
+            <strong>DEPLOYMENT</strong>
+            <span>Click a unit, then a glowing tile to reposition it. Press Start Battle when ready.</span>
+            <span className="deploy-count">
+              {Array.from(battle.state.sides.alliance.units.values()).filter((u) => u.stance !== 'destroyed').length} units ready
+            </span>
           </div>
         ) : null}
         {riskyMove ? (
@@ -2050,6 +2061,7 @@ const BattleView: React.FC<{
           <div className="mission-info">
             <h2>{battle.scenario.name}</h2>
             <p className="muted">{battle.scenario.brief}</p>
+            {!deployMode ? <ObjectiveHud battle={battle} /> : null}
           </div>
           <div className="battle-controls">
             <button className={showRanges ? 'active' : undefined} onClick={() => setShowRanges((v) => !v)}>{showRanges ? 'Hide Ranges' : 'Show Ranges'}</button>
@@ -2616,21 +2628,36 @@ export function App() {
     <>
       <ToastContainer />
       {campaign.outcome ? (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(2,6,4,0.92)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 18, fontFamily: 'monospace', color: '#dfe7df' }}>
-          <h1 style={{ fontSize: 44, letterSpacing: 2, color: campaign.outcome === 'victory' ? '#8ee06a' : '#e0604a', margin: 0 }}>
-            {campaign.outcome === 'victory' ? 'CAMPAIGN WON' : 'CAMPAIGN LOST'}
-          </h1>
-          <p style={{ maxWidth: 520, textAlign: 'center', opacity: 0.85, lineHeight: 1.5 }}>
-            {campaign.outcome === 'victory'
-              ? 'Every sector is secured — the invasion corridor is shattered. The front holds.'
-              : 'The war clock ran out and the front collapsed. The invasion has overrun the continent.'}
-          </p>
-          <p style={{ opacity: 0.6, fontSize: 13 }}>
-            Sectors cleared: {campaign.territories.filter((t) => t.status === 'cleared').length} · Turn {campaign.turn}
-          </p>
-          <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
-            <button className="primary-btn" onClick={() => { reset(); }}>New Campaign</button>
-            <button className="secondary-btn" onClick={() => setMode('menu')}>Main Menu</button>
+        <div className="gameover-overlay">
+          <div className={`gameover-panel ${campaign.outcome}`}>
+            <h1>{campaign.outcome === 'victory' ? 'CAMPAIGN WON' : 'CAMPAIGN LOST'}</h1>
+            <p className="gameover-flavor">
+              {campaign.outcome === 'victory'
+                ? 'Every sector is secured — the invasion corridor is shattered. The front holds.'
+                : 'The war clock ran out and the front collapsed. The invasion has overrun the continent.'}
+            </p>
+            <dl className="gameover-summary">
+              <div className="gameover-stat">
+                <dt>Sectors cleared</dt>
+                <dd>{campaign.territories.filter((t) => t.status === 'cleared').length}/{campaign.territories.length}</dd>
+              </div>
+              <div className="gameover-stat">
+                <dt>Turns taken</dt>
+                <dd>{campaign.turn}</dd>
+              </div>
+              <div className="gameover-stat">
+                <dt>Units surviving</dt>
+                <dd>{campaign.army.length}{campaign.reserves.length ? ` (+${campaign.reserves.length} reserve)` : ''}</dd>
+              </div>
+              <div className="gameover-stat">
+                <dt>Tech researched</dt>
+                <dd>{campaign.research.completed.size}</dd>
+              </div>
+            </dl>
+            <div className="gameover-actions">
+              <button className="primary-btn" onClick={() => { reset(); }}>New Campaign</button>
+              <button className="secondary-btn" onClick={() => setMode('menu')}>Main Menu</button>
+            </div>
           </div>
         </div>
       ) : null}

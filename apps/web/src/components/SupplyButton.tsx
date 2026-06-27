@@ -12,8 +12,9 @@ interface Props {
 export const SupplyButton: React.FC<Props> = ({ unit, hasTarget, onSupply }) => {
   if (!unit || unit.unitType !== 'support' || (unit.stats.ammoCapacity ?? 0) !== 0) return null;
   const disabled = !hasTarget || unit.actionPoints < 2;
+  const reason = unit.actionPoints < 2 ? 'Needs 2 AP' : !hasTarget ? 'No adjacent ally' : '';
   return (
-    <button disabled={disabled} onClick={onSupply} title="Spend 2 AP to refill an adjacent unit's ammo">
+    <button disabled={disabled} onClick={onSupply} title={reason || "Spend 2 AP to refill an adjacent unit's ammo"}>
       Resupply
     </button>
   );

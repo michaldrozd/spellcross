@@ -12,8 +12,9 @@ interface Props {
 export const HealButton: React.FC<Props> = ({ unit, hasTarget, onHeal }) => {
   if (!unit || unit.unitType !== 'support' || !unit.definitionId.includes('medic')) return null;
   const disabled = !hasTarget || unit.actionPoints < 2;
+  const reason = unit.actionPoints < 2 ? 'Needs 2 AP' : !hasTarget ? 'No wounded ally adjacent' : '';
   return (
-    <button disabled={disabled} onClick={onHeal} title="Spend 2 AP to heal an adjacent wounded unit">
+    <button disabled={disabled} onClick={onHeal} title={reason || 'Spend 2 AP to heal an adjacent wounded unit'}>
       Treat
     </button>
   );
