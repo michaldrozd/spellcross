@@ -3,11 +3,19 @@
  * Handles all sound effects and music with rich procedural audio
  */
 
-type SoundType = 'gunshot' | 'explosion' | 'tankMove' | 'infantry' | 'hit' | 'death' | 'select' | 'error' | 'victory' | 'defeat' | 'move' | 'turnStart' | 'magic';
+type SoundType =
+  | 'gunshot' | 'explosion' | 'tankMove' | 'infantry' | 'hit' | 'death' | 'select' | 'error'
+  | 'victory' | 'defeat' | 'move' | 'turnStart' | 'magic'
+  | 'reaction' | 'noAmmo' | 'lowHealth' | 'objective';
+
+interface PlayOpts {
+  intensity?: number;                         // normalized damage [0,1] — scales impact weight
+  material?: 'metal' | 'flesh' | 'undead';    // timbre of the struck target
+  pan?: number;                               // stereo position [-1,1]
+}
 
 class AudioManagerClass {
   private sounds: Map<SoundType, HTMLAudioElement[]> = new Map();
-  private musicPlayer: HTMLAudioElement | null = null;
   private masterVolume: number = 0.7;
   private sfxVolume: number = 0.8;
   private musicVolume: number = 0.5;
@@ -17,6 +25,20 @@ class AudioManagerClass {
   // synthesis; missing ones fall back to generateSound so the game always has audio.
   private fileBuffers: Map<SoundType, AudioBuffer> = new Map();
   private filesProbed = false;
+
+  // Final safety-net limiter every SFX routes through, so AI-turn storms can't clip.
+  private masterBus: { ctx: AudioContext; node: AudioNode } | null = null;
+  // Per-type loudness trim so loud cues (explosion/death) don't dominate quiet ones.
+  private static TYPE_GAIN: Record<SoundType, number> = {
+    gunshot: 0.55, explosion: 0.6, tankMove: 0.7, infantry: 0.6, hit: 0.7, death: 0.7,
+    select: 0.55, error: 0.7, victory: 0.9, defeat: 0.9, move: 0.8, turnStart: 0.6, magic: 0.8,
+    reaction: 0.6, noAmmo: 0.5, lowHealth: 0.6, objective: 0.7
+  };
+
+  // Procedural ambience bed (drone + wind), separate from the SFX limiter bus.
+  private ambienceBus: GainNode | null = null;
+  private ambienceNodes: AudioScheduledSourceNode[] = [];
+  private ambienceTheme: 'battle' | 'hq' | null = null;
 
   constructor() {
     // Initialize audio context on first user interaction
@@ -45,6 +67,36 @@ class AudioManagerClass {
     return this.audioContext;
   }
 
+  // Lazily-built master limiter. Rebuilt if the context was ever replaced.
+  private getMaster(): AudioNode {
+    const ctx = this.getContext();
+    if (this.masterBus && this.masterBus.ctx === ctx) return this.masterBus.node;
+    const comp = ctx.createDynamicsCompressor();
+    const now = ctx.currentTime;
+    comp.threshold.setValueAtTime(-3, now);
+    comp.knee.setValueAtTime(6, now);
+    comp.ratio.setValueAtTime(12, now);
+    comp.attack.setValueAtTime(0.002, now);
+    comp.release.setValueAtTime(0.12, now);
+    const gain = ctx.createGain();
+    gain.gain.value = 0.9; // leave the limiter a little headroom
+    comp.connect(gain);
+    gain.connect(ctx.destination);
+    this.masterBus = { ctx, node: comp };
+    return comp;
+  }
+
+  // Output node for a sound: the master bus, optionally behind a stereo panner.
+  private outNode(pan?: number): AudioNode {
+    const master = this.getMaster();
+    if (pan === undefined || pan === 0) return master;
+    const ctx = this.getContext();
+    const panner = ctx.createStereoPanner();
+    panner.pan.value = Math.max(-1, Math.min(1, pan));
+    panner.connect(master);
+    return panner;
+  }
+
   // Create white noise buffer
   private createNoiseBuffer(duration: number): AudioBuffer {
     const ctx = this.getContext();
@@ -57,7 +109,7 @@ class AudioManagerClass {
   }
 
   // Play noise with envelope
-  private playNoise(duration: number, volume: number, filterFreq: number = 2000, decay: number = 0.5): void {
+  private playNoise(duration: number, volume: number, filterFreq: number = 2000, decay: number = 0.5, dest?: AudioNode): void {
     const ctx = this.getContext();
     const noise = ctx.createBufferSource();
     noise.buffer = this.createNoiseBuffer(duration);
@@ -73,15 +125,16 @@ class AudioManagerClass {
 
     noise.connect(filter);
     filter.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(dest ?? this.getMaster());
     noise.start();
   }
 
   // Generate rich procedural sounds using Web Audio API
-  private generateSound(type: SoundType): void {
+  private generateSound(type: SoundType, opts?: PlayOpts): void {
     const ctx = this.getContext();
-    const volume = this.masterVolume * this.sfxVolume;
+    const volume = this.masterVolume * this.sfxVolume * (AudioManagerClass.TYPE_GAIN[type] ?? 1);
     const t = ctx.currentTime;
+    const out = this.outNode(opts?.pan);
 
     switch (type) {
       case 'gunshot': {
@@ -95,7 +148,7 @@ class AudioManagerClass {
         clickGain.gain.setValueAtTime(volume * 0.4, t);
         clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
         click.connect(clickGain);
-        clickGain.connect(ctx.destination);
+        clickGain.connect(out);
         click.start(t);
         click.stop(t + 0.03);
 
@@ -108,17 +161,17 @@ class AudioManagerClass {
         bodyGain.gain.setValueAtTime(volume * 0.5, t);
         bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
         body.connect(bodyGain);
-        bodyGain.connect(ctx.destination);
+        bodyGain.connect(out);
         body.start(t);
         body.stop(t + 0.12);
 
         // 3. Noise burst
-        this.playNoise(0.08, volume * 0.35, 4000, 0.3);
+        this.playNoise(0.08, volume * 0.35, 4000, 0.3, out);
         break;
       }
 
       case 'explosion': {
-        // Multi-layered explosion
+        const intensity = Math.max(0, Math.min(1, opts?.intensity ?? 0.6));
         // 1. Initial boom
         const boom = ctx.createOscillator();
         const boomGain = ctx.createGain();
@@ -128,7 +181,7 @@ class AudioManagerClass {
         boomGain.gain.setValueAtTime(volume * 0.8, t);
         boomGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
         boom.connect(boomGain);
-        boomGain.connect(ctx.destination);
+        boomGain.connect(out);
         boom.start(t);
         boom.stop(t + 0.5);
 
@@ -141,12 +194,25 @@ class AudioManagerClass {
         crackleGain.gain.setValueAtTime(volume * 0.4, t + 0.02);
         crackleGain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
         crackle.connect(crackleGain);
-        crackleGain.connect(ctx.destination);
+        crackleGain.connect(out);
         crackle.start(t);
         crackle.stop(t + 0.35);
 
-        // 3. Heavy noise
-        this.playNoise(0.6, volume * 0.6, 3000, 0.7);
+        // 3. Deep sub thump that grows with the blast
+        const sub = ctx.createOscillator();
+        const subGain = ctx.createGain();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(55, t);
+        sub.frequency.exponentialRampToValueAtTime(30, t + 0.4);
+        subGain.gain.setValueAtTime(volume * (0.25 + 0.2 * intensity), t);
+        subGain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
+        sub.connect(subGain);
+        subGain.connect(out);
+        sub.start(t);
+        sub.stop(t + 0.45);
+
+        // 4. Heavy noise
+        this.playNoise(0.6, volume * 0.6, 3000, 0.7, out);
         break;
       }
 
@@ -162,12 +228,12 @@ class AudioManagerClass {
         engineGain.gain.linearRampToValueAtTime(volume * 0.3, t + 0.15);
         engineGain.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
         engine.connect(engineGain);
-        engineGain.connect(ctx.destination);
+        engineGain.connect(out);
         engine.start(t);
         engine.stop(t + 0.4);
 
         // Track clatter
-        this.playNoise(0.3, volume * 0.15, 800, 0.8);
+        this.playNoise(0.3, volume * 0.15, 800, 0.8, out);
         break;
       }
 
@@ -181,11 +247,11 @@ class AudioManagerClass {
         stepGain.gain.setValueAtTime(volume * 0.2, t);
         stepGain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
         step.connect(stepGain);
-        stepGain.connect(ctx.destination);
+        stepGain.connect(out);
         step.start(t);
         step.stop(t + 0.1);
 
-        this.playNoise(0.06, volume * 0.1, 600, 0.5);
+        this.playNoise(0.06, volume * 0.1, 600, 0.5, out);
         break;
       }
 
@@ -199,7 +265,7 @@ class AudioManagerClass {
         blip1Gain.gain.setValueAtTime(volume * 0.25, t);
         blip1Gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
         blip1.connect(blip1Gain);
-        blip1Gain.connect(ctx.destination);
+        blip1Gain.connect(out);
         blip1.start(t);
         blip1.stop(t + 0.1);
 
@@ -211,7 +277,7 @@ class AudioManagerClass {
         blip2Gain.gain.setValueAtTime(volume * 0.1, t);
         blip2Gain.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
         blip2.connect(blip2Gain);
-        blip2Gain.connect(ctx.destination);
+        blip2Gain.connect(out);
         blip2.start(t);
         blip2.stop(t + 0.08);
         break;
@@ -228,7 +294,7 @@ class AudioManagerClass {
         buzz1Gain.gain.setValueAtTime(volume * 0.25, t + 0.12);
         buzz1Gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
         buzz1.connect(buzz1Gain);
-        buzz1Gain.connect(ctx.destination);
+        buzz1Gain.connect(out);
         buzz1.start(t);
         buzz1.stop(t + 0.22);
 
@@ -241,32 +307,79 @@ class AudioManagerClass {
         buzz2Gain.gain.setValueAtTime(volume * 0.15, t + 0.12);
         buzz2Gain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
         buzz2.connect(buzz2Gain);
-        buzz2Gain.connect(ctx.destination);
+        buzz2Gain.connect(out);
         buzz2.start(t);
         buzz2.stop(t + 0.22);
         break;
       }
 
       case 'hit': {
-        // Impact sound
+        // Weight scales with damage; timbre with the struck material.
+        const intensity = Math.max(0, Math.min(1, opts?.intensity ?? 0.4));
+        const material = opts?.material ?? 'metal';
+        const startF = 520 - 220 * intensity;          // light hit pings high, heavy hit thuds low
+        const bodyEnd = t + 0.09 + 0.11 * intensity;
         const impact = ctx.createOscillator();
         const impactGain = ctx.createGain();
-        impact.type = 'triangle';
-        impact.frequency.setValueAtTime(400, t);
-        impact.frequency.exponentialRampToValueAtTime(80, t + 0.12);
-        impactGain.gain.setValueAtTime(volume * 0.5, t);
-        impactGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+        impact.type = material === 'flesh' ? 'sine' : 'triangle';
+        impact.frequency.setValueAtTime(startF, t);
+        impact.frequency.exponentialRampToValueAtTime(80, bodyEnd);
+        impactGain.gain.setValueAtTime(volume * (0.3 + 0.4 * intensity), t);
+        impactGain.gain.exponentialRampToValueAtTime(0.001, bodyEnd + 0.03);
         impact.connect(impactGain);
-        impactGain.connect(ctx.destination);
+        impactGain.connect(out);
         impact.start(t);
-        impact.stop(t + 0.15);
+        impact.stop(bodyEnd + 0.05);
 
-        this.playNoise(0.1, volume * 0.25, 2500, 0.4);
+        const noiseLp = material === 'flesh' ? 1200 : 1800 + 1400 * (1 - intensity);
+        this.playNoise(0.1, volume * (0.18 + 0.27 * intensity), noiseLp, 0.4, out);
+
+        if (intensity > 0.45) {
+          const sub = ctx.createOscillator();
+          const sg = ctx.createGain();
+          sub.type = 'sine';
+          sub.frequency.setValueAtTime(70, t);
+          sub.frequency.exponentialRampToValueAtTime(40, t + 0.18);
+          sg.gain.setValueAtTime(volume * 0.35 * intensity, t);
+          sg.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+          sub.connect(sg);
+          sg.connect(out);
+          sub.start(t);
+          sub.stop(t + 0.22);
+        }
+
+        if (material === 'metal') {
+          const n = this.noiseSource(0.04);
+          const bp = ctx.createBiquadFilter();
+          bp.type = 'bandpass';
+          bp.frequency.value = 2200;
+          bp.Q.value = 6;
+          const g = ctx.createGain();
+          g.gain.setValueAtTime(volume * 0.2, t);
+          g.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+          n.connect(bp);
+          bp.connect(g);
+          g.connect(out);
+          n.start(t);
+          n.stop(t + 0.045);
+        } else if (material === 'undead') {
+          const ring = ctx.createOscillator();
+          const rg = ctx.createGain();
+          ring.type = 'triangle';
+          ring.frequency.setValueAtTime(startF * 1.41, t); // tritone — dissonant ring
+          ring.frequency.exponentialRampToValueAtTime(120, t + 0.18);
+          rg.gain.setValueAtTime(volume * 0.18, t);
+          rg.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+          ring.connect(rg);
+          rg.connect(out);
+          ring.start(t);
+          ring.stop(t + 0.22);
+        }
         break;
       }
 
       case 'death': {
-        // Dramatic death sound
+        const material = opts?.material ?? 'flesh';
         const fall = ctx.createOscillator();
         const fallGain = ctx.createGain();
         fall.type = 'sawtooth';
@@ -275,7 +388,7 @@ class AudioManagerClass {
         fallGain.gain.setValueAtTime(volume * 0.4, t);
         fallGain.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
         fall.connect(fallGain);
-        fallGain.connect(ctx.destination);
+        fallGain.connect(out);
         fall.start(t);
         fall.stop(t + 0.5);
 
@@ -289,9 +402,25 @@ class AudioManagerClass {
         thudGain.gain.setValueAtTime(volume * 0.4, t + 0.2);
         thudGain.gain.exponentialRampToValueAtTime(0.001, t + 0.45);
         thud.connect(thudGain);
-        thudGain.connect(ctx.destination);
+        thudGain.connect(out);
         thud.start(t);
         thud.stop(t + 0.45);
+
+        if (material === 'metal') {
+          // a vehicle brewing up: deeper, longer body thump
+          const sub = ctx.createOscillator();
+          const sg = ctx.createGain();
+          sub.type = 'sine';
+          sub.frequency.setValueAtTime(55, t + 0.05);
+          sub.frequency.exponentialRampToValueAtTime(28, t + 0.45);
+          sg.gain.setValueAtTime(0, t);
+          sg.gain.setValueAtTime(volume * 0.45, t + 0.05);
+          sg.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+          sub.connect(sg);
+          sg.connect(out);
+          sub.start(t);
+          sub.stop(t + 0.52);
+        }
         break;
       }
 
@@ -307,7 +436,7 @@ class AudioManagerClass {
           gain.gain.setValueAtTime(volume * 0.3, t + i * 0.12);
           gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.4);
           osc.connect(gain);
-          gain.connect(ctx.destination);
+          gain.connect(out);
           osc.start(t + i * 0.12);
           osc.stop(t + i * 0.12 + 0.4);
         });
@@ -326,7 +455,7 @@ class AudioManagerClass {
           gain.gain.setValueAtTime(volume * 0.25, t + i * 0.2);
           gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.2 + 0.5);
           osc.connect(gain);
-          gain.connect(ctx.destination);
+          gain.connect(out);
           osc.start(t + i * 0.2);
           osc.stop(t + i * 0.2 + 0.5);
         });
@@ -342,7 +471,7 @@ class AudioManagerClass {
         chimeGain.gain.setValueAtTime(volume * 0.2, t);
         chimeGain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
         chime.connect(chimeGain);
-        chimeGain.connect(ctx.destination);
+        chimeGain.connect(out);
         chime.start(t);
         chime.stop(t + 0.3);
 
@@ -353,7 +482,7 @@ class AudioManagerClass {
         chime2Gain.gain.setValueAtTime(volume * 0.15, t + 0.08);
         chime2Gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
         chime2.connect(chime2Gain);
-        chime2Gain.connect(ctx.destination);
+        chime2Gain.connect(out);
         chime2.start(t + 0.08);
         chime2.stop(t + 0.35);
         break;
@@ -371,10 +500,79 @@ class AudioManagerClass {
           shimmerGain.gain.setValueAtTime(volume * 0.12, t + i * 0.05);
           shimmerGain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.05 + 0.25);
           shimmer.connect(shimmerGain);
-          shimmerGain.connect(ctx.destination);
+          shimmerGain.connect(out);
           shimmer.start(t + i * 0.05);
           shimmer.stop(t + i * 0.05 + 0.25);
         }
+        break;
+      }
+
+      case 'reaction': {
+        // Overwatch snap — a sharp click that precedes the muzzle/hit so the reveal reads.
+        const click = ctx.createOscillator();
+        const cg = ctx.createGain();
+        click.type = 'square';
+        click.frequency.setValueAtTime(1200, t);
+        click.frequency.exponentialRampToValueAtTime(300, t + 0.05);
+        cg.gain.setValueAtTime(volume * 0.4, t);
+        cg.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+        click.connect(cg);
+        cg.connect(out);
+        click.start(t);
+        click.stop(t + 0.06);
+        this.playNoise(0.05, volume * 0.5, 6000, 0.4, out);
+        break;
+      }
+
+      case 'noAmmo': {
+        // Dry firing-pin click — the unit is out of ammo.
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = 'square';
+        o.frequency.setValueAtTime(800, t);
+        o.frequency.exponentialRampToValueAtTime(400, t + 0.025);
+        g.gain.setValueAtTime(volume * 0.22, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
+        o.connect(g);
+        g.connect(out);
+        o.start(t);
+        o.stop(t + 0.035);
+        break;
+      }
+
+      case 'lowHealth': {
+        // Two slow low pulses — a unit just dropped into critical health.
+        [0, 0.18].forEach((dt) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = 'sine';
+          o.frequency.setValueAtTime(150, t + dt);
+          g.gain.setValueAtTime(0, t + dt);
+          g.gain.linearRampToValueAtTime(volume * 0.3, t + dt + 0.02);
+          g.gain.exponentialRampToValueAtTime(0.001, t + dt + 0.14);
+          o.connect(g);
+          g.connect(out);
+          o.start(t + dt);
+          o.stop(t + dt + 0.16);
+        });
+        break;
+      }
+
+      case 'objective': {
+        // Ascending two-note chime — an objective advanced.
+        [659, 988].forEach((freq, i) => {
+          const o = ctx.createOscillator();
+          const g = ctx.createGain();
+          o.type = 'sine';
+          o.frequency.setValueAtTime(freq, t + i * 0.12);
+          g.gain.setValueAtTime(0, t + i * 0.12);
+          g.gain.setValueAtTime(volume * 0.26, t + i * 0.12);
+          g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.12 + 0.3);
+          o.connect(g);
+          g.connect(out);
+          o.start(t + i * 0.12);
+          o.stop(t + i * 0.12 + 0.32);
+        });
         break;
       }
 
@@ -386,7 +584,7 @@ class AudioManagerClass {
         gain.gain.setValueAtTime(volume * 0.2, t);
         gain.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
         osc.connect(gain);
-        gain.connect(ctx.destination);
+        gain.connect(out);
         osc.start(t);
         osc.stop(t + 0.1);
       }
@@ -461,7 +659,7 @@ class AudioManagerClass {
       comp.ratio.setValueAtTime(4, t);
       comp.attack.setValueAtTime(0.004, t);
       comp.release.setValueAtTime(0.15, t);
-      comp.connect(ctx.destination);
+      comp.connect(this.getMaster());
       const fade = ctx.createGain();
       fade.gain.setValueAtTime(0.0001, t);
       fade.gain.exponentialRampToValueAtTime(1, t + 0.07);
@@ -573,11 +771,113 @@ class AudioManagerClass {
     }
   }
 
+  // Procedural ambience bed: a low minor drone + gusting wind, mood-shifted by weather. Sits under
+  // the SFX so the battlefield isn't dead air between gunshots. Idempotent per theme; crossfades.
+  startAmbience(theme: 'battle' | 'hq', weather: 'clear' | 'night' | 'fog' = 'clear'): void {
+    if (!this.enabled) return;
+    if (this.ambienceTheme === theme) return;
+    this.stopAmbience();
+    try {
+      const ctx = this.getContext();
+      const t = ctx.currentTime;
+      const themeBase = theme === 'battle' ? 0.18 : 0.12;
+      const bus = ctx.createGain();
+      bus.gain.setValueAtTime(0.0001, t);
+      bus.gain.exponentialRampToValueAtTime(Math.max(0.0002, this.masterVolume * this.musicVolume * themeBase), t + 1.5);
+      bus.connect(ctx.destination);
+      this.ambienceBus = bus;
+      this.ambienceTheme = theme;
+
+      // drone: root + fifth + minor third, each a detuned pair for a slow breathing beat
+      const root = theme === 'battle' ? 55 : 73;
+      const droneLp = ctx.createBiquadFilter();
+      droneLp.type = 'lowpass';
+      droneLp.frequency.value = weather === 'night' ? 420 : 600;
+      droneLp.connect(bus);
+      const droneGain = ctx.createGain();
+      droneGain.gain.value = weather === 'night' ? 0.5 : 0.7;
+      droneGain.connect(droneLp);
+      [1, 1.5, 1.2].forEach((mult, i) => {
+        [-0.3, 0.3].forEach((detune) => {
+          const o = ctx.createOscillator();
+          o.type = i === 0 ? 'sine' : 'triangle';
+          o.frequency.value = root * mult;
+          o.detune.value = detune;
+          const g = ctx.createGain();
+          g.gain.value = (i === 0 ? 0.5 : 0.28) / 2;
+          o.connect(g); g.connect(droneGain);
+          o.start(t);
+          this.ambienceNodes.push(o);
+        });
+      });
+
+      // wind: looping noise through a slowly-gusting lowpass
+      const wind = ctx.createBufferSource();
+      wind.buffer = this.createNoiseBuffer(4);
+      wind.loop = true;
+      const windLp = ctx.createBiquadFilter();
+      windLp.type = 'lowpass';
+      windLp.frequency.value = 600;
+      const gust = ctx.createOscillator();
+      gust.type = 'sine';
+      gust.frequency.value = 0.07;
+      const gustDepth = ctx.createGain();
+      gustDepth.gain.value = 300;
+      gust.connect(gustDepth); gustDepth.connect(windLp.frequency);
+      const windGain = ctx.createGain();
+      windGain.gain.value = weather === 'fog' ? 0.5 : weather === 'night' ? 0.32 : 0.2;
+      wind.connect(windLp); windLp.connect(windGain); windGain.connect(bus);
+      wind.start(t); gust.start(t);
+      this.ambienceNodes.push(wind, gust);
+    } catch (e) {
+      console.warn('Ambience failed:', e);
+    }
+  }
+
+  stopAmbience(): void {
+    const bus = this.ambienceBus;
+    const nodes = this.ambienceNodes;
+    this.ambienceBus = null;
+    this.ambienceNodes = [];
+    this.ambienceTheme = null;
+    if (!bus) return;
+    try {
+      const ctx = this.getContext();
+      bus.gain.cancelScheduledValues(ctx.currentTime);
+      bus.gain.setValueAtTime(Math.max(0.0002, bus.gain.value), ctx.currentTime);
+      bus.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1);
+      window.setTimeout(() => {
+        nodes.forEach((n) => { try { n.stop(); } catch { /* already stopped */ } });
+        try { bus.disconnect(); } catch { /* already gone */ }
+      }, 1100);
+    } catch {
+      nodes.forEach((n) => { try { n.stop(); } catch { /* ignore */ } });
+    }
+  }
+
+  // Dip the ambience bed briefly so a victory/defeat sting cuts through cleanly.
+  duckAmbience(): void {
+    const bus = this.ambienceBus;
+    if (!bus) return;
+    try {
+      const ctx = this.getContext();
+      const now = ctx.currentTime;
+      const target = Math.max(0.0002, this.masterVolume * this.musicVolume * (this.ambienceTheme === 'battle' ? 0.18 : 0.12));
+      bus.gain.cancelScheduledValues(now);
+      bus.gain.setValueAtTime(Math.max(0.0002, bus.gain.value), now);
+      bus.gain.exponentialRampToValueAtTime(Math.max(0.0001, target * 0.35), now + 0.2);
+      bus.gain.exponentialRampToValueAtTime(target, now + 2.4);
+    } catch { /* ignore */ }
+  }
+
   private async probeFiles(): Promise<void> {
     if (this.filesProbed) return;
     this.filesProbed = true;
     const ctx = this.getContext();
-    const types: SoundType[] = ['gunshot', 'explosion', 'tankMove', 'infantry', 'hit', 'death', 'select', 'error', 'victory', 'defeat', 'move', 'turnStart', 'magic'];
+    const types: SoundType[] = [
+      'gunshot', 'explosion', 'tankMove', 'infantry', 'hit', 'death', 'select', 'error',
+      'victory', 'defeat', 'move', 'turnStart', 'magic', 'reaction', 'noAmmo', 'lowHealth', 'objective'
+    ];
     const exts = ['webm', 'mp3', 'ogg', 'wav'];
     await Promise.all(types.map(async (type) => {
       for (const ext of exts) {
@@ -594,10 +894,11 @@ class AudioManagerClass {
     }));
   }
 
-  private playFile(type: SoundType): boolean {
+  private playFile(type: SoundType, opts?: PlayOpts): boolean {
     const buffer = this.fileBuffers.get(type);
     if (!buffer) return false;
     const ctx = this.getContext();
+    const out = this.outNode(opts?.pan);
     // Infantry small-arms play as a rapid automatic burst (matches the visual tracer burst).
     const rounds = type === 'gunshot' ? 5 : 1;
     const gap = 0.07;
@@ -606,20 +907,20 @@ class AudioManagerClass {
       src.buffer = buffer;
       if (rounds > 1) src.playbackRate.value = 0.96 + ((k * 13) % 7) * 0.012; // tiny per-round pitch variation
       const gain = ctx.createGain();
-      gain.gain.value = this.masterVolume * this.sfxVolume * (rounds > 1 ? 0.85 : 1);
+      gain.gain.value = this.masterVolume * this.sfxVolume * (AudioManagerClass.TYPE_GAIN[type] ?? 1) * (rounds > 1 ? 0.85 : 1);
       src.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(out);
       src.start(ctx.currentTime + k * gap);
     }
     return true;
   }
 
-  play(type: SoundType): void {
+  play(type: SoundType, opts?: PlayOpts): void {
     if (!this.enabled) return;
     try {
       if (!this.filesProbed) void this.probeFiles();
-      if (this.playFile(type)) return; // real SFX file if present
-      this.generateSound(type); // otherwise procedural fallback
+      if (this.playFile(type, opts)) return; // real SFX file if present
+      this.generateSound(type, opts); // otherwise procedural fallback
     } catch (e) {
       console.warn('Audio play failed:', e);
     }
@@ -633,11 +934,15 @@ class AudioManagerClass {
     this.sfxVolume = Math.max(0, Math.min(1, vol));
   }
 
+  setMusicVolume(vol: number): void {
+    this.musicVolume = Math.max(0, Math.min(1, vol));
+  }
+
   setEnabled(enabled: boolean): void {
     this.enabled = enabled;
+    if (!enabled) this.stopAmbience();
   }
 }
 
 export const AudioManager = new AudioManagerClass();
-export type { SoundType };
-
+export type { SoundType, PlayOpts };

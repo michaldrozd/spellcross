@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import type { CampaignState } from '@spellcross/core';
 import { clearToasts } from './Toast.js';
+import { AudioManager } from '../services/AudioManager.js';
 
 interface Territory {
   id: string;
@@ -620,6 +621,12 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
       ?? territories.find((territory) => territory.status === 'locked');
     setSelectedTerritory(defaultTerritory?.id ?? null);
   }, [selectedTerritory, territories]);
+
+  // Quieter HQ ambience bed while planning between battles.
+  React.useEffect(() => {
+    AudioManager.startAmbience('hq');
+    return () => AudioManager.stopAmbience();
+  }, []);
   const activeTabStyle: React.CSSProperties = {
     background: 'rgba(255, 255, 255, 0.05)',
     borderBottomColor: 'var(--accent)',

@@ -446,6 +446,20 @@ function soundForAttackEffect(effectType: AttackEffect['type']) {
   }
 }
 
+// Timbre of the struck target: armour clangs, flesh thuds, the demonic invaders ring dissonantly.
+function impactMaterialFor(unit: UnitInstance): 'metal' | 'flesh' | 'undead' {
+  if (unit.unitType === 'vehicle' || unit.unitType === 'artillery') return 'metal';
+  const id = unit.definitionId.toLowerCase();
+  if (id.includes('ghoul') || id.includes('zombie') || id.includes('undead') || id.includes('demon') || id.includes('spawn')) return 'undead';
+  return 'flesh';
+}
+
+// Coarse stereo placement from the unit's isometric screen-x (q - r), so hits pan toward where they land.
+function impactPanFor(unit: UnitInstance, map: BattlefieldMap): number {
+  const screenX = unit.coordinate.q - unit.coordinate.r;
+  return Math.max(-1, Math.min(1, (screenX / Math.max(map.width, map.height)) * 0.7));
+}
+
 function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: BattlefieldMap, weather?: TacticalBattleState['weather']): { weapon: string; hit: number } | null {
   let choice: { weapon: string; hit: number } | null = null;
   const distance = axialDistance(attacker.coordinate, defender.coordinate);
@@ -808,6 +822,13 @@ const BattleView: React.FC<{
 
   // Movement animation state
   const [movingUnit, setMovingUnit] = useState<MovingUnit | null>(null);
+
+  // Battlefield ambience bed for as long as this view is mounted; weather sets the mood.
+  useEffect(() => {
+    AudioManager.startAmbience('battle', battle.state.weather ?? 'clear');
+    return () => AudioManager.stopAmbience();
+  }, [battle.state.weather]);
+
   const deployModeRef = useRef(deployMode);
   // Pending staged enemy-turn SFX timeouts, so they can be cancelled if the battle ends mid-stagger
   // (otherwise gunfire/explosions bleed over the victory/defeat screen).
@@ -1304,18 +1325,25 @@ const BattleView: React.FC<{
   };
 
   const resolveOutcome = () => {
+    // evaluateBattleOutcome ticks hold objectives (idempotent per round); a change means progress.
+    const holdBefore = JSON.stringify(battle.holdProgress);
     const status = evaluateBattleOutcome(battle);
+    if (status === 'ongoing' && JSON.stringify(battle.holdProgress) !== holdBefore) {
+      AudioManager.play('objective');
+    }
     if (status === 'victory' || status === 'defeat') {
       // cancel pending staged enemy SFX so gunfire/explosions don't play over the result screen
       aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
       aiSfxTimeoutsRef.current = [];
     }
     if (status === 'victory') {
+      AudioManager.duckAmbience();
       AudioManager.play('victory');
       applyBattleOutcome(campaign, bundle, 'victory');
       persist();
       onVictory();
     } else if (status === 'defeat') {
+      AudioManager.duckAmbience();
       AudioManager.play('defeat');
       applyBattleOutcome(campaign, bundle, 'defeat');
       persist();
@@ -1329,6 +1357,28 @@ const BattleView: React.FC<{
     window.setTimeout(() => {
       setCombatNotices((existing) => existing.filter((notice) => notice.id !== id));
     }, ttlMs);
+  };
+
+  // Impact audio for a connecting hit: weight/timbre/stereo from the target, plus a critical-health
+  // sting when this blow drops a survivor below 25% (edge-triggered so it fires once, after the hit).
+  const playImpact = (defender: UnitInstance, damage: number, hpBeforeRatio: number, delayMs = 0) => {
+    const killed = defender.currentHealth <= 0;
+    const opts = {
+      intensity: Math.min(1, (damage || 0) / 25),
+      material: impactMaterialFor(defender),
+      pan: impactPanFor(defender, battle.state.map)
+    };
+    const emit = () => {
+      AudioManager.play(killed ? 'death' : 'hit', opts);
+      if (!killed) {
+        const hpAfter = defender.currentHealth / (defender.stats.maxHealth || 100);
+        if (hpBeforeRatio >= 0.25 && hpAfter < 0.25 && hpAfter > 0) {
+          window.setTimeout(() => AudioManager.play('lowHealth'), 320);
+        }
+      }
+    };
+    if (delayMs > 0) aiSfxTimeoutsRef.current.push(window.setTimeout(emit, delayMs));
+    else emit();
   };
 
   function clearTargeting(restoreCamera = false) {
@@ -1444,12 +1494,13 @@ const BattleView: React.FC<{
       const shooter = findBattleUnit(ev.attackerId);
       const target = findBattleUnit(ev.defenderId);
       if (!shooter || !target) continue;
+      if (reactionShots === 0) AudioManager.play('reaction'); // overwatch snap precedes the muzzle
       const sfx = soundForAttackEffect(effectTypeForAttack(shooter, target, ev.weapon));
       const delay = 200 + reactionShots * 450;
       addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay);
       aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
         AudioManager.play(sfx);
-        if (ev.hit !== false) window.setTimeout(() => AudioManager.play('hit'), 240);
+        if (ev.hit !== false) window.setTimeout(() => AudioManager.play('hit', { intensity: Math.min(1, (ev.damage ?? 0) / 25), material: impactMaterialFor(target), pan: impactPanFor(target, battle.state.map) }), 240);
       }, delay));
       reactionShots += 1;
     }
@@ -1583,6 +1634,7 @@ const BattleView: React.FC<{
       // Try to use any weapon
       const anyWeapon = Object.keys(attacker.stats.weaponRanges)[0];
       if (anyWeapon) {
+        const hpBefore = defender.currentHealth / (defender.stats.maxHealth || 100);
         const result = processor.attackUnit({ attackerId, defenderId: defender.id, weaponId: anyWeapon });
 
         if (result.success) {
@@ -1594,7 +1646,7 @@ const BattleView: React.FC<{
           // Impact sound only when the shot actually connects (matches the primary attack branch);
           // keying off raw currentHealth played 'hit' even on a clean miss.
           if (attackOutcome.hit) {
-            AudioManager.play(defender.currentHealth <= 0 ? 'death' : 'hit');
+            playImpact(defender, attackOutcome.damage, hpBefore);
           }
           persist();
           resolveOutcome();
@@ -1607,6 +1659,7 @@ const BattleView: React.FC<{
       return;
     }
 
+    const hpBefore = defender.currentHealth / (defender.stats.maxHealth || 100);
     const result = processor.attackUnit({ attackerId, defenderId: defender.id, weaponId: weapon.weapon });
 
     if (!result.success) {
@@ -1621,7 +1674,7 @@ const BattleView: React.FC<{
       addAttackEffect(attacker, defender, weapon.weapon, attackOutcome);
       // Impact sound only when the shot actually connects (was playing "hit" even on a miss).
       if (attackOutcome.hit) {
-        AudioManager.play(defender.currentHealth <= 0 ? 'death' : 'hit');
+        playImpact(defender, attackOutcome.damage, hpBefore);
       }
     }
 
@@ -1815,6 +1868,7 @@ const BattleView: React.FC<{
         } else if (action.type === 'attack') {
           const attacker = findBattleUnit(action.attackerId);
           const defender = findBattleUnit(action.defenderId);
+          const defHpBefore = defender ? defender.currentHealth / (defender.stats.maxHealth || 100) : 1;
           const result = aiProcessor.attackUnit(action);
           if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
           if (attacker && defender) {
@@ -1824,8 +1878,7 @@ const BattleView: React.FC<{
             const enemyKilled = defender.stance === 'destroyed';
             const enemyHit = outcome.hit;
             AudioManager.play(enemySfx);
-            if (enemyKilled) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('death'), 240));
-            else if (enemyHit) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('hit'), 240));
+            if (enemyKilled || enemyHit) playImpact(defender, outcome.damage, defHpBefore, 240);
             attacksMade += 1;
             if (!phaseUpdated) {
               phaseUpdated = true;
@@ -1929,6 +1982,7 @@ const BattleView: React.FC<{
       } else if (action.type === 'attack') {
         const attacker = findBattleUnit(action.attackerId);
         const defender = findBattleUnit(action.defenderId);
+        const defHpBefore = defender ? defender.currentHealth / (defender.stats.maxHealth || 100) : 1;
         const result = proc.attackUnit(action);
         if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
         if (attacker && defender) {
@@ -1939,8 +1993,7 @@ const BattleView: React.FC<{
           const killed = defender.stance === 'destroyed';
           const hit = outcome.hit;
           AudioManager.play(sfx);
-          if (killed) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('death'), 240));
-          else if (hit) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('hit'), 240));
+          if (killed || hit) playImpact(defender, outcome.damage, defHpBefore, 240);
           await sleep(killed ? 140 : hit ? 70 : 0); // let the kill/hit land before moving on
           await sleep(700);
         }
