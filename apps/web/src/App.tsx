@@ -1310,10 +1310,12 @@ const BattleView: React.FC<{
       aiSfxTimeoutsRef.current = [];
     }
     if (status === 'victory') {
+      AudioManager.play('victory');
       applyBattleOutcome(campaign, bundle, 'victory');
       persist();
       onVictory();
     } else if (status === 'defeat') {
+      AudioManager.play('defeat');
       applyBattleOutcome(campaign, bundle, 'defeat');
       persist();
       onDefeat();
@@ -1828,6 +1830,7 @@ const BattleView: React.FC<{
               phaseUpdated = true;
               showPhaseNotice('Enemy Phase', `${unitDisplayName(action.attackerId, battle.state)} attacking`, 'enemy');
             }
+            await sleep(enemyKilled ? 140 : enemyHit ? 70 : 0); // let the kill/hit land before moving on
             await sleep(700);
             if (attacksMade >= maxEnemyAttacks) {
               aiProcessor.endTurn();
@@ -1857,6 +1860,9 @@ const BattleView: React.FC<{
         aiProcessor.endTurn();
       }
       persist();
+      if (evaluateBattleOutcome(battle) === 'ongoing') {
+        AudioManager.play('turnStart'); // control handed back to the player
+      }
       resolveOutcome();
     } finally {
       enemyTurnBusyRef.current = false;
@@ -1934,6 +1940,7 @@ const BattleView: React.FC<{
           AudioManager.play(sfx);
           if (killed) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('death'), 240));
           else if (hit) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('hit'), 240));
+          await sleep(killed ? 140 : hit ? 70 : 0); // let the kill/hit land before moving on
           await sleep(700);
         }
       } else if (action.type === 'attackTile') {
@@ -2007,13 +2014,13 @@ const BattleView: React.FC<{
         {riskyMove ? (
           <div className="risky-move-backdrop" role="alertdialog" aria-label="Risky move warning">
             <div className="risky-move-dialog">
-              <strong>⚠ Presun pod paľbou</strong>
+              <strong>⚠ Move Under Fire</strong>
               <p>
-                Trasa <strong>{riskyMove.unitName}</strong> vedie cez nepriateľskú paľbu.{' '}
+                Route for <strong>{riskyMove.unitName}</strong> crosses enemy fire.{' '}
                 {riskyMove.lethal
-                  ? 'Reakčná paľba ju môže pri tomto presune zničiť.'
-                  : 'Jednotka je ranená a môže utrpieť ťažké straty.'}
-                {' '}Presunúť?
+                  ? 'Reaction fire could destroy it.'
+                  : 'This unit is wounded and may take heavy losses.'}
+                {' '}Move anyway?
               </p>
               <div className="risky-move-actions">
                 <button
@@ -2024,10 +2031,10 @@ const BattleView: React.FC<{
                     actMove(move.unitId, move.target, true);
                   }}
                 >
-                  Presunúť
+                  Move Anyway
                 </button>
                 <button className="risky-move-cancel" onClick={() => setRiskyMove(null)}>
-                  Zrušiť
+                  Cancel
                 </button>
               </div>
             </div>
@@ -2396,6 +2403,15 @@ export function App() {
   const dismissPopups = () => mutate((s) => { s.popups = []; });
   const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
   const [savedSlots, setSavedSlots] = useState<(SlotSummary | null)[]>(() => loadAllSummaries());
+
+  // Campaign-end sting. Ref-guarded so the frequent strategic re-renders can't re-trigger it.
+  const campaignOutcomeStingRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!campaign.outcome) { campaignOutcomeStingRef.current = null; return; }
+    if (campaignOutcomeStingRef.current === campaign.outcome) return;
+    campaignOutcomeStingRef.current = campaign.outcome;
+    AudioManager.play(campaign.outcome === 'victory' ? 'victory' : 'defeat');
+  }, [campaign.outcome]);
 
   const reportBattleLaunchError = (err: unknown) => {
     const message = err instanceof Error ? err.message : 'Operation could not be launched';

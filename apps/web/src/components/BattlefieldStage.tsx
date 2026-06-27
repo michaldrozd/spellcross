@@ -145,6 +145,7 @@ const tileSize = 56;
 const hexWidth = tileSize;
 const hexHeight = tileSize * 0.866; // sin(60deg)
 const DEATH_TTL_MS = 20_000;
+const SHAKE_MAX_PX = 7; // peak camera shake amplitude at full trauma
 
 
 // Isometric elevation illusion parameters
@@ -1326,6 +1327,10 @@ export function BattlefieldStage({
   const visibleTiles = viewerVision?.visibleTiles ?? new Set<number>();
   const exploredTiles = viewerVision?.exploredTiles ?? new Set<number>();
   const [now, setNow] = useState(() => Date.now());
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
+    []
+  );
   // Update more frequently during animations
   useEffect(() => {
     const interval = (movingUnit || attackEffects.length > 0) ? 16 : 250; // 60fps during animation
@@ -1860,6 +1865,30 @@ export function BattlefieldStage({
     targetCameraSnapshotRef.current = null;
   }, [restoreCameraSignal]);
 
+  // Pan the camera along with a unit while it glides. Without this, scripted (Auto Turn / enemy)
+  // moves happened off-screen and the unit appeared to teleport to its destination. Leaves the
+  // camera on the final tile when the glide ends (no snap-back), and yields to the attack
+  // cinematic, which owns framing+zoom whenever an attack is on screen.
+  useEffect(() => {
+    if (!movingUnit || movingUnit.path.length < 2 || attackEffects.length > 0) return;
+    const { path, startTime, stepDuration } = movingUnit;
+    const preAlign = Math.max(0, movingUnit.preAlignDuration ?? 0);
+    const totalSteps = path.length - 1;
+    const panTo = () => {
+      const elapsed = Math.max(0, Date.now() - startTime - preAlign);
+      const traversed = stepDuration > 0 ? Math.min(totalSteps, elapsed / stepDuration) : totalSteps;
+      const seg = Math.min(totalSteps - 1, Math.floor(traversed));
+      const t = traversed - seg;
+      const a = path[seg];
+      const b = path[seg + 1];
+      const sp = toScreen({ q: a.q + (b.q - a.q) * t, r: a.r + (b.r - a.r) * t });
+      setFollowTargetPx({ x: sp.x + (ISO_MODE ? isoBaseX : 0), y: sp.y });
+    };
+    panTo();
+    const id = window.setInterval(panTo, 33);
+    return () => window.clearInterval(id);
+  }, [movingUnit, attackEffects.length, toScreen, isoBaseX]);
+
   // Camera panning control
   const PAN_SPEED = 800; // pixels per second (keyboard)
   const [panVel, setPanVel] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
@@ -2024,6 +2053,30 @@ export function BattlefieldStage({
   }
   offsetX = Math.round(offsetX);
   offsetY = Math.round(offsetY);
+
+  // Camera shake from live impacts. Derived purely from attackEffects (which already drive the 16ms
+  // render tick), so no extra state/timer. Applied only to the visual world container below — the
+  // unshaken offsetX/offsetY above stay authoritative for pointer and minimap math.
+  let shakeX = 0;
+  let shakeY = 0;
+  if (!prefersReducedMotion) {
+    let shakeTrauma = 0;
+    for (const e of attackEffects) {
+      if (e.hit === false) continue;
+      const elapsed = now - e.startTime;
+      if (elapsed < 0 || elapsed > 520) continue;
+      const env = 1 - elapsed / 520;
+      const base = e.type === 'explosion' ? 0.62 : 0.26;
+      const dmgScale = Math.min(1, (e.damage ?? 0) / 14);
+      shakeTrauma = Math.max(shakeTrauma, base * (0.55 + 0.45 * dmgScale) * env);
+    }
+    if (shakeTrauma > 0) {
+      const mag = shakeTrauma * shakeTrauma * SHAKE_MAX_PX;
+      const a = now * 0.013;
+      shakeX = Math.sin(a * 2.7) * mag;
+      shakeY = Math.cos(a * 3.1) * mag;
+    }
+  }
 
   // Precompute friendly units by coordinate for quick tile-click selection
   const friendlyByCoord = useMemo(() => {
@@ -3517,7 +3570,7 @@ export function BattlefieldStage({
             g.clear();
             if (ISO_MODE && geom) {
               const shape = geom.inset(0.86);
-              g.beginFill(0x89b46f, externalTexturesAreColored ? 0.03 : 0.044);
+              g.beginFill(0x9fd07a, externalTexturesAreColored ? 0.10 : 0.13);
               drawPoly(g as PixiGraphics, shape);
               g.endFill();
               g.lineStyle(1.35, 0x10190d, 0.18);
@@ -4413,6 +4466,7 @@ export function BattlefieldStage({
         const hitElapsed = incomingHit ? now - incomingHit.startTime : 0;
         const hitPhase = incomingHit ? Math.min(Math.max((hitElapsed - 240) / 680, 0), 1) : 1;
         const hitPulse = incomingHit ? 1 - hitPhase : 0;
+        const impactFlash = incomingHit ? Math.max(0, 1 - hitElapsed / 90) : 0; // one-frame white pop on connection
         const groundVehicleHitJolt = movingThisUnit ? 0.9 : 1.8;
         const hitJolt = incomingHit ? Math.sin(hitPhase * Math.PI * 5) * hitPulse * (unitType === 'vehicle' || unitType === 'artillery' ? groundVehicleHitJolt : 3.2) : 0;
         const shotPulse = outgoingShot ? 1 - Math.min((now - outgoingShot.startTime) / 320, 1) : 0;
@@ -4619,18 +4673,24 @@ export function BattlefieldStage({
                 g.clear();
                 if (ISO_MODE) {
 	                  const footprint = unitContactFootprint(tileSize, unitType, definitionId);
-                    const baseAlpha = isSelected || isTarget ? (isFriendly ? 0.16 : 0.24) : (isFriendly ? 0.11 : 0.18);
+                    const baseAlpha = isSelected || isTarget ? (isFriendly ? 0.18 : 0.26) : (isFriendly ? 0.20 : 0.26);
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
                     const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
                     const shadowAlpha = isGroundVehicle ? (isApcContact ? 0 : (movingThisUnit ? 0.07 : 0.045)) : footprint.alpha;
                     const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.34 : 0.42) : footprint.rx;
                     const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.1 : 0.18) : footprint.ry;
-	                  const showFactionBase = isVisible && !isGroundVehicle;
-	                  if (showFactionBase && !isGroundVehicle) {
-	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, isVisible ? baseAlpha : baseAlpha * 0.55);
+	                  const showFactionBase = isVisible;
+	                  if (showFactionBase) {
+	                    // Ground vehicles get the team disc too (their large silhouette dilutes it, so 0.7x);
+	                    // this is the main friend/foe read at zoomed-out city scale.
+	                    const discAlpha = (isVisible ? baseAlpha : baseAlpha * 0.55) * (isGroundVehicle ? 0.7 : 1);
+	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, discAlpha);
 	                    g.drawEllipse(0, footprint.y, baseRx, baseRy);
 	                    g.endFill();
+	                    g.lineStyle(1, isFriendly ? 0x0c2f3f : 0x4a0f0a, discAlpha * 1.15);
+	                    g.drawEllipse(0, footprint.y, baseRx * 0.92, baseRy * 0.92);
+	                    g.lineStyle();
                   }
 	                    if (shadowAlpha > 0) {
 		                    g.beginFill(isGroundVehicle ? 0x020403 : 0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
@@ -4913,7 +4973,7 @@ export function BattlefieldStage({
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
                       scale={{ x: scaleX * 1.01, y: baseScale * squashY * 1.01 }}
-                      alpha={0.38 * hitPulse}
+                      alpha={Math.min(dyingShown ? 1 : 0.9, 0.38 * hitPulse + (dyingShown ? 0.62 : 0.55) * impactFlash)}
                       tint={incomingHit.type === 'magic' ? 0xc58cff : 0xffe3a1}
                       x={spriteSwayX}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
@@ -6345,7 +6405,7 @@ export function BattlefieldStage({
         }}
       >
         {screenBackdrop}
-        <Container x={offsetX} y={offsetY} scale={scale}>
+        <Container x={offsetX + shakeX} y={offsetY + shakeY} scale={scale}>
           {/* World container. In HEX mode we fake tilt; in ISO mode it's identity. */}
           <Container x={ISO_MODE ? isoBaseX : 0} scale={{ x: 1, y: ISO_MODE ? 1 : 0.72 }} skew={{ x: ISO_MODE ? 0 : -0.28, y: 0 }}>
             {voidSkirt}
