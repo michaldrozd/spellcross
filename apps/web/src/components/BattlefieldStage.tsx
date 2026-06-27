@@ -3104,6 +3104,24 @@ export function BattlefieldStage({
     );
   }, [hostSize.h, hostSize.w]);
 
+  // Screen-space vignette: darkens the corners so the eye settles on the action and the scene reads
+  // as one lit space rather than flat-lit tiles. Radial gradients aren't a Pixi Graphics primitive,
+  // so bake it into a canvas texture once per viewport size and draw it as a non-interactive sprite.
+  const vignetteTexture = useMemo(() => {
+    const w = Math.max(1, Math.round(hostSize.w));
+    const h = Math.max(1, Math.round(hostSize.h));
+    return makeCanvasTexture((ctx, cw, ch) => {
+      const cx = cw / 2, cy = ch / 2;
+      const inner = Math.max(cw, ch) * 0.55;
+      const outer = Math.hypot(cx, cy);
+      const grad = ctx.createRadialGradient(cx, cy, inner, cx, cy, outer);
+      grad.addColorStop(0, 'rgba(4,8,14,0)');
+      grad.addColorStop(1, 'rgba(4,8,14,0.22)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, cw, ch);
+    }, w, h);
+  }, [hostSize.w, hostSize.h]);
+
   const tileOverlays = useMemo(() => {
     return map.tiles
       .map((_: any, index: number) => {
@@ -4760,7 +4778,8 @@ export function BattlefieldStage({
                 } else {
                   const shadowY = tileSize * 0.16;
                   g.beginFill(0x000000, 0.2);
-                  g.drawEllipse(0, shadowY, tileSize * 0.34, tileSize * 0.16);
+                  // Offset down-right: light reads from upper-left across the scene, so cast there too.
+                  g.drawEllipse(tileSize * 0.07, shadowY, tileSize * 0.34, tileSize * 0.16);
                   g.endFill();
                 }
               }}
@@ -4885,12 +4904,18 @@ export function BattlefieldStage({
               const vehiclePose = isVehicleUnit && canMirrorForFacing ? rasterVehiclePose(moveScreenVector) : null;
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
               const vehicleTrackJitter = 0;
+              // Suppressed/routed posture: a small downward duck, a foot-unit shudder, and (when routed)
+              // a lean away from the threat — so a pinned squad reads at a glance without a label.
+              const suppressed = unit.stance === 'suppressed';
+              const routed = unit.stance === 'routed';
+              const cowed = suppressed || routed;
+              const cowerShudder = cowed && isFootUnit ? Math.sin(now / 90) * 1.1 : 0;
               const spriteBobY = isFootUnit ? -Math.abs(stepWave) * (directionalSprite ? 1.35 : 2.1) : unitType === 'air' ? stepWave * 1.4 : 0;
-              const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX;
-              const spriteCombatY = hitOffsetY + shotOffsetY;
-              const spriteRotation = vehiclePose ? vehiclePose.rotation + fastWave * 0.004 : 0;
-              const squashX = isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1;
-              const squashY = isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1;
+              const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX + cowerShudder;
+              const spriteCombatY = hitOffsetY + shotOffsetY + (cowed && isFootUnit ? Math.sin(now / 60) * 0.6 : 0);
+              const spriteRotation = (vehiclePose ? vehiclePose.rotation + fastWave * 0.004 : 0) + (routed ? -Math.sign(moveScreenVector.x || 1) * 0.12 : 0);
+              const squashX = (isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1) * (cowed ? 1.04 : 1);
+              const squashY = (isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1) * (cowed ? 0.9 : 1);
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
               const spriteTint = directionalSprite === 'apc_directional' || directionalSprite === 'm113_apc' ? 0xd7d9b8 : 0xffffff;
               const spriteBaseY = directionalSprite ? 0 : tileSize * (isVehicleUnit ? 0.082 : 0.05);
@@ -4930,7 +4955,7 @@ export function BattlefieldStage({
                     anchor={{ x: 0.5, y: anchorY }}
                     scale={{ x: scaleX, y: baseScale * squashY }}
                     alpha={(isVisible ? 1 : 0.72) * (dyingShown ? 0.55 : 1)}
-                    tint={dyingShown ? 0x6b5a52 : spriteTint}
+                    tint={dyingShown ? 0x6b5a52 : suppressed ? 0xb9b2a4 : routed ? 0xc7a39c : spriteTint}
                     x={spriteSwayX}
                     y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
                     rotation={spriteRotation}
@@ -5077,10 +5102,11 @@ export function BattlefieldStage({
               draw={(g) => {
                 g.clear();
 
-                // stance ring
+                // stance ring — pulse it so a pinned/routed unit draws the eye
                 const stance = unit.stance;
                 if (stance === 'suppressed' || stance === 'routed') {
-                  g.lineStyle(2, stance === 'routed' ? 0xff2d55 : 0xffc107, 0.9);
+                  const ringA = 0.55 + Math.sin(now / 200) * 0.35;
+                  g.lineStyle(2, stance === 'routed' ? 0xff2d55 : 0xffc107, ringA);
                   g.drawCircle(0, 0, tileSize * 0.29);
                 }
                 const ent = (unit as any).entrench ?? 0;
@@ -5101,9 +5127,9 @@ export function BattlefieldStage({
                   || isSelectedCarrier
                   || isTarget
                   || recentlyActive
-                  || hpRatio < 0.985
-                  || apRatio < 0.985
-                  || mrRatio < 0.85
+                  || hpRatio < 0.9
+                  || ((isFriendly || isSelected || isTarget) && apRatio < 0.985)
+                  || mrRatio < 0.8
                   || stance === 'suppressed'
                   || stance === 'routed';
                 if (!shouldDrawStatus) return;
@@ -6398,7 +6424,7 @@ export function BattlefieldStage({
         width={hostSize.w}
         height={hostSize.h}
         options={{
-          backgroundColor: 0x061639,
+          backgroundColor: 0x020506, // match screenBackdrop so there's no navy flash on mount/resize
           resolution: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1,
           autoDensity: true, // makes text and sprites crisp on retina displays
           antialias: true // smooths the hard isometric polygon edges (buildings, tiles)
@@ -6528,6 +6554,9 @@ export function BattlefieldStage({
               g.endFill();
             }}
           />
+        ) : null}
+        {hostSize.w > 0 && hostSize.h > 0 ? (
+          <Sprite texture={vignetteTexture} width={hostSize.w} height={hostSize.h} eventMode="none" />
         ) : null}
         <Graphics
           eventMode="static"
