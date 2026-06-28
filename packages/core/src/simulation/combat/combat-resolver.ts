@@ -254,7 +254,7 @@ export function canAffordAttack(attacker: UnitInstance): boolean {
 
 // A dedicated resupply unit: a support unit that carries no ammo of its own (ammoCapacity 0).
 export function isSupplyUnit(unit: UnitInstance): boolean {
-  return unit.unitType === 'support' && (unit.stats.ammoCapacity ?? 0) === 0;
+  return unit.unitType === 'support' && unit.stats.ammoCapacity === 0;
 }
 
 // A field medic: a support unit that restores HP to a wounded adjacent ally instead of resupplying.

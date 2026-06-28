@@ -10,7 +10,7 @@ import {
   unitVisualHeight,
   vehicleSheetDirectionNameForOrientation,
   vehicleSheetDirectionNameForScreenVector
-} from './BattlefieldStage.js';
+} from './unitVisuals.js';
 
 const APC_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 

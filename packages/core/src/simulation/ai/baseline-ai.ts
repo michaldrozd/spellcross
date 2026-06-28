@@ -107,7 +107,7 @@ function findDemolitionTarget(
 }
 
 function findSupplyTarget(state: TacticalBattleState, supplier: UnitInstance): { targetId: string; path: HexCoordinate[] } | null {
-  if (supplier.unitType !== 'support' && supplier.stats.ammoCapacity !== 0) return null;
+  if (!isSupplyUnit(supplier)) return null;
   const allies = Array.from(state.sides[supplier.faction].units.values()).filter(
     (u) => u.id !== supplier.id && u.stance !== 'destroyed' && u.currentAmmo < (u.stats.ammoCapacity ?? Infinity)
   );

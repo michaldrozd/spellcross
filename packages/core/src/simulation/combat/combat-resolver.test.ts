@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createBattleState } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
-import { calculateAttackRange, calculateHitChance, resolveAttack } from './combat-resolver.js';
+import { calculateAttackRange, calculateHitChance, isSupplyUnit, resolveAttack } from './combat-resolver.js';
 
 const plainTile = {
   terrain: 'plain',
@@ -111,51 +111,118 @@ describe('combat-resolver', () => {
     const attacker = state.sides.alliance.units.get(attackerId)!;
     const defender = state.sides.otherSide.units.get(defenderId)!;
 
-  const outcome = resolveAttack({
-    attacker,
-    defender,
-    weaponId: 'rifle',
-    map: state.map,
-    random: () => 0
+    const outcome = resolveAttack({
+      attacker,
+      defender,
+      weaponId: 'rifle',
+      map: state.map,
+      random: () => 0
+    });
+
+    expect(outcome.hit).toBe(true);
+    expect(outcome.hitChance).toBeGreaterThan(0);
+    expect(outcome.roll).toBe(0);
+    expect(defender.currentHealth).toBe(0);
+    expect(defender.stance).toBe('destroyed');
+    expect(outcome.events.some((event) => event.kind === 'unit:defeated')).toBe(true);
   });
 
-  expect(outcome.hit).toBe(true);
-  expect(outcome.hitChance).toBeGreaterThan(0);
-  expect(outcome.roll).toBe(0);
-  expect(defender.currentHealth).toBe(0);
-  expect(defender.stance).toBe('destroyed');
-  expect(outcome.events.some((event) => event.kind === 'unit:defeated')).toBe(true);
-});
+  it('reduces hit chance with cover', () => {
+    const state = createBattleState({
+      ...battleSpec,
+      map: {
+        ...battleSpec.map,
+        tiles: [
+          {
+            ...battleSpec.map.tiles[0]
+          },
+          {
+            ...battleSpec.map.tiles[1],
+            cover: 4
+          }
+        ]
+      }
+    });
 
-it('reduces hit chance with cover', () => {
-  const state = createBattleState({
-    ...battleSpec,
-    map: {
-      ...battleSpec.map,
-      tiles: [
+    const attackerId = Array.from(state.sides.alliance.units.keys())[0];
+    const defenderId = Array.from(state.sides.otherSide.units.keys())[0];
+    const attacker = state.sides.alliance.units.get(attackerId)!;
+    const defender = state.sides.otherSide.units.get(defenderId)!;
+
+    const chance = calculateHitChance({
+      attacker,
+      defender,
+      weaponId: 'rifle',
+      map: state.map
+    });
+
+    expect(chance).toBeLessThan(attacker.stats.weaponAccuracy.rifle);
+  });
+
+  it('only treats zero-ammo support units as supply units', () => {
+    const state = createBattleState({
+      map: {
+        id: 'support-role-map',
+        width: 2,
+        height: 1,
+        tiles: [plainTile, plainTile]
+      },
+      sides: [
         {
-          ...battleSpec.map.tiles[0]
+          faction: 'otherSide',
+          units: [
+            {
+              definition: {
+                id: 'warlock',
+                faction: 'otherSide',
+                name: 'Warlock',
+                type: 'support',
+                stats: {
+                  maxHealth: 70,
+                  mobility: 7,
+                  vision: 7,
+                  armor: 1,
+                  morale: 80,
+                  weaponRanges: { curse: 6 },
+                  weaponPower: { curse: 18 },
+                  weaponAccuracy: { curse: 0.72 }
+                }
+              },
+              coordinate: { q: 0, r: 0 }
+            }
+          ]
         },
         {
-          ...battleSpec.map.tiles[1],
-          cover: 4
+          faction: 'alliance',
+          units: [
+            {
+              definition: {
+                id: 'supply-truck',
+                faction: 'alliance',
+                name: 'Supply Truck',
+                type: 'support',
+                stats: {
+                  maxHealth: 70,
+                  mobility: 8,
+                  vision: 4,
+                  armor: 1,
+                  morale: 60,
+                  ammoCapacity: 0,
+                  weaponRanges: { smg: 3 },
+                  weaponPower: { smg: 8 },
+                  weaponAccuracy: { smg: 0.55 }
+                }
+              },
+              coordinate: { q: 1, r: 0 }
+            }
+          ]
         }
       ]
-    }
-  });
-
-  const attackerId = Array.from(state.sides.alliance.units.keys())[0];
-  const defenderId = Array.from(state.sides.otherSide.units.keys())[0];
-  const attacker = state.sides.alliance.units.get(attackerId)!;
-  const defender = state.sides.otherSide.units.get(defenderId)!;
-
-  const chance = calculateHitChance({
-    attacker,
-    defender,
-    weaponId: 'rifle',
-    map: state.map
-  });
-
-  expect(chance).toBeLessThan(attacker.stats.weaponAccuracy.rifle);
 });
-});
+
+    const warlock = Array.from(state.sides.otherSide.units.values())[0];
+    const supplyTruck = Array.from(state.sides.alliance.units.values())[0];
+    expect(isSupplyUnit(warlock)).toBe(false);
+    expect(isSupplyUnit(supplyTruck)).toBe(true);
+  });
+	});

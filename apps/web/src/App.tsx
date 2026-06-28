@@ -30,6 +30,7 @@ import {
   isoDistance as axialDistance,
   coordinateKey,
   hydrateCampaignState,
+  isSupplyUnit,
   isUnitUnlocked,
   planPathForUnitIso as planPathForUnit,
   reactionThreats,
@@ -779,7 +780,7 @@ const BattleView: React.FC<{
   // For a selected supply truck, the best adjacent friendly unit that needs ammo (computed fresh each
   // render so the Resupply button enables/disables correctly as ammo and positions change).
   const supplyTargetId = (() => {
-    if (!selectedUnit || selectedUnit.unitType !== 'support' || (selectedUnit.stats.ammoCapacity ?? 0) !== 0) return null;
+    if (!selectedUnit || !isSupplyUnit(selectedUnit)) return null;
     let bestId: string | null = null;
     let bestDeficit = 0;
     for (const u of battle.state.sides.alliance.units.values()) {

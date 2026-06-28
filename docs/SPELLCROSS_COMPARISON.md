@@ -1,269 +1,121 @@
-# Porovnanie: Spellcross Remake vs. Originál
+# Spellcross Remake vs. Original Design
 
-Tento dokument porovnáva našu implementáciu s originálnym GDD.
+This document tracks the current implementation against the design anchors in
+`MANUAL.cz.md`, `DESCRIPTION.sk.md`, and `project_spec.md`.
 
----
+Last reviewed: 2026-06-28.
 
-## ZHRNUTIE
+## Current State
 
-| Kategória | Stav | Kompletnosť |
-|-----------|------|-------------|
-| **Strategická vrstva** | Implementované | 75% |
-| **Taktická vrstva** | Implementované | 80% |
-| **Jednotky & Frakcie** | Implementované | 85% |
-| **Bojové mechaniky** | Implementované | 70% |
-| **AI** | Implementované | 60% |
-| **Audio/Vizuál** | Čiastočne | 40% |
+| Area | State |
+| --- | --- |
+| Strategic layer | Playable campaign loop with territories, timers, resources, research, recruitment, refills, formations, events, saves, and campaign outcome handling. |
+| Tactical layer | Playable isometric battles with action points, fog of war, line of sight, morale, XP, cover, elevation, overwatch reaction fire, ammo, supply, healing, transports, objectives, victory, defeat, and retreat. |
+| Units and factions | Alliance and Other Side rosters cover the main expected battlefield roles, including infantry, scouts, armor, artillery, air, support, commanders, undead, monsters, casters, flyers, siege units, and static defenses. |
+| Opponent turn logic | Objective-aware movement, target scoring, difficulty modifiers, demolition targeting, supply and healing behavior, and fog-aware attack gating are implemented. |
+| Audio and visual polish | Weapon, movement, impact, ambient, UI, limiter, camera, shake, hit-stop, hover preview, wrecks, smoke, fog memory, shadows, props, and unit sprites are implemented. |
 
----
+## Strategic Layer
 
-## 1. STRATEGICKÁ VRSTVA
+Implemented:
 
-### Implementované ✅
+- Europe campaign map with 17 main sectors and generated counteroffensive sectors.
+- Money, research, and strategic points.
+- Strategic point conversion to money and research.
+- Territory timers and global campaign pressure.
+- Recruitment delay through `availableOnTurn`.
+- Unit refills, rearming, dismissal, tiers, XP carry-over, and preserved benched units.
+- Research queue with one active project at a time.
+- Research unlocks and stat bonuses for existing and newly deployed units.
+- Formation bonuses applied when building a battle side.
+- Save slots and serialized campaign/battle state.
+- Victory, defeat, retreat, rewards, unlocks, and terminal campaign outcome.
 
-| Feature | Originál | Náš Remake | Poznámka |
-|---------|----------|------------|----------|
-| Mapa regiónov | ✅ | ✅ | Máme mapu Európy s 17 teritóriami |
-| Zdroje (Money) | ✅ | ✅ | `resources.money` |
-| Zdroje (Research) | ✅ | ✅ | `resources.research` |
-| Strategické body | ✅ | ✅ | `resources.strategic` |
-| Výber jednotiek do misie | ✅ | ✅ | Deployment screen |
-| Brífing | ✅ | ✅ | `scenario.brief` |
-| Territory timers | ✅ | ✅ | `remainingTimer` na každom teritóriu |
-| Nákup jednotiek | ✅ | ✅ | Recruit v Army management |
-| Výskum (Tech Tree) | ✅ | ✅ | 9 research topics |
-| Oprava/Heal jednotiek | ✅ | ✅ | Refill button |
-| Tiery jednotiek | ✅ | ✅ | rookie/veteran/elite |
-| Ukladanie (Save) | ✅ | ✅ | 3 save sloty |
+Partially implemented or simplified:
 
-### Čiastočne implementované ⚠️
+- Formations exist mechanically, but formation management UI is still lightweight.
+- Commanders exist as hero units and aura effects, but there is no full officer attachment system.
+- Resource economy is fixed per sector and event, not a full depletion model.
+- Unit upgrades are represented through research and tier/refill behavior, not a detailed equipment workshop.
 
-| Feature | Originál | Náš Remake | Čo chýba |
-|---------|----------|------------|----------|
-| Resource Slider | ✅ | ❌ | Slider pre Money/Research ratio |
-| Vyčerpateľné zdroje | ✅ | ❌ | Zdroje z regiónov neklesajú |
-| Velitelia (Officers) | ✅ | ⚠️ | Máme heroes, ale nie attachment system |
-| Formácie | ✅ | ⚠️ | Data struct existuje, UI chýba |
-| Convert jednotky | ✅ | ❌ | Zmena typu jednotky |
-| Upgrade jednotky | ✅ | ❌ | Lepšia výstroj |
-| Čas na recruit | ✅ | ⚠️ | `availableOnTurn` existuje, nie je aktívne |
+Missing or deferred:
 
-### Chýba ❌
+- Resource allocation slider.
+- Blind research.
+- Full officer attachment system.
+- Scripted story interludes or cutscenes.
+- Limited save/ironman rules.
 
-| Feature | Popis |
-|---------|-------|
-| FMV videá | Cutscenes medzi misiami |
-| "Slepý" výskum | Hráč vie čo odomkne |
-| Vyčerpávanie zdrojov | Strategické body z regiónov by mali klesať |
+## Tactical Layer
 
----
+Implemented:
 
-## 2. TAKTICKÁ VRSTVA
+- Isometric square battlefield projection with camera, zoom, selection, movement planning, and click hitboxes.
+- Terrain costs, passability, cover, elevation, fog of war, persistent explored tiles, line of sight, weather, stealth, and destructible tiles.
+- Action points, attack costs, ammo, weapon ranges, weapon target restrictions, hit chance, damage, morale damage, XP, levels, suppression, routing, and destruction.
+- Damage output scales down for wounded attackers.
+- Overwatch and automatic reaction fire during movement.
+- Threat previews for risky movement.
+- Hover and target preview with hit chance, expected damage, and lethal indication.
+- Supply trucks, field medics, transports, embark/disembark, supply zones, and pickups.
+- Objectives: eliminate, reach, protect, and hold.
+- Retreat rules that can destroy deployed units outside the start zone.
 
-### Implementované ✅
+Partially implemented or simplified:
 
-| Feature | Originál | Náš Remake | Poznámka |
-|---------|----------|------------|----------|
-| Izometrická mriežka | ✅ Square | ✅ Hex | Používame hex grid (modernejšie) |
-| Terén: Road | ✅ | ✅ | `movementCostModifier: 0.8` |
-| Terén: Forest | ✅ | ✅ | Cover + movement cost |
-| Terén: Hills | ✅ | ✅ | Elevation + vision boost |
-| Terén: Swamp | ✅ | ✅ | High movement cost |
-| Terén: Water | ✅ | ✅ | Impassable |
-| Terén: Urban | ✅ | ✅ | High cover |
-| Destructible terrain | ✅ | ✅ | `destructible: true, hp: X` |
-| Fog of War | ✅ | ✅ | `VisionGrid` s explored/visible |
-| Action Points | ✅ | ✅ | `actionPoints` na jednotke |
-| Experience/Level | ✅ | ✅ | XP za zásah/kill, level up |
-| Morale | ✅ | ✅ | Klesá/stúpa, ovplyvňuje stance |
-| Stance (ready/suppressed/routed) | ✅ | ✅ | Podľa morale |
-| Entrenchment (zakopanie) | ✅ | ✅ | 0-3 level, rastie keď unit stojí |
-| Ammunition | ✅ | ✅ | `currentAmmo`, `ammoCapacity` |
-| Transport/Embark | ✅ | ✅ | `transportCapacity`, `carrying`, `embarkedOn` |
-| Supply zones | ✅ | ✅ | `supplyZones` pre doplnenie ammo |
-| Weather | ✅ | ✅ | clear/night/fog |
-| Mission objectives | ✅ | ✅ | eliminate/reach/protect/hold |
-| Turn limits | ✅ | ✅ | `turnLimit` na objectives |
+- Opportunity fire does not yet use a separate initiative contest.
+- Attack categories are broad unit classes rather than a deep armor/light/heavy/object matrix.
+- Radar deploy/pack behavior is not implemented.
+- Reinforcements and ambush triggers are not a general scenario scripting system yet.
 
-### Čiastočne implementované ⚠️
+## Units
 
-| Feature | Originál | Náš Remake | Čo chýba |
-|---------|----------|------------|----------|
-| Opportunity Fire | ✅ | ⚠️ | Overwatch existuje, ale nie automatická reakcia |
-| Damage scaling (HP) | ✅ | ⚠️ | Damage neklesá s HP jednotky |
-| Attack Matrix | ✅ | ⚠️ | Máme `weaponTargets`, ale nie vs Light/Heavy/Air/Objects |
-| Radar units | ✅ | ❌ | Nie je Deploy/Pack mechanika |
-| Line of Sight blocking | ✅ | ✅ | Implementované, ale môže byť lepšie |
+Alliance roles represented:
 
-### Chýba ❌
+- Commander: Captain John Alexander.
+- Infantry: Light Infantry, Storm Squad, Ranger Recon, Pathfinder Snipers.
+- Support infantry: Field Medic.
+- Vehicles: M113 IFV, Leopard 2 MBT, Gepard AA, Sky Lance SAM.
+- Artillery: Mortar Team, M109 SPG, Paladin ACS.
+- Air: Attack Helicopter.
+- Logistics: Supply Truck.
 
-| Feature | Popis |
-|---------|-------|
-| Initiative test pre Opportunity Fire | Skúsenosti/iniciatíva pre reaction fire |
-| ~~Strength = Damage output~~ | ✅ **IMPLEMENTOVANÉ** - Menej HP = menej damage |
-| Limitované ukladanie | 6 slotov na misiu (Ironman mode) |
-| Ambush triggers | Spawn nepriateľov na trigger |
-| Reinforcements script | Nové jednotky počas misie |
-| Fake Loss misie | Misie kde musíš ustúpiť |
+Other Side roles represented:
 
----
+- Line and scout infantry: Orc Warband, Ghoul Pack, Skeleton Horde, Hell Rider, Specter.
+- Heavy monsters and siege units: Ogre Brute, Salamander, Demon Engine.
+- Casters and commanders: Necromancer, Warlock, Lich Lord.
+- Flyers: Winged Fiend, Void Drake.
+- Static defense: Arrow Tower.
 
-## 3. JEDNOTKY A FRAKCIE
+Still open:
 
-### Alliance (Hráč) ✅
+- More unique abilities for caster and monster units.
+- Fortress-style boss encounter content.
+- More specialized reconnaissance and radar-style support units.
 
-| Originál | Náš Remake | ID |
-|----------|------------|-----|
-| Light Infantry | ✅ Light Infantry | `light-infantry` |
-| Heavy Infantry | ✅ Storm Squad | `heavy-infantry` |
-| Mortar Team | ✅ Mortar Team | `mortar-team` |
-| Commandos | ⚠️ Rangers (podobné) | `rangers` |
-| Sniper Team | ✅ Pathfinder Snipers | `sniper-team` |
-| Hummer (scout) | ⚠️ M113 (má transport) | `m113` |
-| APCs | ✅ M113 IFV | `m113` |
-| Tanks | ✅ Leopard 2 MBT | `leopard-2` |
-| Artillery M109 | ✅ M109 SPG | `spg-m109` |
-| Radar trucks | ❌ | - |
-| Helicopters | ✅ Attack Helicopter | `attack-helo` |
-| Field Medic | ✅ Field Medic | `field-medic` |
-| Supply Truck | ✅ Supply Truck | `supply-truck` |
-| AA (Gepard) | ✅ Gepard AA | `gepard-aa` |
-| SAM | ✅ Sky Lance SAM | `sky-lance` |
-| Heavy Artillery | ✅ Paladin ACS | `paladin-acs` |
-| Hero/Commander | ✅ Captain John Alexander | `john-alexander` |
+## User Experience
 
-### The Other Side (Nepriateľ) ✅
+Implemented:
 
-| Originál | Náš Remake | ID |
-|----------|------------|-----|
-| Orcs | ✅ Orc Warband | `orc-warband` |
-| Wolf Riders | ✅ Wolf Rider | `wolf-rider` |
-| Undead/Skeletons | ✅ Skeleton Horde | `skeleton-horde` |
-| Golems | ✅ Ogre Brute | `ogre-brute` |
-| Magotars (flying scout) | ✅ Winged Fiend | `winged-fiend` |
-| Hell Riders | ✅ Hell Rider | `hell-rider` |
-| Necromancers | ✅ Necromancer | `necromancer` |
-| Warlocks | ✅ Warlock | `warlock` |
-| Dragons | ✅ Void Drake | `void-drake` |
-| Demon Engine | ✅ Demon Engine | `demon-engine` |
-| Salamander | ✅ Salamander | `salamander` |
-| Ghouls | ✅ Ghoul Pack | `ghoul-pack` |
-| Lich | ✅ Lich Lord | `lich-lord` |
-| Arrow Towers | ✅ Arrow Tower | `arrow-tower` |
-| Fortress of Terror | ❌ | - |
+- Main menu with save slots.
+- Strategic HQ with map, territory briefings, army management, research, resources, and campaign notices.
+- Deployment flow before battle.
+- Tactical HUD with unit panel, objectives, combat log, attack controls, supply, healing, overwatch, retreat, end turn, and auto turn.
+- Tooltips and onboarding copy for key workflows.
+- End-state screens for campaign victory and defeat.
 
----
+Still open:
 
-## 4. AI
+- Denser formation management UI.
+- More detailed unit inspection popup.
+- Optional faster animation mode for repeated late-campaign turns.
+- More tutorial coverage for advanced mechanics.
 
-### Implementované ✅
+## Best Next Improvements
 
-| Feature | Popis |
-|---------|-------|
-| Prioritizácia cieľov | Heroes, transport, artillery majú vyššiu prioritu |
-| Pathfinding | A* s terrain cost |
-| Attack decision | Najlepšia zbraň + šanca na zásah |
-| Demolition targeting | AI ničí destructible terrain |
-| Movement toward enemies | Pohyb k najbližšiemu nepriateľovi |
-| Supply action | AI jednotky môžu zásobovať |
-
-### Chýba ❌
-
-| Feature | Popis |
-|---------|-------|
-| ~~Difficulty levels~~ | ✅ **IMPLEMENTOVANÉ** - easy/normal/hard/brutal |
-| Formation movement | Skupinový pohyb |
-| Retreat behavior | AI neustupuje |
-| Magic/Spell casting | Špeciálne schopnosti |
-| Ambush tactics | Čakanie na hráča |
-
----
-
-## 5. UI/UX
-
-### Implementované ✅
-
-- Main menu so save slotmi
-- Strategic HQ s mapou
-- Army management (recruit, refill, dismiss)
-- Research tree
-- Territory selection s brífingom
-- Tactical battle UI
-- Unit selection panel
-- Attack confirmation
-- Combat log
-- End turn button
-- Retreat button
-
-### Čiastočne implementované ⚠️
-
-| Feature | Čo chýba |
-|---------|----------|
-| ~~Hit chance display~~ | ✅ **IMPLEMENTOVANÉ** - Ukázať % priamo na mape |
-| ~~Damage preview~~ | ✅ **IMPLEMENTOVANÉ** - Predpokladaný damage pri mierení |
-| Formation movement | UI pre pohyb skupiny |
-| Turbo mode | Zrýchlenie animácií nepriateľa |
-| Tooltips | Vysvetlenia mechaník |
-
-### Chýba ❌
-
-- Kovový/industriálny UI vzhľad (originál)
-- Zelené monochromatické displeje
-- Detailed unit info popup
-- Mini-tutoriál
-
----
-
-## 6. AUDIO
-
-### Chýba ❌
-
-- Zvuky zbraní
-- Zvuky monštier
-- Ambient hudba
-- UI zvuky
-- Dabing/hlasy
-
----
-
-## PRIORITNÝ ZOZNAM NA DOPLNENIE
-
-### Vysoká priorita (Core gameplay)
-
-1. **Opportunity Fire (Reaction)** - Automatická paľba pri pohybe nepriateľa
-2. **Strength = Damage** - Menej HP = menej damage output
-3. **Hit chance display** - Ukázať % priamo na mape pri mierení
-4. **Difficulty levels** - Easy/Normal/Hard pre AI
-
-### Stredná priorita (Polish)
-
-5. **Wolf Riders & Hell Riders** - Chýbajúce enemy jednotky
-6. **Resource slider** - Money/Research allocation
-7. **Formation bonus UI** - Zobrazenie a úprava formácií
-8. **Turbo mode** - Zrýchlenie AI ťahu
-
-### Nízka priorita (Nice to have)
-
-9. **Audio** - Zvuky a hudba
-10. **Radar Deploy/Pack** - Špeciálna mechanika pre radar jednotky
-11. **Arrow Towers** - Statické obranné veže
-12. **Ironman mode** - Limitované ukladanie
-
----
-
-## ZÁVER
-
-Náš remake má **solídny základ** a pokrýva väčšinu core mechaník originálnej hry:
-
-- ✅ Strategická vrstva funguje dobre
-- ✅ Taktický boj je funkčný
-- ✅ Väčšina jednotiek je implementovaná
-- ✅ Základná AI funguje
-
-Hlavné oblasti na zlepšenie:
-- ⚠️ Opportunity Fire systém
-- ⚠️ Damage scaling podľa HP
-- ⚠️ UI feedback (hit chance, damage preview)
-- ❌ Audio úplne chýba
-
-Celkovo je hra **hrateľná a zábavná**, ale na plné priblíženie sa originálu treba ešte dopracovať uvedené featury.
+1. Add deeper tactical scripting: ambushes, reinforcements, forced retreats, and special objectives.
+2. Give caster, monster, radar, and commander units more distinct active abilities.
+3. Expand formation and officer management in the strategic UI.
+4. Add more scenario-specific story flavor without copying original text.
+5. Keep splitting the renderer into smaller modules as visual systems stabilize.

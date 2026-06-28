@@ -1,3 +1,4 @@
+import { isSupplyUnit } from '@spellcross/core';
 import type { UnitInstance } from '@spellcross/core';
 import React from 'react';
 
@@ -10,7 +11,7 @@ interface Props {
 // Only shown for a supply unit (support type carrying no ammo of its own). Refills an adjacent
 // friendly unit's ammo to full for 2 AP.
 export const SupplyButton: React.FC<Props> = ({ unit, hasTarget, onSupply }) => {
-  if (!unit || unit.unitType !== 'support' || (unit.stats.ammoCapacity ?? 0) !== 0) return null;
+  if (!unit || !isSupplyUnit(unit)) return null;
   const disabled = !hasTarget || unit.actionPoints < 2;
   const reason = unit.actionPoints < 2 ? 'Needs 2 AP' : !hasTarget ? 'No adjacent ally' : '';
   return (
