@@ -210,7 +210,10 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
     hitChance,
     roll,
     defenderRemainingHealth: defender.currentHealth,
-    defenderRemainingMorale: defender.currentMorale
+    defenderRemainingMorale: defender.currentMorale,
+    // Where the defender stood when this shot resolved. For reaction fire during a move this is the
+    // path tile the mover was crossing — the UI uses it to anchor/time the muzzle to the glide.
+    defenderAt: { q: defender.coordinate.q, r: defender.coordinate.r }
   });
 
   if (defender.currentHealth === 0) {

@@ -70,6 +70,9 @@ describe('Overwatch (reaction fire)', () => {
 
     const shot = state.timeline.find(e => e.kind==='unit:attacked');
     expect(shot).toBeDefined();
+    // The shot is recorded at the path tile the mover was crossing when it entered range (q1, distance 4),
+    // NOT the destination (q3) — so the UI can anchor the muzzle to the glide instead of the end tile.
+    expect(shot?.kind === 'unit:attacked' ? shot.defenderAt : undefined).toEqual({ q: 1, r: 1 });
   });
 
   it('stops movement if the unit is destroyed by reaction fire and does not log unit:moved', () => {

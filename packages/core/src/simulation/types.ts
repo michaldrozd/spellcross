@@ -216,6 +216,7 @@ export type BattleEvent =
       roll: number;
       defenderRemainingHealth: number;
       defenderRemainingMorale: number;
+      defenderAt?: HexCoordinate; // defender's position when the shot resolved (reaction fire = path tile)
     }
   | {
       kind: 'unit:defeated';

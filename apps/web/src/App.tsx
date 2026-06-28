@@ -1424,8 +1424,10 @@ const BattleView: React.FC<{
     defender: UnitInstance,
     weaponId: string,
     outcome: { hit: boolean; damage: number },
-    delay = 0
+    delay = 0,
+    atCoord?: { q: number; r: number }
   ) => {
+    const to = atCoord ?? defender.coordinate;
     const effectType = effectTypeForAttack(attacker, defender, weaponId);
     const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
     const noticeTitle = outcome.hit ? 'Hit Confirmed' : 'Shot Missed';
@@ -1437,8 +1439,8 @@ const BattleView: React.FC<{
       id: `${attacker.id}-${defender.id}-${nextEffectId()}`,
       fromQ: attacker.coordinate.q,
       fromR: attacker.coordinate.r,
-      toQ: defender.coordinate.q,
-      toR: defender.coordinate.r,
+      toQ: to.q,
+      toR: to.r,
       startTime: Date.now() + delay,
       type: effectType,
       damage: outcome.damage,
@@ -1498,26 +1500,9 @@ const BattleView: React.FC<{
       return false;
     }
 
-    // Visualize any reaction fire the move provoked. Without this an enemy that reaction-fires from fog
-    // damages the mover with no muzzle flash and no sprite (it stays hidden) — "a unit I can't see shoots
-    // me". The effect reveals the shooter (recentAttackSource) and shows the HIT/MISS.
-    let reactionShots = 0;
-    for (const ev of battle.state.timeline.slice(timelineBefore)) {
-      if (ev.kind !== 'unit:attacked' || ev.defenderId !== unitId) continue;
-      const shooter = findBattleUnit(ev.attackerId);
-      const target = findBattleUnit(ev.defenderId);
-      if (!shooter || !target) continue;
-      if (reactionShots === 0) AudioManager.play('reaction'); // overwatch snap precedes the muzzle
-      const sfx = soundForAttackEffect(effectTypeForAttack(shooter, target, ev.weapon));
-      const delay = 200 + reactionShots * 450;
-      addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay);
-      aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
-        AudioManager.play(sfx);
-        if (ev.hit !== false) window.setTimeout(() => AudioManager.play('hit', { intensity: Math.min(1, (ev.damage ?? 0) / 25), material: impactMaterialFor(target), pan: impactPanFor(target, battle.state.map) }), 240);
-      }, delay));
-      reactionShots += 1;
-    }
-
+    // Set up the glide FIRST so we know its timing, then sync the reaction-fire VFX to it — otherwise the
+    // engine resolves reaction fire instantly against the destination and the muzzle/HIT appeared on the
+    // target tile before the unit had visually arrived ("enemies shoot an empty destination").
     const unitType = (unit as any).unitType;
     const isTruck = unitType === 'support' && unit.definitionId.toLowerCase().includes('truck');
     const isVehicleMove = unitType === 'vehicle' || unitType === 'artillery' || isTruck;
@@ -1533,13 +1518,14 @@ const BattleView: React.FC<{
     const fullPath = [startCoord, ...actualPath];
     const stepDuration = isVehicleMove ? 420 : 180;
     const isM113Move = unit.definitionId.toLowerCase().includes('m113');
+    const preAlignDuration = isVehicleMove ? (isM113Move ? 0 : 150) : 0;
     if (fullPath.length >= 2) {
       const nextMovingUnit = {
         unitId,
         path: fullPath,
         startTime: Date.now(),
         stepDuration,
-        preAlignDuration: isVehicleMove ? (isM113Move ? 0 : 150) : 0,
+        preAlignDuration,
         segmentTurnDuration: isM113Move ? 90 : 0
       };
       // realistic engine/track/footstep audio matched to how long this glide actually takes
@@ -1550,6 +1536,32 @@ const BattleView: React.FC<{
       });
     } else {
       AudioManager.playMovement(moveProfile, stepDuration);
+    }
+
+    // When the glide reaches the tile the mover was on when an enemy reaction-fired (engine records it as
+    // defenderAt), flash the muzzle/HIT there. Reveals the shooter and shows HIT/MISS at the right moment.
+    const arrivalDelayFor = (coord: HexCoordinate) => {
+      const idx = fullPath.findIndex((c) => c.q === coord.q && c.r === coord.r);
+      const stepIndex = idx < 0 ? fullPath.length - 1 : idx;
+      return preAlignDuration + stepIndex * stepDuration;
+    };
+    let reactionShots = 0;
+    for (const ev of battle.state.timeline.slice(timelineBefore)) {
+      if (ev.kind !== 'unit:attacked' || ev.defenderId !== unitId) continue;
+      const shooter = findBattleUnit(ev.attackerId);
+      const target = findBattleUnit(ev.defenderId);
+      if (!shooter || !target) continue;
+      const reactAt = ev.defenderAt ?? target.coordinate;
+      const delay = arrivalDelayFor(reactAt) + reactionShots * 40;
+      // overwatch snap just before the muzzle
+      if (reactionShots === 0) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('reaction'), Math.max(0, delay - 120)));
+      const sfx = soundForAttackEffect(effectTypeForAttack(shooter, target, ev.weapon));
+      addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay, reactAt);
+      aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
+        AudioManager.play(sfx);
+        if (ev.hit !== false) window.setTimeout(() => AudioManager.play('hit', { intensity: Math.min(1, (ev.damage ?? 0) / 25), material: impactMaterialFor(target), pan: impactPanFor(target, battle.state.map) }), 240);
+      }, delay));
+      reactionShots += 1;
     }
 
     setSelected(unitId);
