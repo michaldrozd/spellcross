@@ -117,6 +117,25 @@ describe('campaign core', () => {
     expect(sumVision(foggedWithOptics, 'otherSide')).toBe(sumVision(fogged, 'otherSide'));
   });
 
+  it('applies research stat bonuses to fielded units', () => {
+    const infantry = (battle: ReturnType<typeof startBattleForTerritory>) =>
+      Array.from(battle.state.sides.alliance.units.values()).filter((u) => u.unitType === 'infantry');
+
+    const plain = createCampaign(starterBundle);
+    const before = startBattleForTerritory(plain, starterBundle, 'sector-paris');
+
+    const teched = createCampaign(starterBundle);
+    teched.research.completed.add('field-fortification'); // +1 armor to infantry/hero
+    const after = startBattleForTerritory(teched, starterBundle, 'sector-paris');
+
+    const beforeInf = infantry(before);
+    const afterInf = infantry(after);
+    expect(afterInf.length).toBe(beforeInf.length);
+    expect(afterInf.length).toBeGreaterThan(0);
+    const armorGain = afterInf.reduce((s, u) => s + u.stats.armor, 0) - beforeInf.reduce((s, u) => s + u.stats.armor, 0);
+    expect(armorGain).toBe(beforeInf.length); // exactly +1 armor per infantry
+  });
+
   it('stores casualties and rewards after a victory', () => {
     const state = createCampaign(starterBundle);
     const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');

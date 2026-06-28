@@ -567,6 +567,36 @@ const applyFormationBonus = (unit: UnitDefinition, bonus?: Formation['bonus']): 
   };
 };
 
+// Completed research with a statBonus permanently upgrades units of the matching type that you field.
+const applyResearchBonus = (state: CampaignState, bundle: ContentBundle, unit: UnitDefinition): UnitDefinition => {
+  let armor = 0, power = 0, range = 0, accuracy = 0;
+  for (const topic of bundle.research) {
+    if (!topic.statBonus || !state.research.completed.has(topic.id)) continue;
+    if (topic.applyTo && !topic.applyTo.includes(unit.type as 'infantry')) continue;
+    armor += topic.statBonus.armor ?? 0;
+    power += topic.statBonus.weaponPower ?? 0;
+    range += topic.statBonus.range ?? 0;
+    accuracy += topic.statBonus.accuracy ?? 0;
+  }
+  if (!armor && !power && !range && !accuracy) return unit;
+  return {
+    ...unit,
+    stats: {
+      ...unit.stats,
+      armor: unit.stats.armor + armor,
+      weaponPower: power
+        ? Object.fromEntries(Object.entries(unit.stats.weaponPower).map(([k, v]) => [k, v + power]))
+        : unit.stats.weaponPower,
+      weaponRanges: range
+        ? Object.fromEntries(Object.entries(unit.stats.weaponRanges).map(([k, v]) => [k, v + range]))
+        : unit.stats.weaponRanges,
+      weaponAccuracy: accuracy
+        ? Object.fromEntries(Object.entries(unit.stats.weaponAccuracy).map(([k, v]) => [k, Math.min(0.98, v + accuracy)]))
+        : unit.stats.weaponAccuracy
+    }
+  };
+};
+
 const buildArmySide = (
   state: CampaignState,
   bundle: ContentBundle,
@@ -627,8 +657,9 @@ const buildArmySide = (
     const tierAdjusted = applyTierAdjustments(baseDef, roster.tier);
     const formation = state.formations.find((f) => f.units.includes(roster.id));
     const withFormation = applyFormationBonus(tierAdjusted, formation?.bonus);
+    const withResearch = applyResearchBonus(state, bundle, withFormation);
     tacticalUnits.push({
-      definition: withFormation,
+      definition: withResearch,
       coordinate: startTiles[i],
       rosterId: roster.id
     });

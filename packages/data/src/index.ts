@@ -131,6 +131,9 @@ export interface ResearchTopic {
   cost: number;
   unlocks: string[];
   requires?: string[];
+  // Completing the topic permanently buffs units you already field (not just unlocks new ones).
+  statBonus?: { armor?: number; weaponPower?: number; range?: number; accuracy?: number };
+  applyTo?: Array<'infantry' | 'vehicle' | 'artillery' | 'air' | 'support' | 'hero'>;
 }
 
 export type ObjectiveKind = 'eliminate' | 'reach' | 'protect' | 'hold';
@@ -275,7 +278,16 @@ const researchSchema = z.object({
   description: z.string(),
   cost: z.number().positive(),
   unlocks: z.array(z.string()),
-  requires: z.array(z.string()).optional()
+  requires: z.array(z.string()).optional(),
+  statBonus: z
+    .object({
+      armor: z.number().optional(),
+      weaponPower: z.number().optional(),
+      range: z.number().optional(),
+      accuracy: z.number().optional()
+    })
+    .optional(),
+  applyTo: z.array(z.enum(['infantry', 'vehicle', 'artillery', 'air', 'support', 'hero'])).optional()
 });
 
 const scenarioUnitSchema = z.object({
@@ -1025,6 +1037,26 @@ export const starterResearch: ResearchTopic[] = [
     cost: 220,
     unlocks: ['sky-lance'],
     requires: ['arcane-shielding']
+  },
+  {
+    id: 'field-fortification',
+    name: 'Field Fortification',
+    description: 'Entrenching drills and body armor: +1 armor to all infantry you field.',
+    cost: 90,
+    unlocks: [],
+    requires: ['esprit-de-corps'],
+    statBonus: { armor: 1 },
+    applyTo: ['infantry', 'hero']
+  },
+  {
+    id: 'extended-barrels',
+    name: 'Extended Barrels',
+    description: 'Longer gun tubes and better charges: +1 range to all artillery you field.',
+    cost: 110,
+    unlocks: [],
+    requires: ['siege-ops'],
+    statBonus: { range: 1 },
+    applyTo: ['artillery']
   }
 ];
 
