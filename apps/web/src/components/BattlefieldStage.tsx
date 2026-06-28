@@ -204,6 +204,8 @@ export interface BattlefieldStageProps {
   deployMode?: boolean;
   targetHitChance?: number; // 0-1, hit chance to display on target
   targetDamagePreview?: number; // predicted damage to show
+  targetLethal?: boolean; // the previewed shot would kill the target
+  onUnitHover?: (unitId: string | null) => void;
   selectedUnitId?: string;
   viewerFaction?: FactionId;
   width?: number;
@@ -1320,6 +1322,8 @@ export function BattlefieldStage({
   deployMode = false,
   targetHitChance,
   targetDamagePreview,
+  targetLethal = false,
+  onUnitHover,
   selectedUnitId,
   viewerFaction = 'alliance',
   width,
@@ -4258,7 +4262,12 @@ export function BattlefieldStage({
     const from = pointFor(selectedUnit);
     const to = pointFor(targetUnit);
     const explicitTarget = targetHitChance !== undefined;
+    const aimColor = targetLethal ? 0xff5747 : 0xffe27a;
+    const readout = explicitTarget
+      ? `${Math.round((targetHitChance ?? 0) * 100)}%${targetDamagePreview !== undefined ? `  -${targetDamagePreview}` : ''}${targetLethal ? '  KILL' : ''}`
+      : '';
     return (
+      <>
       <Graphics
         draw={(g) => {
           g.clear();
@@ -4287,7 +4296,7 @@ export function BattlefieldStage({
               g.moveTo(sx + (ex - sx) * a, sy + (ey - sy) * a);
               g.lineTo(sx + (ex - sx) * b, sy + (ey - sy) * b);
             }
-            g.lineStyle(0.75, 0xffe27a, 0.92);
+            g.lineStyle(0.75, aimColor, 0.92);
             for (let d = 0; d < linkLen; d += step) {
               const a = d / linkLen;
               const b = Math.min(d + dash, linkLen) / linkLen;
@@ -4310,7 +4319,7 @@ export function BattlefieldStage({
               g.moveTo(cx, cy - 2.2); g.lineTo(cx, cy + 2.2);
             };
             g.lineStyle(1.6, 0x0a0d0a, 0.6); reticle();
-            g.lineStyle(0.9, 0xffe27a, 0.96); reticle();
+            g.lineStyle(0.9, aimColor, 0.96); reticle();
           } else {
             g.lineStyle(0.9, 0x0a0d0a, 0.34);
             g.moveTo(sx, sy); g.lineTo(ex, ey);
@@ -4319,8 +4328,27 @@ export function BattlefieldStage({
           }
         }}
       />
+      {explicitTarget && readout ? (
+        <Text
+          text={readout}
+          x={to.x}
+          y={to.y - tileSize * 0.62}
+          anchor={{ x: 0.5, y: 1 }}
+          resolution={2}
+          style={new TextStyle({
+            fontFamily: 'Courier New',
+            fontSize: 11,
+            fontWeight: '700',
+            fill: targetLethal ? 0xff7a6a : 0xffe6a6,
+            stroke: 0x120604,
+            strokeThickness: 3,
+            align: 'center'
+          })}
+        />
+      ) : null}
+      </>
     );
-  }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetUnitId, toScreen, topGeomFor, visibleTiles]);
+  }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetDamagePreview, targetLethal, targetUnitId, toScreen, topGeomFor, visibleTiles, tileSize]);
 
   const objectiveOverlays = useMemo(() => {
     if (objectiveCoords.length === 0) return [];
@@ -4629,6 +4657,8 @@ export function BattlefieldStage({
             hitArea={unitHitArea}
             pointerdown={stopUnitEvent}
             pointertap={handleUnitTap}
+            pointerover={!isFriendly ? () => onUnitHover?.(unit.id) : undefined}
+            pointerout={!isFriendly ? () => onUnitHover?.(null) : undefined}
           >
             <Graphics
               zIndex={0}

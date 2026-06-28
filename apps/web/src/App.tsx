@@ -765,6 +765,7 @@ const BattleView: React.FC<{
   const [phaseNotice, setPhaseNotice] = useState<{ id: number; title: string; detail: string; tone: 'enemy' | 'alliance' } | null>(null);
   const [pendingAttack, setPendingAttack] = useState<{ id: string; time: number } | null>(null);
   const [targetedEnemy, setTargetedEnemy] = useState<UnitInstance | null>(null);
+  const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null);
   const [cameraRestoreSignal, setCameraRestoreSignal] = useState(0);
   const size = 26;
   const width = Math.max(1100, map.width * size * 2.4);
@@ -808,8 +809,19 @@ const BattleView: React.FC<{
     }
     return bestId;
   })();
-  const previewEnemy = targetedEnemy;
-  const targetWeaponPreview = selectedUnit && targetedEnemy ? bestWeapon(selectedUnit, targetedEnemy, battle.state.map, battle.state.weather) : null;
+  // A hovered enemy previews the shot before you commit; an explicit target still wins if set.
+  const hoveredEnemy = (() => {
+    if (!hoveredEnemyId || !selectedUnit) return null;
+    const u = battle.state.sides.otherSide.units.get(hoveredEnemyId);
+    if (!u || u.stance === 'destroyed') return null;
+    const idx = u.coordinate.r * battle.state.map.width + u.coordinate.q;
+    if (!battle.state.vision.alliance.visibleTiles.has(idx)) return null;
+    return u;
+  })();
+  const previewEnemy = targetedEnemy ?? hoveredEnemy;
+  const targetWeaponPreview = selectedUnit && previewEnemy ? bestWeapon(selectedUnit, previewEnemy, battle.state.map, battle.state.weather) : null;
+  const previewDamage = previewEnemy && targetWeaponPreview ? selectedUnit?.stats.weaponPower[targetWeaponPreview.weapon] : undefined;
+  const previewLethal = !!previewEnemy && previewDamage !== undefined && previewDamage >= previewEnemy.currentHealth;
   const threatenedPathTiles = useMemo(() => {
     if (!plannedPath || !selectedUnit) return undefined;
     const keys = analyzePathThreat(battle.state, selectedUnit, plannedPath).threatenedKeys;
@@ -2045,8 +2057,10 @@ const BattleView: React.FC<{
           targetUnitId={previewEnemy?.id}
           restoreCameraSignal={cameraRestoreSignal}
           deployMode={deployMode}
-          targetHitChance={targetedEnemy && targetWeaponPreview ? targetWeaponPreview.hit / 100 : undefined}
-          targetDamagePreview={targetedEnemy && targetWeaponPreview ? selectedUnit?.stats.weaponPower[targetWeaponPreview.weapon] : undefined}
+          targetHitChance={previewEnemy && targetWeaponPreview ? targetWeaponPreview.hit / 100 : undefined}
+          targetDamagePreview={previewDamage}
+          targetLethal={previewLethal}
+          onUnitHover={setHoveredEnemyId}
           viewerFaction="alliance"
           width={window.innerWidth}
           height={window.innerHeight}
