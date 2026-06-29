@@ -109,6 +109,7 @@ export interface UnitStatsData {
   transportCapacity?: number;
   stealth?: number; // stealth rating - harder to detect (used by Hell Riders)
   spotter?: boolean; // wide-detection recon that can feed shared vision (PSI Corps, radar)
+  fear?: number; // supernatural dread: saps morale of nearby mundane enemies (undead, demons, the titan)
   weaponRanges: Record<string, number>;
   weaponPower: Record<string, number>;
   weaponAccuracy: Record<string, number>;
@@ -258,6 +259,7 @@ const unitStatsSchema = z.object({
   transportCapacity: z.number().int().nonnegative().optional(),
   stealth: z.number().int().nonnegative().optional(),
   spotter: z.boolean().optional(),
+  fear: z.number().int().nonnegative().optional(),
   weaponRanges: z.record(z.string(), z.number().int().nonnegative()),
   weaponPower: z.record(z.string(), z.number().nonnegative()),
   weaponAccuracy: z.record(z.string(), z.number().min(0).max(1)),
@@ -627,6 +629,7 @@ export const starterUnits: UnitData[] = [
       vision: 6,
       armor: 2,
       morale: 60,
+    fear: 1,
     weaponRanges: { talons: 1, scream: 4 },
     weaponPower: { talons: 16, scream: 14 },
     weaponAccuracy: { talons: 0.74, scream: 0.62 }
@@ -760,6 +763,7 @@ export const starterUnits: UnitData[] = [
       vision: 7,
       armor: 1,
       morale: 80,
+      fear: 1,
       weaponRanges: { curse: 6 },
       weaponPower: { curse: 18 },
       weaponAccuracy: { curse: 0.72 }
@@ -796,6 +800,7 @@ export const starterUnits: UnitData[] = [
       vision: 7,
       armor: 0,
       morale: 80,
+      fear: 2,
       weaponRanges: { claws: 1, shadow: 4 },
       weaponPower: { claws: 18, shadow: 14 },
       weaponAccuracy: { claws: 0.78, shadow: 0.66 }
@@ -853,6 +858,7 @@ export const starterUnits: UnitData[] = [
       vision: 7,
       armor: 2,
       morale: 90,
+      fear: 2,
       weaponRanges: { doom: 6, hex: 4 },
       weaponPower: { doom: 26, hex: 16 },
       weaponAccuracy: { doom: 0.68, hex: 0.7 }
@@ -871,6 +877,7 @@ export const starterUnits: UnitData[] = [
       vision: 8,
       armor: 6,
       morale: 85,
+      fear: 1,
       weaponRanges: { flame: 3, dive: 1, shriek: 5 },
       weaponPower: { flame: 24, dive: 30, shriek: 18 },
       weaponAccuracy: { flame: 0.7, dive: 0.82, shriek: 0.66 }
@@ -889,6 +896,7 @@ export const starterUnits: UnitData[] = [
       vision: 6,
       armor: 9,
       morale: 80,
+      fear: 1,
       weaponRanges: { magma: 4, bolt: 6 },
       weaponPower: { magma: 32, bolt: 24 },
       weaponAccuracy: { magma: 0.64, bolt: 0.6 }
@@ -1095,6 +1103,7 @@ export const starterUnits: UnitData[] = [
     id: 'harpy-swarm', name: 'Harpy Swarm', faction: 'otherSide', type: 'air', role: 'recon', cost: 0,
     stats: {
       maxHealth: 60, mobility: 13, vision: 5, armor: 2, morale: 70,
+      fear: 1,
       weaponRanges: { talons: 1, shriek: 3 }, weaponPower: { talons: 10, shriek: 6 }, weaponAccuracy: { talons: 0.74, shriek: 0.8 }
     }
   },
@@ -1102,6 +1111,7 @@ export const starterUnits: UnitData[] = [
     id: 'arachnoid', name: 'Arachnoid', faction: 'otherSide', type: 'vehicle', role: 'line', cost: 0,
     stats: {
       maxHealth: 100, mobility: 8, vision: 6, armor: 5, morale: 68,
+      fear: 1,
       weaponRanges: { spit: 6, mandible: 1 }, weaponPower: { spit: 16, mandible: 18 }, weaponAccuracy: { spit: 0.6, mandible: 0.78 },
       weaponTargets: { spit: ['vehicle', 'artillery'] }
     }
@@ -1110,6 +1120,7 @@ export const starterUnits: UnitData[] = [
     id: 'death-knight', name: 'Knights of Death', faction: 'otherSide', type: 'vehicle', role: 'line', cost: 0,
     stats: {
       maxHealth: 130, mobility: 9, vision: 6, armor: 8, morale: 90,
+      fear: 2,
       weaponRanges: { runeblade: 1, hex: 4 }, weaponPower: { runeblade: 24, hex: 16 }, weaponAccuracy: { runeblade: 0.78, hex: 0.62 }
     }
   },
@@ -1117,6 +1128,7 @@ export const starterUnits: UnitData[] = [
     id: 'black-angel', name: 'Black Angels', faction: 'otherSide', type: 'air', role: 'line', cost: 0,
     stats: {
       maxHealth: 110, mobility: 12, vision: 5, armor: 5, morale: 88,
+      fear: 2,
       weaponRanges: { dive: 1, hellfire: 4 }, weaponPower: { dive: 24, hellfire: 18 }, weaponAccuracy: { dive: 0.8, hellfire: 0.64 }
     }
   },
@@ -1124,6 +1136,7 @@ export const starterUnits: UnitData[] = [
     id: 'stone-golem', name: 'Stone Golem', faction: 'otherSide', type: 'vehicle', role: 'line', cost: 0,
     stats: {
       maxHealth: 170, mobility: 4, vision: 5, armor: 11, morale: 100,
+      fear: 2,
       weaponRanges: { slam: 1, boulder: 5 }, weaponPower: { slam: 28, boulder: 18 }, weaponAccuracy: { slam: 0.76, boulder: 0.56 }
     }
   },
@@ -1131,6 +1144,7 @@ export const starterUnits: UnitData[] = [
     id: 'breorn-titan', name: 'Breorn', faction: 'otherSide', type: 'vehicle', role: 'line', cost: 0,
     stats: {
       maxHealth: 260, mobility: 4, vision: 6, armor: 14, morale: 100,
+      fear: 3,
       weaponRanges: { maul: 1, quake: 3 }, weaponPower: { maul: 44, quake: 30 }, weaponAccuracy: { maul: 0.8, quake: 0.6 }
     }
   }

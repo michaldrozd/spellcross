@@ -186,6 +186,23 @@ export class TurnProcessor {
         unit.currentMorale = Math.min(100, unit.currentMorale + 2);
       }
 
+      // Fear aura: supernatural enemies (undead, demons, the titan) sap the morale of mundane
+      // troops within 2 hexes. Strongest source wins, no stacking. Units that project fear
+      // themselves are fearless and immune.
+      if (!unit.stats.fear) {
+        let dread = 0;
+        for (const enemy of enemySide.units.values()) {
+          if (enemy.stance === 'destroyed') continue;
+          const f = enemy.stats.fear ?? 0;
+          if (f > 0 && isoDistance(enemy.coordinate, unit.coordinate) <= 2) {
+            dread = Math.max(dread, f);
+          }
+        }
+        if (dread > 0) {
+          unit.currentMorale = Math.max(0, unit.currentMorale - dread * 2);
+          unit.stance = unit.currentMorale <= 20 ? 'routed' : unit.currentMorale <= 40 ? 'suppressed' : 'ready';
+        }
+      }
     }
 
     this.#state.round += current === 'otherSide' ? 1 : 0;
