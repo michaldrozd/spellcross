@@ -72,13 +72,13 @@ Before finishing a gameplay or rendering change:
 <claude-mem-context>
 # Memory Context
 
-# [spellcross] recent context, 2026-05-06 8:55am GMT+2
+# [spellcross] recent context, 2026-06-28 9:29am GMT+2
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 26 obs (10,994t read) | 898,966t work | 99% savings
+Stats: 27 obs (11,218t read) | 911,230t work | 99% savings
 
 ### Apr 24, 2026
 1119 8:26p 🔵 spellcross — full project architecture confirmed
@@ -109,6 +109,8 @@ Stats: 26 obs (10,994t read) | 898,966t work | 99% savings
 ### Apr 26, 2026
 1378 7:49p 🔵 spellcross — visual QA re-audit after terrain and overlay refinements
 1380 7:58p 🔵 spellcross — visual QA re-audit after HUD/range pass
+### Jun 28, 2026
+5968 7:58a 🔵 Game Study Session Initiated — Referencing Prior Session d67b6f68
 
-Access 899k tokens of past work via get_observations([IDs]) or mem-search skill.
+Access 911k tokens of past work via get_observations([IDs]) or mem-search skill.
 </claude-mem-context>

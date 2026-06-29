@@ -351,10 +351,10 @@ function generate(cfg: CityConfig): Generated {
 // enemy units (wolf-rider, hell-rider, skeleton-horde, arrow-tower) into play on the hard sectors. ---
 const ROSTER_BY_DIFFICULTY: Record<number, string[]> = {
   1: ['orc-warband', 'ghoul-pack', 'skeleton-horde'],
-  2: ['orc-warband', 'ghoul-pack', 'wolf-rider', 'necromancer'],
-  3: ['ogre-brute', 'wolf-rider', 'necromancer', 'specter', 'arrow-tower'],
-  4: ['ogre-brute', 'hell-rider', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde'],
-  5: ['demon-engine', 'hell-rider', 'lich-lord', 'void-drake', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde', 'specter']
+  2: ['orc-warband', 'ghoul-pack', 'wolf-rider', 'necromancer', 'ka-orc', 'war-orc', 'dark-elf-archers', 'dire-wolves'],
+  3: ['ogre-brute', 'wolf-rider', 'necromancer', 'specter', 'arrow-tower', 'antitank-orc', 'harpy-swarm', 'arachnoid'],
+  4: ['ogre-brute', 'hell-rider', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde', 'death-knight', 'stone-golem', 'antitank-orc'],
+  5: ['demon-engine', 'hell-rider', 'lich-lord', 'void-drake', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde', 'specter', 'breorn-titan', 'black-angel', 'death-knight', 'stone-golem']
 };
 
 function pickSpread(pool: Coord[], n: number, rng: () => number): Coord[] {

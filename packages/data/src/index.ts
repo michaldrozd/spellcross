@@ -108,6 +108,7 @@ export interface UnitStatsData {
   ammoCapacity?: number;
   transportCapacity?: number;
   stealth?: number; // stealth rating - harder to detect (used by Hell Riders)
+  spotter?: boolean; // wide-detection recon that can feed shared vision (PSI Corps, radar)
   weaponRanges: Record<string, number>;
   weaponPower: Record<string, number>;
   weaponAccuracy: Record<string, number>;
@@ -256,6 +257,7 @@ const unitStatsSchema = z.object({
   ammoCapacity: z.number().int().nonnegative().optional(),
   transportCapacity: z.number().int().nonnegative().optional(),
   stealth: z.number().int().nonnegative().optional(),
+  spotter: z.boolean().optional(),
   weaponRanges: z.record(z.string(), z.number().int().nonnegative()),
   weaponPower: z.record(z.string(), z.number().nonnegative()),
   weaponAccuracy: z.record(z.string(), z.number().min(0).max(1)),
@@ -965,6 +967,172 @@ export const starterUnits: UnitData[] = [
       weaponPower: { arrows: 14, oil: 20 },
       weaponAccuracy: { arrows: 0.68, oil: 0.72 }
     }
+  },
+
+  // --- Roster expansion: extra Alliance units mapped to original Spellcross archetypes ---
+  {
+    id: 'commando-team', name: 'Commandos', faction: 'alliance', type: 'infantry', role: 'recon', cost: 140,
+    stats: {
+      maxHealth: 80, mobility: 8, vision: 5, armor: 2, morale: 82, ammoCapacity: 6,
+      weaponRanges: { smg: 4, charge: 1 }, weaponPower: { smg: 18, charge: 36 }, weaponAccuracy: { smg: 0.74, charge: 0.86 },
+      weaponTargets: { charge: ['vehicle', 'artillery', 'support'] }
+    }
+  },
+  {
+    id: 'flamethrower-squad', name: 'Pyro Squad', faction: 'alliance', type: 'infantry', role: 'line', cost: 110,
+    stats: {
+      maxHealth: 100, mobility: 6, vision: 4, armor: 2, morale: 70, ammoCapacity: 6,
+      weaponRanges: { flamer: 2 }, weaponPower: { flamer: 26 }, weaponAccuracy: { flamer: 0.82 }
+    }
+  },
+  {
+    id: 'psi-corps', name: 'PSI Corps', faction: 'alliance', type: 'support', role: 'support', cost: 150,
+    stats: {
+      maxHealth: 80, mobility: 6, vision: 6, armor: 3, morale: 86, ammoCapacity: 8, spotter: true,
+      weaponRanges: { psilance: 6 }, weaponPower: { psilance: 18 }, weaponAccuracy: { psilance: 0.7 }
+    }
+  },
+  {
+    id: 'exo-troopers', name: 'Exo Troopers', faction: 'alliance', type: 'infantry', role: 'line', cost: 180,
+    stats: {
+      maxHealth: 130, mobility: 7, vision: 5, armor: 5, morale: 82, ammoCapacity: 10,
+      weaponRanges: { railrifle: 5, rocket: 4 }, weaponPower: { railrifle: 18, rocket: 24 }, weaponAccuracy: { railrifle: 0.7, rocket: 0.66 },
+      weaponTargets: { rocket: ['vehicle', 'air', 'artillery'] }
+    }
+  },
+  {
+    id: 'humvee-scout', name: 'Recon Humvee', faction: 'alliance', type: 'vehicle', role: 'recon', cost: 90,
+    stats: {
+      maxHealth: 70, mobility: 14, vision: 9, armor: 3, morale: 65, ammoCapacity: 8,
+      weaponRanges: { hmg: 5 }, weaponPower: { hmg: 12 }, weaponAccuracy: { hmg: 0.6 }
+    }
+  },
+  {
+    id: 'light-tank', name: 'TAM Light Tank', faction: 'alliance', type: 'vehicle', role: 'line', cost: 140,
+    stats: {
+      maxHealth: 95, mobility: 9, vision: 5, armor: 5, morale: 66, ammoCapacity: 8,
+      weaponRanges: { gun: 6, mg: 3 }, weaponPower: { gun: 20, mg: 8 }, weaponAccuracy: { gun: 0.66, mg: 0.56 }
+    }
+  },
+  {
+    id: 'bradley-ifv', name: 'Marder IFV', faction: 'alliance', type: 'vehicle', role: 'support', cost: 160,
+    stats: {
+      maxHealth: 100, mobility: 9, vision: 5, armor: 6, morale: 68, ammoCapacity: 8, transportCapacity: 1,
+      weaponRanges: { autocannon: 5, at: 3 }, weaponPower: { autocannon: 14, at: 18 }, weaponAccuracy: { autocannon: 0.62, at: 0.58 },
+      weaponTargets: { at: ['vehicle', 'artillery'] }
+    }
+  },
+  {
+    id: 'railgun-tank', name: 'Elmag Railgun', faction: 'alliance', type: 'vehicle', role: 'line', cost: 230,
+    stats: {
+      maxHealth: 110, mobility: 8, vision: 6, armor: 7, morale: 72, ammoCapacity: 6,
+      weaponRanges: { railgun: 7 }, weaponPower: { railgun: 32 }, weaponAccuracy: { railgun: 0.68 },
+      weaponTargets: { railgun: ['vehicle', 'artillery', 'air', 'support'] }
+    }
+  },
+  {
+    id: 'mlrs-battery', name: 'MLRS Battery', faction: 'alliance', type: 'artillery', role: 'support', cost: 250,
+    stats: {
+      maxHealth: 80, mobility: 6, vision: 5, armor: 3, morale: 68, ammoCapacity: 4,
+      weaponRanges: { rockets: 13 }, weaponPower: { rockets: 30 }, weaponAccuracy: { rockets: 0.54 }
+    }
+  },
+  {
+    id: 'avenger-aa', name: 'Avenger AA', faction: 'alliance', type: 'vehicle', role: 'support', cost: 120,
+    stats: {
+      maxHealth: 75, mobility: 10, vision: 6, armor: 4, morale: 62, ammoCapacity: 10,
+      weaponRanges: { aa: 6, gun: 4 }, weaponPower: { aa: 14, gun: 10 }, weaponAccuracy: { aa: 0.64, gun: 0.56 },
+      weaponTargets: { aa: ['air'] }
+    }
+  },
+  {
+    id: 'siege-walker', name: 'Destructor', faction: 'alliance', type: 'vehicle', role: 'line', cost: 360,
+    stats: {
+      maxHealth: 200, mobility: 5, vision: 7, armor: 13, morale: 85, ammoCapacity: 6,
+      weaponRanges: { siegecannon: 8, flak: 4 }, weaponPower: { siegecannon: 40, flak: 14 }, weaponAccuracy: { siegecannon: 0.66, flak: 0.6 },
+      weaponTargets: { flak: ['air'] }
+    }
+  },
+
+  // --- Roster expansion: extra Forces of Darkness units mapped to original archetypes ---
+  {
+    id: 'ka-orc', name: 'Ka-Orcs', faction: 'otherSide', type: 'infantry', role: 'line', cost: 0,
+    stats: {
+      maxHealth: 110, mobility: 6, vision: 4, armor: 3, morale: 60,
+      weaponRanges: { greataxe: 1, javelin: 3 }, weaponPower: { greataxe: 20, javelin: 12 }, weaponAccuracy: { greataxe: 0.8, javelin: 0.5 }
+    }
+  },
+  {
+    id: 'war-orc', name: 'War Orcs', faction: 'otherSide', type: 'infantry', role: 'line', cost: 0,
+    stats: {
+      maxHealth: 100, mobility: 6, vision: 5, armor: 3, morale: 60,
+      weaponRanges: { blunderbuss: 5 }, weaponPower: { blunderbuss: 16 }, weaponAccuracy: { blunderbuss: 0.56 }
+    }
+  },
+  {
+    id: 'antitank-orc', name: 'Anti-Tank Orcs', faction: 'otherSide', type: 'infantry', role: 'support', cost: 0,
+    stats: {
+      maxHealth: 90, mobility: 6, vision: 6, armor: 2, morale: 58,
+      weaponRanges: { ironlance: 5 }, weaponPower: { ironlance: 26 }, weaponAccuracy: { ironlance: 0.6 },
+      weaponTargets: { ironlance: ['vehicle', 'artillery', 'support'] }
+    }
+  },
+  {
+    id: 'dark-elf-archers', name: 'Dark Elf Archers', faction: 'otherSide', type: 'infantry', role: 'recon', cost: 0,
+    stats: {
+      maxHealth: 70, mobility: 7, vision: 5, armor: 1, morale: 62,
+      weaponRanges: { longbow: 6 }, weaponPower: { longbow: 14 }, weaponAccuracy: { longbow: 0.66 }
+    }
+  },
+  {
+    id: 'dire-wolves', name: 'Dire Wolves', faction: 'otherSide', type: 'vehicle', role: 'recon', cost: 0,
+    stats: {
+      maxHealth: 50, mobility: 13, vision: 6, armor: 0, morale: 55,
+      weaponRanges: { fangs: 1 }, weaponPower: { fangs: 14 }, weaponAccuracy: { fangs: 0.82 }
+    }
+  },
+  {
+    id: 'harpy-swarm', name: 'Harpy Swarm', faction: 'otherSide', type: 'air', role: 'recon', cost: 0,
+    stats: {
+      maxHealth: 60, mobility: 13, vision: 5, armor: 2, morale: 70,
+      weaponRanges: { talons: 1, shriek: 3 }, weaponPower: { talons: 10, shriek: 6 }, weaponAccuracy: { talons: 0.74, shriek: 0.8 }
+    }
+  },
+  {
+    id: 'arachnoid', name: 'Arachnoid', faction: 'otherSide', type: 'vehicle', role: 'line', cost: 0,
+    stats: {
+      maxHealth: 100, mobility: 8, vision: 6, armor: 5, morale: 68,
+      weaponRanges: { spit: 6, mandible: 1 }, weaponPower: { spit: 16, mandible: 18 }, weaponAccuracy: { spit: 0.6, mandible: 0.78 },
+      weaponTargets: { spit: ['vehicle', 'artillery'] }
+    }
+  },
+  {
+    id: 'death-knight', name: 'Knights of Death', faction: 'otherSide', type: 'vehicle', role: 'line', cost: 0,
+    stats: {
+      maxHealth: 130, mobility: 9, vision: 6, armor: 8, morale: 90,
+      weaponRanges: { runeblade: 1, hex: 4 }, weaponPower: { runeblade: 24, hex: 16 }, weaponAccuracy: { runeblade: 0.78, hex: 0.62 }
+    }
+  },
+  {
+    id: 'black-angel', name: 'Black Angels', faction: 'otherSide', type: 'air', role: 'line', cost: 0,
+    stats: {
+      maxHealth: 110, mobility: 12, vision: 5, armor: 5, morale: 88,
+      weaponRanges: { dive: 1, hellfire: 4 }, weaponPower: { dive: 24, hellfire: 18 }, weaponAccuracy: { dive: 0.8, hellfire: 0.64 }
+    }
+  },
+  {
+    id: 'stone-golem', name: 'Stone Golem', faction: 'otherSide', type: 'vehicle', role: 'line', cost: 0,
+    stats: {
+      maxHealth: 170, mobility: 4, vision: 5, armor: 11, morale: 100,
+      weaponRanges: { slam: 1, boulder: 5 }, weaponPower: { slam: 28, boulder: 18 }, weaponAccuracy: { slam: 0.76, boulder: 0.56 }
+    }
+  },
+  {
+    id: 'breorn-titan', name: 'Breorn', faction: 'otherSide', type: 'vehicle', role: 'line', cost: 0,
+    stats: {
+      maxHealth: 260, mobility: 4, vision: 6, armor: 14, morale: 100,
+      weaponRanges: { maul: 1, quake: 3 }, weaponPower: { maul: 44, quake: 30 }, weaponAccuracy: { maul: 0.8, quake: 0.6 }
+    }
   }
 ];
 
@@ -974,14 +1142,14 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Optics I',
     description: 'Scoped sights and rangefinders improve hit odds at distance.',
     cost: 60,
-    unlocks: ['rangers', 'gepard-aa']
+    unlocks: ['rangers', 'gepard-aa', 'humvee-scout']
   },
   {
     id: 'optics-ii',
     name: 'Optics II',
     description: 'Thermal and low-light sights improve reconnaissance in poor visibility.',
     cost: 130,
-    unlocks: ['sniper-team', 'attack-helo'],
+    unlocks: ['sniper-team', 'attack-helo', 'commando-team', 'psi-corps'],
     requires: ['optics-i']
   },
   {
@@ -989,7 +1157,7 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Composite Plating',
     description: 'Layered armor kits for frontline vehicles.',
     cost: 80,
-    unlocks: ['leopard-2'],
+    unlocks: ['leopard-2', 'light-tank', 'bradley-ifv', 'avenger-aa'],
     requires: ['optics-i']
   },
   {
@@ -1004,7 +1172,7 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Siege Operations',
     description: 'Ballistics tables and spotter protocols for heavy artillery.',
     cost: 180,
-    unlocks: ['spg-m109'],
+    unlocks: ['spg-m109', 'mlrs-battery', 'railgun-tank'],
     requires: ['armor-upfit']
   },
   {
@@ -1012,7 +1180,7 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Sanctified Ammunition',
     description: 'Blessed rounds to disrupt spectral enemies.',
     cost: 70,
-    unlocks: ['heavy-infantry'],
+    unlocks: ['heavy-infantry', 'flamethrower-squad'],
     requires: ['esprit-de-corps']
   },
   {
@@ -1027,7 +1195,7 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Arcane Shielding',
     description: 'Reinforced plating and wards for late-war artillery and SAM cover.',
     cost: 200,
-    unlocks: ['paladin-acs'],
+    unlocks: ['paladin-acs', 'siege-walker', 'exo-troopers'],
     requires: ['siege-ops']
   },
   {
