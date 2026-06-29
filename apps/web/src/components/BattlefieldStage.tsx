@@ -23,6 +23,7 @@ import {
   directionalSpriteGroundOffset,
   directionalVehicleSprite,
   directionNameForOrientation,
+  rasterUnitOverride,
   rasterVehiclePose,
   unitContactFootprint,
   unitPointerArea,
@@ -4685,8 +4686,13 @@ export function BattlefieldStage({
               let desiredH = tileSize * 0.45;
               let anchorY = 0.95;
               let canMirrorForFacing = true;
+              const rasterOverridePath = rasterUnitOverride(defId);
               const vehicleDirectionalSprite = directionalVehicleSprite(unitType, defId);
-              const directionalSprite = DIRECTIONAL_UNIT_SPRITES[defId] ?? vehicleDirectionalSprite;
+              // A hand-authored sprite wins over the generic directional sheet — otherwise a unit
+              // typed as `vehicle` (e.g. the Breorn titan) would fall back to the shared tank frames.
+              const directionalSprite = rasterOverridePath
+                ? undefined
+                : DIRECTIONAL_UNIT_SPRITES[defId] ?? vehicleDirectionalSprite;
               const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
               const isVehicleUnit = isGroundVehicle;
               const spriteDirection = isVehicleUnit && directionalSprite === 'm113_apc'
@@ -4768,6 +4774,12 @@ export function BattlefieldStage({
 	              } else if (unitType === 'artillery') {
 	                desiredH = unitVisualHeight(tileSize, unitType, defId);
 	                texturePath = isFriendly ? '/assets/generated/artillery_mlrs.png' : '/assets/generated/watchtower.png';
+	              } else if (unitType === 'air') {
+	                desiredH = unitVisualHeight(tileSize, unitType, defId);
+	                anchorY = 0.85;
+	                texturePath = isFriendly
+	                  ? '/assets/generated/helicopter_apache.png'
+	                  : '/assets/generated/black_angel.png';
 	              } else if (unitType === 'hero') {
 	                desiredH = unitVisualHeight(tileSize, unitType, defId);
 	                if (isFriendly) {
@@ -4779,6 +4791,11 @@ export function BattlefieldStage({
                     texturePath = '/assets/generated/necromancer.png';
                   }
                 }
+              }
+
+              // Per-unit unique sprite (generated art) overrides the type-branch fallback above.
+              if (!directionalSprite && rasterOverridePath) {
+                texturePath = rasterOverridePath;
               }
 
               if (!texture) {

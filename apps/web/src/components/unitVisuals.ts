@@ -66,7 +66,29 @@ export const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/bone_golem.png': 902,
   '/assets/generated/necromancer.png': 858,
   '/assets/generated/death_knight.png': 981,
-  '/assets/generated/tank_m1_abrams.png': 572
+  '/assets/generated/tank_m1_abrams.png': 572,
+  '/assets/generated/light_tank.png': 900,
+  '/assets/generated/breorn_titan.png': 1230,
+  '/assets/generated/ka_orc.png': 1190,
+  '/assets/generated/commando_team.png': 1228,
+  '/assets/generated/pyro_squad.png': 1187,
+  '/assets/generated/psi_corps.png': 1212,
+  '/assets/generated/exo_troopers.png': 1186,
+  '/assets/generated/humvee_scout.png': 1059,
+  '/assets/generated/bradley_ifv.png': 1130,
+  '/assets/generated/railgun_tank.png': 1094,
+  '/assets/generated/mlrs_battery.png': 1105,
+  '/assets/generated/avenger_aa.png': 1061,
+  '/assets/generated/siege_walker.png': 1173,
+  '/assets/generated/war_orc.png': 1233,
+  '/assets/generated/antitank_orc.png': 1216,
+  '/assets/generated/dark_elf_archers.png': 1254,
+  '/assets/generated/dire_wolves.png': 1228,
+  '/assets/generated/harpy_swarm.png': 1253,
+  '/assets/generated/arachnoid.png': 1171,
+  '/assets/generated/knights_of_death.png': 1252,
+  '/assets/generated/black_angel.png': 1188,
+  '/assets/generated/stone_golem.png': 1231
 };
 
 export const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
@@ -84,8 +106,62 @@ export const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
   '/assets/generated/sniper_team.png': 0.98,
   '/assets/generated/tank_m1_abrams.png': 0.65,
   '/assets/generated/watchtower.png': 0.99,
-  '/assets/generated/zombie_horde.png': 0.97
+  '/assets/generated/zombie_horde.png': 0.97,
+  '/assets/generated/light_tank.png': 0.78,
+  '/assets/generated/breorn_titan.png': 0.96,
+  '/assets/generated/ka_orc.png': 0.95,
+  '/assets/generated/commando_team.png': 0.93,
+  '/assets/generated/pyro_squad.png': 0.93,
+  '/assets/generated/psi_corps.png': 0.93,
+  '/assets/generated/exo_troopers.png': 0.93,
+  '/assets/generated/war_orc.png': 0.93,
+  '/assets/generated/antitank_orc.png': 0.93,
+  '/assets/generated/dark_elf_archers.png': 0.93,
+  '/assets/generated/humvee_scout.png': 0.8,
+  '/assets/generated/bradley_ifv.png': 0.8,
+  '/assets/generated/railgun_tank.png': 0.78,
+  '/assets/generated/avenger_aa.png': 0.8,
+  '/assets/generated/mlrs_battery.png': 0.82,
+  '/assets/generated/siege_walker.png': 0.82,
+  '/assets/generated/dire_wolves.png': 0.9,
+  '/assets/generated/arachnoid.png': 0.9,
+  '/assets/generated/knights_of_death.png': 0.92,
+  '/assets/generated/stone_golem.png': 0.95,
+  '/assets/generated/harpy_swarm.png': 0.85,
+  '/assets/generated/black_angel.png': 0.85
 };
+
+// Per-unit raster sprite overrides keyed by a substring of the unit definitionId. Checked after the
+// type-branch fallback so each new unit gets its own art; add a line here per generated sprite.
+const RASTER_UNIT_OVERRIDES: Array<[string, string]> = [
+  ['light-tank', '/assets/generated/light_tank.png'],
+  ['breorn', '/assets/generated/breorn_titan.png'],
+  ['ka-orc', '/assets/generated/ka_orc.png'],
+  ['commando', '/assets/generated/commando_team.png'],
+  ['flamethrower', '/assets/generated/pyro_squad.png'],
+  ['psi-corps', '/assets/generated/psi_corps.png'],
+  ['exo', '/assets/generated/exo_troopers.png'],
+  ['humvee', '/assets/generated/humvee_scout.png'],
+  ['bradley', '/assets/generated/bradley_ifv.png'],
+  ['railgun', '/assets/generated/railgun_tank.png'],
+  ['mlrs', '/assets/generated/mlrs_battery.png'],
+  ['avenger', '/assets/generated/avenger_aa.png'],
+  ['siege-walker', '/assets/generated/siege_walker.png'],
+  ['war-orc', '/assets/generated/war_orc.png'],
+  ['antitank-orc', '/assets/generated/antitank_orc.png'],
+  ['dark-elf', '/assets/generated/dark_elf_archers.png'],
+  ['dire', '/assets/generated/dire_wolves.png'],
+  ['harpy', '/assets/generated/harpy_swarm.png'],
+  ['arachnoid', '/assets/generated/arachnoid.png'],
+  ['death-knight', '/assets/generated/knights_of_death.png'],
+  ['black-angel', '/assets/generated/black_angel.png'],
+  ['stone-golem', '/assets/generated/stone_golem.png']
+];
+
+export function rasterUnitOverride(definitionId: string): string | null {
+  for (const [kw, path] of RASTER_UNIT_OVERRIDES) if (definitionId.includes(kw)) return path;
+  return null;
+}
 
 export const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
   artillery_directional: 0.93,
@@ -153,7 +229,20 @@ export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y:
 };
 
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
+  if (definitionId.includes('orc')) return tile * 0.6; // hulking orcs read larger than human infantry
+  if (unitType === 'air') {
+    if (definitionId.includes('black-angel')) return tile * 0.72;
+    if (definitionId.includes('harpy')) return tile * 0.5;
+    if (definitionId.includes('drake') || definitionId.includes('dragon') || definitionId.includes('fiend')) return tile * 0.62;
+    return tile * 0.58;
+  }
   if (unitType === 'vehicle') {
+    if (definitionId.includes('breorn')) return tile * 0.98; // boss titan towers over the field
+    if (definitionId.includes('golem')) return tile * 0.8;
+    if (definitionId.includes('siege-walker')) return tile * 0.72;
+    if (definitionId.includes('death-knight')) return tile * 0.66;
+    if (definitionId.includes('arachnoid')) return tile * 0.6;
+    if (definitionId.includes('dire') || definitionId.includes('wolf')) return tile * 0.52;
     if (directionalSprite === 'm113_apc') return tile * 0.43;
     if (directionalSprite === 'apc_directional') return tile * 0.398;
     if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.58;
@@ -168,6 +257,7 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
   if (definitionId.includes('golem') || definitionId.includes('ogre') || definitionId.includes('brute')) return tile * 0.74;
   if (directionalSprite === 'heavy_infantry') return tile * 0.45;
   if (directionalSprite === 'rangers') return tile * 0.56;
+  if (definitionId.includes('exo')) return tile * 0.6; // power-armor troopers are bulkier
   if (definitionId.includes('sniper') || definitionId.includes('scout')) return tile * 0.31;
   if (unitType === 'infantry') return tile * 0.56;
   return tile * 0.54;
