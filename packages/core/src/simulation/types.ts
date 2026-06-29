@@ -129,6 +129,7 @@ export interface UnitStats {
   transportCapacity?: number; // optional transport slots for carrying infantry/support
   stealth?: number; // reduces detection chance
   spotter?: boolean; // improves detection for adjacent tiles
+  fear?: number; // supernatural dread radius; saps morale of nearby mundane enemies
   concealmentBonus?: number; // bonus to stealth in cover
   overwatchAccuracyBonus?: number;
 }
