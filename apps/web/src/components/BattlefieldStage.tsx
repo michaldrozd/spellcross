@@ -2298,9 +2298,11 @@ export function BattlefieldStage({
       let baseColor = (terrainPalette as any)[fillTerrain] ?? terrainPalette.plain;
       const colorNoise = tileNoise(q, r, 911) - 0.5;
       if (tile.terrain !== 'water') {
+        // gentle per-tile variation: too much turns the ground into a low-poly patchwork of
+        // hard-edged diamonds, so keep the step between neighbours subtle.
         baseColor = colorNoise > 0
-          ? lightenColor(baseColor, colorNoise * 0.08)
-          : darkenColor(baseColor, Math.abs(colorNoise) * 0.12);
+          ? lightenColor(baseColor, colorNoise * 0.045)
+          : darkenColor(baseColor, Math.abs(colorNoise) * 0.06);
       }
       const roadColor = terrainPalette.road;
       const waterColor = terrainPalette.water;
@@ -2793,7 +2795,7 @@ export function BattlefieldStage({
                     (terrainPalette as any)[neighborTile.terrain] ?? baseColor,
                     0.45
                   );
-                  const alpha = (isVisible ? 0.55 : 0.4) * Math.min(1, delta);
+                  const alpha = (isVisible ? 0.4 : 0.3) * Math.min(1, delta);
                   g.beginFill(tint, alpha);
                   g.moveTo(center.x, center.y);
                   g.lineTo(cornerPoints[cornerA].x, cornerPoints[cornerA].y);
@@ -2803,7 +2805,7 @@ export function BattlefieldStage({
                 } else if (delta < 0) {
                   const depth = Math.min(1, Math.abs(delta));
                   const tint = darkenColor(baseColor, 0.25);
-                  const alpha = (isVisible ? 0.35 : 0.2) * depth;
+                  const alpha = (isVisible ? 0.26 : 0.16) * depth;
                   g.beginFill(tint, alpha);
                   g.moveTo(center.x, center.y);
                   g.lineTo(cornerPoints[cornerB].x, cornerPoints[cornerB].y);
@@ -3740,32 +3742,31 @@ export function BattlefieldStage({
         <Graphics
           draw={(g) => {
             g.clear();
-            const drawCross = () => {
-              g.lineStyle(4, 0x140504, Math.min(0.56, alpha));
-              g.moveTo(-tileSize * 0.26, -tileSize * 0.1);
-              g.lineTo(tileSize * 0.26, tileSize * 0.1);
-              g.moveTo(tileSize * 0.26, -tileSize * 0.1);
-              g.lineTo(-tileSize * 0.26, tileSize * 0.1);
-              g.lineStyle(1.55, 0xffd277, Math.min(0.78, alpha + 0.16));
-              g.moveTo(-tileSize * 0.22, -tileSize * 0.085);
-              g.lineTo(tileSize * 0.22, tileSize * 0.085);
-              g.moveTo(tileSize * 0.22, -tileSize * 0.085);
-              g.lineTo(-tileSize * 0.22, tileSize * 0.085);
+            // Clean "no-entry" glyph lying on the ground plane (iso ellipse + diagonal slash),
+            // with a dark halo so it reads on any terrain — replaces the old crossed-beams look.
+            const drawBlockedGlyph = () => {
+              const gr = tileSize * 0.17;
+              const grY = gr * 0.5;
+              const sl = 0.66;
+              g.lineStyle(3, 0x1a0604, Math.min(0.5, alpha));
+              g.drawEllipse(0, 0, gr, grY);
+              g.moveTo(-gr * sl, -grY * sl); g.lineTo(gr * sl, grY * sl);
+              g.lineStyle(1.5, 0xff7259, Math.min(0.82, alpha + 0.2));
+              g.drawEllipse(0, 0, gr, grY);
+              g.moveTo(-gr * sl, -grY * sl); g.lineTo(gr * sl, grY * sl);
             };
 
             if (ISO_MODE) {
               const ring = geom.inset(markerScale);
-              g.beginFill(0x6f1812, alpha * 0.075);
+              g.beginFill(0x7a1a12, alpha * 0.1);
               drawPoly(g as PixiGraphics, ring);
               g.endFill();
-              g.lineStyle(3.2, 0x170706, alpha * 0.66);
+              // dark base stroke gives the crisp red rim something to anti-alias against
+              g.lineStyle(3, 0x1a0605, alpha * 0.5);
               drawPoly(g as PixiGraphics, ring);
-              g.lineStyle(1.25, 0xf05a43, Math.min(0.78, alpha + 0.12));
+              g.lineStyle(1.4, 0xff6f54, Math.min(0.8, alpha + 0.14));
               drawPoly(g as PixiGraphics, ring);
-              g.lineStyle(0.8, 0xffd277, 0.18 * alpha);
-              g.moveTo(ring[3].x * 0.5, ring[3].y * 0.5);
-              g.lineTo(ring[1].x * 0.65, ring[1].y * 0.65);
-              drawCross();
+              drawBlockedGlyph();
             } else {
               const s = (tileSize / 2) * markerScale;
               const hw = (hexWidth / 2) * markerScale;
@@ -3777,12 +3778,14 @@ export function BattlefieldStage({
                 { x: -hw, y: s / 2 },
                 { x: -hw, y: -s / 2 }
               ];
-              g.beginFill(0x6f1812, alpha * 0.075);
+              g.beginFill(0x7a1a12, alpha * 0.1);
               drawPoly(g as PixiGraphics, pts);
               g.endFill();
-              g.lineStyle(1.4, 0xf05a43, Math.min(0.78, alpha + 0.12));
+              g.lineStyle(3, 0x1a0605, alpha * 0.5);
               drawPoly(g as PixiGraphics, pts);
-              drawCross();
+              g.lineStyle(1.4, 0xff6f54, Math.min(0.8, alpha + 0.14));
+              drawPoly(g as PixiGraphics, pts);
+              drawBlockedGlyph();
             }
           }}
         />
@@ -3793,23 +3796,45 @@ export function BattlefieldStage({
             draw={(g) => {
               g.clear();
               const labelFs = 14;
-              const labelW = Math.max(96, feedbackLabel.length * labelFs * 0.62 + 18);
-              const labelH = labelFs + 10;
-              const plateAlpha = Math.min(0.86, 0.5 + pulse * 0.42);
-              g.beginFill(0x080a0b, plateAlpha);
-              g.drawRoundedRect(-labelW / 2, -labelH / 2, labelW, labelH, 4);
+              const labelW = Math.max(108, feedbackLabel.length * labelFs * 0.6 + 34);
+              const labelH = labelFs + 12;
+              const x0 = -labelW / 2, y0 = -labelH / 2, rad = 7;
+              const plateAlpha = Math.min(0.92, 0.6 + pulse * 0.36);
+              // soft drop shadow
+              g.beginFill(0x000000, plateAlpha * 0.42);
+              g.drawRoundedRect(x0 - 1, y0 + 2.5, labelW + 2, labelH + 1, rad + 1);
               g.endFill();
-              g.lineStyle(1.2, 0xf05a43, Math.min(0.72, 0.3 + pulse * 0.42));
-              g.drawRoundedRect(-labelW / 2, -labelH / 2, labelW, labelH, 4);
+              // body
+              g.beginFill(0x14181b, plateAlpha);
+              g.drawRoundedRect(x0, y0, labelW, labelH, rad);
+              g.endFill();
+              // inner top bevel highlight + bottom shade for a subtle 3D plate
+              g.lineStyle(1, 0x3c474d, plateAlpha * 0.5);
+              g.moveTo(x0 + rad, y0 + 1); g.lineTo(x0 + labelW - rad, y0 + 1);
+              g.lineStyle(1, 0x05080a, plateAlpha * 0.5);
+              g.moveTo(x0 + rad, y0 + labelH - 1); g.lineTo(x0 + labelW - rad, y0 + labelH - 1);
+              // warm amber border
+              g.lineStyle(1.2, 0xe8a24a, Math.min(0.82, 0.4 + pulse * 0.4));
+              g.drawRoundedRect(x0, y0, labelW, labelH, rad);
+              // warning glyph (amber triangle + exclamation) tucked into the left padding
+              const gx = x0 + 13;
+              g.lineStyle(0);
+              g.beginFill(0xffc24a, Math.min(0.96, 0.62 + pulse * 0.34));
+              g.moveTo(gx, -5.4); g.lineTo(gx + 4.8, 4.2); g.lineTo(gx - 4.8, 4.2); g.closePath();
+              g.endFill();
+              g.beginFill(0x14181b, 0.96);
+              g.drawRect(gx - 0.7, -1.8, 1.4, 3.1);
+              g.drawRect(gx - 0.7, 2.4, 1.4, 1.3);
+              g.endFill();
             }}
           />
           <Text
             text={feedbackLabel}
-            x={0}
+            x={6}
             y={0}
             anchor={{ x: 0.5, y: 0.5 }}
             resolution={2}
-            alpha={Math.min(0.97, 0.55 + pulse * 0.42)}
+            alpha={Math.min(0.98, 0.6 + pulse * 0.4)}
             style={new TextStyle({
               fontFamily: 'Courier New',
               fontSize: 14,
@@ -5091,16 +5116,27 @@ export function BattlefieldStage({
                 if (isFriendly) {
                   const markerW = isSelected ? (isGroundVehicle ? 4.6 : 7) : 5;
                   const markerDrop = isSelected ? (isGroundVehicle ? 3.8 : 7) : 5;
-                  const selectedMarkerAlpha = isGroundVehicle ? 0.58 : 0.88;
-                  // Idle/unselected friendlies still get a clearly-visible faction chevron above the head
-                  // (was alpha 0.2 ≈ invisible) so units never vanish into busy terrain or faded buildings.
-                  g.lineStyle((isSelected ? 1.3 : 0.9) * movingVehicleUiDamping, isSelected ? 0xd4f4f2 : 0x06222c, (isSelected ? selectedMarkerAlpha : 0.62) * movingVehicleUiDamping);
-                  g.beginFill(factionAccent, (isSelected || isSelectedCarrier ? (isGroundVehicle ? 0.58 : 0.96) : 0.7) * movingVehicleUiDamping);
-                  g.moveTo(0, flagY + 5);
-                  g.lineTo(-markerW, flagY + 5 - markerDrop);
-                  g.lineTo(markerW, flagY + 5 - markerDrop);
-                  g.closePath();
+                  const sel = isSelected || isSelectedCarrier;
+                  const baseA = (sel ? (isGroundVehicle ? 0.6 : 0.96) : 0.74) * movingVehicleUiDamping;
+                  const tipY = flagY + 5;                 // bottom point (aimed at the unit)
+                  const topY = flagY + 5 - markerDrop;     // top base
+                  // soft drop shadow lifts the chevron off the status plate
+                  g.lineStyle(0);
+                  g.beginFill(0x05141a, 0.26 * movingVehicleUiDamping);
+                  g.moveTo(0, tipY + 1.1); g.lineTo(-markerW - 0.6, topY + 1.1); g.lineTo(markerW + 0.6, topY + 1.1); g.closePath();
                   g.endFill();
+                  // body: darker base then a brighter top wedge → top-lit gradient instead of flat neon
+                  g.beginFill(shade(factionAccent, sel ? 0.72 : 0.6), baseA);
+                  g.moveTo(0, tipY); g.lineTo(-markerW, topY); g.lineTo(markerW, topY); g.closePath();
+                  g.endFill();
+                  g.beginFill(shade(factionAccent, sel ? 1.18 : 1.0), baseA * 0.9);
+                  g.moveTo(0, tipY - markerDrop * 0.42); g.lineTo(-markerW * 0.56, topY); g.lineTo(markerW * 0.56, topY); g.closePath();
+                  g.endFill();
+                  // dark outline + a bright top rim for a beveled edge
+                  g.lineStyle((sel ? 1.1 : 0.8) * movingVehicleUiDamping, 0x07232c, (sel ? 0.7 : 0.5) * movingVehicleUiDamping);
+                  g.moveTo(0, tipY); g.lineTo(-markerW, topY); g.lineTo(markerW, topY); g.closePath();
+                  g.lineStyle((sel ? 1 : 0.7) * movingVehicleUiDamping, shade(factionAccent, 1.5), (sel ? 0.78 : 0.5) * movingVehicleUiDamping);
+                  g.moveTo(-markerW, topY); g.lineTo(markerW, topY);
                 } else if (isTarget) {
                   g.lineStyle(0.9, 0x1f0b09, 0.68);
                   g.beginFill(factionAccent, 0.72);
