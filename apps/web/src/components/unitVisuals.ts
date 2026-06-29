@@ -88,7 +88,17 @@ export const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/arachnoid.png': 1171,
   '/assets/generated/knights_of_death.png': 1252,
   '/assets/generated/black_angel.png': 1188,
-  '/assets/generated/stone_golem.png': 1231
+  '/assets/generated/stone_golem.png': 1231,
+  '/assets/generated/orc_warband.png': 1180,
+  '/assets/generated/winged_fiend.png': 1230,
+  '/assets/generated/warlock.png': 1187,
+  '/assets/generated/salamander.png': 1192,
+  '/assets/generated/specter.png': 1172,
+  '/assets/generated/lich_lord.png': 1252,
+  '/assets/generated/void_drake.png': 1210,
+  '/assets/generated/demon_engine.png': 1211,
+  '/assets/generated/wolf_rider.png': 1121,
+  '/assets/generated/hell_rider.png': 1250
 };
 
 export const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
@@ -128,7 +138,17 @@ export const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
   '/assets/generated/knights_of_death.png': 0.92,
   '/assets/generated/stone_golem.png': 0.95,
   '/assets/generated/harpy_swarm.png': 0.85,
-  '/assets/generated/black_angel.png': 0.85
+  '/assets/generated/black_angel.png': 0.85,
+  '/assets/generated/orc_warband.png': 0.93,
+  '/assets/generated/winged_fiend.png': 0.85,
+  '/assets/generated/warlock.png': 0.93,
+  '/assets/generated/salamander.png': 0.9,
+  '/assets/generated/specter.png': 0.88,
+  '/assets/generated/lich_lord.png': 0.93,
+  '/assets/generated/void_drake.png': 0.85,
+  '/assets/generated/demon_engine.png': 0.8,
+  '/assets/generated/wolf_rider.png': 0.9,
+  '/assets/generated/hell_rider.png': 0.92
 };
 
 // Per-unit raster sprite overrides keyed by a substring of the unit definitionId. Checked after the
@@ -155,7 +175,17 @@ const RASTER_UNIT_OVERRIDES: Array<[string, string]> = [
   ['arachnoid', '/assets/generated/arachnoid.png'],
   ['death-knight', '/assets/generated/knights_of_death.png'],
   ['black-angel', '/assets/generated/black_angel.png'],
-  ['stone-golem', '/assets/generated/stone_golem.png']
+  ['stone-golem', '/assets/generated/stone_golem.png'],
+  ['orc-warband', '/assets/generated/orc_warband.png'],
+  ['winged-fiend', '/assets/generated/winged_fiend.png'],
+  ['warlock', '/assets/generated/warlock.png'],
+  ['salamander', '/assets/generated/salamander.png'],
+  ['specter', '/assets/generated/specter.png'],
+  ['lich', '/assets/generated/lich_lord.png'],
+  ['void-drake', '/assets/generated/void_drake.png'],
+  ['demon-engine', '/assets/generated/demon_engine.png'],
+  ['wolf-rider', '/assets/generated/wolf_rider.png'],
+  ['hell-rider', '/assets/generated/hell_rider.png']
 ];
 
 export function rasterUnitOverride(definitionId: string): string | null {
@@ -230,6 +260,8 @@ export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y:
 
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
   if (definitionId.includes('orc')) return tile * 0.6; // hulking orcs read larger than human infantry
+  if (definitionId.includes('lich')) return tile * 0.56; // crowned lich lord stands taller than a robed caster
+  if (definitionId.includes('hell-rider')) return tile * 0.62; // mounted hell cavalry
   if (unitType === 'air') {
     if (definitionId.includes('black-angel')) return tile * 0.72;
     if (definitionId.includes('harpy')) return tile * 0.5;
@@ -243,6 +275,8 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
     if (definitionId.includes('death-knight')) return tile * 0.66;
     if (definitionId.includes('arachnoid')) return tile * 0.6;
     if (definitionId.includes('dire') || definitionId.includes('wolf')) return tile * 0.52;
+    if (definitionId.includes('salamander')) return tile * 0.5;
+    if (definitionId.includes('demon-engine')) return tile * 0.55;
     if (directionalSprite === 'm113_apc') return tile * 0.43;
     if (directionalSprite === 'apc_directional') return tile * 0.398;
     if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.58;
