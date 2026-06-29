@@ -1126,13 +1126,19 @@ export function BattlefieldStage({
     () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
     []
   );
-  // Update more frequently during animations
+  const [deathMarkers, setDeathMarkers] = useState<Map<string, DeathMarker>>(new Map());
+  // A smoking vehicle wreck keeps animating after the kill effect ends; without a faster tick the
+  // 250ms idle cadence strobes its embers at ~4fps. Skip entirely when reduced motion is requested.
+  const hasSmokingWreck = useMemo(
+    () => !prefersReducedMotion && Array.from(deathMarkers.values()).some((m) => m.unitType === 'vehicle' || m.unitType === 'artillery'),
+    [deathMarkers, prefersReducedMotion]
+  );
+  // Update more frequently during animations (and while a wreck smokes, at a lighter 16fps).
   useEffect(() => {
-    const interval = (movingUnit || attackEffects.length > 0) ? 16 : 250; // 60fps during animation
+    const interval = (movingUnit || attackEffects.length > 0) ? 16 : hasSmokingWreck ? 60 : 250;
     const id = window.setInterval(() => setNow(Date.now()), interval);
     return () => window.clearInterval(id);
-  }, [movingUnit, attackEffects.length]);
-  const [deathMarkers, setDeathMarkers] = useState<Map<string, DeathMarker>>(new Map());
+  }, [movingUnit, attackEffects.length, hasSmokingWreck]);
 
   const stageDimensions = useMemo(() => {
     if (ISO_MODE) {
@@ -2395,7 +2401,9 @@ export function BattlefieldStage({
               }
               for (const tri of tris) {
                 const [a, b, c] = tri;
-                g.beginTextureFill({ texture: tex, matrix: texMatrix, alpha: overlayAlpha });
+                // Memory (explored, not visible) tiles get a cool desaturating tint on the texture too, so
+                // the saturated terrain texture doesn't fight the desaturated base fill / grime.
+                g.beginTextureFill({ texture: tex, matrix: texMatrix, alpha: overlayAlpha, color: isVisible ? 0xffffff : 0x9aa3b0 });
                 g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
                 g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
                 g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
@@ -2919,6 +2927,11 @@ export function BattlefieldStage({
       ctx.fillRect(0, 0, cw, ch);
     }, w, h);
   }, [hostSize.w, hostSize.h]);
+  // Free the previous vignette texture + its backing canvas when the viewport size changes (and on unmount),
+  // so repeated resizes don't accumulate orphaned BaseTextures.
+  useEffect(() => {
+    return () => { try { vignetteTexture.destroy(true); } catch { /* already gone */ } };
+  }, [vignetteTexture]);
 
   const tileOverlays = useMemo(() => {
     return map.tiles
@@ -3990,17 +4003,17 @@ export function BattlefieldStage({
                 const emberLife = Math.max(0, 1 - elapsed / 6000);
                 if (emberLife > 0) {
                   for (const [ex, ey, ph] of [[-0.06, -0.02, 0], [0.05, 0.01, 1.7], [0.0, -0.06, 3.1]] as const) {
-                    const flick = 0.5 + 0.5 * Math.sin(now / 120 + ph);
+                    const flick = prefersReducedMotion ? 0.7 : 0.5 + 0.5 * Math.sin(now / 120 + ph);
                     g.beginFill(0xff7a2a, emberLife * flick * 0.8 * fade);
                     g.drawCircle(ex * tileSize, ey * tileSize, Math.max(0.8, tileSize * 0.02 * flick));
                     g.endFill();
                   }
                 }
                 for (let s = 0; s < 3; s++) {
-                  const rise = ((now / 1400) + s * 0.33) % 1;
+                  const rise = prefersReducedMotion ? (0.3 + s * 0.33) % 1 : ((now / 1400) + s * 0.33) % 1;
                   const sa = (1 - rise) * 0.22 * fade;
                   if (sa <= 0.01) continue;
-                  const sx = Math.sin((now / 700) + s * 2.1) * tileSize * 0.06;
+                  const sx = prefersReducedMotion ? 0 : Math.sin((now / 700) + s * 2.1) * tileSize * 0.06;
                   g.beginFill(0x3a3631, sa);
                   g.drawEllipse(sx, -tileSize * (0.1 + rise * 0.5), tileSize * (0.1 + rise * 0.14), tileSize * (0.07 + rise * 0.1));
                   g.endFill();
@@ -4047,7 +4060,7 @@ export function BattlefieldStage({
       ? `${Math.round((targetHitChance ?? 0) * 100)}%${targetDamagePreview !== undefined ? `  -${targetDamagePreview}` : ''}${targetLethal ? '  KILL' : ''}`
       : '';
     return (
-      <>
+      <Container sortableChildren zIndex={30000}>
       <Graphics
         draw={(g) => {
           g.clear();
@@ -4126,13 +4139,13 @@ export function BattlefieldStage({
           })}
         />
       ) : null}
-      </>
+      </Container>
     );
   }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetDamagePreview, targetLethal, targetUnitId, toScreen, topGeomFor, visibleTiles, tileSize]);
 
   const objectiveOverlays = useMemo(() => {
     if (objectiveCoords.length === 0) return [];
-    const pulse = (Math.sin(now / 420) + 1) / 2;
+    const pulse = prefersReducedMotion ? 0.5 : (Math.sin(now / 420) + 1) / 2;
     return objectiveCoords.map((coord, index) => {
       const tileIdx = coord.r * map.width + coord.q;
       if (!exploredTiles.has(tileIdx)) return null;
@@ -4166,12 +4179,12 @@ export function BattlefieldStage({
         />
       );
     }).filter(Boolean) as JSX.Element[];
-  }, [objectiveCoords, map.width, exploredTiles, visibleTiles, now, toScreen, topGeomFor]);
+  }, [objectiveCoords, map.width, exploredTiles, visibleTiles, now, toScreen, topGeomFor, prefersReducedMotion]);
 
   // Deployment start zone: a cool pulsing tint so "click a glowing tile" is literally true.
   const startZoneOverlays = useMemo(() => {
     if (startZoneCoords.length === 0) return [];
-    const pulse = (Math.sin(now / 360) + 1) / 2;
+    const pulse = prefersReducedMotion ? 0.5 : (Math.sin(now / 360) + 1) / 2;
     return startZoneCoords.map((coord, index) => {
       const pos = toScreen(coord);
       const geom = topGeomFor(coord.q, coord.r);
@@ -4195,7 +4208,7 @@ export function BattlefieldStage({
         />
       );
     });
-  }, [startZoneCoords, now, toScreen, topGeomFor]);
+  }, [startZoneCoords, now, toScreen, topGeomFor, prefersReducedMotion]);
 
 
   const units = useMemo(() => {

@@ -346,7 +346,6 @@ export function getDifficultyModifiers(difficulty: AIDifficulty) {
         threatWeight: 6.0, // very cautious
         flankWeight: 0.5, // poor flanking
         maxStepBonus: -1, // slower movement
-        hitChancePenalty: 0.1, // AI misses more often
         skipAttackChance: 0.15, // sometimes forgets to attack
       };
     case 'normal':
@@ -355,7 +354,6 @@ export function getDifficultyModifiers(difficulty: AIDifficulty) {
         threatWeight: 4.5,
         flankWeight: 1.5,
         maxStepBonus: 0,
-        hitChancePenalty: 0,
         skipAttackChance: 0,
       };
     case 'hard':
@@ -364,7 +362,6 @@ export function getDifficultyModifiers(difficulty: AIDifficulty) {
         threatWeight: 3.8,
         flankWeight: 2.2,
         maxStepBonus: 1,
-        hitChancePenalty: 0,
         skipAttackChance: 0,
       };
     case 'brutal':
@@ -373,7 +370,6 @@ export function getDifficultyModifiers(difficulty: AIDifficulty) {
         threatWeight: 3.2,
         flankWeight: 2.8,
         maxStepBonus: 2,
-        hitChancePenalty: -0.05, // AI is more accurate
         skipAttackChance: 0,
       };
   }

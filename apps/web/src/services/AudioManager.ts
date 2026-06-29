@@ -94,6 +94,9 @@ class AudioManagerClass {
     const panner = ctx.createStereoPanner();
     panner.pan.value = Math.max(-1, Math.min(1, pan));
     panner.connect(master);
+    // A StereoPanner stays alive while connected; release it after the longest impact tail so panned
+    // SFX don't accumulate disconnected-but-referenced nodes over a long battle.
+    setTimeout(() => { try { panner.disconnect(); } catch { /* already gone */ } }, 1500);
     return panner;
   }
 

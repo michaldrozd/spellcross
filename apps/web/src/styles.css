@@ -443,7 +443,7 @@ body {
 
 .deploy-banner {
   position: absolute;
-  bottom: 4.2rem;
+  bottom: 13rem;
   left: 50%;
   transform: translateX(-50%);
   z-index: 48;

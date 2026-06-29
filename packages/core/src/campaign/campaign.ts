@@ -834,6 +834,15 @@ export function evaluateBattleOutcome(battle: ActiveBattle): 'victory' | 'defeat
   const allMet = battle.scenario.objectives.every((o) => isObjectiveMet(o, battle));
   if (allMet) return 'victory';
 
+  // Alternate win: securing the primary objective — reach (extraction flare / far bank / charges) or
+  // hold (secure the relay/spire for N rounds) — wins even with enemies alive; protects are enforced
+  // above, and routing everyone still wins via the all-enemies-dead shortcut. This makes the brief copy
+  // honest on evac, bridgehead, and raid/hold sectors instead of secretly requiring a full wipe too.
+  const primaryObjectives = battle.scenario.objectives.filter((o) => o.kind === 'reach' || o.kind === 'hold');
+  if (primaryObjectives.length > 0 && primaryObjectives.every((o) => isObjectiveMet(o, battle))) {
+    return 'victory';
+  }
+
   const survivingAllies = Array.from(battle.state.sides.alliance.units.values()).filter(
     (u) => u.stance !== 'destroyed'
   );

@@ -25,6 +25,7 @@ import {
   createCampaign,
   decideNextAIAction,
   endStrategicTurn,
+  estimateHitDamage,
   evaluateBattleOutcome,
   hexWithinRange,
   isoDistance as axialDistance,
@@ -95,6 +96,22 @@ const movingUnitDuration = (moving: MovingUnit) => {
     }
   }
   return (moving.preAlignDuration ?? 0) + movementDuration + turnDuration;
+};
+
+// When the glide reaches a given path tile, accounting for segment-turn pauses (M113) so the reaction
+// muzzle/HIT lands exactly as the sprite arrives there rather than a corner-turn too early.
+const arrivalDelayForPath = (moving: MovingUnit, coord: HexCoordinate) => {
+  const fullPath = moving.path;
+  const found = fullPath.findIndex((c) => c.q === coord.q && c.r === coord.r);
+  const stepIndex = found < 0 ? fullPath.length - 1 : Math.max(0, found);
+  let t = (moving.preAlignDuration ?? 0) + stepIndex * moving.stepDuration;
+  const segTurn = moving.segmentTurnDuration ?? 0;
+  if (segTurn > 0) {
+    for (let i = 0; i + 2 < fullPath.length && i < stepIndex; i += 1) {
+      if (orientationForStep(fullPath[i], fullPath[i + 1]) !== orientationForStep(fullPath[i + 1], fullPath[i + 2])) t += segTurn;
+    }
+  }
+  return t;
 };
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
@@ -821,7 +838,11 @@ const BattleView: React.FC<{
   })();
   const previewEnemy = targetedEnemy ?? hoveredEnemy;
   const targetWeaponPreview = selectedUnit && previewEnemy ? bestWeapon(selectedUnit, previewEnemy, battle.state.map, battle.state.weather) : null;
-  const previewDamage = previewEnemy && targetWeaponPreview ? selectedUnit?.stats.weaponPower[targetWeaponPreview.weapon] : undefined;
+  // Show the REAL expected damage (armor + cover + wound modifiers), not raw weapon power — otherwise the
+  // reticle's -N and KILL tag lie about the single most important tactical read in the game.
+  const previewDamage = previewEnemy && targetWeaponPreview && selectedUnit
+    ? estimateHitDamage(selectedUnit, previewEnemy, targetWeaponPreview.weapon, battle.state.map)
+    : undefined;
   const previewLethal = !!previewEnemy && previewDamage !== undefined && previewDamage >= previewEnemy.currentHealth;
   const threatenedPathTiles = useMemo(() => {
     if (!plannedPath || !selectedUnit) return undefined;
@@ -1394,6 +1415,31 @@ const BattleView: React.FC<{
     else emit();
   };
 
+  // Visualize reaction/overwatch fire provoked by a move: muzzle + HIT/MISS + shot/impact sound, anchored
+  // to the tile the mover was crossing (defenderAt) and timed to when its glide reaches that tile. Used by
+  // the player's move, the auto-player turn, AND the enemy turn — so the player's overwatch shots are never
+  // invisible and a reaction kill never reads as "the enemy died for no reason".
+  const playReactionVfx = (moverId: string, moving: MovingUnit | null, timelineBefore: number) => {
+    let shots = 0;
+    for (const ev of battle.state.timeline.slice(timelineBefore)) {
+      if (ev.kind !== 'unit:attacked' || ev.defenderId !== moverId) continue;
+      const shooter = findBattleUnit(ev.attackerId);
+      const target = findBattleUnit(ev.defenderId);
+      if (!shooter || !target) continue;
+      const reactAt = ev.defenderAt ?? target.coordinate;
+      const delay = (moving ? arrivalDelayForPath(moving, reactAt) : 150) + shots * 40;
+      if (shots === 0) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('reaction'), Math.max(0, delay - 120)));
+      const killed = target.stance === 'destroyed';
+      const sfx = soundForAttackEffect(effectTypeForAttack(shooter, target, ev.weapon));
+      addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay, reactAt);
+      aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
+        AudioManager.play(sfx);
+        if (ev.hit !== false) window.setTimeout(() => AudioManager.play(killed ? 'death' : 'hit', { intensity: Math.min(1, (ev.damage ?? 0) / 25), material: impactMaterialFor(target), pan: impactPanFor(target, battle.state.map) }), 240);
+      }, delay));
+      shots += 1;
+    }
+  };
+
   function clearTargeting(restoreCamera = false) {
     if (restoreCamera && targetedEnemy) {
       setCameraRestoreSignal((current) => current + 1);
@@ -1519,8 +1565,9 @@ const BattleView: React.FC<{
     const stepDuration = isVehicleMove ? 420 : 180;
     const isM113Move = unit.definitionId.toLowerCase().includes('m113');
     const preAlignDuration = isVehicleMove ? (isM113Move ? 0 : 150) : 0;
+    let moving: MovingUnit | null = null;
     if (fullPath.length >= 2) {
-      const nextMovingUnit = {
+      moving = {
         unitId,
         path: fullPath,
         startTime: Date.now(),
@@ -1529,40 +1576,16 @@ const BattleView: React.FC<{
         segmentTurnDuration: isM113Move ? 90 : 0
       };
       // realistic engine/track/footstep audio matched to how long this glide actually takes
-      AudioManager.playMovement(moveProfile, movingUnitDuration(nextMovingUnit));
-      movingUnitRef.current = nextMovingUnit;
+      AudioManager.playMovement(moveProfile, movingUnitDuration(moving));
+      movingUnitRef.current = moving;
       flushSync(() => {
-        setMovingUnit(nextMovingUnit);
+        setMovingUnit(moving);
       });
     } else {
       AudioManager.playMovement(moveProfile, stepDuration);
     }
 
-    // When the glide reaches the tile the mover was on when an enemy reaction-fired (engine records it as
-    // defenderAt), flash the muzzle/HIT there. Reveals the shooter and shows HIT/MISS at the right moment.
-    const arrivalDelayFor = (coord: HexCoordinate) => {
-      const idx = fullPath.findIndex((c) => c.q === coord.q && c.r === coord.r);
-      const stepIndex = idx < 0 ? fullPath.length - 1 : idx;
-      return preAlignDuration + stepIndex * stepDuration;
-    };
-    let reactionShots = 0;
-    for (const ev of battle.state.timeline.slice(timelineBefore)) {
-      if (ev.kind !== 'unit:attacked' || ev.defenderId !== unitId) continue;
-      const shooter = findBattleUnit(ev.attackerId);
-      const target = findBattleUnit(ev.defenderId);
-      if (!shooter || !target) continue;
-      const reactAt = ev.defenderAt ?? target.coordinate;
-      const delay = arrivalDelayFor(reactAt) + reactionShots * 40;
-      // overwatch snap just before the muzzle
-      if (reactionShots === 0) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('reaction'), Math.max(0, delay - 120)));
-      const sfx = soundForAttackEffect(effectTypeForAttack(shooter, target, ev.weapon));
-      addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay, reactAt);
-      aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
-        AudioManager.play(sfx);
-        if (ev.hit !== false) window.setTimeout(() => AudioManager.play('hit', { intensity: Math.min(1, (ev.damage ?? 0) / 25), material: impactMaterialFor(target), pan: impactPanFor(target, battle.state.map) }), 240);
-      }, delay));
-      reactionShots += 1;
-    }
+    playReactionVfx(unitId, moving, timelineBefore);
 
     setSelected(unitId);
     setPlannedPath(null);
@@ -1576,9 +1599,9 @@ const BattleView: React.FC<{
   // Glide a unit's sprite along its path after the engine has already committed the move, and return the
   // animation length in ms so a scripted (auto/AI) loop can await it. Mirrors actMove's visual setup —
   // without it, auto-played and enemy moves snap the sprite straight to the destination (teleport).
-  const beginMoveAnimation = (unitId: string, startCoord: HexCoordinate, path: HexCoordinate[]): number => {
+  const beginMoveAnimation = (unitId: string, startCoord: HexCoordinate, path: HexCoordinate[]): MovingUnit | null => {
     const unit = findBattleUnit(unitId);
-    if (!unit || path.length === 0) return 0;
+    if (!unit || path.length === 0) return null;
     const finalCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
     const actualPath: HexCoordinate[] = [];
     for (const step of path) {
@@ -1586,7 +1609,7 @@ const BattleView: React.FC<{
       if (step.q === finalCoord.q && step.r === finalCoord.r) break;
     }
     const fullPath = [startCoord, ...actualPath];
-    if (fullPath.length < 2) return 0;
+    if (fullPath.length < 2) return null;
     const unitType = (unit as any).unitType;
     const def = unit.definitionId.toLowerCase();
     const isTruck = unitType === 'support' && def.includes('truck');
@@ -1601,13 +1624,12 @@ const BattleView: React.FC<{
       preAlignDuration: isVehicleMove ? (isM113Move ? 0 : 150) : 0,
       segmentTurnDuration: isM113Move ? 90 : 0
     };
-    const dur = movingUnitDuration(moving);
-    AudioManager.playMovement(moveProfile, dur); // realistic engine/track/footstep for the whole glide
+    AudioManager.playMovement(moveProfile, movingUnitDuration(moving)); // realistic engine/track/footstep for the whole glide
     movingUnitRef.current = moving;
     flushSync(() => {
       setMovingUnit(moving);
     });
-    return dur;
+    return moving;
   };
 
   const actSupply = (supplierId: string) => {
@@ -1829,7 +1851,11 @@ const BattleView: React.FC<{
     let safety = 0;
     let attacksMade = 0;
     let phaseUpdated = false;
-    const maxEnemyAttacks = campaign.turn > 6 ? 3 : 2;
+    // AI skill tracks the SECTOR's difficulty, not the strategic turn — otherwise a player who never ends
+    // strategic turns farms diff-5 sectors at 'normal', and early-ended turns inflict 'brutal' on diff-1.
+    const sectorDifficulty = campaign.territories.find((t) => t.id === battle.territoryId)?.difficulty ?? 2;
+    const aiTier = sectorDifficulty >= 4 ? 'brutal' : sectorDifficulty >= 3 ? 'hard' : 'normal';
+    const maxEnemyAttacks = sectorDifficulty >= 4 ? 3 : 2;
     // Units whose chosen action the engine rejected this turn. We skip only those when re-deciding so a
     // single bad action doesn't forfeit the rest of the AI's units (decideNextAIAction returns one
     // globally-best action, so without this the turn would end on the first rejection).
@@ -1867,7 +1893,7 @@ const BattleView: React.FC<{
           aggression: 0.6,
           avoidTiles: avoid,
           allowDemolition: true,
-          difficulty: campaign.turn > 10 ? 'brutal' : campaign.turn > 6 ? 'hard' : 'normal',
+          difficulty: aiTier,
           excludeUnitIds: failedUnitIds,
           visibleEnemyIds: foeVisibleIds
         });
@@ -1879,17 +1905,21 @@ const BattleView: React.FC<{
           // skip just this unit so the remaining units still act this turn.
           const mover = findBattleUnit(action.unitId);
           const startCoord = mover ? { q: mover.coordinate.q, r: mover.coordinate.r } : null;
+          const tlBefore = battle.state.timeline.length;
           const moveRes = aiProcessor.moveUnit(action);
           if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }
-          // Only animate + sound an enemy move whose DESTINATION the player can see — this mirrors the
-          // sprite's fog cull, which keys on the destination tile. A move that ends in fog is already
-          // committed by moveUnit; play nothing and don't stall, otherwise the player hears movement
-          // with no unit on screen ("hear, not see"). mover.coordinate is now the post-move destination.
-          if (mover && startCoord
-            && battle.state.vision.alliance.visibleTiles.has(mover.coordinate.r * battle.state.map.width + mover.coordinate.q)) {
-            const dur = beginMoveAnimation(action.unitId, startCoord, action.path);
-            if (dur > 0) await sleep(dur + 90);
+          // Animate an enemy move whose DESTINATION the player can see (mirrors the sprite fog cull) — OR
+          // one that drew the player's overwatch fire, so the reaction is never invisible and a reaction
+          // kill doesn't read as "the enemy died for no reason". A silent fog move with no reaction stays
+          // silent (no "hear, not see"). mover.coordinate is now the post-move destination.
+          const destVisible = !!mover && battle.state.vision.alliance.visibleTiles.has(mover.coordinate.r * battle.state.map.width + mover.coordinate.q);
+          const drewReaction = battle.state.timeline.slice(tlBefore).some((e) => e.kind === 'unit:attacked' && e.defenderId === action.unitId);
+          let mMoving: MovingUnit | null = null;
+          if (mover && startCoord && (destVisible || drewReaction)) {
+            mMoving = beginMoveAnimation(action.unitId, startCoord, action.path);
           }
+          playReactionVfx(action.unitId, mMoving, tlBefore);
+          if (mMoving) { const dur = movingUnitDuration(mMoving); if (dur > 0) await sleep(dur + 90); }
         } else if (action.type === 'attack') {
           const attacker = findBattleUnit(action.attackerId);
           const defender = findBattleUnit(action.defenderId);
@@ -1997,13 +2027,16 @@ const BattleView: React.FC<{
       if (action.type === 'move') {
         const mover = findBattleUnit(action.unitId);
         const startCoord = mover ? { q: mover.coordinate.q, r: mover.coordinate.r } : null;
+        const tlBefore = battle.state.timeline.length;
         const moveRes = proc.moveUnit(action);
         if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }
         setSelected(action.unitId);
+        let mMoving: MovingUnit | null = null;
         if (startCoord) {
-          const dur = beginMoveAnimation(action.unitId, startCoord, action.path);
-          if (dur > 0) await sleep(dur + 90);
+          mMoving = beginMoveAnimation(action.unitId, startCoord, action.path);
         }
+        playReactionVfx(action.unitId, mMoving, tlBefore); // enemy overwatch fire on our auto-move
+        if (mMoving) { const dur = movingUnitDuration(mMoving); if (dur > 0) await sleep(dur + 90); }
       } else if (action.type === 'attack') {
         const attacker = findBattleUnit(action.attackerId);
         const defender = findBattleUnit(action.defenderId);
