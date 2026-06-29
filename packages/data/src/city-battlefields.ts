@@ -308,11 +308,11 @@ function generate(cfg: CityConfig): Generated {
     if (occupied.has(key(q, r)) || isReserved(q, r) || isRoad.has(key(q, r))) continue;
     const t = tileAt(q, r);
     if (!t.passable || t.terrain === 'water') continue;
-    if (t.terrain === 'forest') { if (rng() < 0.66) addProp(q, r, 'tree'); }
+    if (t.terrain === 'forest') { if (rng() < 0.78) addProp(q, r, 'tree'); }
     else if (t.terrain === 'hill') { if (rng() < 0.4) addProp(q, r, 'rock'); }
     else if (t.terrain === 'structure' || t.terrain === 'swamp') { if (rng() < 0.34) addProp(q, r, 'rock'); }
-    else if (t.terrain === 'plain' && isForestNear(q, r)) { if (rng() < 0.45) addProp(q, r, 'bush'); }
-    else if (t.terrain === 'plain' && rng() < 0.1) addProp(q, r, rng() < 0.5 ? 'bush' : 'rock');
+    else if (t.terrain === 'plain' && isForestNear(q, r)) { const x = rng(); if (x < 0.52) addProp(q, r, x < 0.18 ? 'tree' : 'bush'); }
+    else if (t.terrain === 'plain') { const x = rng(); if (x < 0.16) addProp(q, r, x < 0.05 ? 'tree' : x < 0.11 ? 'bush' : 'rock'); }
   }
 
   // 9) collect passable, building-free tiles for choosing zones/objectives/spawns

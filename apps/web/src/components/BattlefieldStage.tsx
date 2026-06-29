@@ -176,9 +176,9 @@ const ELEV_Y_OFFSET = Math.floor(Math.max(8, Math.floor(tileSize * 0.5)) / 2);  
 const CLIFF_DEPTH   = Math.floor(Math.max(8, Math.floor(tileSize * 0.5)) / 2);     // sheer cliff face height per level
 
 const terrainPalette: Record<string, number> = {
-  plain: 0x4b7139,
+  plain: 0x5d9040,
   road: 0x756650,
-  forest: 0x203b1c,
+  forest: 0x27451f,
   urban: 0x625f57,
   hill: 0x7a7038,
   water: 0x226480,
@@ -2919,11 +2919,11 @@ export function BattlefieldStage({
     const h = Math.max(1, Math.round(hostSize.h));
     return makeCanvasTexture((ctx, cw, ch) => {
       const cx = cw / 2, cy = ch / 2;
-      const inner = Math.max(cw, ch) * 0.55;
+      const inner = Math.max(cw, ch) * 0.62;
       const outer = Math.hypot(cx, cy);
       const grad = ctx.createRadialGradient(cx, cy, inner, cx, cy, outer);
       grad.addColorStop(0, 'rgba(4,8,14,0)');
-      grad.addColorStop(1, 'rgba(4,8,14,0.22)');
+      grad.addColorStop(1, 'rgba(4,8,14,0.11)');
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, cw, ch);
     }, w, h);
