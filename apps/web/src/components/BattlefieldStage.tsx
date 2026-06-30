@@ -281,6 +281,28 @@ function hexToRgb(hex: number) {
   return { r: (hex >> 16) & 0xff, g: (hex >> 8) & 0xff, b: hex & 0xff };
 }
 
+// Smooth, continuous 2D value noise in world space (deterministic, no Math.random). Used to blend
+// several ground textures across the map so terrain looks varied but flows continuously between
+// tiles. `seed` decorrelates independent noise fields.
+function smoothValueNoise(x: number, y: number, seed = 0) {
+  const hash = (a: number, b: number) => {
+    let n = (a | 0) * 374761393 + (b | 0) * 668265263 + seed * 1442695040;
+    n = (n ^ (n >> 13)) * 1274126177;
+    return ((n ^ (n >> 16)) >>> 0) / 4294967295;
+  };
+  const xi = Math.floor(x), yi = Math.floor(y);
+  const xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const n00 = hash(xi, yi), n10 = hash(xi + 1, yi), n01 = hash(xi, yi + 1), n11 = hash(xi + 1, yi + 1);
+  return (n00 * (1 - u) + n10 * u) * (1 - v) + (n01 * (1 - u) + n11 * u) * v;
+}
+
+// Two octaves for a more organic, less blobby field.
+function fbmNoise(x: number, y: number, seed = 0) {
+  return smoothValueNoise(x, y, seed) * 0.65 + smoothValueNoise(x * 2.3, y * 2.3, seed + 7) * 0.35;
+}
+
 function mixColor(source: number, target: number, t: number) {
   const sr = (source >> 16) & 0xff;
   const sg = (source >> 8) & 0xff;
@@ -1421,7 +1443,7 @@ export function BattlefieldStage({
       return;
     }
     let cancelled = false;
-    const names = ['plain','road','forest','urban','hill','water','swamp','structure'] as const;
+    const names = ['plain','road','forest','urban','hill','water','swamp','structure','grass2','grass3','sand'] as const;
 
     const detectBitmapColorMode = (bmp: ImageBitmap): 'colored' | 'grayscale' => {
       const SAMPLE = 64;
@@ -2422,6 +2444,31 @@ export function BattlefieldStage({
                 g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
                 g.closePath();
                 g.endFill();
+              }
+
+              // Multi-texture blend: mix a couple of grass variants across the map by smooth world-space
+              // noise (and sand at the water's edge), so the ground looks varied — not one repeated tile —
+              // yet flows continuously between tiles (same world-mapped UVs, only the mix alpha changes).
+              if (coloredTex && isVisible && tile.terrain === 'plain') {
+                const ext = externalTerrainTextures as any;
+                const quad = [cornerPoints.NW, cornerPoints.NE, cornerPoints.SE, cornerPoints.SW];
+                const blendTex = (t: Texture | undefined, alpha: number) => {
+                  if (!t || alpha <= 0.03) return;
+                  g.beginTextureFill({ texture: t, matrix: texMatrix, alpha: Math.min(0.9, alpha) });
+                  drawPoly(g as unknown as PixiGraphics, quad);
+                  g.endFill();
+                };
+                blendTex(ext?.grass2, (fbmNoise(pos.x / 150, pos.y / 150, 11) - 0.4) * 2.1);
+                blendTex(ext?.grass3, (fbmNoise(pos.x / 195, pos.y / 195, 29) - 0.45) * 1.9);
+                // sandy bank: fade sand in on grass tiles that touch water
+                if (ext?.sand) {
+                  let nearWater = false;
+                  for (const e of EDGE_KEYS) {
+                    const vec = EDGE_VECTORS[e];
+                    if (inb(q + vec.dq, r + vec.dr) && (map.tiles[idxAt(q + vec.dq, r + vec.dr)] as any)?.terrain === 'water') { nearWater = true; break; }
+                  }
+                  if (nearWater) blendTex(ext.sand, 0.32 + fbmNoise(pos.x / 60, pos.y / 60, 41) * 0.3);
+                }
               }
 
               if (tile.terrain === 'road') {
