@@ -1272,7 +1272,10 @@ export function BattlefieldStage({
     if (added) {
       setDeathMarkers(next);
     }
-  }, [battleState.sides, deathMarkers]);
+    // `battleState.sides` is a stable Map reference (mutated in place), so it never re-triggers this
+    // effect — keying off the timeline length (which grows on every combat event) makes the scan run
+    // when units actually die, so corpse/wreck markers appear instead of the body just vanishing.
+  }, [battleState.timeline.length, deathMarkers]);
 
   useEffect(() => {
     if (deathMarkers.size === 0) return;

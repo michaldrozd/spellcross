@@ -63,6 +63,12 @@ export interface ActiveBattle {
   // Last battle round in which each hold objective was credited, so progress
   // counts at most once per round regardless of how often outcome is evaluated.
   holdCountedRound: Record<string, number>;
+  // True once the player has left deployment. Persisted so a reloaded in-progress battle resumes in
+  // normal play (with saved unit positions/AP) instead of re-opening DEPLOYMENT and allowing free moves.
+  deployed?: boolean;
+  // Set when a battle is decided but the player hasn't yet acknowledged the result card. Persisted so a
+  // reload re-shows the card and the win's reward/territory unlock can't be silently lost.
+  resolved?: 'victory' | 'defeat';
 }
 
 export interface CampaignState {

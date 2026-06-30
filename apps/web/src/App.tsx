@@ -777,7 +777,10 @@ function analyzePathThreat(
   // skip index 0 — that's where the unit already stands, reaction fire only triggers on the steps it takes
   for (let i = 1; i < pathTiles.length; i += 1) {
     const tile = pathTiles[i];
-    const moverAtTile = { ...unit, coordinate: tile } as UnitInstance;
+    // The engine zeroes entrench the instant a move starts, so reaction fire actually resolves against
+    // an un-entrenched mover. The preview must drop entrench too, or it under-estimates the damage and
+    // a genuinely lethal move slips past the risky-move warning.
+    const moverAtTile = { ...unit, coordinate: tile, entrench: 0, movedThisRound: true } as UnitInstance;
     const threats = reactionThreats(state, moverAtTile);
     if (threats.length === 0) continue;
     threatenedKeys.push(coordinateKey(tile));
@@ -809,7 +812,7 @@ const BattleView: React.FC<{
   const battle = campaign.activeBattle!;
   const { map } = battle.state;
   const [selected, setSelected] = useState<string | null>(null);
-  const [deployMode, setDeployMode] = useState(true);
+  const [deployMode, setDeployMode] = useState(!battle.deployed);
   const [plannedPath, setPlannedPath] = useState<HexCoordinate[] | null>(null);
   const [plannedDestination, setPlannedDestination] = useState<HexCoordinate | null>(null);
   const [invalidMoveFeedback, setInvalidMoveFeedback] = useState<{ coordinate: HexCoordinate; time: number; message: string } | null>(null);
@@ -1026,11 +1029,17 @@ const BattleView: React.FC<{
   }, [selectedUnit, showRanges]);
 
   useEffect(() => {
-    setDeployMode(true);
+    // Resume a saved in-progress battle straight into play; only a fresh battle opens DEPLOYMENT.
+    setDeployMode(!battle.deployed);
     // ensure vision populated immediately so tiles are interactive
     updateAllFactionsVision(battle.state);
+    // A battle that was decided but never acknowledged (reloaded with the result card up) re-shows it.
+    if (battle.resolved) {
+      outcomeShownRef.current = true;
+      setBattleOutcome(buildBattleOutcome(battle.resolved));
+    }
     // default select first unit for immediate click-to-move
-    const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
+    const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
     if (first) setSelected(first.id);
     if (typeof window === 'undefined' || !import.meta.env.DEV) return;
     const getTile = (coord: HexCoordinate) => {
@@ -1050,7 +1059,7 @@ const BattleView: React.FC<{
 
     (window as any).__battleControl = {
       moveFirst: () => {
-        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
+        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         const foe = Array.from(battle.state.sides.otherSide.units.values()).find((u) => u.stance !== 'destroyed');
         if (!first || !foe) return false;
         const neighbors: HexCoordinate[] = [
@@ -1237,7 +1246,7 @@ const BattleView: React.FC<{
         return { ...res, attackerId: attacker.id, ammoAfter: attacker.currentAmmo };
       },
       pathTo: (q: number, r: number) => {
-        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
+        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!first) return { success: false, path: [], cost: 0, reason: 'no_unit' };
         return planPathForUnit(battle.state, first.id, { q, r });
       },
@@ -1258,12 +1267,12 @@ const BattleView: React.FC<{
         plannedDestination: plannedDestinationRef.current
       }),
       ammoFirst: () => {
-        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
+        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!first) return null;
         return { ammo: first.currentAmmo, cap: first.stats.ammoCapacity ?? null };
       },
       drainAmmo: (amount = 1) => {
-        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
+        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!first) return false;
         if (first.currentAmmo !== Infinity) {
           first.currentAmmo = Math.max(0, first.currentAmmo - amount);
@@ -1325,7 +1334,7 @@ const BattleView: React.FC<{
       selectUnit: (unitId?: string) => {
         const target = unitId
           ? battle.state.sides.alliance.units.get(unitId)
-          : Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
+          : Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!target) return false;
         setSelected(target.id);
         setPlannedPath(null);
@@ -1346,7 +1355,7 @@ const BattleView: React.FC<{
       setOverwatch: (unitId?: string) => {
         const target = unitId
           ? battle.state.sides.alliance.units.get(unitId)
-          : Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
+          : Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!target) return false;
         const proc = new TurnProcessor(battle.state);
         const res = proc.setOverwatch(target.id);
@@ -1418,6 +1427,10 @@ const BattleView: React.FC<{
       AudioManager.duckAmbience();
       AudioManager.play(status === 'victory' ? 'victory' : 'defeat');
       setBattleOutcome(buildBattleOutcome(status));
+      // Persist that the battle is decided (reward still applied on Continue). A reload now re-shows
+      // the card instead of dropping the victory's reward/territory unlock.
+      battle.resolved = status;
+      persist();
     }
   };
 
@@ -1428,14 +1441,22 @@ const BattleView: React.FC<{
     const allyUnits = Array.from(battle.state.sides.alliance.units.values());
     const isDead = (u: UnitInstance) => u.stance === 'destroyed' || u.currentHealth <= 0;
     const territory = campaign.territories.find((t) => t.id === battle.territoryId);
+    // Count only deployed ROSTER squads — exclude the ephemeral supply truck and NPC allied support
+    // (which aren't in campaign.army), mirroring applyBattleOutcome's casualty accounting.
+    const deployedTacticalIds = new Set(
+      Object.entries(battle.deployment)
+        .filter(([rosterId]) => campaign.army.some((a) => a.id === rosterId))
+        .map(([, tacticalId]) => tacticalId)
+    );
+    const rosterUnits = allyUnits.filter((u) => deployedTacticalIds.has(u.id));
     return {
       status,
       sectorName: battle.scenario.name,
       rounds: battle.state.round,
       enemiesTotal: enemyUnits.length,
       enemiesDestroyed: enemyUnits.filter(isDead).length,
-      squadsLost: allyUnits.filter(isDead).length,
-      squadsSurviving: allyUnits.filter((u) => !isDead(u)).length,
+      squadsLost: rosterUnits.filter(isDead).length,
+      squadsSurviving: rosterUnits.filter((u) => !isDead(u)).length,
       objectives: (battle.scenario.objectives ?? []).map((o) => ({
         text: o.description,
         met: isObjectiveMet(o, battle)
@@ -1735,7 +1756,7 @@ const BattleView: React.FC<{
   };
 
   const actAttack = (attackerId: string, defender: UnitInstance) => {
-    if (autoTurnBusyRef.current || enemyTurnBusyRef.current) return; // CPU is acting
+    if (autoTurnBusyRef.current || enemyTurnBusyRef.current || movingUnitRef.current) return; // CPU acting, or a unit is still gliding
     // Exit deploy mode when attacking
     if (deployMode) {
       setDeployMode(false);
@@ -1828,22 +1849,26 @@ const BattleView: React.FC<{
       if (selected) {
         const isStartTile = battle.startTiles.some((s) => s.q === coord.q && s.r === coord.r);
         if (isStartTile) {
-          // deployment reposition inside start zone
-          const occupied = Array.from(battle.state.sides.alliance.units.values()).some(
-            (u) => u.id !== selected && u.stance !== 'destroyed' && u.coordinate.q === coord.q && u.coordinate.r === coord.r
+          const unit = battle.state.sides.alliance.units.get(selected);
+          if (!unit || unit.embarkedOn) return; // can't reposition a loaded passenger
+          // deployment reposition inside start zone — refuse any tile already held by a live unit on
+          // either side (a fog-hidden enemy could otherwise be stacked onto)
+          const occupied = Object.values(battle.state.sides).some((side) =>
+            Array.from(side.units.values()).some(
+              (u) => u.id !== selected && u.stance !== 'destroyed' && !u.embarkedOn
+                && u.coordinate.q === coord.q && u.coordinate.r === coord.r
+            )
           );
           if (occupied) return;
-          const unit = battle.state.sides.alliance.units.get(selected);
-          if (unit) {
-            unit.coordinate = { ...coord };
-            updateAllFactionsVision(battle.state);
-            persist();
-          }
+          unit.coordinate = { ...coord };
+          updateAllFactionsVision(battle.state);
+          persist();
         } else {
           // clicking outside start zone exits deployment and performs a move like classic behavior.
           // deployModeRef must flip synchronously or actMove (which reads the ref) bails on the stale value.
           deployModeRef.current = false;
           setDeployMode(false);
+          battle.deployed = true;
           battle.state.activeFaction = 'alliance';
           actMove(selected, coord);
         }
@@ -1852,7 +1877,7 @@ const BattleView: React.FC<{
     }
     // If nothing selected or enemy turn, auto-select the first ready ally to allow quick move clicks
     if (!selected || battle.state.activeFaction !== 'alliance') {
-      const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
+      const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
       if (first) setSelected(first.id);
       battle.state.activeFaction = 'alliance';
     }
@@ -1868,7 +1893,7 @@ const BattleView: React.FC<{
       setPlannedDestination(null);
       setInvalidMoveFeedback(null);
       if (!selected) {
-        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed');
+        const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (first) {
           setSelected(first.id);
           setTargetedEnemy(foe);
@@ -2058,6 +2083,7 @@ const BattleView: React.FC<{
     if (deployModeRef.current) {
       deployModeRef.current = false;
       setDeployMode(false);
+      battle.deployed = true;
       battle.state.activeFaction = 'alliance';
       updateAllFactionsVision(battle.state);
     }
@@ -2153,19 +2179,29 @@ const BattleView: React.FC<{
     updateAllFactionsVision(battle.state);
     persist();
     resolveOutcome();
-    autoTurnBusyRef.current = false;
-    // If the player stopped Auto Turn, leave control with them (don't trigger the enemy turn) so they
-    // can finish the turn manually with the remaining units.
+    // If the player stopped Auto Turn, hand control back (don't trigger the enemy turn) so they can
+    // finish the turn manually with the remaining units.
     if (autoTurnAbortRef.current) {
+      autoTurnBusyRef.current = false;
       setAutoTurnPhase(null);
       autoTurnAbortRef.current = false;
       return;
     }
-    // Hand off to the enemy turn (also animated) once the player's last shot has read on screen.
+    // Hand off to the enemy turn. Keep the busy lock HELD across the handoff sleep — clearing it early
+    // (the old bug) opened a window where End Turn could launch a second concurrent enemy turn (double
+    // round/AP) and where stray player orders could fire. runAiTurn bails while the lock is true, so we
+    // release it on the very line before calling it.
     if (evaluateBattleOutcome(battle) === 'ongoing') {
       setAutoTurnPhase('enemy');
       await sleep(400);
-      if (evaluateBattleOutcome(battle) === 'ongoing') await runAiTurn();
+      if (evaluateBattleOutcome(battle) === 'ongoing') {
+        autoTurnBusyRef.current = false;
+        await runAiTurn();
+      } else {
+        autoTurnBusyRef.current = false;
+      }
+    } else {
+      autoTurnBusyRef.current = false;
     }
     setAutoTurnPhase(null);
   };
@@ -2296,9 +2332,12 @@ const BattleView: React.FC<{
             />
             <button
               className={deployMode ? 'primary-btn' : 'end-turn-btn'}
+              disabled={!!autoTurnPhase}
               onClick={() => {
+                if (autoTurnPhase) return; // Auto Turn owns the turn handoff — no manual End Turn
                 if (deployMode) {
                   setDeployMode(false);
+                  battle.deployed = true;
                   updateAllFactionsVision(battle.state);
                   persist();
                   return;
