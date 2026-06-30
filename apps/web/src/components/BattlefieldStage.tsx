@@ -196,6 +196,7 @@ export interface AttackEffect {
   type: 'gunshot' | 'explosion' | 'magic' | 'melee';
   damage?: number;
   hit?: boolean;
+  arc?: boolean; // indirect fire (mortar/howitzer/rocket) — the shell lobs in a high ballistic arc
 }
 
 export interface MovingUnit {
@@ -5393,11 +5394,29 @@ export function BattlefieldStage({
                   }
                   return;
                 }
-                const trailStart = Math.max(0, travel - 0.24);
+                // Indirect fire lobs the shell along a high parabola (peak at mid-flight); direct fire
+                // stays roughly flat. arcAt() returns the extra upward lift for a given flight fraction.
+                const arcHeight = effect.arc ? tileSize * (1.6 + Math.hypot(toX - fromX, toY - fromY) / (tileSize * 9)) : 0;
+                const arcAt = (frac: number) => arcHeight * Math.sin(Math.max(0, Math.min(1, frac)) * Math.PI);
+                const trailStart = Math.max(0, travel - (effect.arc ? 0.16 : 0.24));
                 const sx = fromX + (toX - fromX) * trailStart;
-                const sy = fromY + (toY - fromY) * trailStart - tileSize * 0.15;
+                const sy = fromY + (toY - fromY) * trailStart - tileSize * 0.15 - arcAt(trailStart);
                 const tx = projX;
-                const ty = projY - tileSize * 0.15;
+                const ty = projY - tileSize * 0.15 - arcAt(travel);
+                if (effect.arc) {
+                  // smooth curved trail: sample the parabola between trailStart and travel
+                  const seg = 6;
+                  g.lineStyle(3.5, 0x15110a, 0.55);
+                  for (let s = 0; s <= seg; s++) {
+                    const f = trailStart + (travel - trailStart) * (s / seg);
+                    const x = fromX + (toX - fromX) * f;
+                    const y = fromY + (toY - fromY) * f - tileSize * 0.15 - arcAt(f);
+                    if (s === 0) g.moveTo(x, y); else g.lineTo(x, y);
+                  }
+                  g.beginFill(0x2a2118, 0.95); g.drawCircle(tx, ty, 3.4); g.endFill();
+                  g.beginFill(0xffcf5d, 0.95); g.drawCircle(tx, ty, 2.2); g.endFill();
+                  g.beginFill(0xfff3c8, 0.95); g.drawCircle(tx, ty, 1); g.endFill();
+                } else {
                 g.lineStyle(effect.type === 'explosion' ? 5 : 3, 0x15110a, 0.9);
                 g.moveTo(sx, sy); g.lineTo(tx, ty);
                 if (effect.type === 'explosion') {
@@ -5421,6 +5440,7 @@ export function BattlefieldStage({
                   g.arc(cx, cy, radius, -0.8, 0.85);
                   g.lineStyle(1.7, 0xd8c79c, 0.92 * (1 - slashProgress * 0.45));
                   g.arc(cx, cy, radius * 0.92, -0.8, 0.85);
+                }
                 }
               }}
             />

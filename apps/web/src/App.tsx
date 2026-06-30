@@ -479,6 +479,14 @@ function firingSound(attacker: UnitInstance, defender: UnitInstance, weaponId: s
   return soundForAttackEffect(effectTypeForAttack(attacker, defender, weaponId));
 }
 
+// Indirect fire (mortars, howitzers, rocket batteries) lobs its shell in a high ballistic arc rather
+// than a flat tracer. Direct-fire tank shells stay flat even though they're also 'explosion' type.
+function isIndirectFire(attacker: UnitInstance, weaponId: string, effectType: AttackEffect['type']) {
+  if (effectType !== 'explosion') return false;
+  const tag = `${attacker.definitionId} ${weaponId}`.toLowerCase();
+  return attacker.unitType === 'artillery' || /mortar|howitzer|rocket|mlrs|catapult|ballista|arc/.test(tag);
+}
+
 // Timbre of the struck target: armour clangs, flesh thuds, the demonic invaders ring dissonantly.
 function impactMaterialFor(unit: UnitInstance): 'metal' | 'flesh' | 'undead' {
   if (unit.unitType === 'vehicle' || unit.unitType === 'artillery') return 'metal';
@@ -1533,6 +1541,7 @@ const BattleView: React.FC<{
   ) => {
     const to = atCoord ?? defender.coordinate;
     const effectType = effectTypeForAttack(attacker, defender, weaponId);
+    const arc = isIndirectFire(attacker, weaponId, effectType);
     const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
     const noticeTitle = outcome.hit ? 'Hit Confirmed' : 'Shot Missed';
     const noticeDetail = outcome.hit
@@ -1547,6 +1556,7 @@ const BattleView: React.FC<{
       toR: to.r,
       startTime: Date.now() + delay,
       type: effectType,
+      arc,
       damage: outcome.damage,
       hit: outcome.hit
     }]);
