@@ -66,30 +66,34 @@ const crispTexture = (texture: Texture) => {
 
 // Painted iso building sprites used in place of the flat procedural boxes. keepTop crops the
 // baked-in ground base off the bottom of each 1024² asset so it sits cleanly on the terrain.
-const PAINTED_BUILDINGS: Array<{ tex: string; keepTop: number }> = [
-  { tex: 'assets/generated/concrete_bunker.png', keepTop: 0.84 },
-  { tex: 'assets/generated/hangar_building.png', keepTop: 0.84 },
-  { tex: 'assets/generated/watchtower.png', keepTop: 0.86 },
-  { tex: 'assets/generated/ruins_building.png', keepTop: 0.80 },
+// scaleAdj normalizes each sprite to a consistent on-tile FOOTPRINT: the generated art fills its
+// 1024² frame by wildly different amounts (base width 54%–99%), so without this a wide-base sprite
+// renders a far bigger footprint than a narrow one at the same scale. Measured from each asset's
+// opaque base width at the keepTop crop line and normalized to the median (≈0.74), clamped [0.74,1.4].
+const PAINTED_BUILDINGS: Array<{ tex: string; keepTop: number; scaleAdj?: number }> = [
+  { tex: 'assets/generated/concrete_bunker.png', keepTop: 0.84, scaleAdj: 1.12 },
+  { tex: 'assets/generated/hangar_building.png', keepTop: 0.84, scaleAdj: 1.40 },
+  { tex: 'assets/generated/watchtower.png', keepTop: 0.86, scaleAdj: 0.75 },
+  { tex: 'assets/generated/ruins_building.png', keepTop: 0.80, scaleAdj: 1.01 },
   // 16 additional building variants so dense districts don't repeat the same few sprites. keepTop crops
   // the thick 3-D soil plinth off the bottom of each diorama base — left on, a building's plinth juts
   // down-screen into the building below it and they read as glued together even when properly spaced.
-  { tex: 'assets/generated/building_01.png', keepTop: 0.86 }, // brick apartment block
-  { tex: 'assets/generated/building_02.png', keepTop: 0.86 }, // concrete apartment tower
-  { tex: 'assets/generated/building_03.png', keepTop: 0.86 }, // brick townhouse
-  { tex: 'assets/generated/building_04.png', keepTop: 0.86 }, // red-tile cottage
-  { tex: 'assets/generated/building_05.png', keepTop: 0.86 }, // thatched cottage
-  { tex: 'assets/generated/building_06.png', keepTop: 0.86 }, // corner shop
-  { tex: 'assets/generated/building_07.png', keepTop: 0.86 }, // stone church
-  { tex: 'assets/generated/building_08.png', keepTop: 0.86 }, // factory with chimney
-  { tex: 'assets/generated/building_09.png', keepTop: 0.86 }, // warehouse
-  { tex: 'assets/generated/building_10.png', keepTop: 0.86 }, // wooden barn
-  { tex: 'assets/generated/building_11.png', keepTop: 0.86 }, // water tower
-  { tex: 'assets/generated/building_12.png', keepTop: 0.86 }, // grain silos
-  { tex: 'assets/generated/building_13.png', keepTop: 0.86 }, // ruined apartment block
-  { tex: 'assets/generated/building_14.png', keepTop: 0.86 }, // ruined house
-  { tex: 'assets/generated/building_15.png', keepTop: 0.86 }, // ruined factory shell
-  { tex: 'assets/generated/building_16.png', keepTop: 0.86 }  // command post / bunker HQ
+  { tex: 'assets/generated/building_01.png', keepTop: 0.86, scaleAdj: 1.05 }, // brick apartment block
+  { tex: 'assets/generated/building_02.png', keepTop: 0.86, scaleAdj: 1.05 }, // concrete apartment tower
+  { tex: 'assets/generated/building_03.png', keepTop: 0.86, scaleAdj: 1.21 }, // brick townhouse
+  { tex: 'assets/generated/building_04.png', keepTop: 0.86, scaleAdj: 1.28 }, // red-tile cottage
+  { tex: 'assets/generated/building_05.png', keepTop: 0.86, scaleAdj: 0.92 }, // thatched cottage
+  { tex: 'assets/generated/building_06.png', keepTop: 0.86, scaleAdj: 0.88 }, // corner shop
+  { tex: 'assets/generated/building_07.png', keepTop: 0.86, scaleAdj: 0.81 }, // stone church
+  { tex: 'assets/generated/building_08.png', keepTop: 0.86, scaleAdj: 0.81 }, // factory with chimney
+  { tex: 'assets/generated/building_09.png', keepTop: 0.86, scaleAdj: 1.37 }, // warehouse
+  { tex: 'assets/generated/building_10.png', keepTop: 0.86, scaleAdj: 0.88 }, // wooden barn
+  { tex: 'assets/generated/building_11.png', keepTop: 0.86, scaleAdj: 1.12 }, // water tower
+  { tex: 'assets/generated/building_12.png', keepTop: 0.86, scaleAdj: 0.85 }, // grain silos
+  { tex: 'assets/generated/building_13.png', keepTop: 0.86, scaleAdj: 0.93 }, // ruined apartment block
+  { tex: 'assets/generated/building_14.png', keepTop: 0.86, scaleAdj: 0.99 }, // ruined house
+  { tex: 'assets/generated/building_15.png', keepTop: 0.86, scaleAdj: 0.95 }, // ruined factory shell
+  { tex: 'assets/generated/building_16.png', keepTop: 0.86, scaleAdj: 1.14 }  // command post / bunker HQ
 ];
 
 const hashStringToIndex = (s: string, mod: number) => {
@@ -5919,9 +5923,11 @@ export function BattlefieldStage({
         // happen to hash alike still differ when they sit side by side (q±1 / r±1 shift the index) — this
         // is what stops the "same 2-3 sprites repeating next to each other" look in dense districts.
         const painted = b.texture
-          ? { tex: b.texture, keepTop: 1 }
+          ? { tex: b.texture, keepTop: 1, scaleAdj: 1 }
           : PAINTED_BUILDINGS[(hashStringToIndex(b.id, PAINTED_BUILDINGS.length) + q0 + r0 * 7) % PAINTED_BUILDINGS.length];
-        const spriteScale = b.scale ?? 0.07 * Math.max(w, h, 1);
+        // Footprint scale × the sprite's content-normalization factor, so every building reads at a
+        // consistent on-tile size regardless of how much of its 1024² frame the art happens to fill.
+        const spriteScale = (b.scale ?? 0.07 * Math.max(w, h, 1)) * (painted?.scaleAdj ?? 1);
 
         // Geometric occlusion: fade the building when a visible unit actually sits under its drawn sprite
         // rectangle. This works for ANY height/width (a tall, wide watchtower included) — the old q-r

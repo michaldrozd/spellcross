@@ -243,7 +243,9 @@ function generate(cfg: CityConfig): Generated {
   const lcq = Math.floor(w / 2) + (rng() < 0.5 ? -1 : 0);
   const lcr = Math.floor(h / 2);
   const landmarkSize = cfg.difficulty >= 4 ? { bw: 2, bh: 2, levels: 4 } : { bw: 2, bh: 2, levels: 3 };
-  placeBuilding(lcq, lcr, landmarkSize.bw, landmarkSize.bh, { levels: landmarkSize.levels, scale: 0.2, wallColor: 0x4b5563, roofColor: 0x1f2937 });
+  // ~2x a 1x1 building (matches its 2-tile footprint) instead of the old 0.2 that rendered it ~2.85x
+  // bigger — pixels blown up out of scale with the rest of the city ("zoomed-in" mismatch).
+  placeBuilding(lcq, lcr, landmarkSize.bw, landmarkSize.bh, { levels: landmarkSize.levels, scale: 0.13, wallColor: 0x4b5563, roofColor: 0x1f2937 });
 
   // 7) a coherent settlement: a short row of buildings strung ALONG the road (a district/hamlet) rather
   //    than scattered boxes, plus a few satellites. Denser for built-up themes.
