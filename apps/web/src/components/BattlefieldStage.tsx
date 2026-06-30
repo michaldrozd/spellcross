@@ -2336,7 +2336,7 @@ export function BattlefieldStage({
         // uv = (local + graphicsOrigin)/k → scale(1/k) then translate(+origin/k). The previous
         // translate(-origin) shifted each tile's sampling ~3% out of step, which showed up as faint
         // diamond seams (the "low-poly grid").
-        const k = 6; // texels per world unit; tuned so the texture is ~1:1 (crisp) at the 3x zoom ceiling
+        const k = 3.2; // texels per world unit — low enough that the texture's repeat spans ~7 tiles (no obvious tiling)
         const gx = pos.x;
         const gy = pos.y - avgHeight * ELEV_Y_OFFSET;
         texMatrix.scale(1 / k, 1 / k);
@@ -2488,8 +2488,8 @@ export function BattlefieldStage({
                   ];
                   const roadTextureMatrix = new Matrix();
                   if (coloredTex) {
-                    roadTextureMatrix.scale(1 / 4, 1 / 4);
-                    roadTextureMatrix.translate(pos.x / 4, (pos.y - avgHeight * ELEV_Y_OFFSET) / 4);
+                    roadTextureMatrix.scale(1 / 2.6, 1 / 2.6);
+                    roadTextureMatrix.translate(pos.x / 2.6, (pos.y - avgHeight * ELEV_Y_OFFSET) / 2.6);
                   } else {
                     roadTextureMatrix.translate((q * 17 + r * 5 + i * 11) % 64, (q * 3 + r * 19 + i * 7) % 32);
                   }
@@ -2515,8 +2515,8 @@ export function BattlefieldStage({
                 g.endFill();
                 const fullWaterMatrix = new Matrix();
                 if (coloredTex) {
-                  fullWaterMatrix.scale(1 / 4.5, 1 / 4.5);
-                  fullWaterMatrix.translate(pos.x / 4.5, (pos.y - avgHeight * ELEV_Y_OFFSET) / 4.5);
+                  fullWaterMatrix.scale(1 / 3, 1 / 3);
+                  fullWaterMatrix.translate(pos.x / 3, (pos.y - avgHeight * ELEV_Y_OFFSET) / 3);
                 } else {
                   fullWaterMatrix.translate((q * 23 + r * 7) % 64, (q * 5 + r * 17) % 32);
                 }
