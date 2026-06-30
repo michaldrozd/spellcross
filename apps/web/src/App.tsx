@@ -909,6 +909,10 @@ const BattleView: React.FC<{
   const aiSfxTimeoutsRef = useRef<number[]>([]);
   // Guards Auto Turn against re-entry while the player's staged gunfire plays out before the enemy turn.
   const autoTurnBusyRef = useRef(false);
+  // Drives the on-screen "AUTO TURN" indicator. The phase lets the banner say whose turn is auto-playing.
+  const [autoTurnPhase, setAutoTurnPhase] = useState<'player' | 'enemy' | null>(null);
+  // Set when the player clicks "Stop" during Auto Turn — the auto loop checks it and hands control back.
+  const autoTurnAbortRef = useRef(false);
   // True while the enemy turn animates. Together with autoTurnBusyRef it locks out player orders so a
   // stray click can't move a unit (or hijack activeFaction) mid-CPU-turn now that those turns are async.
   const enemyTurnBusyRef = useRef(false);
@@ -2059,6 +2063,8 @@ const BattleView: React.FC<{
     }
     if (battle.state.activeFaction !== 'alliance') return;
     autoTurnBusyRef.current = true;
+    autoTurnAbortRef.current = false;
+    setAutoTurnPhase('player');
 
     aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
     aiSfxTimeoutsRef.current = [];
@@ -2074,6 +2080,7 @@ const BattleView: React.FC<{
 
     while (battle.state.activeFaction === 'alliance' && safety < 80) {
       safety += 1;
+      if (autoTurnAbortRef.current) break; // player clicked Stop — hand the rest of the turn back to them
       // Fog of war: the squad may only fire at enemies on tiles we can currently see. Recomputed each
       // step because advancing reveals more of the map. (Movement still seeks all enemies, to scout.)
       const seenTiles = battle.state.vision.alliance.visibleTiles;
@@ -2146,12 +2153,21 @@ const BattleView: React.FC<{
     updateAllFactionsVision(battle.state);
     persist();
     resolveOutcome();
-    // Hand off to the enemy turn (also animated) once the player's last shot has read on screen.
     autoTurnBusyRef.current = false;
+    // If the player stopped Auto Turn, leave control with them (don't trigger the enemy turn) so they
+    // can finish the turn manually with the remaining units.
+    if (autoTurnAbortRef.current) {
+      setAutoTurnPhase(null);
+      autoTurnAbortRef.current = false;
+      return;
+    }
+    // Hand off to the enemy turn (also animated) once the player's last shot has read on screen.
     if (evaluateBattleOutcome(battle) === 'ongoing') {
+      setAutoTurnPhase('enemy');
       await sleep(400);
       if (evaluateBattleOutcome(battle) === 'ongoing') await runAiTurn();
     }
+    setAutoTurnPhase(null);
   };
 
   return (
@@ -2189,6 +2205,16 @@ const BattleView: React.FC<{
       </div>
 
       <div className="battle-ui-layer">
+        {autoTurnPhase ? (
+          <div className={`auto-turn-banner ${autoTurnPhase}`}>
+            <span className="auto-turn-spinner" />
+            <strong>AUTO TURN</strong>
+            <span>{autoTurnPhase === 'player' ? 'The computer is playing your turn…' : 'Enemy turn…'}</span>
+            {autoTurnPhase === 'player' ? (
+              <button className="auto-turn-stop" onClick={() => { autoTurnAbortRef.current = true; }}>Stop &amp; take over</button>
+            ) : null}
+          </div>
+        ) : null}
         {phaseNotice ? (
           <div className={`battle-phase-notice ${phaseNotice.tone}`}>
             <strong>{phaseNotice.title}</strong>
@@ -2283,11 +2309,17 @@ const BattleView: React.FC<{
               {deployMode ? 'Start Battle' : 'End Turn'}
             </button>
             <button
-              className="auto-turn-btn"
-              title="Let the computer deploy and play this turn for you"
-              onClick={runAutoPlayerTurn}
+              className={`auto-turn-btn${autoTurnPhase ? ' running' : ''}`}
+              title={autoTurnPhase
+                ? 'Stop Auto Turn and finish the turn manually'
+                : 'Let the computer deploy and play this turn for you'}
+              disabled={autoTurnPhase === 'enemy'}
+              onClick={() => {
+                if (autoTurnPhase) { autoTurnAbortRef.current = true; }
+                else { runAutoPlayerTurn(); }
+              }}
             >
-              {deployMode ? 'Auto Deploy & Play' : 'Auto Turn'}
+              {autoTurnPhase ? 'Stop Auto' : deployMode ? 'Auto Deploy & Play' : 'Auto Turn'}
             </button>
             <button
               className="secondary-btn"
