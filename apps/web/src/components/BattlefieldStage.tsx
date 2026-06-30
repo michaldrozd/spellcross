@@ -74,7 +74,7 @@ const PAINTED_BUILDINGS: Array<{ tex: string; keepTop: number; scaleAdj?: number
   { tex: 'assets/generated/concrete_bunker.png', keepTop: 0.84, scaleAdj: 1.12 },
   { tex: 'assets/generated/hangar_building.png', keepTop: 0.84, scaleAdj: 1.40 },
   { tex: 'assets/generated/watchtower.png', keepTop: 0.86, scaleAdj: 0.75 },
-  { tex: 'assets/generated/ruins_building.png', keepTop: 0.80, scaleAdj: 1.01 },
+  { tex: 'assets/generated/ruins_building.png', keepTop: 0.80, scaleAdj: 0.82 }, // tall sprite — extra trim so it doesn't tower
   // 16 additional building variants so dense districts don't repeat the same few sprites. keepTop crops
   // the thick 3-D soil plinth off the bottom of each diorama base — left on, a building's plinth juts
   // down-screen into the building below it and they read as glued together even when properly spaced.
