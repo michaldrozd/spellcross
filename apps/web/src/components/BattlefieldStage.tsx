@@ -1443,7 +1443,7 @@ export function BattlefieldStage({
       return;
     }
     let cancelled = false;
-    const names = ['plain','road','forest','urban','hill','water','swamp','structure','grass2','grass3','sand'] as const;
+    const names = ['plain','road','forest','urban','hill','water','swamp','structure'] as const;
 
     const detectBitmapColorMode = (bmp: ImageBitmap): 'colored' | 'grayscale' => {
       const SAMPLE = 64;
@@ -1474,15 +1474,16 @@ export function BattlefieldStage({
         // 1) Per-terrain PNGs (highest priority if present)
         await Promise.all(
           names.map(async (n) => {
-            const url = `/textures/terrain/${n}.png`;
+            // Prefer a compact .jpg (opaque ground textures don't need alpha), fall back to .png.
+            let res: Response | null = null;
+            for (const ext of ['jpg', 'png']) {
+              try {
+                const r = await fetch(`/textures/terrain/${n}.${ext}`, { method: 'GET', cache: 'no-store' });
+                if (r.ok && (r.headers.get('content-type') ?? '').startsWith('image/')) { res = r; break; }
+              } catch { /* try next ext */ }
+            }
             try {
-              const res = await fetch(url, { method: 'GET', cache: 'no-store' });
-              if (!res.ok) {
-                missing.add(`${n}.png`);
-                return;
-              }
-              const type = res.headers.get('content-type') ?? '';
-              if (!type.startsWith('image/')) {
+              if (!res) {
                 missing.add(`${n}.png`);
                 return;
               }
@@ -2444,31 +2445,6 @@ export function BattlefieldStage({
                 g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
                 g.closePath();
                 g.endFill();
-              }
-
-              // Multi-texture blend: mix a couple of grass variants across the map by smooth world-space
-              // noise (and sand at the water's edge), so the ground looks varied — not one repeated tile —
-              // yet flows continuously between tiles (same world-mapped UVs, only the mix alpha changes).
-              if (coloredTex && isVisible && tile.terrain === 'plain') {
-                const ext = externalTerrainTextures as any;
-                const quad = [cornerPoints.NW, cornerPoints.NE, cornerPoints.SE, cornerPoints.SW];
-                const blendTex = (t: Texture | undefined, alpha: number) => {
-                  if (!t || alpha <= 0.03) return;
-                  g.beginTextureFill({ texture: t, matrix: texMatrix, alpha: Math.min(0.9, alpha) });
-                  drawPoly(g as unknown as PixiGraphics, quad);
-                  g.endFill();
-                };
-                blendTex(ext?.grass2, (fbmNoise(pos.x / 150, pos.y / 150, 11) - 0.4) * 2.1);
-                blendTex(ext?.grass3, (fbmNoise(pos.x / 195, pos.y / 195, 29) - 0.45) * 1.9);
-                // sandy bank: fade sand in on grass tiles that touch water
-                if (ext?.sand) {
-                  let nearWater = false;
-                  for (const e of EDGE_KEYS) {
-                    const vec = EDGE_VECTORS[e];
-                    if (inb(q + vec.dq, r + vec.dr) && (map.tiles[idxAt(q + vec.dq, r + vec.dr)] as any)?.terrain === 'water') { nearWater = true; break; }
-                  }
-                  if (nearWater) blendTex(ext.sand, 0.32 + fbmNoise(pos.x / 60, pos.y / 60, 41) * 0.3);
-                }
               }
 
               if (tile.terrain === 'road') {
