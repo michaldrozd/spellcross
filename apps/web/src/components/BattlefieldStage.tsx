@@ -2498,6 +2498,23 @@ export function BattlefieldStage({
               }
 
               if (tile.terrain === 'water') {
+                // Continuous blue base across the whole tile + world-mapped water texture, so a body
+                // of water reads as one surface instead of swamp-green showing through the gaps
+                // between river bands (which made each tile a distinct low-poly diamond).
+                const waterQuad = [cornerPoints.NW, cornerPoints.NE, cornerPoints.SE, cornerPoints.SW];
+                g.beginFill(waterColor, isVisible ? 0.9 : 0.6);
+                drawPoly(g as unknown as PixiGraphics, waterQuad);
+                g.endFill();
+                const fullWaterMatrix = new Matrix();
+                if (coloredTex) {
+                  fullWaterMatrix.scale(1 / 1.5, 1 / 1.5);
+                  fullWaterMatrix.translate(-pos.x, -(pos.y - avgHeight * ELEV_Y_OFFSET));
+                } else {
+                  fullWaterMatrix.translate((q * 23 + r * 7) % 64, (q * 5 + r * 17) % 32);
+                }
+                g.beginTextureFill({ texture: waterTex, matrix: fullWaterMatrix, alpha: isVisible ? 0.4 : 0.22 });
+                drawPoly(g as unknown as PixiGraphics, waterQuad);
+                g.endFill();
                 const waterNeighbor = (edge: EdgeKey) => {
                   const vec = EDGE_VECTORS[edge];
                   if (!inb(q + vec.dq, r + vec.dr)) return false;
@@ -2818,7 +2835,7 @@ export function BattlefieldStage({
                     pa = ca; pb = cb;
                   }
                 }
-                if (delta > 0 && delta <= 1.05) {
+                if (delta > 0 && delta <= 1.05 && tile.terrain !== 'water') {
                   const tint = mixColor(
                     baseColor,
                     (terrainPalette as any)[neighborTile.terrain] ?? baseColor,
