@@ -2322,7 +2322,7 @@ export function BattlefieldStage({
         ((terrainTextures as any).water ?? tex);
       const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
       // Memory tiles lean on the desaturated base color, so the texture sits back further when not visible.
-      const overlayAlpha = coloredTex ? (isVisible ? 0.92 : 0.45) : (isVisible ? 0.4 : 0.18);
+      const overlayAlpha = coloredTex ? (isVisible ? 1 : 0.45) : (isVisible ? 0.4 : 0.18);
       const texMatrix = new Matrix();
       if (coloredTex) {
         // Map the large painted texture continuously across the map (world-space) so the
@@ -2775,7 +2775,7 @@ export function BattlefieldStage({
                     (terrainPalette as any)[neighborTile.terrain] ?? baseColor,
                     0.45
                   );
-                  const alpha = (isVisible ? 0.4 : 0.3) * Math.min(1, delta);
+                  const alpha = (coloredTex ? (isVisible ? 0.16 : 0.12) : (isVisible ? 0.4 : 0.3)) * Math.min(1, delta);
                   g.beginFill(tint, alpha);
                   g.moveTo(center.x, center.y);
                   g.lineTo(cornerPoints[cornerA].x, cornerPoints[cornerA].y);
@@ -2785,7 +2785,7 @@ export function BattlefieldStage({
                 } else if (delta < 0) {
                   const depth = Math.min(1, Math.abs(delta));
                   const tint = darkenColor(baseColor, 0.25);
-                  const alpha = (isVisible ? 0.26 : 0.16) * depth;
+                  const alpha = (coloredTex ? (isVisible ? 0.12 : 0.08) : (isVisible ? 0.26 : 0.16)) * depth;
                   g.beginFill(tint, alpha);
                   g.moveTo(center.x, center.y);
                   g.lineTo(cornerPoints[cornerB].x, cornerPoints[cornerB].y);
