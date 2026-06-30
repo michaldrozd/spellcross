@@ -6,7 +6,7 @@
 type SoundType =
   | 'gunshot' | 'explosion' | 'tankMove' | 'infantry' | 'hit' | 'death' | 'select' | 'error'
   | 'victory' | 'defeat' | 'move' | 'turnStart' | 'magic'
-  | 'reaction' | 'noAmmo' | 'lowHealth' | 'objective';
+  | 'reaction' | 'noAmmo' | 'lowHealth' | 'objective' | 'mortar';
 
 interface PlayOpts {
   intensity?: number;                         // normalized damage [0,1] — scales impact weight
@@ -32,7 +32,7 @@ class AudioManagerClass {
   private static TYPE_GAIN: Record<SoundType, number> = {
     gunshot: 0.55, explosion: 0.6, tankMove: 0.7, infantry: 0.6, hit: 0.7, death: 0.7,
     select: 0.55, error: 0.7, victory: 0.9, defeat: 0.9, move: 0.8, turnStart: 0.6, magic: 0.8,
-    reaction: 0.6, noAmmo: 0.5, lowHealth: 0.6, objective: 0.7
+    reaction: 0.6, noAmmo: 0.5, lowHealth: 0.6, objective: 0.7, mortar: 0.62
   };
 
   // Procedural ambience bed (drone + wind), separate from the SFX limiter bus.
@@ -216,6 +216,27 @@ class AudioManagerClass {
 
         // 4. Heavy noise
         this.playNoise(0.6, volume * 0.6, 3000, 0.7, out);
+        break;
+      }
+
+      case 'mortar': {
+        // Hollow tube "POOMP" of a mortar leaving the bipod — a soft pressurised thump, NOT a blast.
+        // The shell's detonation at the target is a separate explosion cue.
+        const thump = ctx.createOscillator();
+        const thumpGain = ctx.createGain();
+        thump.type = 'sine';
+        thump.frequency.setValueAtTime(150, t);
+        thump.frequency.exponentialRampToValueAtTime(58, t + 0.13);
+        thumpGain.gain.setValueAtTime(0.0001, t);
+        thumpGain.gain.exponentialRampToValueAtTime(volume * 0.7, t + 0.012);
+        thumpGain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+        thump.connect(thumpGain);
+        thumpGain.connect(out);
+        thump.start(t);
+        thump.stop(t + 0.22);
+
+        // short airy "fwip" of the round clearing the tube
+        this.playNoise(0.12, volume * 0.22, 1200, 0.6, out);
         break;
       }
 

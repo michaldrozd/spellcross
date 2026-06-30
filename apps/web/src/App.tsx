@@ -15,6 +15,7 @@ import { OverwatchButton } from './components/OverwatchButton.js';
 import { SupplyButton } from './components/SupplyButton.js';
 import { HealButton } from './components/HealButton.js';
 import { ObjectiveHud } from './components/ObjectiveHud.js';
+import { unitPortrait } from './components/unitVisuals.js';
 import {
   applyBattleOutcome,
   calculateHitChance,
@@ -117,13 +118,18 @@ const arrivalDelayForPath = (moving: MovingUnit, coord: HexCoordinate) => {
 
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
+// Man-portable "artillery" that is actually a foot crew (mortar team) — walks, doesn't track.
+const isFootCrew = (definitionId: string) => definitionId.includes('mortar');
+
 // Pick the realistic movement-audio profile for a unit: air = rotor chop, supply trucks = wheeled
-// engine + tyres, tanks/APCs/artillery = diesel engine + track clatter, everything else = footsteps.
-const movementProfileFor = (unitType: string, isTruck: boolean): 'foot' | 'track' | 'wheel' | 'rotor' =>
+// engine + tyres, self-propelled guns/tanks/APCs = diesel engine + track clatter, foot crews and
+// infantry = footsteps.
+const movementProfileFor = (unitType: string, isTruck: boolean, definitionId = ''): 'foot' | 'track' | 'wheel' | 'rotor' =>
   unitType === 'air' ? 'rotor'
     : isTruck ? 'wheel'
-      : (unitType === 'vehicle' || unitType === 'artillery') ? 'track'
-        : 'foot';
+      : isFootCrew(definitionId) ? 'foot'
+        : (unitType === 'vehicle' || unitType === 'artillery') ? 'track'
+          : 'foot';
 
 const unitTextures: Record<string, PIXI.Texture> = {
   infantry: PIXI.Texture.from('/units/infantry.png'),
@@ -463,6 +469,14 @@ function soundForAttackEffect(effectType: AttackEffect['type']) {
     default:
       return 'gunshot';
   }
+}
+
+// The sound a weapon makes when FIRED. A mortar leaves the tube with a hollow launch thump, not the
+// blast its shell makes downrange — so it gets its own cue instead of the generic artillery explosion.
+function firingSound(attacker: UnitInstance, defender: UnitInstance, weaponId: string) {
+  const id = attacker.definitionId.toLowerCase();
+  if (id.includes('mortar') || weaponId.toLowerCase().includes('mortar')) return 'mortar' as const;
+  return soundForAttackEffect(effectTypeForAttack(attacker, defender, weaponId));
 }
 
 // Timbre of the struck target: armour clangs, flesh thuds, the demonic invaders ring dissonantly.
@@ -1474,7 +1488,7 @@ const BattleView: React.FC<{
       const delay = (moving ? arrivalDelayForPath(moving, reactAt) : 150) + shots * 40;
       if (shots === 0) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('reaction'), Math.max(0, delay - 120)));
       const killed = target.stance === 'destroyed';
-      const sfx = soundForAttackEffect(effectTypeForAttack(shooter, target, ev.weapon));
+      const sfx = firingSound(shooter, target, ev.weapon);
       addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay, reactAt);
       aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
         AudioManager.play(sfx);
@@ -1595,8 +1609,8 @@ const BattleView: React.FC<{
     // target tile before the unit had visually arrived ("enemies shoot an empty destination").
     const unitType = (unit as any).unitType;
     const isTruck = unitType === 'support' && unit.definitionId.toLowerCase().includes('truck');
-    const isVehicleMove = unitType === 'vehicle' || unitType === 'artillery' || isTruck;
-    const moveProfile = movementProfileFor(unitType, isTruck);
+    const isVehicleMove = (unitType === 'vehicle' || unitType === 'artillery' || isTruck) && !isFootCrew(unit.definitionId);
+    const moveProfile = movementProfileFor(unitType, isTruck, unit.definitionId);
 
     const finalCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
     const actualPath: HexCoordinate[] = [];
@@ -1657,8 +1671,8 @@ const BattleView: React.FC<{
     const unitType = (unit as any).unitType;
     const def = unit.definitionId.toLowerCase();
     const isTruck = unitType === 'support' && def.includes('truck');
-    const isVehicleMove = unitType === 'vehicle' || unitType === 'artillery' || isTruck;
-    const moveProfile = movementProfileFor(unitType, isTruck);
+    const isVehicleMove = (unitType === 'vehicle' || unitType === 'artillery' || isTruck) && !isFootCrew(def);
+    const moveProfile = movementProfileFor(unitType, isTruck, def);
     const isM113Move = def.includes('m113');
     const moving: MovingUnit = {
       unitId,
@@ -1731,8 +1745,7 @@ const BattleView: React.FC<{
         if (result.success) {
           const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
           // Play attack sound only on success
-          const effectType = effectTypeForAttack(attacker, defender, anyWeapon);
-          AudioManager.play(soundForAttackEffect(effectType));
+          AudioManager.play(firingSound(attacker, defender, anyWeapon));
           addAttackEffect(attacker, defender, anyWeapon, attackOutcome);
           // Impact sound only when the shot actually connects (matches the primary attack branch);
           // keying off raw currentHealth played 'hit' even on a clean miss.
@@ -1760,8 +1773,7 @@ const BattleView: React.FC<{
     } else {
       const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
       // Play attack sound and effects only on success
-      const effectType = effectTypeForAttack(attacker, defender, weapon.weapon);
-      AudioManager.play(soundForAttackEffect(effectType));
+      AudioManager.play(firingSound(attacker, defender, weapon.weapon));
       addAttackEffect(attacker, defender, weapon.weapon, attackOutcome);
       // Impact sound only when the shot actually connects (was playing "hit" even on a miss).
       if (attackOutcome.hit) {
@@ -1976,7 +1988,7 @@ const BattleView: React.FC<{
           if (attacker && defender) {
             const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
             addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
-            const enemySfx = soundForAttackEffect(effectTypeForAttack(attacker, defender, action.weaponId));
+            const enemySfx = firingSound(attacker, defender, action.weaponId);
             const enemyKilled = defender.stance === 'destroyed';
             const enemyHit = outcome.hit;
             AudioManager.play(enemySfx);
@@ -2094,7 +2106,7 @@ const BattleView: React.FC<{
           setSelected(action.attackerId);
           const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
           addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
-          const sfx = soundForAttackEffect(effectTypeForAttack(attacker, defender, action.weaponId));
+          const sfx = firingSound(attacker, defender, action.weaponId);
           const killed = defender.stance === 'destroyed';
           const hit = outcome.hit;
           AudioManager.play(sfx);
@@ -2298,7 +2310,12 @@ const BattleView: React.FC<{
                   <div className="unit-details">
                     <div className="unit-monitor">
                       <div className={`unit-scope unit-scope-${unit.unitType}`}>
-                        <span>{(def?.name ?? unit.unitType).slice(0, 1)}</span>
+                        <img
+                          className="unit-scope-portrait"
+                          src={unitPortrait(unit.unitType, unit.definitionId, true)}
+                          alt={def?.name ?? unit.unitType}
+                          draggable={false}
+                        />
                       </div>
                       <div className="unit-readout">
                         <span>{unit.unitType}</span>

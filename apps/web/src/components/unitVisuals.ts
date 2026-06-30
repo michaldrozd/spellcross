@@ -89,6 +89,7 @@ export const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/knights_of_death.png': 1252,
   '/assets/generated/black_angel.png': 1188,
   '/assets/generated/stone_golem.png': 1231,
+  '/assets/generated/mortar_team.png': 1139,
   '/assets/generated/orc_warband.png': 1180,
   '/assets/generated/winged_fiend.png': 1230,
   '/assets/generated/warlock.png': 1187,
@@ -139,6 +140,7 @@ export const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
   '/assets/generated/stone_golem.png': 0.95,
   '/assets/generated/harpy_swarm.png': 0.85,
   '/assets/generated/black_angel.png': 0.85,
+  '/assets/generated/mortar_team.png': 0.9,
   '/assets/generated/orc_warband.png': 0.93,
   '/assets/generated/winged_fiend.png': 0.85,
   '/assets/generated/warlock.png': 0.93,
@@ -176,6 +178,7 @@ const RASTER_UNIT_OVERRIDES: Array<[string, string]> = [
   ['death-knight', '/assets/generated/knights_of_death.png'],
   ['black-angel', '/assets/generated/black_angel.png'],
   ['stone-golem', '/assets/generated/stone_golem.png'],
+  ['mortar', '/assets/generated/mortar_team.png'],
   ['orc-warband', '/assets/generated/orc_warband.png'],
   ['winged-fiend', '/assets/generated/winged_fiend.png'],
   ['warlock', '/assets/generated/warlock.png'],
@@ -191,6 +194,39 @@ const RASTER_UNIT_OVERRIDES: Array<[string, string]> = [
 export function rasterUnitOverride(definitionId: string): string | null {
   for (const [kw, path] of RASTER_UNIT_OVERRIDES) if (definitionId.includes(kw)) return path;
   return null;
+}
+
+// A representative static sprite for a unit, for HUD portraits. Hand-authored override wins; otherwise
+// fall back to the same base art the battlefield uses for each unit type, so every unit shows real art.
+export function unitPortrait(unitType: string, definitionId: string, isFriendly: boolean): string {
+  const ov = rasterUnitOverride(definitionId);
+  if (ov) return ov;
+  const id = definitionId.toLowerCase();
+  const g = (f: string) => `/assets/generated/${f}`;
+  if (unitType === 'air') return isFriendly ? g('helicopter_apache.png') : g('black_angel.png');
+  if (unitType === 'vehicle') {
+    if (id.includes('apc') || id.includes('ifv') || id.includes('m113')) return g('apc_m113.png');
+    if (id.includes('tank') || id.includes('abrams') || id.includes('m1')) return g('tank_m1_abrams.png');
+    if (id.includes('artillery') || id.includes('mlrs') || id.includes('howitzer')) return g('artillery_mlrs.png');
+    if (id.includes('heli') || id.includes('apache') || id.includes('chopper')) return g('helicopter_apache.png');
+    return isFriendly ? g('tank_m1_abrams.png') : g('apc_m113.png');
+  }
+  if (unitType === 'artillery') return isFriendly ? g('artillery_mlrs.png') : g('watchtower.png');
+  if (unitType === 'hero') {
+    if (isFriendly) return g('infantry_squad.png');
+    return id.includes('knight') || id.includes('death') ? g('death_knight.png') : g('necromancer.png');
+  }
+  if (isFriendly) {
+    if (id.includes('sniper') || id.includes('scout')) return g('sniper_team.png');
+    if (id.includes('medic') || id.includes('doctor')) return g('medic_unit.png');
+    return g('infantry_squad.png');
+  }
+  // enemy infantry / support
+  if (id.includes('ghoul') || id.includes('zombie') || id.includes('undead')) return g('ghoul_pack.png');
+  if (id.includes('golem')) return g('bone_golem.png');
+  if (id.includes('ogre') || id.includes('brute') || id.includes('troll')) return g('ogre_brute.png');
+  if (id.includes('warlock') || id.includes('necromancer') || id.includes('lich')) return g('necromancer.png');
+  return g('skeleton_warrior.png');
 }
 
 export const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
@@ -259,6 +295,7 @@ export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y:
 };
 
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
+  if (definitionId.includes('mortar')) return tile * 0.52; // foot crew, not a towed gun
   if (definitionId.includes('orc')) return tile * 0.6; // hulking orcs read larger than human infantry
   if (definitionId.includes('lich')) return tile * 0.56; // crowned lich lord stands taller than a robed caster
   if (definitionId.includes('hell-rider')) return tile * 0.62; // mounted hell cavalry
