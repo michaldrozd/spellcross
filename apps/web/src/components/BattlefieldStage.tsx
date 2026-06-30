@@ -576,6 +576,9 @@ const pointInPoly = (point: { x: number; y: number }, poly: ReadonlyArray<{ x: n
 
 const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+const easeOutCubic = (t: number) => 1 - Math.pow(1 - clamp01(t), 3);
+// overshoot ease (s≈2.2) — used for damage-number "pop"
+const easeOutBack = (t: number) => { const c = clamp01(t); const s = 2.2; return 1 + (s + 1) * Math.pow(c - 1, 3) + s * Math.pow(c - 1, 2); };
 
 type WindowLayoutConfig = {
   rows: number;
@@ -4037,7 +4040,8 @@ export function BattlefieldStage({
                 g.lineStyle(1.4, 0x0a0805, 0.6 * fade);
                 g.drawRoundedRect(-tileSize * 0.2, -tileSize * 0.12, tileSize * 0.4, tileSize * 0.2, 3);
                 g.lineStyle();
-                const emberLife = Math.max(0, 1 - elapsed / 6000);
+                // a knocked-out hull keeps burning for most of the marker's life, not just 6s
+                const emberLife = Math.max(0, 1 - elapsed / 14000);
                 if (emberLife > 0) {
                   for (const [ex, ey, ph] of [[-0.06, -0.02, 0], [0.05, 0.01, 1.7], [0.0, -0.06, 3.1]] as const) {
                     const flick = prefersReducedMotion ? 0.7 : 0.5 + 0.5 * Math.sin(now / 120 + ph);
@@ -4046,9 +4050,11 @@ export function BattlefieldStage({
                     g.endFill();
                   }
                 }
+                // dense black smoke column in the first few seconds after the kill, thinning over time
+                const smokeBoost = Math.max(0, 1 - elapsed / 4500);
                 for (let s = 0; s < 3; s++) {
                   const rise = prefersReducedMotion ? (0.3 + s * 0.33) % 1 : ((now / 1400) + s * 0.33) % 1;
-                  const sa = (1 - rise) * 0.22 * fade;
+                  const sa = (1 - rise) * (0.22 + 0.3 * smokeBoost) * fade;
                   if (sa <= 0.01) continue;
                   const sx = prefersReducedMotion ? 0 : Math.sin((now / 700) + s * 2.1) * tileSize * 0.06;
                   g.beginFill(0x3a3631, sa);
@@ -4268,6 +4274,9 @@ export function BattlefieldStage({
         let movingThisUnit = false;
         let moveScreenVector = orientationScreenVector(animatedOrientation);
         let movingBaseHeight: number | undefined;
+        let easedProgress = 0;
+        let isFirstSeg = false;
+        let isLastSeg = false;
         const unitType = (unit as any).unitType as string;
         const definitionId = unit.definitionId.toLowerCase();
         const isSupportVehicle = unitType === 'support' && definitionId.includes('truck');
@@ -4318,7 +4327,18 @@ export function BattlefieldStage({
           const toCoord = movingUnit.path[currentStep + 1];
 
           if (fromCoord && toCoord && currentStep < totalSteps) {
-            const easedProgress = stepProgress * stepProgress * (3 - 2 * stepProgress);
+            // Ease only the FIRST segment in (from rest) and the LAST segment out (to rest); keep
+            // interior segments LINEAR so a multi-tile path travels at constant speed instead of
+            // stuttering to a near-stop at every waypoint (the old per-segment smoothstep "skating").
+            isFirstSeg = currentStep === 0;
+            isLastSeg = currentStep === totalSteps - 1;
+            easedProgress = (isFirstSeg && isLastSeg)
+              ? stepProgress * stepProgress * (3 - 2 * stepProgress)
+              : isFirstSeg
+                ? stepProgress * stepProgress
+                : isLastSeg
+                  ? stepProgress * (2 - stepProgress)
+                  : stepProgress;
             movingThisUnit = !isTurnPhase;
             movementPhase = currentStepFloat;
             displayCoord = isTurnPhase
@@ -4394,7 +4414,7 @@ export function BattlefieldStage({
           return effect.fromQ === unit.coordinate.q
             && effect.fromR === unit.coordinate.r
             && elapsed >= 0
-            && elapsed <= 320;
+            && elapsed <= 380; // long enough to show the recoil settle
         });
         const recentAttackSource = attackEffects.find((effect) => {
           const elapsed = now - effect.startTime;
@@ -4414,7 +4434,10 @@ export function BattlefieldStage({
         const hitElapsed = incomingHit ? now - incomingHit.startTime : 0;
         const hitPhase = incomingHit ? Math.min(Math.max((hitElapsed - 240) / 680, 0), 1) : 1;
         const hitPulse = incomingHit ? 1 - hitPhase : 0;
-        const impactFlash = incomingHit ? Math.max(0, 1 - hitElapsed / 90) : 0; // one-frame white pop on connection
+        // Connection flash peaks at the ARRIVAL beat (when the round actually lands / the jolt begins),
+        // not at fire time — the old `1 - hitElapsed/90` popped white the instant the shot left the barrel.
+        const HIT_ARRIVAL = 240;
+        const impactFlash = incomingHit ? Math.max(0, 1 - Math.abs(hitElapsed - HIT_ARRIVAL) / 120) : 0;
         const groundVehicleHitJolt = movingThisUnit ? 0.9 : 1.8;
         const hitJolt = incomingHit ? Math.sin(hitPhase * Math.PI * 5) * hitPulse * (unitType === 'vehicle' || unitType === 'artillery' ? groundVehicleHitJolt : 3.2) : 0;
         const shotPulse = outgoingShot ? 1 - Math.min((now - outgoingShot.startTime) / 320, 1) : 0;
@@ -4434,8 +4457,16 @@ export function BattlefieldStage({
         const lunge = outgoingShot
           ? Math.sin(Math.min(1, (now - outgoingShot.startTime) / 320) * Math.PI) * (isOutgoingMelee ? 4.2 : 0)
           : 0;
+        // Snappy recoil: a fast kick out (0-50ms) then a damped overshoot settle, instead of a flat
+        // linear push — gives the shot a felt "crack" and recovery.
+        const recoilT = outgoingShot ? now - outgoingShot.startTime : 0;
+        const recoilKick = outgoingShot
+          ? (recoilT < 50
+              ? recoilT / 50
+              : Math.max(0, 1 - (recoilT - 50) / 290) * Math.cos((recoilT - 50) / 290 * Math.PI * 2.2) * Math.exp(-(recoilT - 50) / 150))
+          : 0;
         const recoil = outgoingShot
-          ? shotPulse * (unitType === 'vehicle' || unitType === 'artillery' ? 2.4 : 1.3)
+          ? recoilKick * (unitType === 'vehicle' || unitType === 'artillery' ? 5.5 : 3.2)
           : 0;
         const shotOffsetX = outgoingShot ? outgoingDir.x * lunge - outgoingDir.x * recoil : 0;
         const shotOffsetY = outgoingShot ? outgoingDir.y * lunge - outgoingDir.y * recoil * 0.45 : 0;
@@ -4851,20 +4882,52 @@ export function BattlefieldStage({
                 : 0;
               const vehiclePose = isVehicleUnit && canMirrorForFacing ? rasterVehiclePose(moveScreenVector) : null;
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
-              const vehicleTrackJitter = 0;
+              // Vehicles carry weight: a road shake + suspension dip while moving (driven by fastWave,
+              // which is only non-zero in motion — so idle vehicles sit still rather than statically skewed).
+              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? 0.4 : 0;
+              const vehicleRumbleY = isVehicleUnit ? Math.abs(fastWave) * 0.5 : 0;
               // Suppressed/routed posture: a small downward duck, a foot-unit shudder, and (when routed)
               // a lean away from the threat — so a pinned squad reads at a glance without a label.
               const suppressed = unit.stance === 'suppressed';
               const routed = unit.stance === 'routed';
               const cowed = suppressed || routed;
               const cowerShudder = cowed && isFootUnit ? Math.sin(now / 90) * 1.1 : 0;
-              const spriteBobY = isFootUnit ? -Math.abs(stepWave) * (directionalSprite ? 1.35 : 2.1) : unitType === 'air' ? stepWave * 1.4 : 0;
+              const spriteBobY = (isFootUnit ? -Math.abs(stepWave) * (directionalSprite ? 1.35 : 2.1) : unitType === 'air' ? stepWave * 1.4 : -vehicleRumbleY);
               const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX + cowerShudder;
               const spriteCombatY = hitOffsetY + shotOffsetY + (cowed && isFootUnit ? Math.sin(now / 60) * 0.6 : 0);
               const spriteRotation = (vehiclePose ? vehiclePose.rotation + fastWave * 0.004 : 0) + (routed ? -Math.sign(moveScreenVector.x || 1) * 0.12 : 0);
-              const squashX = (isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1) * (cowed ? 1.04 : 1);
-              const squashY = (isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1) * (cowed ? 0.9 : 1);
+              // Volume-preserving impact squash: the struck unit compresses vertically / bulges wide at
+              // the moment of contact and springs back as the hit pulse decays. Vehicles jello half as much.
+              const hitSquash = incomingHit ? Math.sin(Math.min(1, hitElapsed / 180) * Math.PI) * hitPulse : 0;
+              const squashAmt = (unitType === 'vehicle' || unitType === 'artillery') ? 0.5 : 1;
+              const squashX = (isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1) * (cowed ? 1.04 : 1) * (1 + hitSquash * 0.16 * squashAmt);
+              const squashY = (isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1) * (cowed ? 0.9 : 1) * (1 - hitSquash * 0.20 * squashAmt);
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
+              // Death animation clock: one normalized 0→1 ramp over ~1.1s from the killing blow, driving a
+              // per-archetype death — infantry topple & sink, undead/demons dissolve & drift up, vehicles
+              // get the wreck/fireball (handled by the marker system). Reduced-motion keeps only the fade.
+              const deathStart = (incomingHit ?? recentHitTarget)?.startTime;
+              const deathMs = dyingShown && deathStart ? now - deathStart - 240 : 0;
+              const dProg = clamp01(deathMs / 1100);
+              const dEase = prefersReducedMotion ? 0 : easeOutCubic(dProg);
+              const isUndeadDemon = isGhoulPack
+                || definitionId.includes('demon') || definitionId.includes('imp') || definitionId.includes('specter')
+                || definitionId.includes('wraith') || definitionId.includes('angel') || definitionId.includes('drake')
+                || definitionId.includes('fiend') || definitionId.includes('warlock') || definitionId.includes('lich')
+                || definitionId.includes('skeleton') || definitionId.includes('harpy') || definitionId.includes('salamander');
+              const dyingFoot = dyingShown && isFootUnit && !isUndeadDemon;
+              const dyingSpook = dyingShown && isUndeadDemon;
+              // infantry: topple away from the shot, sink, vertical-squash
+              const toppleSign = -Math.sign(incomingDir.x || 1);
+              const deathRotation = dyingFoot ? toppleSign * dEase * 0.85 : 0;
+              const deathSinkY = dyingFoot ? dEase * tileSize * 0.18 : (dyingSpook ? -dEase * tileSize * 0.22 : 0);
+              const deathScaleY = dyingFoot ? (1 - dEase * 0.32) : 1;
+              const deathScaleX = dyingSpook ? (1 - dEase * 0.25) : 1;
+              const deathAlphaMul = !dyingShown ? 1 : dyingSpook ? (1 - easeOutCubic(clamp01(deathMs / 700))) : dyingFoot ? (0.55 + 0.45 * (1 - dEase)) : 0.55;
+              const deathTint = !dyingShown ? null
+                : dyingSpook ? mixColor(0x6b5a52, definitionId.includes('skeleton') || isGhoulPack ? 0x6f7d6a : 0x9a3326, dEase)
+                : dyingFoot ? mixColor(0x6b5a52, 0x4a3a34, dEase)
+                : 0x6b5a52;
               const spriteTint = directionalSprite === 'apc_directional' || directionalSprite === 'm113_apc' ? 0xd7d9b8 : 0xffffff;
               const spriteBaseY = directionalSprite ? 0 : tileSize * (isVehicleUnit ? 0.082 : 0.05);
               unitSpriteTopY = spriteBaseY + groundOffsetY - anchorY * desiredH;
@@ -4901,12 +4964,12 @@ export function BattlefieldStage({
                   <Sprite
                     texture={texture}
                     anchor={{ x: 0.5, y: anchorY }}
-                    scale={{ x: scaleX, y: baseScale * squashY }}
-                    alpha={(isVisible ? 1 : 0.72) * (dyingShown ? 0.55 : 1)}
-                    tint={dyingShown ? 0x6b5a52 : suppressed ? 0xb9b2a4 : routed ? 0xc7a39c : spriteTint}
+                    scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
+                    alpha={(isVisible ? 1 : 0.72) * deathAlphaMul}
+                    tint={deathTint !== null ? deathTint : suppressed ? 0xb9b2a4 : routed ? 0xc7a39c : spriteTint}
                     x={spriteSwayX}
-                    y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
-                    rotation={spriteRotation}
+                    y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
+                    rotation={spriteRotation + deathRotation}
                     zIndex={1}
                   />
                   {outgoingShot ? (
@@ -4946,8 +5009,8 @@ export function BattlefieldStage({
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
                       scale={{ x: scaleX * 1.01, y: baseScale * squashY * 1.01 }}
-                      alpha={Math.min(dyingShown ? 1 : 0.9, 0.38 * hitPulse + (dyingShown ? 0.62 : 0.55) * impactFlash)}
-                      tint={incomingHit.type === 'magic' ? 0xc58cff : 0xffe3a1}
+                      alpha={Math.min(dyingShown ? 1 : 0.95, 0.38 * hitPulse + (dyingShown ? 0.9 : 0.85) * impactFlash)}
+                      tint={incomingHit.type === 'magic' ? 0xc58cff : impactFlash > 0.6 ? 0xffffff : 0xffe3a1}
                       x={spriteSwayX}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
                       rotation={spriteRotation}
@@ -5602,31 +5665,41 @@ export function BattlefieldStage({
               }}
             />
           )}
-          {elapsed > 220 && elapsed < 2300 && (
-            // Counter-scaled so the combat text stays a fixed, crisp on-screen size
-            // (net scale ≈ 1) instead of being blown up ~4.5x by the camera zoom.
-            <Container
-              x={toX}
-              y={toY - tileSize * 0.5 - (elapsed - 220) * 0.005}
-              zIndex={zIndex + 2}
-              scale={1 / scale}
-            >
-              <Text
-                text={effect.hit ? `HIT -${effect.damage ?? ''}` : 'MISS'}
-                anchor={{ x: 0.5, y: 0.5 }}
-                resolution={2}
-                style={new TextStyle({
-                  fontFamily: 'monospace',
-                  fontSize: effect.hit ? 18 : 15,
-                  fontWeight: '800',
-                  fill: effect.hit ? '#f3d58a' : '#d8d1bc',
-                  stroke: effect.hit ? '#3a1308' : '#17130d',
-                  strokeThickness: effect.hit ? 3.5 : 3
-                })}
-                alpha={Math.max(0, 0.9 - (elapsed - 220) / 2300)}
-              />
-            </Container>
-          )}
+          {elapsed > 220 && elapsed < 2300 && (() => {
+            // Damage number with a punchy pop (overshoot scale), an ease-out leap upward, and a size/
+            // colour ramp by magnitude — so a big hit reads as a big number, not a uniform tick.
+            const dmg = effect.damage ?? 0;
+            const pop = easeOutBack((elapsed - 220) / 170);
+            const rise = tileSize * 0.5 + 20 * easeOutCubic((elapsed - 220) / 900);
+            const fontSize = effect.hit ? Math.round(16 + Math.min(16, dmg * 0.7)) : 15;
+            const big = dmg >= 18;
+            const fill = !effect.hit ? '#d8d1bc' : big ? '#ff8a3c' : dmg >= 9 ? '#ffc24a' : '#f3d58a';
+            return (
+              // Counter-scaled so the combat text stays a fixed, crisp on-screen size
+              // (net scale ≈ 1) instead of being blown up by the camera zoom.
+              <Container
+                x={toX}
+                y={toY - rise}
+                zIndex={zIndex + 2}
+                scale={(1 / scale) * Math.max(0.2, pop)}
+              >
+                <Text
+                  text={effect.hit ? `-${dmg}` : 'MISS'}
+                  anchor={{ x: 0.5, y: 0.5 }}
+                  resolution={2}
+                  style={new TextStyle({
+                    fontFamily: 'monospace',
+                    fontSize,
+                    fontWeight: '800',
+                    fill,
+                    stroke: effect.hit ? (big ? '#5a0d00' : '#3a1308') : '#17130d',
+                    strokeThickness: effect.hit ? 4 : 3
+                  })}
+                  alpha={Math.max(0, 0.95 - (elapsed - 220) / 2300)}
+                />
+              </Container>
+            );
+          })()}
         </Container>
       );
     }).filter(Boolean) as JSX.Element[];
