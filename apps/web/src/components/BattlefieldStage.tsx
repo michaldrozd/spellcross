@@ -2373,8 +2373,10 @@ export function BattlefieldStage({
           draw={(g) => {
               g.clear();
               if (!isExplored) {
-                const hiddenColor = mixColor(baseColor, 0x020508, 0.72);
-                g.beginFill(hiddenColor, 0.92);
+                // Constant fog colour (not per-tile baseColor) so a region of unknown reads as one
+                // dark expanse instead of a patchwork of subtly different dark diamonds.
+                const hiddenColor = 0x05080c;
+                g.beginFill(hiddenColor, 0.93);
                 g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
                 g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
                 g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
@@ -2388,12 +2390,7 @@ export function BattlefieldStage({
                 g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
                 g.closePath();
                 g.endFill();
-                g.lineStyle(1, 0x0b1722, 0.2);
-                g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
-                g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
-                g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
-                g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
-                g.closePath();
+                // (no per-tile outline stroke here — it was drawing a hard diamond grid over the fog)
                 return;
               }
               const fillCol = isVisible ? baseColor : memoryColor(baseColor);
@@ -2860,25 +2857,24 @@ export function BattlefieldStage({
                   x: p.x + (center.x - p.x) * amount,
                   y: p.y + (center.y - p.y) * amount
                 });
-                const fringeDepth = 0.15 + tileNoise(q, r, 960 + edgeIndex) * 0.12;
-                const fringe = [
-                  a,
-                  b,
-                  towardCenter(b, fringeDepth),
-                  towardCenter(a, fringeDepth * 0.82)
+                // Soft gradient skirt that fades the explored ground into the dark unknown over
+                // several miznuce bands — no hard fringe band or edge line — so the fog frontier
+                // reads as a soft shadow, not a low-poly diamond cut.
+                const dk = 0x05080c;
+                const n = 0.04 + tileNoise(q, r, 960 + edgeIndex) * 0.06;
+                const bands = [
+                  { d0: 0, d1: 0.10 + n, a: isVisible ? 0.36 : 0.26 },
+                  { d0: 0.10 + n, d1: 0.23 + n, a: isVisible ? 0.2 : 0.14 },
+                  { d0: 0.23 + n, d1: 0.38 + n, a: isVisible ? 0.1 : 0.07 }
                 ];
-                g.beginFill(darkenColor(baseColor, 0.45), isVisible ? 0.24 : 0.16);
-                drawPoly(g as unknown as PixiGraphics, fringe);
-                g.endFill();
-                g.lineStyle(1, 0x050805, isVisible ? 0.2 : 0.12);
-                const mid = {
-                  x: (a.x + b.x) / 2 + (tileNoise(q, r, 970 + edgeIndex) - 0.5) * 6,
-                  y: (a.y + b.y) / 2 + (tileNoise(q, r, 974 + edgeIndex) - 0.5) * 3
-                };
-                g.moveTo(a.x, a.y);
-                g.lineTo(mid.x, mid.y);
-                g.lineTo(b.x, b.y);
-                g.lineStyle();
+                for (const band of bands) {
+                  g.beginFill(dk, band.a);
+                  drawPoly(g as unknown as PixiGraphics, [
+                    towardCenter(a, band.d0), towardCenter(b, band.d0),
+                    towardCenter(b, band.d1), towardCenter(a, band.d1)
+                  ]);
+                  g.endFill();
+                }
               });
 
               if (isExplored && !isVisible) {
