@@ -2325,14 +2325,17 @@ export function BattlefieldStage({
       const overlayAlpha = coloredTex ? (isVisible ? 1 : 0.45) : (isVisible ? 0.4 : 0.18);
       const texMatrix = new Matrix();
       if (coloredTex) {
-        // Map the large painted texture continuously across the map (world-space) so the
-        // ground reads as one cohesive painted surface; REPEAT wrap tiles it seamlessly.
-        // u = k * world  →  matrix.scale(1/k) then translate(-graphicsOrigin).
-        const k = 3.6; // texels per world unit (higher = finer, crisper ground detail and less magnification blur when zoomed in)
+        // Map the large painted texture continuously in WORLD space so the ground reads as one
+        // cohesive painted surface (REPEAT wrap tiles it seamlessly). The texture fill matrix maps
+        // a tile's LOCAL geometry coords to texel coords, so to get uv = world/k we need
+        // uv = (local + graphicsOrigin)/k → scale(1/k) then translate(+origin/k). The previous
+        // translate(-origin) shifted each tile's sampling ~3% out of step, which showed up as faint
+        // diamond seams (the "low-poly grid").
+        const k = 3.6; // texels per world unit (higher = finer, crisper ground detail)
         const gx = pos.x;
         const gy = pos.y - avgHeight * ELEV_Y_OFFSET;
         texMatrix.scale(1 / k, 1 / k);
-        texMatrix.translate(-gx, -gy);
+        texMatrix.translate(gx / k, gy / k);
       } else {
         texMatrix.translate((q * 13 + r * 7) % 64, (q * 5 + r * 11) % 64);
       }
@@ -2481,7 +2484,7 @@ export function BattlefieldStage({
                   const roadTextureMatrix = new Matrix();
                   if (coloredTex) {
                     roadTextureMatrix.scale(0.5, 0.5);
-                    roadTextureMatrix.translate(-pos.x, -(pos.y - avgHeight * ELEV_Y_OFFSET));
+                    roadTextureMatrix.translate(pos.x * 0.5, (pos.y - avgHeight * ELEV_Y_OFFSET) * 0.5);
                   } else {
                     roadTextureMatrix.translate((q * 17 + r * 5 + i * 11) % 64, (q * 3 + r * 19 + i * 7) % 32);
                   }
@@ -2508,7 +2511,7 @@ export function BattlefieldStage({
                 const fullWaterMatrix = new Matrix();
                 if (coloredTex) {
                   fullWaterMatrix.scale(1 / 2.4, 1 / 2.4);
-                  fullWaterMatrix.translate(-pos.x, -(pos.y - avgHeight * ELEV_Y_OFFSET));
+                  fullWaterMatrix.translate(pos.x / 2.4, (pos.y - avgHeight * ELEV_Y_OFFSET) / 2.4);
                 } else {
                   fullWaterMatrix.translate((q * 23 + r * 7) % 64, (q * 5 + r * 17) % 32);
                 }
