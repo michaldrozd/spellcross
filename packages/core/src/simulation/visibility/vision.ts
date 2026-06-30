@@ -1,5 +1,6 @@
 import type { BattlefieldMap, FactionId, HexCoordinate, TacticalBattleState } from '../types.js';
-import { getTile, hexLine, hexWithinRange, isWithinBounds, tileIndex } from '../utils/grid.js';
+import { getTile, isWithinBounds, tileIndex } from '../utils/grid.js';
+import { isoLine, isoWithinRange } from '../utils/grid-iso.js';
 import { isUnitDetected } from './stealth.js';
 
 export interface VisionOptions {
@@ -34,7 +35,7 @@ function tileBlocksVision(map: BattlefieldMap, coordinate: HexCoordinate): boole
 
 export function hasLineOfSight(map: BattlefieldMap, from: HexCoordinate, to: HexCoordinate): boolean {
   if (!isWithinBounds(map, to)) return false;
-  const line = hexLine(from, to);
+  const line = isoLine(from, to);
   for (let i = 1; i < line.length - 1; i++) {
     if (tileBlocksVision(map, line[i])) {
       return false;
@@ -46,19 +47,20 @@ export function hasLineOfSight(map: BattlefieldMap, from: HexCoordinate, to: Hex
 function computeVisibleTilesForUnit(
   state: TacticalBattleState,
   unitCoordinate: HexCoordinate,
-  visionRange: number,
-  stealthPenalty = 0
+  visionRange: number
 ): Set<number> {
   const result = new Set<number>();
-  const boundedRange = Math.min(visionRange, MAX_VISION_RANGE);
-  const candidates = hexWithinRange(unitCoordinate, boundedRange);
+  // Floor to an integer: night/fog penalties can make the range fractional, which would corrupt the
+  // tile enumeration. Vision/range/movement all share the same iso (Chebyshev) geometry now.
+  const boundedRange = Math.max(0, Math.floor(Math.min(visionRange, MAX_VISION_RANGE)));
+  const candidates = isoWithinRange(unitCoordinate, boundedRange);
 
   for (const candidate of candidates) {
     if (!isWithinBounds(state.map, candidate)) {
       continue;
     }
 
-    const line = hexLine(unitCoordinate, candidate);
+    const line = isoLine(unitCoordinate, candidate);
     let blocked = false;
     for (let i = 1; i < line.length - 1; i++) {
       if (tileBlocksVision(state.map, line[i])) {
@@ -107,8 +109,9 @@ export function updateFactionVision(
       tileProvidesBoost: providesBoost,
       elevation: unitTile?.elevation ?? 0
     }) - weatherPenalty;
-    const stealthPenalty = options.detectionPenalty ?? BASE_STEALTH_PENALTY;
-    const unitVisibleTiles = computeVisibleTilesForUnit(state, unit.coordinate, range - stealthPenalty, stealthPenalty);
+    // General tile visibility uses the unit's full effective range. Stealth is a SEPARATE check below
+    // (isUnitDetected) — it must not shrink how far everyone can see the ground.
+    const unitVisibleTiles = computeVisibleTilesForUnit(state, unit.coordinate, range);
     for (const tile of unitVisibleTiles) {
       visibleTiles.add(tile);
     }

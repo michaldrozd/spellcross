@@ -1202,7 +1202,7 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Mobile Supply Corps',
     description: 'Field supply trucks to resupply ammo mid-battle.',
     cost: 80,
-    unlocks: ['supply-truck', 'supply-truck-unlock']
+    unlocks: ['supply-truck']
   },
   {
     id: 'arcane-shielding',

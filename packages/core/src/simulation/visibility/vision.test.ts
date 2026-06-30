@@ -85,6 +85,26 @@ describe('updateFactionVision', () => {
     expect(state.vision.alliance.visibleTiles.has(blockedTileIndex)).toBe(false);
   });
 
+  it('sees diagonal tiles within iso (Chebyshev) range — not hex-cube range', () => {
+    // Regression: vision once used hex-cube geometry while combat uses iso Chebyshev distance, so a
+    // same-sign diagonal target (dq,dr same sign) was out of the vision ring even though it was in
+    // weapon range. Viewer (0,0) vision 4; tile (2,2) is isoDistance 2 — must be visible.
+    const open: typeof plainTile[] = Array.from({ length: 25 }, () => plainTile);
+    const state = createBattleState({
+      map: { id: 'iso-vis', width: 5, height: 5, tiles: open },
+      sides: [
+        { faction: 'alliance', units: [{
+          definition: { id: 'scout', faction: 'alliance', name: 'S', type: 'infantry',
+            stats: { maxHealth: 10, mobility: 4, vision: 4, armor: 0, morale: 60, weaponRanges: { r: 4 }, weaponPower: { r: 1 }, weaponAccuracy: { r: 1 } } },
+          coordinate: { q: 0, r: 0 } }] },
+        { faction: 'otherSide', units: [] }
+      ]
+    });
+    updateFactionVision(state, 'alliance');
+    const idx = 2 * 5 + 2; // tile (2,2)
+    expect(state.vision.alliance.visibleTiles.has(idx)).toBe(true);
+  });
+
   it('handles factions with no active units', () => {
     const state = createBattleState({
       ...battleSpec,

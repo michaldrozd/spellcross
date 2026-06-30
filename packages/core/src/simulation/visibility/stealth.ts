@@ -12,8 +12,13 @@ export function isUnitDetected(
   const viewerUnits = state.sides[viewerFaction]?.units;
   if (!viewerUnits) return false;
   for (const viewer of viewerUnits.values()) {
-    if (viewer.stance === 'destroyed') continue;
-    const range = viewer.stats.vision;
+    if (viewer.stance === 'destroyed' || viewer.embarkedOn) continue;
+    // Match the effective range the visibility pass uses (vision + high-ground/lookout boosts), so a
+    // unit you can SEE the ground around can also actually detect a stealthed enemy standing there.
+    const viewerTile = getTile(map, viewer.coordinate);
+    const boost = viewerTile?.providesVisionBoost ? 1 : 0;
+    const elev = (viewerTile?.elevation ?? 0) >= 1 ? 1 : 0;
+    const range = viewer.stats.vision + boost + elev;
     const dist = isoDistance(viewer.coordinate, target.coordinate);
     if (dist > range) continue;
     const targetTile = getTile(map, target.coordinate);

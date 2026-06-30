@@ -184,6 +184,8 @@ export class TurnProcessor {
       })();
       if (hasCommanderNearby) {
         unit.currentMorale = Math.min(100, unit.currentMorale + 2);
+        // re-derive stance: the aura can push a unit back up into the 'ready' band
+        unit.stance = unit.currentMorale <= 20 ? 'routed' : unit.currentMorale <= 40 ? 'suppressed' : 'ready';
       }
 
       // Fear aura: supernatural enemies (undead, demons, the titan) sap the morale of mundane
