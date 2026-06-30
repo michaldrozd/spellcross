@@ -2328,7 +2328,7 @@ export function BattlefieldStage({
         // Map the large painted texture continuously across the map (world-space) so the
         // ground reads as one cohesive painted surface; REPEAT wrap tiles it seamlessly.
         // u = k * world  →  matrix.scale(1/k) then translate(-graphicsOrigin).
-        const k = 2.5; // texels per world unit (higher = finer grass per tile so single tufts don't look like giant bushes when zoomed in)
+        const k = 3.6; // texels per world unit (higher = finer, crisper ground detail and less magnification blur when zoomed in)
         const gx = pos.x;
         const gy = pos.y - avgHeight * ELEV_Y_OFFSET;
         texMatrix.scale(1 / k, 1 / k);
@@ -2502,94 +2502,34 @@ export function BattlefieldStage({
                 // of water reads as one surface instead of swamp-green showing through the gaps
                 // between river bands (which made each tile a distinct low-poly diamond).
                 const waterQuad = [cornerPoints.NW, cornerPoints.NE, cornerPoints.SE, cornerPoints.SW];
-                g.beginFill(waterColor, isVisible ? 0.9 : 0.6);
+                g.beginFill(waterColor, isVisible ? 0.72 : 0.5);
                 drawPoly(g as unknown as PixiGraphics, waterQuad);
                 g.endFill();
                 const fullWaterMatrix = new Matrix();
                 if (coloredTex) {
-                  fullWaterMatrix.scale(1 / 1.5, 1 / 1.5);
+                  fullWaterMatrix.scale(1 / 2.4, 1 / 2.4);
                   fullWaterMatrix.translate(-pos.x, -(pos.y - avgHeight * ELEV_Y_OFFSET));
                 } else {
                   fullWaterMatrix.translate((q * 23 + r * 7) % 64, (q * 5 + r * 17) % 32);
                 }
-                g.beginTextureFill({ texture: waterTex, matrix: fullWaterMatrix, alpha: isVisible ? 0.4 : 0.22 });
+                // Let the realistic painted water texture carry the surface; it maps continuously
+                // across tiles so a body of water reads as one rippling sheet.
+                g.beginTextureFill({ texture: waterTex, matrix: fullWaterMatrix, alpha: isVisible ? 0.82 : 0.5 });
                 drawPoly(g as unknown as PixiGraphics, waterQuad);
                 g.endFill();
-                const waterNeighbor = (edge: EdgeKey) => {
-                  const vec = EDGE_VECTORS[edge];
-                  if (!inb(q + vec.dq, r + vec.dr)) return false;
-                  const neighbor = map.tiles[idxAt(q + vec.dq, r + vec.dr)] as any;
-                  return neighbor?.terrain === 'water';
-                };
-                const edgeMid = (edge: EdgeKey) => {
-                  const [a, b] = EDGE_TO_CORNERS[edge];
-                  return {
-                    x: (cornerPoints[a].x + cornerPoints[b].x) / 2,
-                    y: (cornerPoints[a].y + cornerPoints[b].y) / 2
-                  };
-                };
-                const connected = EDGE_KEYS.filter(waterNeighbor);
-                const exits = connected.length > 0 ? connected : (['E', 'W'] as EdgeKey[]);
-                const drawWaterBand = (edge: EdgeKey, width: number, color: number, alpha: number, jitterSalt: number) => {
-                  const p = edgeMid(edge);
-                  const dx = p.x - center.x;
-                  const dy = p.y - center.y;
-                  const len = Math.max(1, Math.hypot(dx, dy));
-                  const nx = (-dy / len) * width;
-                  const ny = (dx / len) * width * 0.76;
-                  const j1 = (tileNoise(q, r, jitterSalt) - 0.5) * 2.4;
-                  const j2 = (tileNoise(q, r, jitterSalt + 1) - 0.5) * 2.4;
-                  const poly = [
-                    { x: center.x + nx + j1, y: center.y + ny },
-                    { x: p.x + nx + j2, y: p.y + ny },
-                    { x: p.x - nx + j2, y: p.y - ny },
-                    { x: center.x - nx + j1, y: center.y - ny }
-                  ];
-                  g.beginFill(color, alpha);
-                  drawPoly(g as unknown as PixiGraphics, poly);
-                  g.endFill();
-                };
-                const bankColor = mixColor(baseColor, waterColor, 0.36);
-                exits.forEach((edge, i) => {
-                  drawWaterBand(edge, 13.2, bankColor, isVisible ? 0.84 : 0.52, 700 + i * 9);
-                });
-                g.beginFill(bankColor, isVisible ? 0.86 : 0.54);
-                g.drawEllipse(center.x, center.y, 15.5, 7.1);
+                // Soft central depth darkening for body. The rippling surface + colour now come
+                // from the continuous painted water texture above; the old per-tile river bands +
+                // ellipses are what made the water read as faceted low-poly diamonds, so they're gone.
+                g.beginFill(darkenColor(waterColor, 0.3), isVisible ? 0.2 : 0.12);
+                g.drawEllipse(center.x, center.y, 15, 6.8);
                 g.endFill();
-                exits.forEach((edge, i) => {
-                  drawWaterBand(edge, 9.6, waterColor, isVisible ? 0.96 : 0.65, 740 + i * 9);
-                });
-                g.beginFill(waterColor, isVisible ? 0.98 : 0.67);
-                g.drawEllipse(center.x, center.y, 11.6, 5.3);
-                g.endFill();
-                exits.forEach((edge, i) => {
-                  const p = edgeMid(edge);
-                  const dx = p.x - center.x;
-                  const dy = p.y - center.y;
-                  const len = Math.max(1, Math.hypot(dx, dy));
-                  const nx = (-dy / len) * 6.8;
-                  const ny = (dx / len) * 4.1;
-                  const poly = [
-                    { x: center.x + nx, y: center.y + ny },
-                    { x: p.x + nx, y: p.y + ny },
-                    { x: p.x - nx, y: p.y - ny },
-                    { x: center.x - nx, y: center.y - ny }
-                  ];
-                  const waterTextureMatrix = new Matrix();
-                  if (coloredTex) {
-                    waterTextureMatrix.scale(1 / 1.5, 1 / 1.5);
-                    waterTextureMatrix.translate(-pos.x, -(pos.y - avgHeight * ELEV_Y_OFFSET));
-                  } else {
-                    waterTextureMatrix.translate((q * 23 + r * 7 + i * 13) % 64, (q * 5 + r * 17 + i * 11) % 32);
-                  }
-                  g.beginTextureFill({ texture: waterTex, matrix: waterTextureMatrix, alpha: isVisible ? 0.46 : 0.24 });
-                  drawPoly(g as unknown as PixiGraphics, poly);
-                  g.endFill();
-                });
               }
 
               if (isVisible) {
-                const decalAlpha = coloredTex ? 0.32 : 0.28;
+                // With the painted photo texture present, heavy per-tile decals just stamp
+                // tile-confined clumps over a continuous surface → that's what read as a low-poly
+                // patchwork. Keep them very light so the painted ground carries the detail.
+                const decalAlpha = coloredTex ? 0.1 : 0.28;
                 const drawSpot = (salt: number, color: number, alpha: number, rx: number, ry: number) => {
                   const px = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.56;
                   const py = (tileNoise(q, r, salt + 17) - 0.5) * ISO_TILE_H * 0.58;
@@ -2727,15 +2667,9 @@ export function BattlefieldStage({
                   drawStroke(54, 0x1a1511, decalAlpha * 0.98, 20);
                   drawStroke(55, 0x756954, decalAlpha * 0.52, 13);
                 } else if (tile.terrain === 'water') {
-                  g.lineStyle(1, 0x7ab0b8, 0.22);
-                  for (let i = 0; i < 3; i++) {
-                    const px = (tileNoise(q, r, 80 + i) - 0.5) * ISO_TILE_W * 0.5;
-                    const py = (tileNoise(q, r, 90 + i) - 0.5) * ISO_TILE_H * 0.35;
-                    g.moveTo(px - 8, py);
-                    g.lineTo(px + 8, py - 1);
-                  }
-                  g.lineStyle();
-                  drawSpot(92, 0x0d2f43, 0.2, 11, 3);
+                  // ripples come from the continuous painted water texture now; the old per-tile
+                  // wave strokes just read as digital stripes. Keep only a faint depth darkening.
+                  drawSpot(92, 0x0d2f43, 0.12, 12, 3.2);
                 }
               }
 
