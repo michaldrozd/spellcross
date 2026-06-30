@@ -31,6 +31,7 @@ import {
   isoDistance as axialDistance,
   coordinateKey,
   hydrateCampaignState,
+  isObjectiveMet,
   isSupplyUnit,
   isUnitUnlocked,
   planPathForUnitIso as planPathForUnit,
@@ -764,6 +765,18 @@ function analyzePathThreat(
   return { threatenedKeys, worstTileDamage };
 }
 
+type BattleOutcomeData = {
+  status: 'victory' | 'defeat';
+  sectorName: string;
+  rounds: number;
+  enemiesDestroyed: number;
+  enemiesTotal: number;
+  squadsLost: number;
+  squadsSurviving: number;
+  objectives: Array<{ text: string; met: boolean }>;
+  reward?: { money: number; research: number; strategic: number };
+};
+
 const BattleView: React.FC<{
   campaign: CampaignState;
   onVictory: () => void;
@@ -785,6 +798,11 @@ const BattleView: React.FC<{
   const [targetedEnemy, setTargetedEnemy] = useState<UnitInstance | null>(null);
   const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null);
   const [cameraRestoreSignal, setCameraRestoreSignal] = useState(0);
+  // When a battle ends we freeze on the field and show an outcome card, instead of snapping
+  // straight to the strategic map. The deferred apply (rewards, casualties, sector status) only
+  // runs when the player dismisses the card via Continue.
+  const [battleOutcome, setBattleOutcome] = useState<BattleOutcomeData | null>(null);
+  const outcomeShownRef = useRef(false);
   const size = 26;
   const width = Math.max(1100, map.width * size * 2.4);
   const height = Math.max(800, map.height * size * 2.2);
@@ -1366,23 +1384,49 @@ const BattleView: React.FC<{
       AudioManager.play('objective');
     }
     if (status === 'victory' || status === 'defeat') {
+      if (outcomeShownRef.current) return; // already showing the result card; don't re-fire
+      outcomeShownRef.current = true;
       // cancel pending staged enemy SFX so gunfire/explosions don't play over the result screen
       aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
       aiSfxTimeoutsRef.current = [];
-    }
-    if (status === 'victory') {
       AudioManager.duckAmbience();
-      AudioManager.play('victory');
-      applyBattleOutcome(campaign, bundle, 'victory');
-      persist();
-      onVictory();
-    } else if (status === 'defeat') {
-      AudioManager.duckAmbience();
-      AudioManager.play('defeat');
-      applyBattleOutcome(campaign, bundle, 'defeat');
-      persist();
-      onDefeat();
+      AudioManager.play(status === 'victory' ? 'victory' : 'defeat');
+      setBattleOutcome(buildBattleOutcome(status));
     }
+  };
+
+  // Snapshot the just-finished battle into a result card. Reads battle.state directly (still intact —
+  // applyBattleOutcome, which mutates the campaign, is deferred until the player hits Continue).
+  const buildBattleOutcome = (status: 'victory' | 'defeat'): BattleOutcomeData => {
+    const enemyUnits = Array.from(battle.state.sides.otherSide.units.values());
+    const allyUnits = Array.from(battle.state.sides.alliance.units.values());
+    const isDead = (u: UnitInstance) => u.stance === 'destroyed' || u.currentHealth <= 0;
+    const territory = campaign.territories.find((t) => t.id === battle.territoryId);
+    return {
+      status,
+      sectorName: battle.scenario.name,
+      rounds: battle.state.round,
+      enemiesTotal: enemyUnits.length,
+      enemiesDestroyed: enemyUnits.filter(isDead).length,
+      squadsLost: allyUnits.filter(isDead).length,
+      squadsSurviving: allyUnits.filter((u) => !isDead(u)).length,
+      objectives: (battle.scenario.objectives ?? []).map((o) => ({
+        text: o.description,
+        met: isObjectiveMet(o, battle)
+      })),
+      reward: status === 'victory' && territory ? { ...territory.reward } : undefined
+    };
+  };
+
+  // Player dismissed the result card → now commit the outcome to the campaign and leave the battle.
+  const confirmBattleOutcome = () => {
+    if (!battleOutcome) return;
+    const status = battleOutcome.status;
+    applyBattleOutcome(campaign, bundle, status);
+    persist();
+    setBattleOutcome(null);
+    if (status === 'victory') onVictory();
+    else onDefeat();
   };
 
   const addCombatNotice = (message: string, ttlMs = 1800) => {
@@ -1863,6 +1907,9 @@ const BattleView: React.FC<{
     try {
       while (battle.state.activeFaction === 'otherSide' && safety < 50) {
         safety += 1;
+        // If the player's already been wiped out (or the enemy is), stop the enemy turn here so the
+        // outcome card shows immediately rather than after the rest of the queued enemy actions.
+        if (evaluateBattleOutcome(battle) !== 'ongoing') break;
         const objectiveTargets = battle.scenario.objectives
           .map((o) => o.target)
           .filter((t): t is HexCoordinate => Boolean(t));
@@ -2494,6 +2541,53 @@ const BattleView: React.FC<{
           </div>
         </div>
       </div>
+
+      {battleOutcome ? (
+        <div className={`battle-outcome-overlay ${battleOutcome.status}`}>
+          <div className="battle-outcome-card">
+            <div className="battle-outcome-stamp">
+              {battleOutcome.status === 'victory' ? 'SECTOR SECURED' : 'MISSION FAILED'}
+            </div>
+            <p className="battle-outcome-sector">{battleOutcome.sectorName}</p>
+            <p className="battle-outcome-flavor">
+              {battleOutcome.status === 'victory'
+                ? 'The ground is ours. Survivors are regrouping and the sector falls under Alliance control.'
+                : 'The line broke. What remains of the strike force is pulling back to regroup.'}
+            </p>
+
+            {battleOutcome.objectives.length ? (
+              <ul className="battle-outcome-objectives">
+                {battleOutcome.objectives.map((o, i) => (
+                  <li key={i} className={o.met ? 'met' : 'failed'}>
+                    <span className="obj-mark">{o.met ? '✓' : '✕'}</span>
+                    <span>{o.text}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <dl className="battle-outcome-stats">
+              <div><dt>Enemies destroyed</dt><dd>{battleOutcome.enemiesDestroyed}/{battleOutcome.enemiesTotal}</dd></div>
+              <div><dt>Squads surviving</dt><dd>{battleOutcome.squadsSurviving}</dd></div>
+              <div><dt>Squads lost</dt><dd className={battleOutcome.squadsLost > 0 ? 'loss' : ''}>{battleOutcome.squadsLost}</dd></div>
+              <div><dt>Rounds</dt><dd>{battleOutcome.rounds}</dd></div>
+            </dl>
+
+            {battleOutcome.reward ? (
+              <div className="battle-outcome-spoils">
+                <span className="spoils-label">Spoils</span>
+                <span className="spoils-item">+{battleOutcome.reward.money} <em>CR</em></span>
+                <span className="spoils-item">+{battleOutcome.reward.research} <em>RP</em></span>
+                <span className="spoils-item">+{battleOutcome.reward.strategic} <em>SP</em></span>
+              </div>
+            ) : null}
+
+            <button className="primary-btn battle-outcome-continue" onClick={confirmBattleOutcome}>
+              {battleOutcome.status === 'victory' ? 'Return to HQ' : 'Regroup at HQ'}
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 };

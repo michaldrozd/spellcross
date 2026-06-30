@@ -2915,6 +2915,138 @@ header.app-header {
   justify-content: center;
 }
 
+/* In-battle outcome card — shown on the frozen battlefield before returning to HQ */
+.battle-outcome-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(3, 6, 10, 0.55) 0%, rgba(2, 4, 7, 0.86) 80%);
+  backdrop-filter: blur(1.5px);
+  animation: outcome-fade 0.45s ease both;
+}
+
+@keyframes outcome-fade { from { opacity: 0; } to { opacity: 1; } }
+
+.battle-outcome-card {
+  min-width: 380px;
+  max-width: 460px;
+  padding: 1.7rem 2rem 1.6rem;
+  text-align: center;
+  font-family: "Courier New", monospace;
+  color: var(--text);
+  background:
+    linear-gradient(180deg, rgba(127, 127, 112, 0.10), rgba(10, 13, 12, 0.97) 22%),
+    var(--panel);
+  border: 2px solid;
+  border-color: #858979 #1c2221 #151918 #62685e;
+  border-radius: 5px;
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+  animation: outcome-rise 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes outcome-rise {
+  from { transform: translateY(22px) scale(0.96); opacity: 0; }
+  to { transform: translateY(0) scale(1); opacity: 1; }
+}
+
+.battle-outcome-stamp {
+  font-size: 1.85rem;
+  font-weight: 700;
+  letter-spacing: 4px;
+  padding: 0.35rem 0;
+  border-top: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  animation: outcome-stamp 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) 0.12s both;
+}
+
+@keyframes outcome-stamp {
+  0% { transform: scale(1.5); opacity: 0; letter-spacing: 12px; }
+  100% { transform: scale(1); opacity: 1; letter-spacing: 4px; }
+}
+
+.battle-outcome-overlay.victory .battle-outcome-stamp { color: var(--accent-glow); text-shadow: 0 0 18px rgba(244, 197, 32, 0.35); }
+.battle-outcome-overlay.defeat .battle-outcome-stamp { color: #e0604a; text-shadow: 0 0 18px rgba(196, 48, 48, 0.3); }
+.battle-outcome-overlay.victory .battle-outcome-card { border-top-color: rgba(244, 197, 32, 0.5); }
+.battle-outcome-overlay.defeat .battle-outcome-card { border-top-color: rgba(196, 48, 48, 0.45); }
+
+.battle-outcome-sector {
+  margin: 0.8rem 0 0.2rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--text);
+}
+
+.battle-outcome-flavor {
+  margin: 0 0 1.1rem;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.battle-outcome-objectives {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0.7rem 0;
+  border-top: 1px solid var(--panel-border);
+  border-bottom: 1px solid var(--panel-border);
+  text-align: left;
+  font-size: 0.78rem;
+}
+
+.battle-outcome-objectives li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.battle-outcome-objectives .obj-mark { font-weight: 700; width: 0.9rem; flex: none; }
+.battle-outcome-objectives li.met { color: #9fd07a; }
+.battle-outcome-objectives li.met .obj-mark { color: #9fd07a; }
+.battle-outcome-objectives li.failed { color: #c98b80; }
+.battle-outcome-objectives li.failed .obj-mark { color: #e0604a; }
+
+.battle-outcome-stats {
+  margin: 0 0 1.1rem;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem 1.2rem;
+}
+
+.battle-outcome-stats > div { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.78rem; }
+.battle-outcome-stats dt { color: var(--text-dim); }
+.battle-outcome-stats dd { margin: 0; font-weight: 700; color: var(--text); }
+.battle-outcome-stats dd.loss { color: #e0604a; }
+
+.battle-outcome-spoils {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  margin: 0 0 1.2rem;
+  padding: 0.55rem 0.6rem;
+  border: 1px solid rgba(244, 197, 32, 0.28);
+  border-radius: 4px;
+  background: rgba(244, 197, 32, 0.06);
+}
+
+.battle-outcome-spoils .spoils-label {
+  font-size: 0.66rem;
+  letter-spacing: 2px;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.battle-outcome-spoils .spoils-item { font-size: 0.92rem; font-weight: 700; color: var(--accent-glow); }
+.battle-outcome-spoils .spoils-item em { font-size: 0.62rem; font-style: normal; color: var(--text-dim); margin-left: 1px; }
+
+.battle-outcome-continue { width: 100%; margin-top: 0.2rem; }
+
 .battle-controls {
   position: fixed;
   right: 1rem;
