@@ -2322,7 +2322,10 @@ export function BattlefieldStage({
         ((terrainTextures as any).water ?? tex);
       const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
       // Memory tiles lean on the desaturated base color, so the texture sits back further when not visible.
-      const overlayAlpha = coloredTex ? (isVisible ? 1 : 0.45) : (isVisible ? 0.4 : 0.18);
+      // Memory (explored, not visible) keeps the continuous texture nearly opaque too — just with a
+      // cool desaturating tint — so fogged ground reads as one dimmed painted surface instead of a
+      // patchwork of per-tile dark diamonds.
+      const overlayAlpha = coloredTex ? (isVisible ? 1 : 0.9) : (isVisible ? 0.4 : 0.18);
       const texMatrix = new Matrix();
       if (coloredTex) {
         // Map the large painted texture continuously in WORLD space so the ground reads as one
