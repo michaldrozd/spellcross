@@ -1466,7 +1466,12 @@ export function BattlefieldStage({
               await ensureImageDecodable(blob);
               const objUrl = URL.createObjectURL(blob);
               const loaded = crispTexture(Texture.from(objUrl));
+              // Painted ground is sampled across many tiles; mipmaps + linear keep it smooth and
+              // painterly instead of shimmering into a crisp pixel-art grid when zoomed out.
+              loaded.baseTexture.scaleMode = SCALE_MODES.LINEAR;
+              loaded.baseTexture.mipmap = MIPMAP_MODES.ON;
               (loaded.baseTexture as any).wrapMode = WRAP_MODES.REPEAT; // tile painted ground textures seamlessly
+              loaded.baseTexture.update();
               out[n] = loaded;
               anyLoaded = true;
               explicitColorTextures = true;
@@ -2788,6 +2793,33 @@ export function BattlefieldStage({
                   g.lineTo(mid.x, mid.y);
                   g.lineTo(b.x, b.y);
                   g.lineStyle();
+                } else if (tile.terrain !== neighborTile.terrain) {
+                  // Feather land↔land boundaries (grass/road/dirt) so the ground reads as one painted
+                  // surface instead of hard-cut low-poly diamonds. Bleed the neighbour's tone a short
+                  // way into this tile along the shared edge with a few fading bands.
+                  const a = cornerPoints[cornerA];
+                  const b = cornerPoints[cornerB];
+                  const edgeIndex = EDGE_KEYS.indexOf(edge);
+                  const toC = (p: { x: number; y: number }, amt: number) => ({
+                    x: p.x + (center.x - p.x) * amt,
+                    y: p.y + (center.y - p.y) * amt
+                  });
+                  const nColor = (terrainPalette as any)[neighborTile.terrain] ?? baseColor;
+                  const blend = mixColor(baseColor, nColor, 0.62);
+                  const bands = [
+                    { d: 0.13 + tileNoise(q, r, 700 + edgeIndex) * 0.05, a: isVisible ? 0.5 : 0.32 },
+                    { d: 0.27 + tileNoise(q, r, 706 + edgeIndex) * 0.06, a: isVisible ? 0.28 : 0.17 },
+                    { d: 0.42 + tileNoise(q, r, 712 + edgeIndex) * 0.06, a: isVisible ? 0.13 : 0.08 }
+                  ];
+                  let pa = a, pb = b;
+                  for (const band of bands) {
+                    const ca = toC(a, band.d);
+                    const cb = toC(b, band.d);
+                    g.beginFill(blend, band.a);
+                    drawPoly(g as unknown as PixiGraphics, [pa, pb, cb, ca]);
+                    g.endFill();
+                    pa = ca; pb = cb;
+                  }
                 }
                 if (delta > 0 && delta <= 1.05) {
                   const tint = mixColor(
