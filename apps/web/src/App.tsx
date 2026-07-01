@@ -512,6 +512,7 @@ function impactPanFor(unit: UnitInstance, map: BattlefieldMap): number {
 
 function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: BattlefieldMap, weather?: TacticalBattleState['weather']): { weapon: string; hit: number } | null {
   let choice: { weapon: string; hit: number } | null = null;
+  let bestScore = 0;
   const distance = axialDistance(attacker.coordinate, defender.coordinate);
 
   for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
@@ -531,9 +532,12 @@ function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: Battlef
 
     if (hit <= 0) continue;
 
-    // hit is a decimal 0-1, convert to percentage
+    // Pick the weapon with the best expected EFFECTIVE damage (hit × armour/type-aware damage), so the
+    // anti-tank gun is chosen against a tank and the MG against infantry — not just the most accurate.
+    const score = hit * Math.max(1, estimateHitDamage(attacker, defender, weaponId, map));
     const hitPercent = Math.round(hit * 100);
-    if (!choice || hitPercent > choice.hit) {
+    if (!choice || score > bestScore) {
+      bestScore = score;
       choice = { weapon: weaponId, hit: hitPercent };
     }
   }

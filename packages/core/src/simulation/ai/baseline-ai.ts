@@ -1,7 +1,7 @@
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { coordinateKey, getNeighbors, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
 import { isIsoNeighbor, isoDirectionIndex, isoDistance } from '../utils/grid-iso.js';
-import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange, isMedicUnit, isSupplyUnit } from '../combat/combat-resolver.js';
+import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange, estimateHitDamage, isMedicUnit, isSupplyUnit } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import { hasLineOfSight } from '../visibility/vision.js';
 
@@ -282,11 +282,13 @@ function buildThreatAwarePathToward(
 function flankAwareAttackScore(attacker: UnitInstance, defender: UnitInstance, weaponId: string, map: TacticalBattleState['map'], weather?: TacticalBattleState['weather']): number {
   const hit = calculateHitChance({ attacker, defender, weaponId, map, weather });
   if (hit <= 0) return 0;
-  const power = attacker.stats.weaponPower[weaponId] ?? 0;
+  // Expected EFFECTIVE damage (armour + weapon-vs-target-class), not raw power — so a unit fires its
+  // anti-tank weapon at armour and its MG at infantry, instead of always the most accurate one.
+  const dmg = estimateHitDamage(attacker, defender, weaponId, map);
   const attackDir = isoDirectionIndex(defender.coordinate, attacker.coordinate);
   const delta = orientationDelta(defender.orientation ?? 0, attackDir);
   const flankBonus = delta >= 3 ? 1.25 : delta === 2 ? 1.15 : 1;
-  return hit * (power || 1) * flankBonus * priorityScore(defender);
+  return hit * Math.max(1, dmg) * flankBonus * priorityScore(defender);
 }
 
 function bestAttackFromHere(

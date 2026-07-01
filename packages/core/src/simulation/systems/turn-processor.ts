@@ -103,12 +103,16 @@ export function reactionAttackers(state: TacticalBattleState, mover: UnitInstanc
       const distance = isoDistance(defender.coordinate, mover.coordinate);
       let bestWeapon: string | null = null;
       let bestHit = 0;
+      let bestScore = 0;
       for (const weaponId of Object.keys(defender.stats.weaponRanges)) {
         const range = calculateAttackRange(defender, weaponId, state.map);
         if (range <= 0 || distance > range) continue;
         if (!canWeaponTarget(defender, weaponId, mover)) continue;
         const hitChance = calculateHitChance({ attacker: defender, defender: mover, weaponId, map: state.map, weather: state.weather });
-        if (hitChance > bestHit) {
+        // pick by expected effective damage (hit × armour/type-aware damage), not raw accuracy
+        const score = hitChance * Math.max(1, estimateHitDamage(defender, mover, weaponId, state.map));
+        if (score > bestScore) {
+          bestScore = score;
           bestHit = hitChance;
           bestWeapon = weaponId;
         }

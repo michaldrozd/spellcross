@@ -3,6 +3,7 @@ import { createBattleState } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
 import { calculateHitChance } from './combat-resolver.js';
 import { isoDirectionIndex } from '../utils/grid-iso.js';
+import { decideNextAIAction } from '../ai/baseline-ai.js';
 
 const plain = { terrain: 'plain', elevation: 0, cover: 0, movementCostModifier: 1, passable: true, providesVisionBoost: false } as const;
 
@@ -35,6 +36,39 @@ describe('flanking / rear attacks', () => {
     const frontal = calculateHitChance({ attacker: front, defender: foe, weaponId: 'rifle', map: state.map });
     const flanked = calculateHitChance({ attacker: rear, defender: foe, weaponId: 'rifle', map: state.map });
     expect(flanked).toBeGreaterThan(frontal);
+  });
+});
+
+describe('weapon selection by effective damage (counters express)', () => {
+  // a trooper carrying BOTH a small-arms MG (accurate, anti-infantry) and an AT gun (anti-armour)
+  const trooper = (q: number, foeType: 'vehicle' | 'infantry') => ({
+    definition: { id: 'trooper', faction: 'alliance' as const, name: 'T', type: 'infantry' as const,
+      stats: { maxHealth: 40, mobility: 4, vision: 6, armor: 0, morale: 60,
+        weaponRanges: { mg: 4, at: 4 }, weaponPower: { mg: 16, at: 22 }, weaponAccuracy: { mg: 0.9, at: 0.7 } } },
+    coordinate: { q, r: 0 }
+  });
+  const foe = (q: number, type: 'vehicle' | 'infantry', armor: number, id: string) => ({
+    definition: { id, faction: 'otherSide' as const, name: id, type,
+      stats: { maxHealth: 80, mobility: 4, vision: 4, armor, morale: 60, weaponRanges: { x: 1 }, weaponPower: { x: 1 }, weaponAccuracy: { x: 1 } } },
+    coordinate: { q, r: 0 }
+  });
+  function pick(foeType: 'vehicle' | 'infantry', armor: number, foeId: string) {
+    const state = createBattleState({
+      map: { id: 'm', width: 6, height: 1, tiles: Array.from({ length: 6 }, () => plain) },
+      sides: [
+        { faction: 'alliance', units: [trooper(1, foeType)] },
+        { faction: 'otherSide', units: [foe(3, foeType, armor, foeId)] }
+      ]
+    });
+    const foeUnit = Array.from(state.sides.otherSide.units.values())[0];
+    const action = decideNextAIAction(state, 'alliance', { aggression: 0.9, difficulty: 'hard', visibleEnemyIds: new Set([foeUnit.id]) });
+    return action.type === 'attack' ? action.weaponId : `(no attack: ${action.type})`;
+  }
+  it('fires the AT gun at a heavy tank, not the more-accurate MG', () => {
+    expect(pick('vehicle', 6, 'leopard-2')).toBe('at');
+  });
+  it('fires the MG at infantry, not the AT gun', () => {
+    expect(pick('infantry', 0, 'foot')).toBe('mg');
   });
 });
 
