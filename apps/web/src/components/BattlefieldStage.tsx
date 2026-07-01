@@ -6667,7 +6667,8 @@ export function BattlefieldStage({
             draw={(g) => {
               g.clear();
               if (battleState.weather === 'night') {
-                g.beginFill(0x0c1836, 0.4);
+                // Moonlit blue, not pitch black — still clearly night but the battlefield stays readable.
+                g.beginFill(0x18294a, 0.28);
               } else {
                 // Dim cool haze. A lighter grey at higher alpha brightened the (dark) terrain and made
                 // fog maps look washed-out/over-lit; this darker, subtler tone reads as mist without it.
