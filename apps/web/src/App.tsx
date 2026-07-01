@@ -2102,6 +2102,10 @@ const BattleView: React.FC<{
     const reachTargets = battle.scenario.objectives.filter((o) => o.kind === 'reach').map((o) => o.target).filter(Boolean) as HexCoordinate[];
     const objectiveTargets = reachTargets;
     const failedUnitIds = new Set<string>();
+    // Backstop against the planner walking a unit in circles: remember every tile each unit has stood on
+    // this turn. If it's told to step back onto one, bench it for the rest of the turn instead of thrashing.
+    const visitedTiles = new Map<string, Set<string>>();
+    const tileKey = (c: HexCoordinate) => `${c.q},${c.r}`;
     let safety = 0;
 
     while (battle.state.activeFaction === 'alliance' && safety < 80) {
@@ -2129,6 +2133,12 @@ const BattleView: React.FC<{
       if (action.type === 'move') {
         const mover = findBattleUnit(action.unitId);
         const startCoord = mover ? { q: mover.coordinate.q, r: mover.coordinate.r } : null;
+        const dest = action.path[action.path.length - 1];
+        const seen = visitedTiles.get(action.unitId) ?? new Set<string>();
+        if (dest && seen.has(tileKey(dest))) { failedUnitIds.add(action.unitId); continue; } // would revisit → cycle
+        if (startCoord) seen.add(tileKey(startCoord));
+        if (dest) seen.add(tileKey(dest));
+        visitedTiles.set(action.unitId, seen);
         const tlBefore = battle.state.timeline.length;
         const moveRes = proc.moveUnit(action);
         if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }

@@ -408,9 +408,14 @@ export function decideNextAIAction(
   for (const u of units) {
     const lowHealth = u.currentHealth <= u.stats.maxHealth * (aggression > 0.7 ? 0.25 : 0.35);
     const rattled = u.currentMorale <= (aggression > 0.7 ? 20 : 30);
+    // Only back off when an enemy is genuinely CLOSE (a "danger" reposition), not merely inside the
+    // unit's own firing band. The old `maxRange-2` made a range-8 unit flee an enemy at 6 tiles — a tile
+    // it could happily shoot from — so it retreated, the advance phase pulled it back, and it thrashed
+    // in circles. Danger radius scales gently with range (snipers only when nearly adjacent).
+    const dangerRadius = Math.max(2, Math.min(4, Math.ceil(maxRange(u) * 0.35)));
     const rangedStandoff =
       maxRange(u) >= 6 &&
-      enemiesAll.some((e) => isoDistance(u.coordinate, e.coordinate) < Math.max(2, maxRange(u) - 2));
+      enemiesAll.some((e) => isoDistance(u.coordinate, e.coordinate) <= dangerRadius);
     if (lowHealth || rattled || rangedStandoff) {
       const step = tryFallbackStep(state, u, enemiesAll);
       if (step && step.length) return { type: 'move', unitId: u.id, path: step };
