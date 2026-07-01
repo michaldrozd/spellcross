@@ -1,6 +1,7 @@
 import { getTile, orientationDelta } from '../utils/grid.js';
 import { isoDistance } from '../utils/grid-iso.js';
 import { isoDirectionIndex } from '../utils/grid-iso.js';
+import { typeEffectiveness } from './damage-types.js';
 import type {
   BattlefieldMap,
   BattleEvent,
@@ -82,7 +83,8 @@ export function estimateHitDamage(
 ): number {
   const weaponPower = attacker.stats.weaponPower[weaponId] ?? 0;
   if (weaponPower <= 0) return 0;
-  const effectivePower = weaponPower * calculateStrengthModifier(attacker);
+  // Weapon-vs-target-class effectiveness (AT shreds armour, small arms shred infantry, AA owns air...)
+  const effectivePower = weaponPower * calculateStrengthModifier(attacker) * typeEffectiveness(attacker, weaponId, defender);
   const defenderTile = getTile(map, defender.coordinate);
   const defenderCover = (defenderTile?.cover ?? 0) + (defender.entrench ?? 0);
   const armorReduction = defender.stats.armor * ARMOR_ABSORPTION_FACTOR;

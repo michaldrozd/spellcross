@@ -118,7 +118,7 @@ describe('Overwatch (reaction fire)', () => {
     const threats = reactionThreats(state, ally);
     expect(threats.length).toBe(1);
     expect(threats[0].attackerId).toBe(Array.from(state.sides.otherSide.units.keys())[0]);
-    expect(threats[0].potentialDamage).toBe(12); // bow power 12, ally has no armor/cover
+    expect(threats[0].potentialDamage).toBe(14); // bow power 12 × arrow-vs-infantry 1.15 ≈ 14, no armor/cover
     expect(threats[0].hitChance).toBeGreaterThan(0);
 
     // out of range -> no threat

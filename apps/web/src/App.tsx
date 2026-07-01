@@ -46,6 +46,9 @@ import {
   startBattleForTerritory,
   startResearch,
   TurnProcessor,
+  typeEffectiveness,
+  weaponDamageRole,
+  calculateStrengthModifier,
   updateAllFactionsVision
 } from '@spellcross/core';
 import type { BattleEvent, BattlefieldMap, CampaignState, HexCoordinate, TacticalBattleState, UnitInstance } from '@spellcross/core';
@@ -893,6 +896,12 @@ const BattleView: React.FC<{
     ? estimateHitDamage(selectedUnit, previewEnemy, targetWeaponPreview.weapon, battle.state.map)
     : undefined;
   const previewLethal = !!previewEnemy && previewDamage !== undefined && previewDamage >= previewEnemy.currentHealth;
+  const previewHitChance = previewEnemy && targetWeaponPreview && selectedUnit && !deployMode
+    ? calculateHitChance({ attacker: selectedUnit, defender: previewEnemy, weaponId: targetWeaponPreview.weapon, map: battle.state.map, weather: battle.state.weather })
+    : undefined;
+  const previewEff = previewEnemy && targetWeaponPreview && selectedUnit
+    ? typeEffectiveness(selectedUnit, targetWeaponPreview.weapon, previewEnemy)
+    : 1;
   const threatenedPathTiles = useMemo(() => {
     if (!plannedPath || !selectedUnit) return undefined;
     const keys = analyzePathThreat(battle.state, selectedUnit, plannedPath).threatenedKeys;
@@ -2440,6 +2449,31 @@ const BattleView: React.FC<{
                       {unit.statusEffects.has('overwatch') && <span className="badge">Overwatch</span>}
                       {carrier && <p>Cargo {unit.carrying?.length ?? 0}/{unit.stats.transportCapacity}</p>}
                     </div>
+                    <div className="unit-armory">
+                      <p className="unit-armory-top">
+                        <span>ARM <b>{unit.stats.armor}</b></span>
+                        {unit.level != null && <span>LVL <b>{unit.level}</b></span>}
+                        <span>XP <b>{unit.experience ?? 0}</b>{unit.level != null ? `/${unit.level * 100}` : ''}</span>
+                      </p>
+                      {Object.keys(unit.stats.weaponRanges).map((wid) => {
+                        const roleLabel: Record<string, string> = {
+                          ap: 'AP', he: 'HE', autocannon: 'AC', smallarms: 'SA',
+                          aa: 'AA', arrow: 'BOW', fire: 'FIRE', melee: 'MELEE', magic: 'PSI'
+                        };
+                        const role = weaponDamageRole(wid);
+                        const atk = Math.round((unit.stats.weaponPower[wid] ?? 0) * calculateStrengthModifier(unit));
+                        const acc = Math.round((unit.stats.weaponAccuracy[wid] ?? 0.6) * 100);
+                        return (
+                          <p key={wid} className="unit-weapon-line">
+                            <span className={`wep-role wep-${role}`}>{roleLabel[role] ?? role}</span>
+                            <span className="wep-name">{wid}</span>
+                            <span>ATK {atk}</span>
+                            <span>RNG {unit.stats.weaponRanges[wid]}</span>
+                            <span>ACC {acc}%</span>
+                          </p>
+                        );
+                      })}
+                    </div>
                     <div className="unit-actions">
                       {carrier && (
                         <button
@@ -2616,6 +2650,32 @@ const BattleView: React.FC<{
               })()}
             </div>
           )}
+
+          {previewEnemy && !deployMode && selectedUnit ? (
+            <div className="target-card">
+              <h3>Target</h3>
+              <div className="target-intel">
+                <strong>{unitDisplayName(previewEnemy.id, battle.state)}</strong>
+                <p className="unit-stat-line">
+                  HP {compactNumber(previewEnemy.currentHealth)}/{compactNumber(previewEnemy.stats.maxHealth)}
+                  <i style={{ '--unit-stat-percent': `${Math.max(0, Math.min(100, Math.round((previewEnemy.currentHealth / previewEnemy.stats.maxHealth) * 100)))}%` } as React.CSSProperties} />
+                </p>
+                {targetWeaponPreview ? (
+                  <>
+                    <p className="target-hit">Hit <b>{Math.round((previewHitChance ?? 0) * 100)}%</b>
+                      <span className="target-dmg">Dmg ~<b>{previewDamage ?? 0}</b></span>
+                    </p>
+                    <p className={`target-eff ${previewEff >= 1.2 ? 'eff-strong' : previewEff <= 0.65 ? 'eff-weak' : 'eff-ok'}`}>
+                      {targetWeaponPreview.weapon}: {previewEff >= 1.2 ? 'STRONG' : previewEff <= 0.65 ? 'WEAK' : 'OK'} <span>×{previewEff.toFixed(2)}</span>
+                    </p>
+                    {previewLethal ? <span className="badge badge-kill">LIKELY KILL</span> : null}
+                  </>
+                ) : (
+                  <p className="muted">No weapon can hit this target</p>
+                )}
+              </div>
+            </div>
+          ) : null}
 
           <div className="battle-log-panel">
             <h3>Combat Log</h3>

@@ -11,7 +11,7 @@ const base: CreateBattleStateOptions = {
     {
       faction: 'alliance',
       units: [
-        { definition: { id: 'ally', faction: 'alliance', name: 'Ally', type: 'infantry', stats: { maxHealth: 20, mobility: 4, vision: 3, armor: 0, morale: 28, weaponRanges: { rifle: 1 }, weaponPower: { rifle: 10 }, weaponAccuracy: { rifle: 1 } } }, coordinate: { q: 0, r: 0 } }
+        { definition: { id: 'ally', faction: 'alliance', name: 'Ally', type: 'infantry', stats: { maxHealth: 40, mobility: 4, vision: 3, armor: 0, morale: 28, weaponRanges: { rifle: 1 }, weaponPower: { rifle: 10 }, weaponAccuracy: { rifle: 1 } } }, coordinate: { q: 0, r: 0 } }
       ]
     },
     {
