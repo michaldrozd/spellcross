@@ -105,6 +105,24 @@ describe('updateFactionVision', () => {
     expect(state.vision.alliance.visibleTiles.has(idx)).toBe(true);
   });
 
+  it('forest tiles block line of sight through them (ambush cover)', () => {
+    const forest = { ...plainTile, terrain: 'forest', cover: 2, blocksVision: true } as const;
+    const tiles = [plainTile, forest, plainTile, plainTile, plainTile]; // viewer(0,0) — forest(1,0) — (2,0)
+    const state = createBattleState({
+      map: { id: 'fog', width: 5, height: 1, tiles: [...tiles] },
+      sides: [
+        { faction: 'alliance', units: [{
+          definition: { id: 's', faction: 'alliance', name: 'S', type: 'infantry',
+            stats: { maxHealth: 10, mobility: 4, vision: 6, armor: 0, morale: 60, weaponRanges: { r: 4 }, weaponPower: { r: 1 }, weaponAccuracy: { r: 1 } } },
+          coordinate: { q: 0, r: 0 } }] },
+        { faction: 'otherSide', units: [] }
+      ]
+    });
+    updateFactionVision(state, 'alliance');
+    // the forest tile itself is seen (edge), but a tile BEHIND the treeline is not
+    expect(state.vision.alliance.visibleTiles.has(2)).toBe(false); // (2,0) behind forest at (1,0)
+  });
+
   it('handles factions with no active units', () => {
     const state = createBattleState({
       ...battleSpec,

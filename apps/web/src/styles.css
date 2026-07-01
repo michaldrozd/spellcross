@@ -3322,6 +3322,26 @@ header.app-header {
   border-radius: 2px;
 }
 
+.unit-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.2rem;
+}
+.unit-tags .badge {
+  font-family: "Courier New", monospace;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  padding: 0.08rem 0.34rem;
+  border-radius: 2px;
+  color: #cfe0bd;
+  background: rgba(74, 110, 60, 0.28);
+  border: 1px solid rgba(133, 143, 119, 0.4);
+}
+.unit-tags .badge-cover { color: #bfe6a8; background: rgba(60, 110, 48, 0.4); border-color: rgba(127, 208, 122, 0.55); }
+.unit-tags .badge-conceal { color: #a8dccf; background: rgba(40, 92, 84, 0.42); border-color: rgba(90, 169, 199, 0.5); }
+
 .unit-card.target-card {
   background:
     linear-gradient(rgba(111, 82, 54, 0.07) 1px, transparent 1px),

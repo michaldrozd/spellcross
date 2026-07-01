@@ -2445,8 +2445,22 @@ const BattleView: React.FC<{
                         Morale {unit.currentMorale}
                         <i style={{ '--unit-stat-percent': `${moralePct}%` } as React.CSSProperties} />
                       </p>
-                      <p>Cover {tile?.cover ?? 0}%</p>
-                      {unit.statusEffects.has('overwatch') && <span className="badge">Overwatch</span>}
+                      {(() => {
+                        const coverVal = (tile?.cover ?? 0) + (unit.entrench ?? 0);
+                        const terrainLabel: Record<string, string> = { plain: 'Open', road: 'Road', forest: 'Forest', urban: 'Urban', hill: 'Hill', swamp: 'Swamp', structure: 'Rubble', water: 'Water' };
+                        const coverWord = coverVal >= 3 ? 'Heavy' : coverVal === 2 ? 'Solid' : coverVal === 1 ? 'Light' : 'None';
+                        return (
+                          <>
+                            <p>Cover <b>{coverWord}</b>{coverVal > 0 ? ` · ${terrainLabel[tile?.terrain ?? 'plain'] ?? tile?.terrain}` : ''}</p>
+                            <div className="unit-tags">
+                              {coverVal > 0 && <span className="badge badge-cover">IN COVER</span>}
+                              {tile?.blocksVision && <span className="badge badge-conceal">CONCEALED</span>}
+                              {unit.statusEffects.has('overwatch') && <span className="badge">OVERWATCH</span>}
+                              {(unit.entrench ?? 0) > 0 && <span className="badge">DUG IN</span>}
+                            </div>
+                          </>
+                        );
+                      })()}
                       {carrier && <p>Cargo {unit.carrying?.length ?? 0}/{unit.stats.transportCapacity}</p>}
                     </div>
                     <div className="unit-armory">

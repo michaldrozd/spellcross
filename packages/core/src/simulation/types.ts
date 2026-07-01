@@ -97,6 +97,9 @@ export interface MapTile {
   movementCostModifier: number;
   passable: boolean;
   providesVisionBoost: boolean;
+  // Blocks line of sight THROUGH this tile (dense forest / buildings / rubble) — enables ambushes and
+  // limits sight lines. The tile a viewer or target actually stands on is never treated as blocking.
+  blocksVision?: boolean;
   // Optional: per-edge elevation style (used by renderer/pathfinding for slopes vs. cliffs)
   elevEdges?: Partial<Record<EdgeDir, ElevEdgeStyle>>;
   // Optional destructible terrain support

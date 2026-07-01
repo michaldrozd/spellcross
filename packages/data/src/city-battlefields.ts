@@ -51,14 +51,17 @@ const tileOf = (terrain: TerrainType, extra: Partial<MapTile> = {}): MapTile => 
 });
 
 const TERRAIN_TILE: Record<string, (rng: () => number) => MapTile> = {
+  // Each terrain has a distinct tactical role: open ground is exposed & fast, forest hides & blocks
+  // sight, urban/rubble are hard cover that break line of sight, hills see & shoot far, swamp bogs you
+  // down with no cover, roads are fast but exposed.
   plain: () => tileOf('plain'),
-  road: () => tileOf('road', { cover: 0, movementCostModifier: 0.8 }),
-  forest: () => tileOf('forest', { cover: 2, movementCostModifier: 2 }),
-  urban: () => tileOf('urban', { cover: 1, movementCostModifier: 1.1 }),
-  hill: () => tileOf('hill', { elevation: 1, providesVisionBoost: true, cover: 1, movementCostModifier: 1.2 }),
+  road: () => tileOf('road', { cover: 0, movementCostModifier: 0.7 }),
+  forest: () => tileOf('forest', { cover: 2, movementCostModifier: 2, blocksVision: true }),
+  urban: () => tileOf('urban', { cover: 3, movementCostModifier: 1.1, blocksVision: true }),
+  hill: () => tileOf('hill', { elevation: 1, providesVisionBoost: true, cover: 1, movementCostModifier: 1.4 }),
   water: () => tileOf('water', { passable: false, movementCostModifier: 99 }),
-  swamp: () => tileOf('swamp', { cover: 1, movementCostModifier: 2 }),
-  rubble: () => tileOf('structure', { cover: 2, movementCostModifier: 1.6, destructible: true, hp: 20 })
+  swamp: () => tileOf('swamp', { cover: 0, movementCostModifier: 2.2 }),
+  rubble: () => tileOf('structure', { cover: 3, movementCostModifier: 1.6, blocksVision: true, destructible: true, hp: 20 })
 };
 
 const inB = (q: number, r: number, w: number, h: number) => q >= 0 && q < w && r >= 0 && r < h;

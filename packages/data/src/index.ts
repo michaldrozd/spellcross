@@ -26,6 +26,7 @@ export interface MapTile {
   movementCostModifier: number;
   passable: boolean;
   providesVisionBoost: boolean;
+  blocksVision?: boolean;
   destructible?: boolean;
   hp?: number;
 }
@@ -233,6 +234,7 @@ const mapTileSchema = z.object({
   movementCostModifier: z.number().positive(),
   passable: z.boolean(),
   providesVisionBoost: z.boolean(),
+  blocksVision: z.boolean().optional(),
   destructible: z.boolean().optional(),
   hp: z.number().optional()
 });

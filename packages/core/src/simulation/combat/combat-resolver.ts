@@ -36,8 +36,10 @@ const MORALE_DAMAGE_FACTOR = 0.5;
 const FLANK_ACCURACY_BONUS = 0.08;
 const REAR_ACCURACY_BONUS = 0.15;
 const ARMOR_ABSORPTION_FACTOR = 0.65;
-const COVER_ABSORPTION_FACTOR = 0.35;
-const COVER_ACCURACY_PENALTY = 0.04;
+// Cover is a meaningful tactical choice: forest (2) ≈ -12% to be hit & soaks ~1 dmg; urban/rubble (3)
+// ≈ -18% & ~1.5 dmg. Stacks with entrenchment.
+const COVER_ABSORPTION_FACTOR = 0.5;
+const COVER_ACCURACY_PENALTY = 0.06;
 const RANGE_ACCURACY_PENALTY = 0.12;
 const MIN_HIT_CHANCE = 0.05;
 const MAX_HIT_CHANCE = 0.98;

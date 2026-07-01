@@ -30,7 +30,9 @@ function tileBlocksVision(map: BattlefieldMap, coordinate: HexCoordinate): boole
   if (!tile.passable) {
     return true;
   }
-  return tile.cover >= 3;
+  // Dense terrain (forest / buildings / rubble) breaks line of sight through it — you can't see or
+  // shoot across a treeline, which is what lets units lurk in the woods and spring ambushes.
+  return tile.blocksVision === true || tile.cover >= 3;
 }
 
 export function hasLineOfSight(map: BattlefieldMap, from: HexCoordinate, to: HexCoordinate): boolean {
