@@ -431,30 +431,30 @@ const nextNoticeId = () => (combatNoticeSeq += 1);
 let attackEffectSeq = 0;
 const nextEffectId = () => (attackEffectSeq += 1);
 
+// Classify an attack by the actual WEAPON, not by the unit's chassis. Keying off unit type made every
+// vehicle/creature "explode" (wolves, sword-cavalry) and defaulted everything else to a rifle burst
+// (longbows, great-axes, snipers). Keyword order matters — earlier categories win.
 function effectTypeForAttack(attacker: UnitInstance, defender: UnitInstance, weaponId: string): AttackEffect['type'] {
   const definitionId = attacker.definitionId.toLowerCase();
-  const weapon = weaponId.toLowerCase();
-  const distance = axialDistance(attacker.coordinate, defender.coordinate);
-  if (attacker.unitType === 'vehicle' || attacker.unitType === 'artillery') return 'explosion';
-  if (
-    definitionId.includes('warlock')
-    || definitionId.includes('necromancer')
-    || definitionId.includes('lich')
-    || weapon.includes('hex')
-    || weapon.includes('curse')
-    || weapon.includes('doom')
-    || weapon.includes('shadow')
-    || weapon.includes('scream')
-    || weapon.includes('bolt')
-    || weapon.includes('flame')
-  ) return 'magic';
-  if (weapon.includes('boulder') || weapon.includes('rocket') || weapon.includes('shell')) return 'explosion';
-  if (distance <= 1 && (
-    weapon.includes('claw')
-    || weapon.includes('cleaver')
-    || weapon.includes('maul')
-    || weapon.includes('talon')
-  )) return 'melee';
+  const w = weaponId.toLowerCase();
+  const has = (...ks: string[]) => ks.some((k) => w.includes(k));
+  const casterName = definitionId.includes('warlock') || definitionId.includes('necromancer') || definitionId.includes('lich');
+  // magic: spellcasters + sonic/soul/energy attacks (but soul/rune-BLADES are melee, handled below)
+  if ((casterName || has('hex', 'curse', 'doom', 'shadow', 'scream', 'shriek', 'psi', 'spectral', 'bolt')) && !has('blade')) {
+    return 'magic';
+  }
+  // fire: flamethrowers, fire-breath, incendiary, magma, burning oil
+  if (has('flame', 'flamer', 'hellfire', 'magma', 'breath', 'pyro', 'oil', 'incend')) return 'fire';
+  // bow/arrow: single arced projectile, not a burst
+  if (has('bow', 'arrow', 'dart', 'crossbow', 'quarrel')) return 'arrow';
+  // melee: blades, bludgeons, natural weapons, thrown lances/javelins, swoop dives
+  if (has('axe', 'blade', 'sword', 'maul', 'slam', 'fang', 'bite', 'mandible', 'claw', 'cleaver', 'talon',
+          'lance', 'spear', 'fist', 'mace', 'hammer', 'gore', 'tusk', 'dive', 'javelin', 'bone')) return 'melee';
+  // heavy ordnance
+  if (has('shell', 'rocket', 'boulder', 'cannon', 'howitzer', 'mortar', 'siege', 'quake', 'grenade', 'missile', 'sam', 'flak', 'spit')) return 'explosion';
+  if (w === 'at' || has('antitank')) return 'explosion';
+  // single high-power shot (bolt-action / rail / marksman): one crack, not a burst
+  if (has('sniper', 'marksman', 'railgun', 'railrifle', 'dmr')) return 'sniper';
   return 'gunshot';
 }
 
@@ -466,6 +466,12 @@ function soundForAttackEffect(effectType: AttackEffect['type']) {
       return 'magic'; // spellcasters were wrongly playing a rifle shot
     case 'melee':
       return 'hit'; // a single thud, not the 5-round gunshot burst
+    case 'arrow':
+      return 'bow'; // a bow twang + arrow, not an assault-rifle burst (dark elf / skeleton archers)
+    case 'fire':
+      return 'fire'; // flamethrower / fire-breath whoosh
+    case 'sniper':
+      return 'sniper'; // a single high-powered crack, not a burst
     default:
       return 'gunshot';
   }

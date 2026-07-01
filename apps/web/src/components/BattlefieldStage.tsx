@@ -197,7 +197,7 @@ export interface AttackEffect {
   toQ: number;
   toR: number;
   startTime: number;
-  type: 'gunshot' | 'explosion' | 'magic' | 'melee';
+  type: 'gunshot' | 'explosion' | 'magic' | 'melee' | 'arrow' | 'fire' | 'sniper';
   damage?: number;
   hit?: boolean;
   arc?: boolean; // indirect fire (mortar/howitzer/rocket) — the shell lobs in a high ballistic arc
@@ -5343,8 +5343,9 @@ export function BattlefieldStage({
       const projY = fromY + (toY - fromY) * travel;
 
       // Infantry small-arms read as a short automatic burst rather than one round:
-      // several staggered tracers + a flickering muzzle flash.
-      const BURST_ROUNDS = 5;
+      // several staggered tracers + a flickering muzzle flash. A sniper/rail shot is ONE round.
+      const isBurst = effect.type === 'gunshot' || effect.type === 'sniper';
+      const BURST_ROUNDS = effect.type === 'sniper' ? 1 : 5;
       const BURST_GAP = 55; // ms between rounds
       const BURST_FLIGHT = 150; // ms each round is in flight
       let gunFlicker = 0;
@@ -5357,7 +5358,7 @@ export function BattlefieldStage({
 
       return (
         <Container key={effect.id} zIndex={zIndex}>
-          {effect.type !== 'gunshot' && elapsed < 620 && (
+          {!isBurst && effect.type !== 'arrow' && effect.type !== 'fire' && elapsed < 620 && (
             <Graphics
               draw={(g) => {
                 g.clear();
@@ -5391,19 +5392,20 @@ export function BattlefieldStage({
             />
           )}
 
-          {effect.type !== 'melee' && elapsed < 320 && (
+          {effect.type !== 'melee' && effect.type !== 'arrow' && elapsed < 320 && (
             <Graphics
               x={fromX}
               y={fromY - tileSize * 0.15}
               draw={(g) => {
                 g.clear();
-                // Gunshot: flicker the muzzle flash per burst round; others: single fading flash.
-                const fade = effect.type === 'gunshot' ? gunFlicker : 1 - elapsed / 320;
+                // Firearms flicker the muzzle flash per burst round; others: single fading flash. Bows
+                // (arrow) draw no muzzle at all — handled by excluding them above.
+                const fade = isBurst ? gunFlicker : 1 - elapsed / 320;
                 if (fade <= 0) return;
-                const flashScale = effect.type === 'gunshot' ? 0.24 : effect.type === 'magic' ? 0.22 : 0.31;
-                const flashReach = effect.type === 'gunshot' ? 0.54 : 0.5;
-                const flashTail = effect.type === 'gunshot' ? 0.32 : 0.38;
-                const flashWidth = effect.type === 'gunshot' ? 0.075 : 0.1;
+                const flashScale = isBurst ? 0.24 : effect.type === 'magic' ? 0.22 : 0.31;
+                const flashReach = isBurst ? 0.54 : 0.5;
+                const flashTail = isBurst ? 0.32 : 0.38;
+                const flashWidth = isBurst ? 0.075 : 0.1;
                 const flashSize = tileSize * flashScale * fade;
                 const dx = toX - fromX;
                 const dy = toY - fromY;
@@ -5412,10 +5414,10 @@ export function BattlefieldStage({
                 const uy = dy / len;
                 const px = -uy;
                 const py = ux;
-                g.lineStyle(effect.type === 'gunshot' ? 2.8 : 3.8, 0x120b05, 0.9 * fade);
+                g.lineStyle(isBurst ? 2.8 : 3.8, 0x120b05, 0.9 * fade);
                 g.moveTo(-ux * tileSize * 0.14, -uy * tileSize * 0.14);
-                g.lineTo(ux * tileSize * (effect.type === 'gunshot' ? 0.28 : 0.32), uy * tileSize * (effect.type === 'gunshot' ? 0.28 : 0.32));
-                g.beginFill(effect.type === 'magic' ? 0xc779ff : 0xffe1a1, (effect.type === 'gunshot' ? 0.68 : 0.78) * fade);
+                g.lineTo(ux * tileSize * (isBurst ? 0.28 : 0.32), uy * tileSize * (isBurst ? 0.28 : 0.32));
+                g.beginFill(effect.type === 'magic' ? 0xc779ff : 0xffe1a1, (isBurst ? 0.68 : 0.78) * fade);
                 g.moveTo(ux * tileSize * 0.1, uy * tileSize * 0.1);
                 g.lineTo(ux * tileSize * flashReach + px * tileSize * flashWidth, uy * tileSize * flashReach + py * tileSize * flashWidth);
                 g.lineTo(ux * tileSize * flashTail - px * tileSize * flashWidth, uy * tileSize * flashTail - py * tileSize * flashWidth);
@@ -5436,12 +5438,12 @@ export function BattlefieldStage({
             />
           )}
 
-          {(effect.type === 'gunshot' ? elapsed < 560 : travel < 1) && (
+          {(isBurst ? elapsed < 560 : travel < 1) && (
             <Graphics
               draw={(g) => {
                 g.clear();
-                if (effect.type === 'gunshot') {
-                  // Automatic burst: several staggered tracer rounds in flight at once.
+                if (isBurst) {
+                  // Automatic burst (or a single sniper round): staggered tracer(s) in flight.
                   const dxb = toX - fromX;
                   const dyb = toY - fromY;
                   const lenb = Math.max(1, Math.hypot(dxb, dyb));
@@ -5501,6 +5503,35 @@ export function BattlefieldStage({
                   g.beginFill(0xaa44ff, 0.9);
                   g.drawCircle(tx, ty, 4.5);
                   g.endFill();
+                } else if (effect.type === 'arrow') {
+                  // A single arrow: a short brown shaft with a dark head and a hint of fletching — no tracer glow.
+                  const dxa = tx - sx, dya = ty - sy;
+                  const la = Math.max(1, Math.hypot(dxa, dya));
+                  const ua = dxa / la, va = dya / la;
+                  const shaftLen = Math.min(la, tileSize * 0.34);
+                  const bx = tx - ua * shaftLen, by = ty - va * shaftLen;
+                  g.lineStyle(2.2, 0x5a4326, 0.95); g.moveTo(bx, by); g.lineTo(tx, ty); // shaft
+                  g.lineStyle(2.6, 0x1c140b, 0.95); // arrowhead
+                  g.moveTo(tx, ty); g.lineTo(tx - ua * 4 + va * 3, ty - va * 4 - ua * 3);
+                  g.moveTo(tx, ty); g.lineTo(tx - ua * 4 - va * 3, ty - va * 4 + ua * 3);
+                  g.lineStyle(1.6, 0xcdbb90, 0.9); // fletching
+                  g.moveTo(bx, by); g.lineTo(bx - ua * 3 + va * 2.4, by - va * 3 - ua * 2.4);
+                  g.moveTo(bx, by); g.lineTo(bx - ua * 3 - va * 2.4, by - va * 3 + ua * 2.4);
+                } else if (effect.type === 'fire') {
+                  // A short flame stream billowing from the nozzle toward the target — flickering orange blobs.
+                  const dxf = toX - fromX, dyf = toY - fromY;
+                  const reach = Math.min(1, travel * 1.4);
+                  const puffs = 7;
+                  for (let k = 0; k < puffs; k++) {
+                    const f = (k / (puffs - 1)) * reach;
+                    const px = fromX + dxf * f;
+                    const py = fromY + dyf * f - tileSize * 0.15;
+                    const jig = Math.sin(now / 40 + k * 1.7) * tileSize * 0.03;
+                    const rad = tileSize * (0.05 + f * 0.14) * (0.8 + 0.2 * Math.sin(now / 30 + k));
+                    g.beginFill(0x3a1c08, 0.35); g.drawCircle(px + jig, py - rad * 0.3, rad * 1.15); g.endFill();
+                    g.beginFill(0xff7a1e, 0.6); g.drawCircle(px + jig, py, rad); g.endFill();
+                    g.beginFill(0xffd24a, 0.75); g.drawCircle(px + jig, py, rad * 0.55); g.endFill();
+                  }
                 } else {
                   const slashProgress = Math.min(Math.max((elapsed - 80) / 260, 0), 1);
                   const cx = fromX + (toX - fromX) * 0.62;
@@ -5516,7 +5547,7 @@ export function BattlefieldStage({
             />
           )}
 
-          {travel >= 1 && elapsed < 1050 && effect.type !== 'melee' && effect.type !== 'gunshot' && (
+          {travel >= 1 && elapsed < 1050 && effect.type !== 'melee' && !isBurst && (
             <Graphics
               draw={(g) => {
                 g.clear();

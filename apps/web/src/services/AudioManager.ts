@@ -6,7 +6,7 @@
 type SoundType =
   | 'gunshot' | 'explosion' | 'tankMove' | 'infantry' | 'hit' | 'death' | 'select' | 'error'
   | 'victory' | 'defeat' | 'move' | 'turnStart' | 'magic'
-  | 'reaction' | 'noAmmo' | 'lowHealth' | 'objective' | 'mortar';
+  | 'reaction' | 'noAmmo' | 'lowHealth' | 'objective' | 'mortar' | 'bow' | 'fire' | 'sniper';
 
 interface PlayOpts {
   intensity?: number;                         // normalized damage [0,1] — scales impact weight
@@ -32,7 +32,8 @@ class AudioManagerClass {
   private static TYPE_GAIN: Record<SoundType, number> = {
     gunshot: 0.55, explosion: 0.6, tankMove: 0.7, infantry: 0.6, hit: 0.7, death: 0.7,
     select: 0.55, error: 0.7, victory: 0.9, defeat: 0.9, move: 0.8, turnStart: 0.6, magic: 0.8,
-    reaction: 0.6, noAmmo: 0.5, lowHealth: 0.6, objective: 0.7, mortar: 0.62
+    reaction: 0.6, noAmmo: 0.5, lowHealth: 0.6, objective: 0.7, mortar: 0.62,
+    bow: 0.5, fire: 0.6, sniper: 0.62
   };
 
   // Procedural ambience bed (drone + wind), separate from the SFX limiter bus.
@@ -237,6 +238,62 @@ class AudioManagerClass {
 
         // short airy "fwip" of the round clearing the tube
         this.playNoise(0.12, volume * 0.22, 1200, 0.6, out);
+        break;
+      }
+
+      case 'bow': {
+        // Bow twang: a short low string pluck + the arrow's airy whoosh.
+        const string = ctx.createOscillator();
+        const sGain = ctx.createGain();
+        string.type = 'triangle';
+        string.frequency.setValueAtTime(320, t);
+        string.frequency.exponentialRampToValueAtTime(140, t + 0.09);
+        sGain.gain.setValueAtTime(volume * 0.5, t);
+        sGain.gain.exponentialRampToValueAtTime(0.001, t + 0.14);
+        string.connect(sGain); sGain.connect(out);
+        string.start(t); string.stop(t + 0.15);
+        this.playNoise(0.16, volume * 0.18, 2200, 0.5, out); // fletching whoosh
+        break;
+      }
+
+      case 'sniper': {
+        // Single high-powered crack: a sharp transient + a short deep report + tail (no burst).
+        const crack = ctx.createOscillator();
+        const cGain = ctx.createGain();
+        crack.type = 'square';
+        crack.frequency.setValueAtTime(1800, t);
+        crack.frequency.exponentialRampToValueAtTime(160, t + 0.02);
+        cGain.gain.setValueAtTime(volume * 0.6, t);
+        cGain.gain.exponentialRampToValueAtTime(0.001, t + 0.05);
+        crack.connect(cGain); cGain.connect(out);
+        crack.start(t); crack.stop(t + 0.05);
+        const body = ctx.createOscillator();
+        const bGain = ctx.createGain();
+        body.type = 'sawtooth';
+        body.frequency.setValueAtTime(120, t);
+        body.frequency.exponentialRampToValueAtTime(50, t + 0.18);
+        bGain.gain.setValueAtTime(volume * 0.35, t + 0.005);
+        bGain.gain.exponentialRampToValueAtTime(0.001, t + 0.22);
+        body.connect(bGain); bGain.connect(out);
+        body.start(t); body.stop(t + 0.22);
+        this.playNoise(0.25, volume * 0.4, 2600, 0.65, out); // echoing tail
+        break;
+      }
+
+      case 'fire': {
+        // Flamethrower / fire-breath: a sustained low roar of filtered noise with a warm sub underneath.
+        this.playNoise(0.55, volume * 0.55, 900, 0.9, out);
+        this.playNoise(0.5, volume * 0.3, 300, 0.85, out);
+        const roar = ctx.createOscillator();
+        const rGain = ctx.createGain();
+        roar.type = 'sawtooth';
+        roar.frequency.setValueAtTime(70, t);
+        roar.frequency.linearRampToValueAtTime(58, t + 0.5);
+        rGain.gain.setValueAtTime(0.0001, t);
+        rGain.gain.linearRampToValueAtTime(volume * 0.22, t + 0.08);
+        rGain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+        roar.connect(rGain); rGain.connect(out);
+        roar.start(t); roar.stop(t + 0.55);
         break;
       }
 
