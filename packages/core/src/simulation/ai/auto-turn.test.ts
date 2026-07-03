@@ -115,4 +115,31 @@ describe('Auto Turn (computer plays the player side)', () => {
     expect(anyDamage).toBe(true); // the squad actually shot the enemy
     expect(enemiesAlive.length).toBe(0); // and wiped them out within 25 auto turns
   });
+
+  // A unit carrying both a long-range main gun (>=7, triggers the "artillery avoids point-blank"
+  // standoff heuristic) and a genuinely short-range secondary must still use that secondary up close
+  // instead of being benched by its own big gun's preference to keep distance.
+  it('uses a short-range secondary weapon at point-blank range even if the unit also owns a 7+ range weapon', () => {
+    const bigGunUnit = (id: string, faction: 'alliance' | 'otherSide', q: number, r: number) => ({
+      definition: {
+        id, faction, name: id, type: 'vehicle' as const,
+        stats: {
+          maxHealth: 100, mobility: 6, vision: 6, armor: 5, morale: 70, ammoCapacity: 10,
+          weaponRanges: { maingun: 7, coax: 3 }, weaponPower: { maingun: 30, coax: 8 }, weaponAccuracy: { maingun: 0.6, coax: 0.5 },
+          weaponTargets: { maingun: ['vehicle', 'artillery', 'air', 'support'] } // can't hit infantry
+        }
+      },
+      coordinate: { q, r }
+    });
+    const state = createBattleState({
+      map: makeMap(10, 3),
+      sides: [
+        { faction: 'alliance', units: [bigGunUnit('tank', 'alliance', 4, 1)] },
+        { faction: 'otherSide', units: [dummy('foe', 5, 1)] } // adjacent, infantry: only coax can hit it
+      ]
+    });
+    const foeId = Array.from(state.sides.otherSide.units.values())[0].id;
+    const action = decideNextAIAction(state, 'alliance', { aggression: 0.85, difficulty: 'hard', visibleEnemyIds: new Set([foeId]) });
+    expect(action).toMatchObject({ type: 'attack', weaponId: 'coax' });
+  });
 });

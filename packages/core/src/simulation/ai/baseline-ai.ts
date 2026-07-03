@@ -422,9 +422,16 @@ export function decideNextAIAction(
     // it could happily shoot from — so it retreated, the advance phase pulled it back, and it thrashed
     // in circles. Danger radius scales gently with range (snipers only when nearly adjacent).
     const dangerRadius = Math.max(2, Math.min(4, Math.ceil(maxRange(u) * 0.35)));
+    // Only kite from an enemy the unit actually has a standoff weapon for — a unit whose long-range
+    // weapon can't target this foe (e.g. an anti-armor railgun vs infantry) has nothing to gain by
+    // retreating from its own short-range weapon's danger radius; it should just fight from here.
+    const hasStandoffWeapon = (enemy: UnitInstance) =>
+      Object.keys(u.stats.weaponRanges).some(
+        (w) => u.stats.weaponRanges[w] > dangerRadius && canWeaponTarget(u, w, enemy)
+      );
     const rangedStandoff =
       maxRange(u) >= 6 &&
-      enemiesAll.some((e) => isoDistance(u.coordinate, e.coordinate) <= dangerRadius);
+      enemiesAll.some((e) => isoDistance(u.coordinate, e.coordinate) <= dangerRadius && hasStandoffWeapon(e));
     if (lowHealth || rattled || rangedStandoff) {
       const step = tryFallbackStep(state, u, enemiesAll);
       if (step && step.length) return { type: 'move', unitId: u.id, path: step };
@@ -474,9 +481,13 @@ export function decideNextAIAction(
         const defender = listEnemyUnits(state, faction).find((e) => e.id === choice.defenderId);
         // target priority is already folded into choice.score via flankAwareAttackScore
         const priority = defender ? priorityScore(defender) : 1;
+        // The point-blank check only makes sense for the long gun itself — a vehicle carrying a
+        // short-range secondary (coax/mg) alongside a 7+ range main gun should still use that
+        // secondary up close instead of being benched by its own big gun's standoff preference.
+        const chosenWeaponIsLongRange = (u.stats.weaponRanges[choice.weaponId] ?? 0) >= 7;
         if (lowAmmo && priority < 2) {
           // hold fire to conserve ammo
-        } else if (isArtillery && defender && isoDistance(u.coordinate, defender.coordinate) <= 2) {
+        } else if (isArtillery && chosenWeaponIsLongRange && defender && isoDistance(u.coordinate, defender.coordinate) <= 2) {
           // avoid point-blank for artillery; let movement handle reposition
         } else {
           bestAttack = { attackerId: u.id, defenderId: choice.defenderId, weaponId: choice.weaponId, score: choice.score };

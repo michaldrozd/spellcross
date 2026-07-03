@@ -1037,7 +1037,9 @@ export const starterUnits: UnitData[] = [
     id: 'railgun-tank', name: 'Elmag Railgun', faction: 'alliance', type: 'vehicle', role: 'line', cost: 230,
     stats: {
       maxHealth: 110, mobility: 8, vision: 6, armor: 7, morale: 72, ammoCapacity: 6,
-      weaponRanges: { railgun: 7 }, weaponPower: { railgun: 32 }, weaponAccuracy: { railgun: 0.68 },
+      // the railgun itself is anti-armor only (like leopard-2's cannon); the coax MG keeps it from
+      // sitting idle against infantry-heavy waves the way its single restricted weapon would otherwise
+      weaponRanges: { railgun: 7, coax: 3 }, weaponPower: { railgun: 32, coax: 8 }, weaponAccuracy: { railgun: 0.68, coax: 0.52 },
       weaponTargets: { railgun: ['vehicle', 'artillery', 'air', 'support'] }
     }
   },
