@@ -1,0 +1,89 @@
+{
+  "sector-paris": {
+    "name": "Parížske okolie",
+    "brief": "Prebieha evakuácia hlavného mesta. Zaistite perimeter, kým civilisti unikajú."
+  },
+  "sector-lyon": {
+    "name": "Lyonská priemyselná zóna",
+    "brief": "Ochráňte zbrojovky pred démonickými sabotérmi."
+  },
+  "sector-strasbourg": {
+    "name": "Štrasburský priechod",
+    "brief": "Most cez Rýn je naša jediná zásobovacia trasa. Udržte ho za každú cenu."
+  },
+  "sector-munich": {
+    "name": "Mníchovská obranná línia",
+    "brief": "Nemecké jednotky sa držia. Posilnite ich pozíciu pred ďalším náporom."
+  },
+  "sector-zurich": {
+    "name": "Alpská pevnosť",
+    "brief": "Švajčiarske bunkre poskytujú vynikajúce obranné postavenia. Vyčistite tunely."
+  },
+  "sector-vienna": {
+    "name": "Obliehanie Viedne",
+    "brief": "Starobylé mesto je obliehané. Prerazte obkľúčenie a osloboďte obrancov."
+  },
+  "sector-brussels": {
+    "name": "Bruselské velenie",
+    "brief": "Veliteľstvo NATO je kompromitované. Vyneste utajené informácie skôr, než padne."
+  },
+  "sector-amsterdam": {
+    "name": "Amsterdamský prístav",
+    "brief": "Kontrola prístavu je nevyhnutná pre námorné zásobovacie trasy."
+  },
+  "sector-copenhagen": {
+    "name": "Kodanská úžina",
+    "brief": "Vstupný bod do Baltského mora. Zaistite ho, aby ste zabránili obchvatu z mora."
+  },
+  "sector-prague": {
+    "name": "Pražské podzemie",
+    "brief": "Staroveké katakomby skrývajú temný rituál. Zostúpte a prerušte ho."
+  },
+  "sector-berlin": {
+    "name": "Berlínske ruiny",
+    "brief": "Padnuté hlavné mesto. Prerazte sa spustošením a znovu získajte srdce Európy."
+  },
+  "sector-warsaw": {
+    "name": "Varšavský front",
+    "brief": "Východná obranná línia. Poľské jednotky potrebujú okamžité posily."
+  },
+  "sector-krakow": {
+    "name": "Krakovská citadela",
+    "brief": "Starobylá pevnosť premenená na portálový uzol. Zaútočte na ňu a zapečaťte ju."
+  },
+  "sector-kyiv": {
+    "name": "Obliehanie Kyjeva",
+    "brief": "Najväčšie mesto stále stojace na východe. Kľúčový strategický cieľ."
+  },
+  "sector-carpathian": {
+    "name": "Karpatský priesmyk",
+    "brief": "Horské priechody sa hemžia nepriateľskými hliadkami. Vyčistite trasu."
+  },
+  "sector-blacksea": {
+    "name": "Pobrežie Čierneho mora",
+    "brief": "Zaistite južné krídlo. Z hlbín sa vynárajú morskí démoni."
+  },
+  "sector-rift": {
+    "name": "Východná trhlina",
+    "brief": "Hlavný invázny portál. Zničte ho a obráťte priebeh vojny."
+  },
+  "mapLabel": {
+    "sector-paris": "Paríž",
+    "sector-lyon": "Lyon",
+    "sector-strasbourg": "Štrasburg",
+    "sector-munich": "Mníchov",
+    "sector-zurich": "Alpská pevnosť",
+    "sector-vienna": "Viedeň",
+    "sector-brussels": "Brusel",
+    "sector-amsterdam": "Amsterdam",
+    "sector-copenhagen": "Kodaň",
+    "sector-prague": "Praha",
+    "sector-berlin": "Berlín",
+    "sector-warsaw": "Varšava",
+    "sector-krakow": "Krakov",
+    "sector-kyiv": "Kyjev",
+    "sector-carpathian": "Karpatský priesmyk",
+    "sector-blacksea": "Čierne more",
+    "sector-rift": "Trhlina"
+  }
+}

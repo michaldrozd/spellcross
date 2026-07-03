@@ -12,7 +12,26 @@ import type { HexCoordinate, TacticalBattleState, UnitDefinition } from '../simu
 import { coordinateKey } from '../simulation/utils/grid.js';
 import { createBattleState } from '../simulation/game-state.js';
 import { updateAllFactionsVision } from '../simulation/visibility/vision.js';
-import { pushEvent } from './events.js';
+
+// Core game logic must stay presentation-agnostic (no hardcoded English sentences baked into engine
+// state) so the web layer can render campaign narrative in any language. Every log/event/popup carries
+// an i18n key + interpolation params instead of a formatted string; the web layer looks the key up in
+// its `campaign` translation namespace. Business-rule errors follow the same pattern via CampaignError.
+export interface CampaignLogEntry {
+  key: string;
+  params?: Record<string, string | number>;
+}
+
+export class CampaignError extends Error {
+  readonly key: string;
+  readonly params?: Record<string, string | number>;
+  constructor(key: string, message: string, params?: Record<string, string | number>) {
+    super(message);
+    this.name = 'CampaignError';
+    this.key = key;
+    this.params = params;
+  }
+}
 
 export type UnitTier = 'rookie' | 'veteran' | 'elite';
 
@@ -51,6 +70,13 @@ export type TerritoryStatus = 'locked' | 'available' | 'cleared' | 'failed';
 export interface TerritoryState extends TerritorySpec {
   status: TerritoryStatus;
   remainingTimer?: number;
+  // Territories synthesized at runtime (raids/counterattacks) carry an i18n key + params so the UI can
+  // render a localized name/brief instead of the hardcoded English `name`/`brief` above (kept as the
+  // fallback and as the stable identifier `isGeneratedCounteroffensive` matches against). Territories
+  // from the static content bundle have no key here — the UI looks those up by `id` instead.
+  nameKey?: string;
+  briefKey?: string;
+  keyParams?: Record<string, string | number>;
 }
 
 export interface ActiveBattle {
@@ -86,9 +112,9 @@ export interface CampaignState {
   territories: TerritoryState[];
   research: ResearchState;
   activeBattle?: ActiveBattle;
-  log: string[];
-  events?: Array<{ turn: number; message: string }>;
-  popups?: Array<{ turn: number; title: string; body: string; kind: 'briefing' | 'warning' | 'reward' | 'loss' }>;
+  log: CampaignLogEntry[];
+  events?: Array<{ turn: number; key: string; params?: Record<string, string | number> }>;
+  popups?: Array<{ turn: number; key: string; params?: Record<string, string | number>; kind: 'briefing' | 'warning' | 'reward' | 'loss' }>;
   // Terminal campaign state: set once the last sector is cleared (victory) or the war clock runs out
   // (defeat). The UI shows a game-over screen; without it both ends were silent no-ops.
   outcome?: 'victory' | 'defeat';
@@ -108,8 +134,8 @@ export interface SerializedCampaignState {
     completed: string[];
     inProgress?: ResearchState['inProgress'];
   };
-  log: string[];
-  events?: Array<{ turn: number; message: string }>;
+  log: CampaignLogEntry[];
+  events?: CampaignState['events'];
   popups?: CampaignState['popups'];
   outcome?: 'victory' | 'defeat';
   // Tagged-encoded tactical battle (see encodeActiveBattle); absent when no battle is in progress.
@@ -219,7 +245,7 @@ export function createCampaign(bundle: ContentBundle, campaignId?: string): Camp
     formations: [defaultFormation],
     territories,
     research,
-    log: [`Campaign ${spec.name} initialized`],
+    log: [{ key: 'campaignInitialized', params: { name: spec.name, campaignId: spec.id } }],
     events: [],
     popups: []
   };
@@ -255,13 +281,13 @@ export function isUnitUnlocked(state: CampaignState, bundle: ContentBundle, unit
 
 export function startResearch(state: CampaignState, bundle: ContentBundle, topicId: string) {
   if (state.research.inProgress) {
-    throw new Error('Research already in progress');
+    throw new CampaignError('researchInProgress', 'Research already in progress');
   }
   const topic = bundle.research.find((r) => r.id === topicId);
   if (!topic) throw new Error(`Research ${topicId} not found`);
   const unmet = (topic.requires ?? []).filter((req) => !state.research.completed.has(req));
   if (unmet.length) {
-    throw new Error(`Missing prerequisites: ${unmet.join(', ')}`);
+    throw new CampaignError('missingPrerequisites', `Missing prerequisites: ${unmet.join(', ')}`, { list: unmet.join(', ') });
   }
   state.research.inProgress = { topicId, remaining: topic.cost };
 }
@@ -269,7 +295,12 @@ export function startResearch(state: CampaignState, bundle: ContentBundle, topic
 export function progressResearch(state: CampaignState, bundle: ContentBundle) {
   if (!state.research.inProgress) return;
   const topic = bundle.research.find((r) => r.id === state.research.inProgress?.topicId);
-  if (!topic) return;
+  if (!topic) {
+    // Topic disappeared from the content bundle (rename/removal): clear the slot instead of
+    // blocking all future research on a save that can never finish it.
+    state.research.inProgress = undefined;
+    return;
+  }
   const spend = Math.min(state.resources.research, state.research.inProgress.remaining);
   state.resources.research -= spend;
   state.research.inProgress.remaining -= spend;
@@ -279,7 +310,7 @@ export function progressResearch(state: CampaignState, bundle: ContentBundle) {
       state.research.known.add(unlock);
     }
     state.research.inProgress = undefined;
-    state.log.push(`Research completed: ${topic.name}`);
+    state.log.push({ key: 'researchCompleted', params: { topic: topic.name, topicId: topic.id } });
   }
 }
 
@@ -306,25 +337,45 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
   const upkeep = Math.max(0, Math.floor(state.army.length * 3));
   if (state.resources.money >= upkeep) {
     state.resources.money -= upkeep;
-    state.log.push(`Upkeep paid: ${upkeep}`);
+    state.log.push({ key: 'upkeepPaid', params: { amount: upkeep } });
   } else {
     state.resources.money = 0;
-    state.log.push('Insufficient funds for upkeep; treasury depleted');
+    state.log.push({ key: 'upkeepInsufficient' });
   }
 
   progressResearch(state, bundle);
 
+  let reliefExpiredThisTurn = false;
+  const expiredRaidIds: string[] = [];
   for (const territory of state.territories) {
     if (territory.status === 'available' && territory.remainingTimer != null) {
       territory.remainingTimer -= 1;
       if (territory.remainingTimer <= 0) {
+        if (isGeneratedCounteroffensive(territory)) {
+          // Raid window closed: the attacking force withdraws and the opportunity is gone.
+          // Leaving it attackable forever made the timer meaningless.
+          expiredRaidIds.push(territory.id);
+          if (typeof territory.keyParams?.target === 'string') {
+            state.log.push({
+              key: 'raidExpired',
+              params: { target: territory.keyParams.target, targetId: String(territory.keyParams.targetId ?? '') }
+            });
+          } else {
+            state.log.push({ key: 'raidExpiredGeneric' });
+          }
+          continue;
+        }
         // Timed territories sit on the only path to the final objective; a permanent 'failed' here
         // would make the campaign unwinnable. The relief window is lost but the sector stays clearable.
         territory.remainingTimer = undefined;
-        state.log.push(`Relief window expired at ${territory.name}; the sector remains contested.`);
-        state.events?.push({ turn: state.turn, message: `Relief window expired at ${territory.name}.` });
+        reliefExpiredThisTurn = true;
+        state.log.push({ key: 'reliefExpired', params: { territory: territory.name, territoryId: territory.id } });
+        state.events?.push({ turn: state.turn, key: 'reliefExpired', params: { territory: territory.name, territoryId: territory.id } });
       }
     }
+  }
+  if (expiredRaidIds.length > 0) {
+    state.territories = state.territories.filter((t) => !expiredRaidIds.includes(t.id));
   }
 
   state.globalTimer -= 1;
@@ -332,15 +383,13 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
     // War clock ran out: strategic defeat. Don't permanently flip path sectors to 'failed' (that left
     // the campaign silently unwinnable); instead declare a terminal outcome the UI renders as game-over.
     state.outcome = 'defeat';
-    state.log.push('War clock expired: strategic defeat.');
-    state.popups?.push({ turn: state.turn, title: 'Strategic Defeat', body: 'The war clock has run out. The invasion has overwhelmed the front.', kind: 'loss' });
+    state.log.push({ key: 'warClockExpired' });
+    state.popups?.push({ turn: state.turn, key: 'strategicDefeat', kind: 'loss' });
   }
   if (state.globalTimer === 5) {
-    const title = 'War Clock Critical';
-    const body = 'Enemy tempo rising; decisive actions needed before the invasion hardens.';
-    state.log.push(title);
-    state.events?.push({ turn: state.turn, message: body });
-    state.popups?.push({ turn: state.turn, title, body, kind: 'warning' });
+    state.log.push({ key: 'warClockCritical' });
+    state.events?.push({ turn: state.turn, key: 'warClockCritical' });
+    state.popups?.push({ turn: state.turn, key: 'warClockCritical', kind: 'warning' });
   }
 
   // Promote ready recruits
@@ -352,33 +401,25 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
 
   // Simple scripted events
   if (state.turn === 3) {
-    const title = 'Intel: Sorcerers';
-    const body = 'Enemy sorcerers sighted near the outpost. Expect ethereal units and protect your command squad.';
-    state.log.push(title);
-    state.events?.push({ turn: state.turn, message: body });
-    state.popups?.push({ turn: state.turn, title, body, kind: 'briefing' });
+    state.log.push({ key: 'intelSorcerers' });
+    state.events?.push({ turn: state.turn, key: 'intelSorcerers' });
+    state.popups?.push({ turn: state.turn, key: 'intelSorcerers', kind: 'briefing' });
   }
   if (state.turn === 5) {
-    state.log.push('Command: Reinforcements unlocked via local allies (+20 SP).');
+    state.log.push({ key: 'localAlliesCommand' });
     state.resources.strategic += 20;
-    const title = 'Local Allies';
-    const body = 'Local militia pledge support. Strategic pool +20; recruit heavier squads sooner.';
-    state.events?.push({ turn: state.turn, message: body });
-    state.popups?.push({ turn: state.turn, title, body, kind: 'reward' });
+    state.events?.push({ turn: state.turn, key: 'localAllies' });
+    state.popups?.push({ turn: state.turn, key: 'localAllies', kind: 'reward' });
   }
   if (state.turn === 6) {
     state.research.known.add('supply-truck-unlock');
-    const title = 'Logistics Online';
-    const body = 'Mobile supply corps attached. Supply trucks available as battlefield support.';
-    state.log.push(title);
-    state.events?.push({ turn: state.turn, message: body });
-    state.popups?.push({ turn: state.turn, title, body, kind: 'reward' });
+    state.log.push({ key: 'logisticsOnline' });
+    state.events?.push({ turn: state.turn, key: 'logisticsOnline' });
+    state.popups?.push({ turn: state.turn, key: 'logisticsOnline', kind: 'reward' });
   }
   if (state.turn === 8) {
-    const title = 'Final Assault Authorized';
-    const body = 'HQ orders an assault on the Black Spire before the rift stabilizes. Expect elites and beasts.';
-    state.events?.push({ turn: state.turn, message: body });
-    state.popups?.push({ turn: state.turn, title, body, kind: 'briefing' });
+    state.events?.push({ turn: state.turn, key: 'finalAssault' });
+    state.popups?.push({ turn: state.turn, key: 'finalAssault', kind: 'briefing' });
   }
   if (state.turn === 4) {
     const reinf: ArmyUnit = {
@@ -390,32 +431,31 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
       availableOnTurn: state.turn + 2
     };
     state.reserves.push(reinf);
-    const title = 'Reinforcements En Route';
-    const body = 'Storm Squad will arrive in 2 turns. Prepare a landing zone.';
-    state.log.push(title);
-    state.events?.push({ turn: state.turn, message: body });
-    state.popups?.push({ turn: state.turn, title, body, kind: 'briefing' });
+    state.log.push({ key: 'reinforcementsEnRoute' });
+    state.events?.push({ turn: state.turn, key: 'reinforcementsEnRoute' });
+    state.popups?.push({ turn: state.turn, key: 'reinforcementsEnRoute', kind: 'briefing' });
   }
 
   // Branching counterattack event if the war clock is low or a territory fell
   const counterattackExists = state.territories.some((t) => t.id === 'counterattack');
-  const recentLoss = state.territories.some((t) => t.status === 'failed' && (t.remainingTimer ?? 0) <= 0);
+  const recentLoss =
+    reliefExpiredThisTurn || state.territories.some((t) => t.status === 'failed' && (t.remainingTimer ?? 0) <= 0);
   if (!counterattackExists && (recentLoss || state.globalTimer <= 5)) {
     state.territories.push({
       id: 'counterattack',
       name: 'Enemy Counterattack',
       brief: 'Enemy forces counter-attack near the crossroads. Hold them off.',
+      nameKey: 'dynamic.counterattack.name',
+      briefKey: 'dynamic.counterattack.brief',
       scenarioId: 'enemy-counterstrike',
       timer: 3,
       remainingTimer: 3,
       reward: { money: 120, research: 25, strategic: 10 },
       status: 'available'
     });
-    const title = 'Enemy Counterattack';
-    const body = 'Enemy counterattack detected near Crossroads — respond immediately.';
-    state.log.push(title);
-    state.events?.push({ turn: state.turn, message: body });
-    state.popups?.push({ turn: state.turn, title, body, kind: 'warning' });
+    state.log.push({ key: 'enemyCounterattack' });
+    state.events?.push({ turn: state.turn, key: 'enemyCounterattack' });
+    state.popups?.push({ turn: state.turn, key: 'enemyCounterattack', kind: 'warning' });
   }
 
   // Periodic raid/retake attempts on cleared sectors every 4 turns
@@ -433,14 +473,17 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
           id: raidId,
           name: `Enemy Raid near ${target.name}`,
           brief: 'Enemy forces launch a counteroffensive to retake ground. Hold them off.',
+          nameKey: 'dynamic.raidNear.name',
+          briefKey: 'dynamic.raidNear.brief',
+          keyParams: { target: target.name, targetId: target.id },
           scenarioId: 'enemy-counterstrike',
           timer: 2,
           remainingTimer: 2,
           reward: { money: 60, research: 15, strategic: 8 },
           status: 'available'
         });
-        state.log.push(`Enemy raid threatens ${target.name}; rapid response required.`);
-        state.events?.push({ turn: state.turn, message: `Enemy raid near ${target.name}. New defense available.` });
+        state.log.push({ key: 'raidThreatens', params: { target: target.name, targetId: target.id } });
+        state.events?.push({ turn: state.turn, key: 'raidNear', params: { target: target.name, targetId: target.id } });
       }
     }
   }
@@ -451,15 +494,21 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
       id: 'enemy-raid-static',
       name: 'Enemy Raid',
       brief: 'Hostile force is probing our lines. Repel the raid.',
+      nameKey: 'dynamic.staticRaid.name',
+      briefKey: 'dynamic.staticRaid.brief',
       scenarioId: 'enemy-counterstrike',
       timer: 2,
       remainingTimer: 2,
       reward: { money: 60, research: 15, strategic: 8 },
       status: 'available'
     });
-    state.log.push('Enemy raid detected on the line — immediate response.');
-    state.events?.push({ turn: state.turn, message: 'Enemy raid available to defend.' });
+    state.log.push({ key: 'raidStaticDetected' });
+    state.events?.push({ turn: state.turn, key: 'raidStatic' });
   }
+
+  // Both feeds grow every turn and get serialized into every save slot — keep them bounded.
+  if (state.log.length > 200) state.log = state.log.slice(-200);
+  if (state.events && state.events.length > 200) state.events = state.events.slice(-200);
 }
 
 export function recruitUnit(
@@ -470,11 +519,11 @@ export function recruitUnit(
 ): ArmyUnit {
   const def = findUnitDef(bundle, definitionId);
   if (!isUnitUnlocked(state, bundle, def.id)) {
-    throw new Error('Unit not unlocked by research');
+    throw new CampaignError('unitNotUnlocked', 'Unit not unlocked by research');
   }
   const cost = Math.round(def.cost * tierCostMultiplier(tier));
   if (state.resources.money < cost) {
-    throw new Error('Not enough money to recruit');
+    throw new CampaignError('notEnoughMoneyRecruit', 'Not enough money to recruit');
   }
 
   const availableOnTurn = state.turn + 2;
@@ -488,7 +537,7 @@ export function recruitUnit(
   };
   state.resources.money -= cost;
   state.reserves.push(unit);
-  state.log.push(`Recruited ${def.name} (${tier}) available on turn ${availableOnTurn}`);
+  state.log.push({ key: 'unitRecruited', params: { name: def.name, unitId: def.id, tier, turn: availableOnTurn } });
   return unit;
 }
 
@@ -497,7 +546,7 @@ export function refillUnit(state: CampaignState, bundle: ContentBundle, unitId: 
   if (!unit) throw new Error('Unit not found');
   const def = findUnitDef(bundle, unit.definitionId);
   const cost = Math.round(def.cost * 0.35 * tierCostMultiplier(tier));
-  if (state.resources.money < cost) throw new Error('Not enough money to refill');
+  if (state.resources.money < cost) throw new CampaignError('notEnoughMoneyRefill', 'Not enough money to refill');
   state.resources.money -= cost;
   unit.currentHealth = def.stats.maxHealth;
 
@@ -519,10 +568,10 @@ export function rearmUnit(
   if (!unit) throw new Error('Unit not found');
   const newDef = findUnitDef(bundle, newDefinitionId);
   if (!isUnitUnlocked(state, bundle, newDef.id)) {
-    throw new Error('Unit not unlocked by research');
+    throw new CampaignError('unitNotUnlocked', 'Unit not unlocked by research');
   }
   const cost = Math.round(newDef.cost * 0.5);
-  if (state.resources.money < cost) throw new Error('Not enough money to rearm');
+  if (state.resources.money < cost) throw new CampaignError('notEnoughMoneyRearm', 'Not enough money to rearm');
 
   state.resources.money -= cost;
   unit.definitionId = newDef.id;
@@ -617,7 +666,8 @@ const buildArmySide = (
     .filter((u) => (u.availableOnTurn ?? 0) <= state.turn)
     .concat(
       // auto-attach supply truck if unlocked and not already present
-      state.research.known.has('supply-truck-unlock')
+      state.research.known.has('supply-truck-unlock') &&
+      !state.army.some((u) => u.definitionId === 'supply-truck')
         ? [
             {
               id: nanoid(6),
@@ -636,11 +686,18 @@ const buildArmySide = (
       const capB = defB.stats.transportCapacity ?? 0;
       return capB - capA;
     });
+  const startTiles = scenario.startZones.alliance;
   let rosterUnits = selectedUnitIds
     ? available.filter((u) => selectedUnitIds.includes(u.id))
     : available;
   const transports = available.filter((u) => (findUnitDef(bundle, u.definitionId).stats.transportCapacity ?? 0) > 0);
-  if (!rosterUnits.some((u) => transports.includes(u)) && transports.length > 0) {
+  // Don't force a transport into an explicit full selection — deployment is truncated to the start
+  // zone, so the injected unit would silently evict one the player deliberately picked.
+  if (
+    !rosterUnits.some((u) => transports.includes(u)) &&
+    transports.length > 0 &&
+    (!selectedUnitIds || rosterUnits.length < startTiles.length)
+  ) {
     const pick = transports[0];
     rosterUnits = [pick, ...rosterUnits.filter((u) => u.id !== pick.id)];
   }
@@ -654,7 +711,6 @@ const buildArmySide = (
   if (apc) {
     rosterUnits = [apc, ...rosterUnits.filter((u) => u.id !== apc.id)];
   }
-  const startTiles = scenario.startZones.alliance;
   const tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string }> = [];
 
   for (let i = 0; i < Math.min(startTiles.length, rosterUnits.length); i++) {
@@ -679,10 +735,10 @@ export function startBattleForTerritory(
   territoryId: string,
   selectedUnitIds?: string[]
 ): ActiveBattle {
-  if (state.activeBattle) throw new Error('Battle already in progress');
+  if (state.activeBattle) throw new CampaignError('battleInProgress', 'Battle already in progress');
   const territory = state.territories.find((t) => t.id === territoryId);
-  if (!territory) throw new Error('Territory not found');
-  if (territory.status !== 'available') throw new Error('Territory not attackable');
+  if (!territory) throw new CampaignError('territoryNotFound', 'Territory not found');
+  if (territory.status !== 'available') throw new CampaignError('territoryNotAttackable', 'Territory not attackable');
 
   const scenario = bundle.scenarios.find((s) => s.id === territory.scenarioId);
   if (!scenario) throw new Error(`Scenario ${territory.scenarioId} missing`);
@@ -695,7 +751,7 @@ export function startBattleForTerritory(
   }));
 
   if (tacticalUnits.length + alliedSupport.length === 0) {
-    throw new Error('No deployable units available for this operation');
+    throw new CampaignError('noDeployableUnits', 'No deployable units available for this operation');
   }
 
   const enemyUnits = scenario.otherSideForces.map((unit) => ({
@@ -733,8 +789,8 @@ export function startBattleForTerritory(
       }
     }
     updateAllFactionsVision(battleState);
-    state.log.push(hasOptics ? 'Night op: thermal sights keep our forces seeing clearly.' : 'Night op: visibility reduced for all forces.');
-    state.events?.push({ turn: state.turn, message: hasOptics ? 'Optics II: thermal sights offset the night.' : 'Night conditions: vision reduced by 1.' });
+    state.log.push({ key: hasOptics ? 'weatherNightThermal' : 'weatherNightReduced' });
+    state.events?.push({ turn: state.turn, key: hasOptics ? 'nightThermal' : 'nightReduced' });
   }
   if (scenario.weather === 'fog') {
     for (const [faction, side] of Object.entries(battleState.sides)) {
@@ -744,8 +800,8 @@ export function startBattleForTerritory(
       }
     }
     updateAllFactionsVision(battleState);
-    state.log.push(hasOptics ? 'Fog: thermal optics keep our forces partially sighted.' : 'Fog: vision severely reduced.');
-    state.events?.push({ turn: state.turn, message: hasOptics ? 'Optics II: thermal sights cut through the fog.' : 'Fog banks cut visibility (-2).' });
+    state.log.push({ key: hasOptics ? 'weatherFogThermal' : 'weatherFogReduced' });
+    state.events?.push({ turn: state.turn, key: hasOptics ? 'fogThermal' : 'fogReduced' });
   }
 
   const deployment: Record<string, string> = {};
@@ -785,8 +841,9 @@ export const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattl
     case 'reach': {
       if (!objective.target) return false;
       const key = coordinateKey(objective.target);
+      // Embarked passengers keep a frozen coordinate at the embark tile — they can't occupy it.
       return Array.from(battle.state.sides.alliance.units.values()).some(
-        (u) => u.stance !== 'destroyed' && coordinateKey(u.coordinate) === key
+        (u) => u.stance !== 'destroyed' && !u.embarkedOn && coordinateKey(u.coordinate) === key
       );
     }
     case 'protect': {
@@ -822,7 +879,7 @@ function tickHoldProgress(battle: ActiveBattle) {
     if (battle.holdCountedRound[objective.id] === round) continue;
     const key = coordinateKey(objective.target);
     const held = Array.from(battle.state.sides.alliance.units.values()).some(
-      (u) => u.stance !== 'destroyed' && coordinateKey(u.coordinate) === key
+      (u) => u.stance !== 'destroyed' && !u.embarkedOn && coordinateKey(u.coordinate) === key
     );
     if (held) {
       battle.holdProgress[objective.id] = (battle.holdProgress[objective.id] ?? 0) + 1;
@@ -890,8 +947,12 @@ export function retreatFromBattle(state: CampaignState) {
       updatedArmy.push(roster);
       continue;
     }
-    const onStartTile = startKeys.has(coordinateKey(unit.coordinate));
-    if (unit.stance === 'destroyed' || !onStartTile) {
+    // Embarked passengers keep their coordinate frozen at the embark tile — judge them by the
+    // carrier's position instead, so riding a transport back to the deploy zone saves them.
+    const carrier = unit.embarkedOn ? battle.state.sides.alliance.units.get(unit.embarkedOn) : undefined;
+    const effectiveUnit = carrier ?? unit;
+    const onStartTile = startKeys.has(coordinateKey(effectiveUnit.coordinate));
+    if (unit.stance === 'destroyed' || effectiveUnit.stance === 'destroyed' || !onStartTile) {
       continue; // lost during retreat
     }
     roster.currentHealth = unit.currentHealth;
@@ -900,7 +961,7 @@ export function retreatFromBattle(state: CampaignState) {
   }
   state.army = updatedArmy;
   state.activeBattle = undefined;
-  state.log.push('Retreated from battle');
+  state.log.push({ key: 'battleRetreated' });
 }
 
 export function applyBattleOutcome(
@@ -945,11 +1006,11 @@ export function applyBattleOutcome(
     state.resources.money += territory.reward.money;
     state.resources.research += territory.reward.research;
     state.resources.strategic += territory.reward.strategic;
-    state.log.push(`Territory secured: ${territory.name}`);
+    state.log.push({ key: 'territorySecured', params: { territory: territory.name, territoryId: territory.id } });
     state.popups?.push({
       turn: state.turn,
-      title: 'Sector secured',
-      body: `${territory.name} is under control. Rewards have been added to HQ reserves.`,
+      key: 'territorySecured',
+      params: { territory: territory.name, territoryId: territory.id },
       kind: 'reward'
     });
 
@@ -966,7 +1027,7 @@ export function applyBattleOutcome(
         if (allRequirementsMet) {
           t.status = 'available';
           t.remainingTimer = t.timer; // Start the timer when territory becomes available
-          state.log.push(`New sector available: ${t.name}`);
+          state.log.push({ key: 'newSectorAvailable', params: { territory: t.name, territoryId: t.id } });
         }
       }
     }
@@ -975,18 +1036,16 @@ export function applyBattleOutcome(
     const realSectors = state.territories.filter((t) => !isGeneratedCounteroffensive(t));
     if (!state.outcome && realSectors.length > 0 && realSectors.every((t) => t.status === 'cleared')) {
       state.outcome = 'victory';
-      state.log.push('All sectors secured — the front is broken. Campaign won.');
-      state.popups?.push({ turn: state.turn, title: 'Campaign Won', body: 'Every sector is under control. The invasion corridor is shattered.', kind: 'reward' });
+      state.log.push({ key: 'campaignWon' });
+      state.popups?.push({ turn: state.turn, key: 'campaignWon', kind: 'reward' });
     }
   } else {
     territory.status = territory.status === 'available' ? 'available' : 'failed';
-    state.log.push(`Defeat at ${territory.name}`);
+    state.log.push({ key: 'defeatAt', params: { territory: territory.name, territoryId: territory.id } });
     state.popups?.push({
       turn: state.turn,
-      title: 'Operation failed',
-      body: state.army.length === 0
-        ? `${territory.name} was lost and no deployable units remain. Open the Army tab, recruit or refill units, then relaunch.`
-        : `${territory.name} was lost. Surviving units have returned to HQ for refit.`,
+      key: state.army.length === 0 ? 'operationFailedNoArmy' : 'operationFailedWithSurvivors',
+      params: { territory: territory.name, territoryId: territory.id },
       kind: 'loss'
     });
   }
@@ -1059,6 +1118,20 @@ export function serializeCampaignState(state: CampaignState): SerializedCampaign
   };
 }
 
+// Saves written before the i18n refactor stored log entries as raw English strings and popups with
+// pre-rendered title/body. Map them onto the 'legacy' passthrough key so old slots still display.
+function normalizeLegacyLogEntry(entry: CampaignLogEntry | string): CampaignLogEntry {
+  return typeof entry === 'string' ? { key: 'legacy', params: { text: entry } } : entry;
+}
+
+type CampaignPopup = NonNullable<CampaignState['popups']>[number];
+function normalizeLegacyPopup(
+  popup: CampaignPopup | (Omit<CampaignPopup, 'key' | 'params'> & { title: string; body: string })
+): CampaignPopup {
+  if ('key' in popup) return popup;
+  return { turn: popup.turn, key: 'legacy', params: { title: popup.title, body: popup.body }, kind: popup.kind };
+}
+
 export function hydrateCampaignState(bundle: ContentBundle, snapshot: SerializedCampaignState): CampaignState {
   const spec = findCampaignSpec(bundle, snapshot.campaignId);
   const campaignId = snapshot.campaignId ?? spec.id;
@@ -1077,10 +1150,12 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     army: structuredClone(snapshot.army),
     reserves: structuredClone(snapshot.reserves),
     formations: structuredClone(snapshot.formations),
+    // Older builds flipped expired path sectors to 'failed', leaving those campaigns silently
+    // unwinnable; normalize them back to attackable on load.
     territories: snapshot.territories.map((t) => ({
       ...(territoryBase.get(t.id) ?? t),
-      status: t.status,
-      remainingTimer: t.remainingTimer
+      status: t.status === 'failed' ? 'available' : t.status,
+      remainingTimer: t.status === 'failed' ? undefined : t.remainingTimer
     })),
     research: {
       known: researchKnown,
@@ -1088,9 +1163,9 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
       inProgress: snapshot.research.inProgress ? { ...snapshot.research.inProgress } : undefined
     },
     activeBattle: snapshot.activeBattle ? decodeActiveBattle(snapshot.activeBattle) : undefined,
-    log: [...snapshot.log],
+    log: snapshot.log.map(normalizeLegacyLogEntry),
     events: snapshot.events ? [...snapshot.events] : [],
-    popups: snapshot.popups ? structuredClone(snapshot.popups) : [],
+    popups: snapshot.popups ? structuredClone(snapshot.popups).map(normalizeLegacyPopup) : [],
     outcome: snapshot.outcome
   };
 

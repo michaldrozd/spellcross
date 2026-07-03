@@ -372,7 +372,7 @@ export function unitPointerArea(tile: number, unitType: string, definitionId: st
   if (unitType === 'vehicle' || (unitType === 'support' && isTruck)) {
     return selected
       ? { x: -tile * 0.18, y: -tile * 0.03, width: tile * 0.36, height: tile * 0.17 }
-      : { x: -tile * 0.18, y: -tile * 0.34, width: tile * 0.54, height: tile * 0.52 };
+      : { x: -tile * 0.27, y: -tile * 0.34, width: tile * 0.54, height: tile * 0.52 };
   }
   if (unitType === 'artillery') {
     return { x: -tile * 0.38, y: -tile * 0.46, width: tile * 0.76, height: tile * 0.64 };

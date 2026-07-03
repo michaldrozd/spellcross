@@ -28,8 +28,11 @@ test('tactical edge cases: blocked movement, embarked units, and exhausted attac
     const ctrl = (window as any).__battleControl;
     const infantry = (ctrl?.allyUnits?.() ?? []).find((unit: any) => unit.type === 'infantry' && !unit.embarkedOn);
     if (!infantry) return null;
-    for (let r = 0; r < 7; r++) {
-      for (let q = 0; q < 10; q++) {
+    for (let dr = -7; dr <= 7; dr++) {
+      for (let dq = -7; dq <= 7; dq++) {
+        const q = infantry.coord.q + dq;
+        const r = infantry.coord.r + dr;
+        if (q < 0 || r < 0) continue;
         const path = ctrl.pathForUnit(infantry.id, q, r);
         if (path?.success && path.path.length && path.cost <= 7) {
           const target = path.path[path.path.length - 1];

@@ -1,0 +1,112 @@
+{
+  "action": {
+    "showRanges": "Zobraziť dosahy",
+    "hideRanges": "Skryť dosahy",
+    "embarkAdj": "Naložiť vedľa",
+    "unload": "Vyložiť",
+    "disembark": "Vystúpiť"
+  },
+  "reject": {
+    "moveBlocked": "Presun zablokovaný",
+    "moveOrderBlocked": "Príkaz na presun zablokovaný",
+    "noSelectedUnit": "Žiadna vybraná jednotka",
+    "outsideBattlefield": "Mimo bojiska",
+    "occupiedAllied": "Obsadené spojeneckou jednotkou",
+    "occupiedHostile": "Obsadené nepriateľskou jednotkou",
+    "blockedByTerrain": "Zablokované: {{terrain}}",
+    "blockedByWater": "Zablokované vodou",
+    "forestBlocks": "Les blokuje tento typ jednotky",
+    "outOfRange": "Mimo dosahu: potrebuje {{needed}} AP, má {{has}}",
+    "unreachable": "K cieľu nevedie žiadna trasa",
+    "alreadyAtDestination": "Už na cieli"
+  },
+  "notice": {
+    "resupplied": "Munícia doplnená",
+    "stabilized": "Zranenie stabilizované",
+    "hitTitle": "Zásah potvrdený",
+    "hitDetail": "{{defender}} - {{damage}} poškodenia",
+    "missTitle": "Výstrel netrafil",
+    "missDetail": "{{attacker}} → {{defender}}",
+    "enemyTurnTitle": "Nepriateľský ťah",
+    "enemyTurnDetail": "Nepriateľské jednotky konajú",
+    "enemyPhaseTitle": "Nepriateľská fáza",
+    "enemyPhaseDetail": "{{unit}} útočí"
+  },
+  "autoTurn": {
+    "label": "AUTO ŤAH",
+    "playerPhase": "Počítač hrá tvoj ťah…",
+    "enemyPhase": "Nepriateľský ťah…",
+    "stopAndTakeOver": "Zastaviť a prevziať",
+    "stopTooltip": "Zastaviť auto ťah a dokončiť ťah ručne",
+    "startTooltip": "Nechaj počítač nasadiť a odohrať tento ťah za teba"
+  },
+  "deploy": {
+    "title": "NASADENIE",
+    "hint": "Klikni na jednotku a potom na svietiace políčko, aby si ju premiestnil. Stlač Spustiť bitku, keď si pripravený.",
+    "unitsReady": "Pripravených jednotiek: {{count}}"
+  },
+  "risky": {
+    "ariaLabel": "Varovanie pred rizikovým presunom",
+    "title": "⚠ Presun pod paľbou",
+    "routeLethal": "Trasa: {{unit}} — vedie cez nepriateľskú paľbu. Reakčná paľba by ju mohla zničiť. Napriek tomu presunúť?",
+    "routeWounded": "Trasa: {{unit}} — vedie cez nepriateľskú paľbu. Táto jednotka je zranená a môže utrpieť ťažké straty. Napriek tomu presunúť?",
+    "moveAnyway": "Presunúť napriek tomu"
+  },
+  "rangeOverlay": {
+    "label": "Prehľad dosahu"
+  },
+  "panel": {
+    "selectedUnit": "Vybraná jednotka",
+    "none": "Žiadna",
+    "ammo": "Munícia",
+    "morale": "Morálka",
+    "cover": "Kryt",
+    "coverHeavy": "Silný",
+    "coverSolid": "Solídny",
+    "coverLight": "Slabý",
+    "coverNone": "Žiadny",
+    "inCover": "V KRYTE",
+    "concealed": "SKRYTÝ",
+    "overwatch": "POHOTOVOSŤ",
+    "dugIn": "ZAKOPANÝ",
+    "cargo": "Náklad",
+    "selectUnitHint": "Vyber jednotku pre zobrazenie detailov",
+    "fireControl": "Riadenie paľby",
+    "target": "Cieľ",
+    "dmgApprox": "Dmg ~",
+    "effStrong": "SILNÉ",
+    "effWeak": "SLABÉ",
+    "effOk": "OK",
+    "likelyKill": "PRAVDEPODOBNÝ ZÁSAH",
+    "noWeaponCanHit": "Žiadna zbraň nedosiahne na tento cieľ",
+    "combatLog": "Bojový záznam",
+    "tacticalLinkReady": "TAKTICKÉ SPOJENIE PRIPRAVENÉ",
+    "sensorGridOnline": "SENZOROVÁ SIEŤ ONLINE",
+    "awaitingFireOrder": "ČAKÁ SA NA ROZKAZ K PALBE"
+  },
+  "fireControl": {
+    "blockedByRange": "Mimo dosahu",
+    "need2Ap": "Treba 2 AP",
+    "hostileContact": "Nepriateľský kontakt",
+    "hex": "Pole",
+    "hit": "Zásah",
+    "weapon": "Zbraň",
+    "blocked": "Blokované",
+    "range": "Dosah",
+    "status": "Stav",
+    "attackUnavailable": "Útok nedostupný"
+  },
+  "outcome": {
+    "sectorSecured": "SEKTOR ZABEZPEČENÝ",
+    "missionFailed": "MISIA ZLYHALA",
+    "victoryFlavor": "Územie je naše. Prežívajúci sa presúvajú a sektor prechádza pod kontrolu Aliancie.",
+    "defeatFlavor": "Línia sa zlomila. Zvyšky útočnej sily ustupujú na preskupenie.",
+    "enemiesDestroyed": "Zničení nepriatelia",
+    "squadsSurviving": "Prežívajúce jednotky",
+    "squadsLost": "Stratené jednotky",
+    "rounds": "Kolá",
+    "spoils": "Korisť",
+    "returnToHq": "Návrat na veliteľstvo",
+    "regroupAtHq": "Preskupiť na veliteľstve"
+  }
+}

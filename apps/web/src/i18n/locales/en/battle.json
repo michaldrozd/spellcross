@@ -1,0 +1,112 @@
+{
+  "action": {
+    "showRanges": "Show Ranges",
+    "hideRanges": "Hide Ranges",
+    "embarkAdj": "Embark Adj",
+    "unload": "Unload",
+    "disembark": "Disembark"
+  },
+  "reject": {
+    "moveBlocked": "Move blocked",
+    "moveOrderBlocked": "Move order blocked",
+    "noSelectedUnit": "No selected unit",
+    "outsideBattlefield": "Outside battlefield",
+    "occupiedAllied": "Occupied by allied unit",
+    "occupiedHostile": "Occupied by hostile unit",
+    "blockedByTerrain": "Blocked by {{terrain}}",
+    "blockedByWater": "Blocked by water",
+    "forestBlocks": "Forest blocks this unit type",
+    "outOfRange": "Out of range: needs {{needed}} AP, has {{has}}",
+    "unreachable": "No path to destination",
+    "alreadyAtDestination": "Already at destination"
+  },
+  "notice": {
+    "resupplied": "Ammunition resupplied",
+    "stabilized": "Casualty stabilized",
+    "hitTitle": "Hit Confirmed",
+    "hitDetail": "{{defender}} - {{damage}} damage",
+    "missTitle": "Shot Missed",
+    "missDetail": "{{attacker}} → {{defender}}",
+    "enemyTurnTitle": "Enemy Turn",
+    "enemyTurnDetail": "Hostile units are acting",
+    "enemyPhaseTitle": "Enemy Phase",
+    "enemyPhaseDetail": "{{unit}} attacking"
+  },
+  "autoTurn": {
+    "label": "AUTO TURN",
+    "playerPhase": "The computer is playing your turn…",
+    "enemyPhase": "Enemy turn…",
+    "stopAndTakeOver": "Stop & take over",
+    "stopTooltip": "Stop Auto Turn and finish the turn manually",
+    "startTooltip": "Let the computer deploy and play this turn for you"
+  },
+  "deploy": {
+    "title": "DEPLOYMENT",
+    "hint": "Click a unit, then a glowing tile to reposition it. Press Start Battle when ready.",
+    "unitsReady": "{{count}} units ready"
+  },
+  "risky": {
+    "ariaLabel": "Risky move warning",
+    "title": "⚠ Move Under Fire",
+    "routeLethal": "Route for {{unit}} crosses enemy fire. Reaction fire could destroy it. Move anyway?",
+    "routeWounded": "Route for {{unit}} crosses enemy fire. This unit is wounded and may take heavy losses. Move anyway?",
+    "moveAnyway": "Move Anyway"
+  },
+  "rangeOverlay": {
+    "label": "Range Overlay"
+  },
+  "panel": {
+    "selectedUnit": "Selected Unit",
+    "none": "None",
+    "ammo": "Ammo",
+    "morale": "Morale",
+    "cover": "Cover",
+    "coverHeavy": "Heavy",
+    "coverSolid": "Solid",
+    "coverLight": "Light",
+    "coverNone": "None",
+    "inCover": "IN COVER",
+    "concealed": "CONCEALED",
+    "overwatch": "OVERWATCH",
+    "dugIn": "DUG IN",
+    "cargo": "Cargo",
+    "selectUnitHint": "Select a unit to view details",
+    "fireControl": "Fire Control",
+    "target": "Target",
+    "dmgApprox": "Dmg ~",
+    "effStrong": "STRONG",
+    "effWeak": "WEAK",
+    "effOk": "OK",
+    "likelyKill": "LIKELY KILL",
+    "noWeaponCanHit": "No weapon can hit this target",
+    "combatLog": "Combat Log",
+    "tacticalLinkReady": "TACTICAL LINK READY",
+    "sensorGridOnline": "SENSOR GRID ONLINE",
+    "awaitingFireOrder": "AWAITING FIRE ORDER"
+  },
+  "fireControl": {
+    "blockedByRange": "Blocked by range",
+    "need2Ap": "Need 2 AP",
+    "hostileContact": "Hostile Contact",
+    "hex": "Hex",
+    "hit": "Hit",
+    "weapon": "Weapon",
+    "blocked": "Blocked",
+    "range": "Range",
+    "status": "Status",
+    "attackUnavailable": "Attack unavailable"
+  },
+  "outcome": {
+    "sectorSecured": "SECTOR SECURED",
+    "missionFailed": "MISSION FAILED",
+    "victoryFlavor": "The ground is ours. Survivors are regrouping and the sector falls under Alliance control.",
+    "defeatFlavor": "The line broke. What remains of the strike force is pulling back to regroup.",
+    "enemiesDestroyed": "Enemies destroyed",
+    "squadsSurviving": "Squads surviving",
+    "squadsLost": "Squads lost",
+    "rounds": "Rounds",
+    "spoils": "Spoils",
+    "returnToHq": "Return to HQ",
+    "regroupAtHq": "Regroup at HQ"
+  }
+}

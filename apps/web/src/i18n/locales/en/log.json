@@ -1,0 +1,11 @@
+{
+  "round": "Round {{round}}: {{faction}} turn",
+  "moved": "Move: {{unit}} advances through cover",
+  "hit": "Hit: {{attacker}} → {{defender}} ({{damage}} dmg)",
+  "miss": "Miss: {{attacker}} → {{defender}}",
+  "destroyed": "Destroyed: {{unit}}",
+  "xpGained": "XP gained: {{unit}}",
+  "tileDestroyed": "Tile destroyed at {{q}},{{r}}",
+  "levelUp": "Level up: {{unit}} (level {{level}})",
+  "genericEvent": "Battle event"
+}

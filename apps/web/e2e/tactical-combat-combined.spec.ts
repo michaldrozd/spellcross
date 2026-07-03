@@ -40,10 +40,18 @@ test('combined-arms tactical flow: transport, disembark, fight, AI reacts', asyn
   }, passenger.id);
   expect(after.embarkedOn).toBeFalsy();
 
-  // Attack and ensure log records combat, then let AI act
+  // Attack and ensure log records combat, then let AI act. Battlefields are far larger than a single
+  // turn's movement, so the nearest enemy usually isn't reachable yet — snap one into weapon range for
+  // a deterministic check.
+  await page.evaluate(() => {
+    const ctrl = (window as any).__battleControl;
+    const ally = ctrl?.allyUnits?.()[0];
+    const enemy = ctrl?.enemyUnits?.()[0];
+    if (ally && enemy) ctrl.snapUnit(enemy.id, ally.coord.q, Math.max(0, ally.coord.r - 1));
+  });
   const attacked = await page.evaluate(() => (window as any).__battleControl?.attackFirst?.());
   expect(attacked).toBeTruthy();
-  await expect(page.locator('.log-entries')).toContainText(/hit|missed|damage/);
+  await expect(page.locator('.log-entries')).toContainText(/Hit:|Miss:|dmg/);
 
   await page.getByRole('button', { name: /^End Turn$/i }).click({ timeout: 1000 }).catch(() => {});
   await page.evaluate(() => (window as any).__battleControl?.endTurn?.());

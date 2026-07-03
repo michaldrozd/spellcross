@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
-interface SaveSlot {
+import { setAppLanguage, SUPPORTED_LANGUAGES } from '../i18n/index.js';
+
+export interface SaveSlot {
   slot: number;
   turn: number;
   money: number;
@@ -24,6 +27,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   savedSlots,
   currentSlot,
 }) => {
+  const { t, i18n } = useTranslation('mainmenu');
   const [selectedSlot, setSelectedSlot] = useState(currentSlot);
   const [showSlots, setShowSlots] = useState(false);
 
@@ -34,19 +38,34 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   return (
     <div className="main-menu">
       <div className="menu-backdrop" />
+      <div className="menu-lang-switch">
+        {SUPPORTED_LANGUAGES.map(lang => (
+          <button
+            key={lang}
+            className={`menu-lang-btn ${i18n.language === lang ? 'active' : ''}`}
+            onClick={() => setAppLanguage(lang)}
+          >
+            {t(`language.${lang}`)}
+          </button>
+        ))}
+      </div>
       <div className="menu-container">
         <div className="menu-logo">
-          <h1>SPELLCROSS</h1>
-          <p className="menu-subtitle">THE LAST BATTLE</p>
+          <h1>{t('title')}</h1>
+          <p className="menu-subtitle">{t('subtitle')}</p>
         </div>
 
         <div className="menu-intel-panel">
-          <span>Campaign Link</span>
-          <strong>{hasAnySave ? `Slot ${currentSlot} ready` : 'No active campaign'}</strong>
+          <span>{t('intel.campaignLink')}</span>
+          <strong>{hasAnySave ? t('intel.slotReady', { slot: currentSlot }) : t('intel.noActiveCampaign')}</strong>
           <small>
             {currentSave
-              ? `Turn ${currentSave.turn} / ${currentSave.territories} sectors / ${currentSave.activeBattle ? 'battle pending' : 'field HQ'}`
-              : `${activeSlots} saved slots detected`}
+              ? t('intel.statusLine', {
+                  turn: currentSave.turn,
+                  territories: currentSave.territories,
+                  battleStatus: currentSave.activeBattle ? t('intel.battlePending') : t('intel.fieldHq'),
+                })
+              : t('intel.savedSlotsDetected', { count: activeSlots })}
           </small>
         </div>
 
@@ -57,42 +76,42 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               onClick={() => onContinue(currentSlot)}
             >
               <span className="btn-icon">▶</span>
-              CONTINUE
+              {t('buttons.continue')}
               {savedSlots[currentSlot - 1] && (
-                <span className="btn-detail">Turn {savedSlots[currentSlot - 1]!.turn}</span>
+                <span className="btn-detail">{t('buttons.turnDetail', { turn: savedSlots[currentSlot - 1]!.turn })}</span>
               )}
             </button>
           )}
 
-          <button 
+          <button
             className="menu-btn"
             onClick={() => setShowSlots(true)}
           >
             <span className="btn-icon">📋</span>
-            {hasAnySave ? 'LOAD GAME' : 'NEW GAME'}
+            {hasAnySave ? t('buttons.loadGame') : t('buttons.newGame')}
           </button>
 
           <button className="menu-btn" disabled>
             <span className="btn-icon">⚙</span>
-            SETTINGS
+            {t('buttons.settings')}
           </button>
 
           <button className="menu-btn" disabled>
             <span className="btn-icon">📖</span>
-            MANUAL
+            {t('buttons.manual')}
           </button>
         </div>
 
         <div className="menu-footer">
-          <p>Spellcross Remake © 2025</p>
-          <p className="version">v0.1.0 Alpha</p>
+          <p>{t('footer.copyright')}</p>
+          <p className="version">{t('footer.version')}</p>
         </div>
       </div>
 
       {showSlots && (
         <div className="slot-modal">
           <div className="slot-modal-content">
-            <h2>SELECT SLOT</h2>
+            <h2>{t('slotModal.title')}</h2>
             <div className="slot-list">
               {[1, 2, 3].map((slotNum) => {
                 const save = savedSlots[slotNum - 1];
@@ -102,22 +121,22 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     className={`slot-item ${selectedSlot === slotNum ? 'selected' : ''}`}
                     onClick={() => setSelectedSlot(slotNum)}
                   >
-                    <span className="slot-number">Slot {slotNum}</span>
+                    <span className="slot-number">{t('slotModal.slotLabel', { slot: slotNum })}</span>
                     {save ? (
                       <div className="slot-info">
-                        <span>Turn {save.turn}</span>
-                        <span>${save.money} | {save.territories} territories</span>
-                        <span className="slot-date">{new Date(save.updated).toLocaleDateString()}</span>
+                        <span>{t('slotModal.turnLabel', { turn: save.turn })}</span>
+                        <span>{t('slotModal.moneyLine', { money: save.money, territories: save.territories })}</span>
+                        <span className="slot-date">{new Date(save.updated).toLocaleDateString(i18n.language)}</span>
                       </div>
                     ) : (
-                      <span className="slot-empty">- Empty -</span>
+                      <span className="slot-empty">{t('slotModal.empty')}</span>
                     )}
                   </button>
                 );
               })}
             </div>
             <div className="slot-actions">
-              <button 
+              <button
                 className="menu-btn menu-btn-primary"
                 onClick={() => {
                   const save = savedSlots[selectedSlot - 1];
@@ -128,13 +147,13 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                   }
                 }}
               >
-                {savedSlots[selectedSlot - 1] ? 'LOAD' : 'NEW GAME'}
+                {savedSlots[selectedSlot - 1] ? t('slotModal.load') : t('slotModal.newGame')}
               </button>
-              <button 
+              <button
                 className="menu-btn menu-btn-secondary"
                 onClick={() => setShowSlots(false)}
               >
-                BACK
+                {t('slotModal.back')}
               </button>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
-import { coordinateKey, getNeighbors, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
-import { isIsoNeighbor, isoDirectionIndex, isoDistance } from '../utils/grid-iso.js';
+import { coordinateKey, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
+import { isIsoNeighbor, isoDirectionIndex, isoDistance, isoNeighbors } from '../utils/grid-iso.js';
 import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange, estimateHitDamage, isMedicUnit, isSupplyUnit } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import { hasLineOfSight } from '../visibility/vision.js';
@@ -36,7 +36,8 @@ function occupiedSet(state: TacticalBattleState): Set<string> {
   const occ = new Set<string>();
   for (const side of Object.values(state.sides)) {
     for (const u of side.units.values()) {
-      if (u.stance === 'destroyed') continue;
+      // embarked passengers ride in the carrier; their frozen coordinate must not block tiles
+      if (u.stance === 'destroyed' || u.embarkedOn) continue;
       occ.add(coordinateKey(u.coordinate));
     }
   }
@@ -109,7 +110,7 @@ function findDemolitionTarget(
 function findSupplyTarget(state: TacticalBattleState, supplier: UnitInstance): { targetId: string; path: HexCoordinate[] } | null {
   if (!isSupplyUnit(supplier)) return null;
   const allies = Array.from(state.sides[supplier.faction].units.values()).filter(
-    (u) => u.id !== supplier.id && u.stance !== 'destroyed' && u.currentAmmo < (u.stats.ammoCapacity ?? Infinity)
+    (u) => u.id !== supplier.id && u.stance !== 'destroyed' && !u.embarkedOn && u.currentAmmo < (u.stats.ammoCapacity ?? Infinity)
   );
   if (allies.length === 0) return null;
   let best: { targetId: string; path: HexCoordinate[] } | null = null;
@@ -165,10 +166,16 @@ function tryFallbackStep(
   unit: UnitInstance,
   awayFrom: UnitInstance[]
 ): HexCoordinate[] | null {
+  const occ = occupiedSet(state);
+  const weatherMoveMod = state.weather === 'fog' ? 1.2 : state.weather === 'night' ? 1.1 : 1;
+  const mult = movementMultiplierForStance(unit.stance) * weatherMoveMod;
   let best: { step: HexCoordinate; score: number } | null = null;
-  for (const n of getNeighbors(state.map, unit.coordinate)) {
+  for (const n of isoNeighbors(state.map, unit.coordinate)) {
     const tile = getTile(state.map, n);
     if (!tile || !canUnitEnterTerrain(unit.unitType, tile)) continue;
+    // a step the executor would reject (occupied / too expensive) benches the unit for the turn
+    if (occ.has(coordinateKey(n))) continue;
+    if (tile.movementCostModifier * mult > unit.actionPoints) continue;
     // increase distance from nearest enemy
     const currentNearest = awayFrom.reduce((min, foe) => Math.min(min, isoDistance(unit.coordinate, foe.coordinate)), Infinity);
     const afterNearest = awayFrom.reduce((min, foe) => Math.min(min, isoDistance(n, foe.coordinate)), Infinity);
@@ -219,7 +226,9 @@ function buildThreatAwarePathToward(
   for (let steps = 0; steps < maxStepsCap; steps++) {
     let best: { step: HexCoordinate; score: number; cost: number } | null = null;
     const baseDist = isoDistance(current, goal);
-    for (const n of getNeighbors(state.map, current)) {
+    // movement/range use iso (Chebyshev) geometry — hex neighbors would miss both diagonals,
+    // making SE/NW goals look unreachable and stalling the advance under threat
+    for (const n of isoNeighbors(state.map, current)) {
       const k = coordinateKey(n);
       if (visited.has(k)) continue;
       if (occ.has(k)) continue;
@@ -390,10 +399,8 @@ export function decideNextAIAction(
   const maxStepBonus = mods.maxStepBonus;
   const skipAttackChance = mods.skipAttackChance;
 
-  // Easy difficulty: AI sometimes "forgets" to attack
-  if (skipAttackChance > 0 && Math.random() < skipAttackChance) {
-    // Skip directly to movement phase
-  }
+  // Easy difficulty: AI sometimes "forgets" to attack and goes straight to movement
+  const skipAttacks = skipAttackChance > 0 && Math.random() < skipAttackChance;
   const side = state.sides[faction];
   const exclude = options.excludeUnitIds;
   const units = Array.from(side.units.values()).filter((u) => isUsableUnit(u) && !(exclude && exclude.has(u.id)));
@@ -439,39 +446,46 @@ export function decideNextAIAction(
   let bestAttack:
     | { attackerId: string; defenderId: string; weaponId: string; score: number }
     | null = null;
-  for (const u of units) {
-    if (u.stance === 'routed') continue; // routed units cannot attack — exclude from attack selection
-    // Fast lane: shoot occupying enemies first
-    for (const target of contestTargets) {
-      for (const weaponId of Object.keys(u.stats.weaponRanges)) {
-        if (!canWeaponTarget(u, weaponId, target)) continue;
-        const score = flankAwareAttackScore(u, target, weaponId, state.map, state.weather) + 2;
-        if (!bestAttack || score > bestAttack.score) {
-          bestAttack = { attackerId: u.id, defenderId: target.id, weaponId, score };
+  if (!skipAttacks) {
+    for (const u of units) {
+      if (u.stance === 'routed') continue; // routed units cannot attack — exclude from attack selection
+      // Fast lane: shoot occupying enemies first. Only propose shots the executor will accept —
+      // an unaffordable/out-of-range "attack" here gets rejected and benches the unit for the turn.
+      if (canAffordAttack(u)) {
+        for (const target of contestTargets) {
+          for (const weaponId of Object.keys(u.stats.weaponRanges)) {
+            if (!canWeaponTarget(u, weaponId, target)) continue;
+            const rawScore = flankAwareAttackScore(u, target, weaponId, state.map, state.weather);
+            if (rawScore <= 0) continue;
+            const score = rawScore + 2;
+            if (!bestAttack || score > bestAttack.score) {
+              bestAttack = { attackerId: u.id, defenderId: target.id, weaponId, score };
+            }
+          }
+        }
+      }
+
+      // artillery prefers standoff: skip attack if moving closer is safer unless enemy in range
+      const isArtillery = u.unitType === 'artillery' || Object.keys(u.stats.weaponRanges).some((w) => u.stats.weaponRanges[w] >= 7);
+      const choice = bestAttackFromHere(state, u, attackEnemies);
+      // conserve ammo if low unless high-priority target
+      const lowAmmo = u.currentAmmo !== Infinity && u.currentAmmo <= Math.max(1, (u.stats.ammoCapacity ?? 0) * 0.25);
+      if (choice && (!bestAttack || choice.score > bestAttack.score)) {
+        const defender = listEnemyUnits(state, faction).find((e) => e.id === choice.defenderId);
+        // target priority is already folded into choice.score via flankAwareAttackScore
+        const priority = defender ? priorityScore(defender) : 1;
+        if (lowAmmo && priority < 2) {
+          // hold fire to conserve ammo
+        } else if (isArtillery && defender && isoDistance(u.coordinate, defender.coordinate) <= 2) {
+          // avoid point-blank for artillery; let movement handle reposition
+        } else {
+          bestAttack = { attackerId: u.id, defenderId: choice.defenderId, weaponId: choice.weaponId, score: choice.score };
         }
       }
     }
-
-    // artillery prefers standoff: skip attack if moving closer is safer unless enemy in range
-    const isArtillery = u.unitType === 'artillery' || Object.keys(u.stats.weaponRanges).some((w) => u.stats.weaponRanges[w] >= 7);
-    const choice = bestAttackFromHere(state, u, attackEnemies);
-    // conserve ammo if low unless high-priority target
-    const lowAmmo = u.currentAmmo !== Infinity && u.currentAmmo <= Math.max(1, (u.stats.ammoCapacity ?? 0) * 0.25);
-    if (choice && (!bestAttack || choice.score > bestAttack.score)) {
-      const defender = listEnemyUnits(state, faction).find((e) => e.id === choice.defenderId);
-      const priority = defender ? priorityScore(defender) : 1;
-      const weightedScore = choice.score * priority;
-      if (lowAmmo && priority < 2) {
-        // hold fire to conserve ammo
-      } else if (isArtillery && defender && isoDistance(u.coordinate, defender.coordinate) <= 2) {
-        // avoid point-blank for artillery; let movement handle reposition
-      } else if (!bestAttack || weightedScore > bestAttack.score) {
-        bestAttack = { attackerId: u.id, defenderId: choice.defenderId, weaponId: choice.weaponId, score: weightedScore };
-      }
+    if (bestAttack) {
+      return { type: 'attack', attackerId: bestAttack.attackerId, defenderId: bestAttack.defenderId, weaponId: bestAttack.weaponId };
     }
-  }
-  if (bestAttack) {
-    return { type: 'attack', attackerId: bestAttack.attackerId, defenderId: bestAttack.defenderId, weaponId: bestAttack.weaponId };
   }
 
   // 2) Otherwise, plan a (possibly multi-step) threat-aware path toward objectives or nearest enemy
@@ -480,6 +494,7 @@ export function decideNextAIAction(
   const reachGoals = options.reachTargets ?? [];
   const defendBias = options.defendBias ?? false;
   const avoidTiles = options.avoidTiles ?? new Set<string>();
+  let anchoredHolderId: string | null = null;
   if (defendBias && holdGoals.length > 0) {
     const anchor = holdGoals[0];
     const holder = units.find((u) => isoDistance(u.coordinate, anchor) <= 2);
@@ -488,11 +503,14 @@ export function decideNextAIAction(
       if (shot) {
         return { type: 'attack', attackerId: holder.id, defenderId: shot.defenderId, weaponId: shot.weaponId };
       }
-      return { type: 'endTurn' };
+      // The holder stays put guarding the anchor; ending the whole turn here would freeze
+      // every other unit on the side for the rest of the battle.
+      anchoredHolderId = holder.id;
     }
   }
   let bestMove: { unitId: string; path: HexCoordinate[]; score: number } | null = null;
   for (const u of units) {
+    if (u.id === anchoredHolderId) continue;
     // supply role: a support truck resupplies an adjacent low-ammo ally, else moves toward one
     if (isSupplyUnit(u)) {
       const supply = findSupplyTarget(state, u);
@@ -543,13 +561,17 @@ export function decideNextAIAction(
       const flankTarget =
         enemiesAll.find((e) => coordinateKey(e.coordinate) === coordinateKey(tgt)) ??
         enemiesAll.sort((a, b) => isoDistance(u.coordinate, a.coordinate) - isoDistance(u.coordinate, b.coordinate))[0];
-      const path = buildThreatAwarePathToward(state, u, tgt, {
+      const plannedPath = buildThreatAwarePathToward(state, u, tgt, {
         flankTarget,
         threatWeight,
         flankWeight,
         maxStepBonus: maxStepBonus + (ranged ? 1 : 0),
         attackEnemies
-      }).filter((step) => !avoidTiles.has(coordinateKey(step)));
+      });
+      // Truncate at the first avoided tile — filtering steps out of the middle leaves
+      // non-adjacent jumps that moveUnit rejects.
+      const avoidedAt = plannedPath.findIndex((step) => avoidTiles.has(coordinateKey(step)));
+      const path = avoidedAt === -1 ? plannedPath : plannedPath.slice(0, avoidedAt);
       if (!path || path.length === 0) continue;
       const last = path[path.length - 1];
       const distReduction = isoDistance(u.coordinate, tgt) - isoDistance(last, tgt);

@@ -1,0 +1,46 @@
+{
+  "optics-i": {
+    "name": "Optika I",
+    "description": "Zameriavače a diaľkomery zlepšujú šancu na zásah na väčšiu vzdialenosť."
+  },
+  "optics-ii": {
+    "name": "Optika II",
+    "description": "Termovízia a prístroje na nočné videnie zlepšujú prieskum za zlej viditeľnosti."
+  },
+  "armor-upfit": {
+    "name": "Kompozitné pancierovanie",
+    "description": "Vrstvené pancierové sady pre jednotky prvej línie."
+  },
+  "esprit-de-corps": {
+    "name": "Bojové bratstvo",
+    "description": "Výcvik súdržnosti jednotiek, ktorý zrýchľuje obnovu morálky."
+  },
+  "siege-ops": {
+    "name": "Obliehacie operácie",
+    "description": "Balistické tabuľky a protokoly pre pozorovateľov ťažkého delostrelectva."
+  },
+  "sanctified-ammo": {
+    "name": "Posvätená munícia",
+    "description": "Požehnané náboje narúšajúce spektrálnych nepriateľov."
+  },
+  "mobile-supply": {
+    "name": "Mobilný zásobovací zbor",
+    "description": "Poľné zásobovacie vozidlá na doplnenie munície priamo v boji."
+  },
+  "arcane-shielding": {
+    "name": "Arkánne štítenie",
+    "description": "Zosilnené pancierovanie a ochranné runy pre neskorovojnové delostrelectvo a protivzdušnú obranu."
+  },
+  "wyrm-slayer": {
+    "name": "Doktrína zabijaka drakov",
+    "description": "Taktiky proti bestiám a sledovanie okrídlených hrôz."
+  },
+  "field-fortification": {
+    "name": "Poľné opevnenie",
+    "description": "Zákopový výcvik a telové brnenie: +1 k pancierovaniu všetkej nasadenej pechoty."
+  },
+  "extended-barrels": {
+    "name": "Predĺžené hlavne",
+    "description": "Dlhšie hlavne a lepšie náplne: +1 k dostrelu všetkého nasadeného delostrelectva."
+  }
+}

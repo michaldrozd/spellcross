@@ -49,11 +49,19 @@ export function findPathOnMap(
   const ignore = options.ignoreCoordinates ?? new Set<string>();
   const movementMultiplier = options.movementMultiplier ?? 1;
 
+  // Admissible heuristic: cheap tiles (roads at 0.7-0.8) cost less than 1 per step, so a raw
+  // grid distance overestimates and can misreport road-reachable tiles as beyond maxCost.
+  let minStepCost = 1;
+  for (const t of map.tiles) {
+    if (t?.passable && t.movementCostModifier < minStepCost) minStepCost = t.movementCostModifier;
+  }
+  minStepCost *= movementMultiplier;
+
   const openSet: NodeRecord[] = [
     {
       coordinate: start,
       costFromStart: 0,
-      estimatedTotalCost: axialDistance(start, goal)
+      estimatedTotalCost: axialDistance(start, goal) * minStepCost
     }
   ];
   const closedSet = new Set<string>();
@@ -112,26 +120,24 @@ export function findPathOnMap(
         continue;
       }
 
-      const heuristic = axialDistance(neighbor, goal);
+      const heuristic = axialDistance(neighbor, goal) * minStepCost;
       const existing = nodeLookup.get(neighborKey);
 
-      if (!existing || tentativeCost < existing.costFromStart) {
-        const estimatedTotalCost = tentativeCost + heuristic;
+      if (!existing) {
         const record: NodeRecord = {
           coordinate: neighbor,
           costFromStart: tentativeCost,
-          estimatedTotalCost,
+          estimatedTotalCost: tentativeCost + heuristic,
           parent: current
         };
         nodeLookup.set(neighborKey, record);
-
-        if (!existing) {
-          openSet.push(record);
-        } else {
-          existing.costFromStart = tentativeCost;
-          existing.estimatedTotalCost = estimatedTotalCost;
-          existing.parent = current;
-        }
+        openSet.push(record);
+      } else if (tentativeCost < existing.costFromStart) {
+        // update the one shared record — a fresh copy in the lookup would let the open-set
+        // entry go stale after a second improvement
+        existing.costFromStart = tentativeCost;
+        existing.estimatedTotalCost = tentativeCost + heuristic;
+        existing.parent = current;
       }
     }
   }

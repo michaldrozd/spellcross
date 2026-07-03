@@ -1,0 +1,186 @@
+{
+  "evacuation-run": {
+    "name": "Úprk k evakuácii",
+    "brief": "Prerazte cez nájazdníkov a dostaňte sa k evakuačnému signálu skôr, než sa línia zrúti.",
+    "objectives": {
+      "reach-evac": "Presuňte ľubovoľnú spojeneckú jednotku k evakuačnej svetlici.",
+      "keep-commander": "Nepríďte o kapitána Alexandra."
+    }
+  },
+  "crossroads-defense": {
+    "name": "Obrana križovatky",
+    "brief": "Udržte spustošenú osadu proti prieskumnému útoku.",
+    "objectives": {
+      "eliminate": "Zničte nepriateľský hrot útoku.",
+      "protect-bridge": "Udržte centrálne námestie 4 kolá."
+    }
+  },
+  "enemy-counterstrike": {
+    "name": "Protiútok na osadu",
+    "brief": "Nepriateľské sily tlačia späť ku križovatke. Udržte námestie, kým sa nezlomia.",
+    "objectives": {
+      "hold-square": "Udržte mestské námestie 3 kolá.",
+      "protect-captain": "Udržte kapitána Alexandra nažive."
+    }
+  },
+  "bridgehead": {
+    "name": "Nájazd na predmostie",
+    "brief": "Nastražte nálože na mostnú konštrukciu alebo rozprášte jej stráž, kým sa neuzavrie okno útoku.",
+    "objectives": {
+      "eliminate": "Zničte alebo rozprášte všetkých obrancov.",
+      "reach-bridge": "Nastražte nálože na mostnú konštrukciu."
+    }
+  },
+  "outpost-night": {
+    "name": "Nočný nájazd na predsunutú základňu",
+    "brief": "Prerazte obliehaciu líniu pod rúškom tmy a umlčte nepriateľské čarodejníctvo.",
+    "objectives": {
+      "eliminate-commander": "Odstráňte veliteľov nepriateľského kováru.",
+      "hold-relay": "Zaistite komunikačný uzol na 3 kolá."
+    }
+  },
+  "black-spire-assault": {
+    "name": "Útok na Čiernu vežu",
+    "brief": "Zrúťte rituálnu vežu, zlomte príšery a zastavte zapálenie portálu.",
+    "objectives": {
+      "eliminate-portal": "Zničte rituálnych strážcov.",
+      "hold-spire": "Udržte okolie veže 3 kolá."
+    }
+  },
+  "city-sector-paris": {
+    "name": "Parížske okolie",
+    "brief": "Kryte evakuáciu civilistov a dostaňte sa k evakuačnej svetlici skôr, než sa perimeter zrúti.",
+    "objectives": {
+      "sector-paris-reach": "Presuňte ľubovoľnú jednotku k evakuačnej svetlici.",
+      "sector-paris-protect": "Nepríďte o kapitána Alexandra."
+    }
+  },
+  "city-sector-lyon": {
+    "name": "Lyonská priemyselná zóna",
+    "brief": "Udržte pevný bod v továrni proti démonickému nájazdu na zbrojovky.",
+    "objectives": {
+      "sector-lyon-hold": "Udržte centrálny pevný bod 3 kolá.",
+      "sector-lyon-protect": "Udržte kapitána Alexandra nažive."
+    }
+  },
+  "city-sector-strasbourg": {
+    "name": "Štrasburský priechod",
+    "brief": "Preforsujte Rýn: rozprášte mostnú stráž alebo nastražte nálože, kým sa neuzavrie okno útoku.",
+    "objectives": {
+      "sector-strasbourg-eliminate": "Zničte alebo rozprášte obrancov.",
+      "sector-strasbourg-reach": "Nastražte nálože pri vzdialenom cieli."
+    }
+  },
+  "city-sector-munich": {
+    "name": "Mníchovská obranná línia",
+    "brief": "Prepadnite prednú líniu pod rúškom tmy a umlčte nepriateľské čarodejníctvo.",
+    "objectives": {
+      "sector-munich-eliminate": "Umlčte veliteľov nepriateľského kováru.",
+      "sector-munich-hold": "Zaistite komunikačný uzol na 3 kolá."
+    }
+  },
+  "city-sector-zurich": {
+    "name": "Alpská pevnosť",
+    "brief": "Udržte pevný bod horského priesmyku, kým sa čistia bunkre.",
+    "objectives": {
+      "sector-zurich-hold": "Udržte centrálny pevný bod 3 kolá.",
+      "sector-zurich-protect": "Udržte kapitána Alexandra nažive."
+    }
+  },
+  "city-sector-vienna": {
+    "name": "Obliehanie Viedne",
+    "brief": "Prelomte obliehanie starého mesta: rozprášte obliehateľov a prerazte k vnútornému okruhu.",
+    "objectives": {
+      "sector-vienna-eliminate": "Zničte alebo rozprášte obrancov.",
+      "sector-vienna-reach": "Nastražte nálože pri vzdialenom cieli."
+    }
+  },
+  "city-sector-brussels": {
+    "name": "Bruselské velenie",
+    "brief": "Vyneste utajené informácie k evakuačnému bodu skôr, než veliteľstvo padne.",
+    "objectives": {
+      "sector-brussels-reach": "Presuňte ľubovoľnú jednotku k evakuačnej svetlici.",
+      "sector-brussels-protect": "Nepríďte o kapitána Alexandra."
+    }
+  },
+  "city-sector-amsterdam": {
+    "name": "Amsterdamský prístav",
+    "brief": "Bojujte naprieč kanálmi a cez prístavnú hmlu obsaďte vzdialené mólo.",
+    "objectives": {
+      "sector-amsterdam-eliminate": "Zničte alebo rozprášte obrancov.",
+      "sector-amsterdam-reach": "Nastražte nálože pri vzdialenom cieli."
+    }
+  },
+  "city-sector-copenhagen": {
+    "name": "Kodanská úžina",
+    "brief": "Udržte pobrežný pevný bod a zamedzte baltskému obchvatu.",
+    "objectives": {
+      "sector-copenhagen-hold": "Udržte centrálny pevný bod 3 kolá.",
+      "sector-copenhagen-protect": "Udržte kapitána Alexandra nažive."
+    }
+  },
+  "city-sector-prague": {
+    "name": "Pražské Staré Mesto",
+    "brief": "V noci prepadnite staromestský labyrint uličiek a rozvráťte temný rituál.",
+    "objectives": {
+      "sector-prague-eliminate": "Umlčte veliteľov nepriateľského kováru.",
+      "sector-prague-hold": "Zaistite komunikačný uzol na 3 kolá."
+    }
+  },
+  "city-sector-berlin": {
+    "name": "Berlínske ruiny",
+    "brief": "Prebojujte sa cez hmlu spustošeným hlavným mestom a zlomte rituálnych strážcov.",
+    "objectives": {
+      "sector-berlin-eliminate": "Zničte rituálnych strážcov.",
+      "sector-berlin-hold": "Udržte okolie veže 3 kolá."
+    }
+  },
+  "city-sector-warsaw": {
+    "name": "Varšavský front",
+    "brief": "Prelomte východnú líniu naprieč sutinami a obsaďte vzdialený pevný bod.",
+    "objectives": {
+      "sector-warsaw-eliminate": "Zničte alebo rozprášte obrancov.",
+      "sector-warsaw-reach": "Nastražte nálože pri vzdialenom cieli."
+    }
+  },
+  "city-sector-krakow": {
+    "name": "Krakovská citadela",
+    "brief": "Zaútočte na citadelu premenenú na portálový uzol a udržte jej okolie, aby ste ju zapečatili.",
+    "objectives": {
+      "sector-krakow-eliminate": "Zničte rituálnych strážcov.",
+      "sector-krakow-hold": "Udržte okolie veže 3 kolá."
+    }
+  },
+  "city-sector-kyiv": {
+    "name": "Obliehanie Kyjeva",
+    "brief": "Nočný nájazd naprieč spustošenou metropolou, aby ste umlčali kovár a udržali komunikačný uzol.",
+    "objectives": {
+      "sector-kyiv-eliminate": "Umlčte veliteľov nepriateľského kováru.",
+      "sector-kyiv-hold": "Zaistite komunikačný uzol na 3 kolá."
+    }
+  },
+  "city-sector-carpathian": {
+    "name": "Karpatský priesmyk",
+    "brief": "Udržte pevný bod vo vysokom priesmyku a vyčistite hrebene plné hliadok.",
+    "objectives": {
+      "sector-carpathian-hold": "Udržte centrálny pevný bod 3 kolá.",
+      "sector-carpathian-protect": "Udržte kapitána Alexandra nažive."
+    }
+  },
+  "city-sector-blacksea": {
+    "name": "Pobrežie Čierneho mora",
+    "brief": "Postupujte hmlistým pobrežím, rozprášte pobrežný prízrak a obsaďte vzdialený mys.",
+    "objectives": {
+      "sector-blacksea-eliminate": "Zničte alebo rozprášte obrancov.",
+      "sector-blacksea-reach": "Nastražte nálože pri vzdialenom cieli."
+    }
+  },
+  "city-sector-rift": {
+    "name": "Východná trhlina",
+    "brief": "Prekročte spálenú trhlinu, zničte strážcov a udržte okolie portálu.",
+    "objectives": {
+      "sector-rift-eliminate": "Zničte rituálnych strážcov.",
+      "sector-rift-hold": "Udržte okolie veže 3 kolá."
+    }
+  }
+}

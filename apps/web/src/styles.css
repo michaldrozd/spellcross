@@ -4219,3 +4219,38 @@ button:disabled {
 ::-webkit-scrollbar-thumb:hover {
   background: #475569;
 }
+
+/* ============================================
+   MAIN MENU LANGUAGE SWITCH
+   ============================================ */
+.menu-lang-switch {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  z-index: 2;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.menu-lang-btn {
+  padding: 0.3rem 0.7rem;
+  background: linear-gradient(180deg, #1a1a25 0%, #12121a 100%);
+  border: 1px solid var(--stroke);
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.menu-lang-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.menu-lang-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 12px rgba(212, 165, 32, 0.25);
+}

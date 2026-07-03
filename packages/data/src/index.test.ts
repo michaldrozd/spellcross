@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { loadContentBundle, starterBundle, validatedStarterBundle } from './index.js';
+import { cityScenarioIdByTerritory } from './city-battlefields.js';
 
 describe('data bundle', () => {
   it('validates starter bundle structure', () => {
@@ -14,6 +15,53 @@ describe('data bundle', () => {
   it('exports a prevalidated bundle', () => {
     expect(validatedStarterBundle.units[0].id).toBeDefined();
     expect(validatedStarterBundle.campaigns[0].territories.length).toBeGreaterThan(0);
+  });
+
+  it('keeps all cross-references resolvable', () => {
+    const bundle = validatedStarterBundle;
+    const unitIds = new Set(bundle.units.map((u) => u.id));
+    const scenarioIds = new Set(bundle.scenarios.map((s) => s.id));
+    const researchIds = new Set(bundle.research.map((r) => r.id));
+    const territories = bundle.campaigns[0].territories;
+    const territoryIds = new Set(territories.map((t) => t.id));
+
+    for (const topic of bundle.research) {
+      for (const req of topic.requires ?? []) {
+        expect(researchIds, `research ${topic.id} requires ${req}`).toContain(req);
+      }
+      for (const unlock of topic.unlocks) {
+        // unlocks are either unit ids or feature flags like supply-truck-unlock
+        if (unitIds.has(unlock)) continue;
+        expect(unlock, `research ${topic.id} unlock ${unlock} looks like a typo'd unit id`).toMatch(/-unlock$|^feature-/);
+      }
+    }
+
+    for (const territory of territories) {
+      expect(scenarioIds, `territory ${territory.id} scenario`).toContain(territory.scenarioId);
+      for (const req of territory.requires ?? []) {
+        expect(territoryIds, `territory ${territory.id} requires ${req}`).toContain(req);
+      }
+    }
+
+    // a typo'd territoryId in CITY_CONFIGS silently falls back to a legacy shared map
+    for (const territory of territories) {
+      expect(cityScenarioIdByTerritory, `territory ${territory.id} has no city battlefield`).toHaveProperty(territory.id);
+    }
+
+    for (const scenario of bundle.scenarios) {
+      for (const force of [...scenario.otherSideForces, ...(scenario.allianceForces ?? [])]) {
+        expect(unitIds, `scenario ${scenario.id} spawns ${force.definitionId}`).toContain(force.definitionId);
+      }
+    }
+
+    for (const unit of bundle.units) {
+      const ranges = Object.keys(unit.stats.weaponRanges).sort();
+      expect(Object.keys(unit.stats.weaponPower).sort(), `unit ${unit.id} weaponPower keys`).toEqual(ranges);
+      expect(Object.keys(unit.stats.weaponAccuracy).sort(), `unit ${unit.id} weaponAccuracy keys`).toEqual(ranges);
+      for (const weapon of Object.keys(unit.stats.weaponTargets ?? {})) {
+        expect(ranges, `unit ${unit.id} weaponTargets ${weapon}`).toContain(weapon);
+      }
+    }
   });
 
   it('pays out monotonically with difficulty so harder sectors fund the next tier', () => {

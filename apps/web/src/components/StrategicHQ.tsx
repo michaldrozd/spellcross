@@ -1,7 +1,10 @@
 import React, { useState, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import type { CampaignState } from '@spellcross/core';
 import { clearToasts } from './Toast.js';
 import { AudioManager } from '../services/AudioManager.js';
+import i18n from '../i18n/index.js';
 
 interface Territory {
   id: string;
@@ -48,7 +51,7 @@ interface StrategicHQProps {
   researchTopics: ResearchTopic[];
   currentResearch: { topicId: string; remaining: number } | null;
   completedResearch: Set<string>;
-  log: string[];
+  log: CampaignState['log'];
   popups?: CampaignState['popups'];
   onStartBattle: (territoryId: string) => void;
   onEndTurn: () => void;
@@ -92,22 +95,22 @@ function researchBranch(topic: ResearchTopic) {
   return 'doctrine';
 }
 
-function researchBranchLabel(branch: string) {
+function researchBranchLabel(branch: string, t: TFunction<'hq'>) {
   switch (branch) {
     case 'recon':
-      return 'RECON';
+      return t('branch.recon');
     case 'armor':
-      return 'ARMOR';
+      return t('branch.armor');
     case 'infantry':
-      return 'INFANTRY';
+      return t('branch.infantry');
     case 'logistics':
-      return 'LOGISTICS';
+      return t('branch.logistics');
     case 'arcane':
-      return 'WARDING';
+      return t('branch.warding');
     case 'artillery':
-      return 'SIEGE';
+      return t('branch.siege');
     default:
-      return 'DOCTRINE';
+      return t('branch.doctrine');
   }
 }
 
@@ -120,19 +123,89 @@ function armySectionKey(unit: ArmyUnit) {
   return 'infantry';
 }
 
-function armySectionLabel(section: string) {
+function armySectionLabel(section: string, t: TFunction<'hq'>) {
   switch (section) {
     case 'command':
-      return 'COMMAND';
+      return t('army.section.command');
     case 'recon':
-      return 'RECON';
+      return t('army.section.recon');
     case 'vehicles':
-      return 'VEHICLES';
+      return t('army.section.vehicles');
     case 'support':
-      return 'SUPPORT';
+      return t('army.section.support');
     default:
-      return 'INFANTRY';
+      return t('army.section.infantry');
   }
+}
+
+function regionLabel(region: string, t: TFunction<'hq'>) {
+  switch (region) {
+    case 'France':
+      return t('region.france');
+    case 'Germany':
+      return t('region.germany');
+    case 'Austria':
+      return t('region.austria');
+    case 'Poland':
+      return t('region.poland');
+    case 'Ukraine':
+      return t('region.ukraine');
+    case 'Belgium':
+      return t('region.belgium');
+    case 'Czech Republic':
+      return t('region.czechRepublic');
+    case 'Denmark':
+      return t('region.denmark');
+    case 'Netherlands':
+      return t('region.netherlands');
+    case 'Switzerland':
+      return t('region.switzerland');
+    case 'The Rift':
+      return t('region.theRift');
+    default:
+      return region;
+  }
+}
+
+// Campaign log entries carry an i18n key + params (see CampaignLogEntry in @spellcross/core) so they
+// render in the active locale instead of always English.
+// Log/popup params from packages/core carry a raw English content name (territory/topic/unit)
+// alongside its stable id, since the engine itself stays locale-agnostic. Re-resolve the display
+// name through the active locale before interpolating it into the translated sentence.
+function localizedLogParams(params?: Record<string, string | number>) {
+  if (!params) return params;
+  const resolved = { ...params };
+  if (typeof params.territoryId === 'string' && typeof params.territory === 'string') {
+    resolved.territory = i18n.t(`territories:${params.territoryId}.name`, { defaultValue: params.territory });
+  }
+  if (typeof params.targetId === 'string' && typeof params.target === 'string') {
+    resolved.target = i18n.t(`territories:${params.targetId}.name`, { defaultValue: params.target });
+  }
+  if (typeof params.topicId === 'string' && typeof params.topic === 'string') {
+    resolved.topic = i18n.t(`research:${params.topicId}.name`, { defaultValue: params.topic });
+  }
+  if (typeof params.unitId === 'string' && typeof params.name === 'string') {
+    resolved.name = i18n.t(`units:${params.unitId}.name`, { defaultValue: params.name });
+  }
+  if (typeof params.campaignId === 'string' && typeof params.name === 'string') {
+    resolved.name = i18n.t(`campaign:names.${params.campaignId}`, { defaultValue: params.name });
+  }
+  if (typeof params.tier === 'string') {
+    resolved.tier = i18n.t(`hq:army.tier.${params.tier}`, { defaultValue: params.tier });
+  }
+  return resolved;
+}
+
+function formatCampaignLogEntry(entry: CampaignState['log'][number], t: TFunction<'campaign'>) {
+  return t(`campaign:log.${entry.key}`, localizedLogParams(entry.params));
+}
+
+type CampaignPopup = NonNullable<CampaignState['popups']>[number];
+function popupTitle(popup: CampaignPopup, t: TFunction<'campaign'>) {
+  return t(`campaign:popups.${popup.key}.title`, localizedLogParams(popup.params));
+}
+function popupBody(popup: CampaignPopup, t: TFunction<'campaign'>) {
+  return t(`campaign:popups.${popup.key}.body`, localizedLogParams(popup.params));
 }
 
 // Strategic Map View Component with visual Europe map
@@ -141,8 +214,11 @@ const StrategicMapView: React.FC<{
   selectedTerritory: string | null;
   onSelectTerritory: (id: string | null) => void;
   onStartBattle: (id: string) => void;
-  log: string[];
+  log: CampaignState['log'];
 }> = ({ territories, selectedTerritory, onSelectTerritory, onStartBattle, log }) => {
+  // Aliased to `translate` (not `t`) — this component uses `t` pervasively as a loop variable name for
+  // Territory objects (`territories.map((t) => t.status)` etc.), which would shadow the i18n function.
+  const { t: translate } = useTranslation(['hq', 'territories', 'campaign']);
   const selected = territories.find(t => t.id === selectedTerritory);
   const statusCounts = useMemo(() => ({
     cleared: territories.filter((t) => t.status === 'cleared').length,
@@ -185,11 +261,10 @@ const StrategicMapView: React.FC<{
     }
   };
 
-  const mapLabelForTerritory = (name: string) => {
-    if (name.startsWith('The Eastern Rift')) return 'Rift';
-    if (name.startsWith('Black Sea')) return 'Black Sea';
-    return name.split(' ')[0] ?? name;
-  };
+  // Short map-pin label per territory, keyed by the stable id (not the localized display name) — the
+  // old version derived this by taking the first word of `name`, which breaks once names are translated
+  // (e.g. Slovak "Parížske okolie".split(' ')[0] => "Parížske", not a place name).
+  const mapLabelForTerritory = (id: string) => translate(`territories:mapLabel.${id}`, { defaultValue: id.replace(/^sector-/, '') });
 
   const getDifficultyStars = (diff: number = 1) => '★'.repeat(diff) + '☆'.repeat(5 - diff);
 
@@ -267,11 +342,11 @@ const StrategicMapView: React.FC<{
           ))}
 
           {/* Region labels */}
-          <text x="20" y="48" className="region-label">FRANCE</text>
-          <text x="42" y="41" className="region-label">GERMANY</text>
-          <text x="54" y="57" className="region-label">AUSTRIA</text>
-          <text x="69" y="35" className="region-label">POLAND</text>
-          <text x="76" y="58" className="region-label">UKRAINE</text>
+          <text x="20" y="48" className="region-label">{translate('hq:region.france')}</text>
+          <text x="42" y="41" className="region-label">{translate('hq:region.germany')}</text>
+          <text x="54" y="57" className="region-label">{translate('hq:region.austria')}</text>
+          <text x="69" y="35" className="region-label">{translate('hq:region.poland')}</text>
+          <text x="76" y="58" className="region-label">{translate('hq:region.ukraine')}</text>
 
           {/* Connection lines */}
           {connections.map((conn, i) => (
@@ -393,7 +468,7 @@ const StrategicMapView: React.FC<{
                   y={t.mapPosition.y + 3.5}
                   className={`territory-name ${t.status}`}
                 >
-                  {mapLabelForTerritory(t.name)}
+                  {mapLabelForTerritory(t.id)}
                 </text>
               </g>
             );
@@ -405,22 +480,22 @@ const StrategicMapView: React.FC<{
             fill="#ef4444"
             opacity="0.38"
           />
-          <text x="91" y="60" className="invasion-label">INVASION</text>
+          <text x="91" y="60" className="invasion-label">{translate('hq:map.invasion')}</text>
         </svg>
 
         <div className="map-status-strip">
-          <span><b>{statusCounts.available}</b> active fronts</span>
-          <span><b>{statusCounts.cleared}</b> secured</span>
-          <span><b>{statusCounts.locked}</b> locked</span>
-          <strong>{urgentTerritory ? `${urgentTerritory.name}: ${urgentTerritory.remainingTimer} turns` : 'No timed crisis'}</strong>
+          <span><b>{statusCounts.available}</b> {translate('hq:map.activeFronts')}</span>
+          <span><b>{statusCounts.cleared}</b> {translate('hq:map.secured')}</span>
+          <span><b>{statusCounts.locked}</b> {translate('hq:map.locked')}</span>
+          <strong>{urgentTerritory ? translate('hq:map.timedCrisis', { territory: urgentTerritory.name, turns: urgentTerritory.remainingTimer }) : translate('hq:map.noTimedCrisis')}</strong>
         </div>
 
         {/* Map legend */}
         <div className="map-legend">
-          <div className="legend-item"><span className="legend-dot cleared"></span> Cleared</div>
-          <div className="legend-item"><span className="legend-dot available"></span> Available</div>
-          <div className="legend-item"><span className="legend-dot locked"></span> Locked</div>
-          <div className="legend-item"><span className="legend-dot failed"></span> Failed</div>
+          <div className="legend-item"><span className="legend-dot cleared"></span> {translate('hq:status.cleared')}</div>
+          <div className="legend-item"><span className="legend-dot available"></span> {translate('hq:status.available')}</div>
+          <div className="legend-item"><span className="legend-dot locked"></span> {translate('hq:status.locked')}</div>
+          <div className="legend-item"><span className="legend-dot failed"></span> {translate('hq:status.failed')}</div>
         </div>
       </div>
 
@@ -429,30 +504,30 @@ const StrategicMapView: React.FC<{
         {selected ? (
           <>
             <h2>{selected.name}</h2>
-            <div className="territory-region">{selected.region}</div>
+            <div className="territory-region">{selected.region ? regionLabel(selected.region, translate) : null}</div>
             <div className="territory-difficulty">
-              Difficulty: <span className="stars">{getDifficultyStars(selected.difficulty)}</span>
+              {translate('hq:territory.difficulty')}: <span className="stars">{getDifficultyStars(selected.difficulty)}</span>
             </div>
             <div className="territory-metrics">
-              <span><b>{selected.status.toUpperCase()}</b>Status</span>
-              <span><b>{selected.remainingTimer ?? '-'}</b>Turns</span>
-              <span><b>{selected.difficulty ?? 1}/5</b>Risk</span>
+              <span><b>{translate(`hq:status.${selected.status}`).toUpperCase()}</b>{translate('hq:territory.status')}</span>
+              <span><b>{selected.remainingTimer ?? '-'}</b>{translate('hq:territory.turns')}</span>
+              <span><b>{selected.difficulty ?? 1}/5</b>{translate('hq:territory.risk')}</span>
             </div>
             <div className="territory-intel">
-              <span><b>ENTRY</b>{selected.status === 'locked' ? 'Blocked' : selected.status === 'available' ? 'Open' : 'Closed'}</span>
-              <span><b>PRESSURE</b>{selected.remainingTimer != null ? `${selected.remainingTimer} turn clock` : 'No active timer'}</span>
-              <span><b>CHAIN</b>{selected.requires?.length ? `${selected.requires.length} prerequisite` : 'Frontline sector'}</span>
+              <span><b>{translate('hq:territory.entry')}</b>{selected.status === 'locked' ? translate('hq:territory.entryBlocked') : selected.status === 'available' ? translate('hq:territory.entryOpen') : translate('hq:territory.entryClosed')}</span>
+              <span><b>{translate('hq:territory.pressure')}</b>{selected.remainingTimer != null ? translate('hq:territory.turnClock', { turns: selected.remainingTimer }) : translate('hq:territory.noActiveTimer')}</span>
+              <span><b>{translate('hq:territory.chain')}</b>{selected.requires?.length ? translate('hq:territory.prerequisiteCount', { count: selected.requires.length }) : translate('hq:territory.frontlineSector')}</span>
             </div>
             <p className="territory-brief">{selected.brief}</p>
 
             <div className="territory-status-badge" data-status={selected.status}>
-              {selected.status.toUpperCase()}
-              {selected.remainingTimer != null && ` • ${selected.remainingTimer} TURNS`}
+              {translate(`hq:status.${selected.status}`).toUpperCase()}
+              {selected.remainingTimer != null && ` • ${translate('hq:territory.turnsBadge', { turns: selected.remainingTimer })}`}
             </div>
 
             {selected.requires && selected.requires.length > 0 && selected.status === 'locked' && (
               <div className="territory-requires">
-                <strong>Requires:</strong>
+                <strong>{translate('hq:territory.requires')}</strong>
                 <ul>
                   {selected.requires.map(reqId => {
                     const req = territories.find(t => t.id === reqId);
@@ -468,37 +543,37 @@ const StrategicMapView: React.FC<{
 
             {selected.status === 'available' && (
               <button className="attack-btn-large" onClick={() => onStartBattle(selected.id)}>
-                ⚔ LAUNCH ATTACK
+                ⚔ {translate('hq:territory.launchAttack')}
               </button>
             )}
 
             {selected.status === 'cleared' && (
               <div className="territory-reward-earned">
-                <span className="checkmark">✓</span> SECTOR SECURED
+                <span className="checkmark">✓</span> {translate('hq:territory.sectorSecured')}
               </div>
             )}
           </>
         ) : (
           <div className="no-selection">
-            <p>Select a territory on the map to view details</p>
+            <p>{translate('hq:map.selectTerritoryHint')}</p>
             <div className="quick-stats">
-              <div>Cleared: {territories.filter(t => t.status === 'cleared').length}</div>
-              <div>Available: {territories.filter(t => t.status === 'available').length}</div>
-              <div>Remaining: {territories.filter(t => t.status === 'locked').length}</div>
+              <div>{translate('hq:status.cleared')}: {territories.filter(t => t.status === 'cleared').length}</div>
+              <div>{translate('hq:status.available')}: {territories.filter(t => t.status === 'available').length}</div>
+              <div>{translate('hq:map.remaining')}: {territories.filter(t => t.status === 'locked').length}</div>
             </div>
             <div className="front-intel-grid">
-              <span><b>PRIMARY THREAT</b>{urgentTerritory?.name ?? 'No timed crisis'}</span>
-              <span><b>NEXT LOCK</b>{nextLockedTerritory?.name ?? 'All routes open'}</span>
-              <span><b>READINESS</b>{statusCounts.available} active fronts</span>
+              <span><b>{translate('hq:map.primaryThreat')}</b>{urgentTerritory?.name ?? translate('hq:map.noTimedCrisis')}</span>
+              <span><b>{translate('hq:map.nextLock')}</b>{nextLockedTerritory?.name ?? translate('hq:map.allRoutesOpen')}</span>
+              <span><b>{translate('hq:map.readiness')}</b>{statusCounts.available} {translate('hq:map.activeFronts')}</span>
             </div>
           </div>
         )}
 
         {/* Operations log */}
         <div className="mini-log">
-          <h4>Recent Events</h4>
+          <h4>{translate('hq:map.recentEvents')}</h4>
           {log.slice(-4).map((entry, idx) => (
-            <div key={idx} className="log-entry">{entry}</div>
+            <div key={idx} className="log-entry">{formatCampaignLogEntry(entry, translate)}</div>
           ))}
         </div>
       </div>
@@ -512,6 +587,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
   log, onStartBattle, onEndTurn, onRecruit, onRefill, onDismiss,
   onResearch, onConvertMoney, onConvertResearch, onBack, popups, onDismissPopups, availableUnits
 }) => {
+  const { t } = useTranslation(['hq', 'common', 'campaign']);
   const [activeTab, setActiveTab] = useState<'map' | 'army' | 'research'>('map');
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
   const switchTab = (tab: 'map' | 'army' | 'research') => {
@@ -600,10 +676,12 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
     ?? researchTopics.find((topic) => !completedResearch.has(topic.id))
     ?? researchTopics[0];
   const focusResearchBranch = focusResearchTopic ? researchBranch(focusResearchTopic) : 'doctrine';
-  const focusResearchUnlocks = focusResearchTopic?.unlocks?.length ? focusResearchTopic.unlocks.join(' / ') : 'Force multiplier';
+  const focusResearchUnlocks = focusResearchTopic?.unlocks?.length
+    ? focusResearchTopic.unlocks.map((id) => i18n.t(`units:${id}.name`, { defaultValue: id })).join(' / ')
+    : t('research.forceMultiplier');
   const focusResearchRequires = focusResearchTopic?.requires?.length
     ? focusResearchTopic.requires.map((id) => researchById.get(id)?.name ?? id).join(' / ')
-    : 'Baseline doctrine';
+    : t('research.baselineDoctrine');
   const focusResearchPathIds = useMemo(() => {
     const pathIds = new Set<string>();
     const collect = (topic?: ResearchTopic) => {
@@ -643,20 +721,20 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
       {/* Top status bar */}
       <div className="hq-topbar">
         <div className="hq-title">
-          <button className="back-btn" onClick={onBack}>◀ MENU</button>
-          <h1>FIELD HQ</h1>
-          <span className="turn-info">TURN {turn} • WAR CLOCK {warClock}</span>
+          <button className="back-btn" onClick={onBack}>◀ {t('topbar.menu')}</button>
+          <h1>{t('topbar.fieldHq')}</h1>
+          <span className="turn-info">{t('topbar.turnClock', { turn, warClock })}</span>
         </div>
         <div className="hq-resources">
           <div className="resource">
             <span className="resource-icon">CR</span>
             <span className="resource-value">{Math.round(money)}</span>
-            <span className="resource-label">Credits</span>
+            <span className="resource-label">{t('topbar.credits')}</span>
           </div>
           <div className="resource">
             <span className="resource-icon">RP</span>
             <span className="resource-value">{Math.round(research)}</span>
-            <span className="resource-label">Research</span>
+            <span className="resource-label">{t('topbar.research')}</span>
           </div>
           <div className="resource">
             <span className="resource-icon">SP</span>
@@ -665,7 +743,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
           </div>
         </div>
         <button className="end-turn-btn" onClick={onEndTurn}>
-          END TURN ▶
+          {t('topbar.endTurn')} ▶
         </button>
       </div>
 
@@ -673,57 +751,57 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
       <div className="hq-tabs">
         <button className={`tab ${activeTab === 'map' ? 'active' : ''}`} data-active={activeTab === 'map'} style={activeTab === 'map' ? activeTabStyle : inactiveTabStyle} onClick={() => switchTab('map')}>
           <span className="tab-code">OPS</span>
-          <span>Territories</span>
+          <span>{t('topbar.territories')}</span>
         </button>
         <button className={`tab ${activeTab === 'army' ? 'active' : ''}`} data-active={activeTab === 'army'} style={activeTab === 'army' ? activeTabStyle : inactiveTabStyle} onClick={() => switchTab('army')}>
           <span className="tab-code">TOE</span>
-          <span>Army ({army.length})</span>
+          <span>{t('topbar.armyCount', { count: army.length })}</span>
         </button>
         <button className={`tab ${activeTab === 'research' ? 'active' : ''}`} data-active={activeTab === 'research'} style={activeTab === 'research' ? activeTabStyle : inactiveTabStyle} onClick={() => switchTab('research')}>
           <span className="tab-code">R&amp;D</span>
-          <span>Research</span>
+          <span>{t('topbar.research')}</span>
         </button>
       </div>
 
       {/* Content area */}
       <div className="hq-content">
         {latestOutcomeReport && (
-          <section className={`hq-outcome hq-outcome-${latestOutcomeReport.kind}`} aria-label="Latest operation outcome">
-            <div className="hq-outcome-code">{latestOutcomeReport.kind === 'loss' ? 'RED STATUS' : 'SECURED'}</div>
+          <section className={`hq-outcome hq-outcome-${latestOutcomeReport.kind}`} aria-label={t('outcome.latestOutcomeAriaLabel')}>
+            <div className="hq-outcome-code">{latestOutcomeReport.kind === 'loss' ? t('outcome.redStatus') : t('outcome.secured')}</div>
             <div>
-              <span>OPERATION RESULT</span>
-              <h2>{latestOutcomeReport.title}</h2>
-              <p>{latestOutcomeReport.body}</p>
+              <span>{t('outcome.operationResult')}</span>
+              <h2>{popupTitle(latestOutcomeReport, t)}</h2>
+              <p>{popupBody(latestOutcomeReport, t)}</p>
             </div>
             <div className="hq-outcome-actions">
-              <b>{latestOutcomeReport.kind === 'loss' ? `${army.length} UNITS READY` : `${Math.round(money)} CR`}</b>
-              <small>{latestOutcomeReport.kind === 'loss' ? 'Open Army if force strength is low' : 'Rewards posted to HQ reserves'}</small>
+              <b>{latestOutcomeReport.kind === 'loss' ? t('outcome.unitsReady', { count: army.length }) : `${Math.round(money)} CR`}</b>
+              <small>{latestOutcomeReport.kind === 'loss' ? t('outcome.openArmyHint') : t('outcome.rewardsPostedHint')}</small>
               {onDismissPopups && (
-                <button onClick={onDismissPopups}>ACKNOWLEDGE</button>
+                <button onClick={onDismissPopups}>{t('outcome.acknowledge')}</button>
               )}
             </div>
           </section>
         )}
 
         {visibleReports.length > 0 && (
-          <div className="hq-alerts" role="alertdialog" aria-label="Operation reports">
+          <div className="hq-alerts" role="alertdialog" aria-label={t('outcome.operationReportsAriaLabel')}>
             <div className="hq-alerts-header">
-              <span>OPERATION REPORTS</span>
+              <span>{t('outcome.operationReports')}</span>
               <b>{popups?.length ?? visibleReports.length}</b>
             </div>
             <div className="hq-alert-list">
               {visibleReports.map((popup, index) => (
-                <div key={`${popup.title}-${index}`} className={`hq-alert hq-alert-${popup.kind}`}>
-                  <strong>{popup.title}</strong>
-                  <span>{popup.body}</span>
+                <div key={`${popup.key}-${index}`} className={`hq-alert hq-alert-${popup.kind}`}>
+                  <strong>{popupTitle(popup, t)}</strong>
+                  <span>{popupBody(popup, t)}</span>
                 </div>
               ))}
             </div>
             {archivedReportCount > 0 && (
-              <small className="hq-alert-archive">+{archivedReportCount} earlier reports</small>
+              <small className="hq-alert-archive">{t('outcome.earlierReports', { count: archivedReportCount })}</small>
             )}
             {onDismissPopups && (
-              <button className="dismiss-alerts" onClick={onDismissPopups}>CLEAR REPORTS</button>
+              <button className="dismiss-alerts" onClick={onDismissPopups}>{t('outcome.clearReports')}</button>
             )}
           </div>
         )}
@@ -743,19 +821,19 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
             <div className="army-roster">
               <div className="view-heading">
                 <div>
-                  <span>FORCE ROSTER</span>
-                  <h3>YOUR FORCES</h3>
+                  <span>{t('army.forceRoster')}</span>
+                  <h3>{t('army.yourForces')}</h3>
                 </div>
                 <div className="army-kpis">
-                  <span><b>{army.length}</b> ready</span>
-                  <span><b>{reserves.length}</b> transit</span>
-                  <span><b>{woundedUnits}</b> damaged</span>
+                  <span><b>{army.length}</b> {t('army.ready')}</span>
+                  <span><b>{reserves.length}</b> {t('army.transit')}</span>
+                  <span><b>{woundedUnits}</b> {t('army.damaged')}</span>
                 </div>
               </div>
               {army.length > 0 && (
                 <div className="army-type-strip">
                   {Object.entries(armyByType).map(([type, count]) => (
-                    <span key={type}><b>{count}</b>{type}</span>
+                    <span key={type}><b>{count}</b>{t(`common:unitType.${type}`)}</span>
                   ))}
                 </div>
               )}
@@ -766,9 +844,9 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                     <span>{forceFocusUnit.name.slice(0, 1)}</span>
                   </div>
                   <div>
-                    <span>FORCE ANCHOR</span>
+                    <span>{t('army.forceAnchor')}</span>
                     <h4>{forceFocusUnit.name}</h4>
-                    <p>{armySectionLabel(armySectionKey(forceFocusUnit))} · {forceFocusUnit.tier} · {forceFocusHealth}% combat ready</p>
+                    <p>{armySectionLabel(armySectionKey(forceFocusUnit), t)} · {t(`army.tier.${forceFocusUnit.tier}`)} · {t('army.combatReadyPct', { pct: forceFocusHealth })}</p>
                   </div>
                   <div className="force-focus-meter">
                     <b>{forceFocusUnit.currentHealth}/{forceFocusUnit.maxHealth}</b>
@@ -777,17 +855,17 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                 </section>
               )}
               {army.length === 0 ? (
-                <p className="empty-msg">No units recruited yet</p>
+                <p className="empty-msg">{t('army.noUnitsYet')}</p>
               ) : (
                 armySections.map(({ section, units }) => (
                   <section key={section} className={`army-section army-section-${section}`}>
                     <div className="army-section-heading">
-                      <span>{armySectionLabel(section)}</span>
+                      <span>{armySectionLabel(section, t)}</span>
                       <b>{units.length}</b>
                     </div>
                     {units.map((u) => {
                       const healthPercent = Math.max(0, Math.min(100, Math.round((u.currentHealth / u.maxHealth) * 100)));
-                      const readiness = healthPercent < 55 ? 'DAMAGED' : u.experience >= 60 ? 'VETERAN' : 'READY';
+                      const readinessKey = healthPercent < 55 ? 'damaged' : u.experience >= 60 ? 'veteran' : 'ready';
                       return (
                         <div key={u.id} className={`unit-row unit-row-${u.unitType} unit-row-section-${section} ${healthPercent < 70 ? 'unit-row-damaged' : ''}`}>
                           <div className={`roster-token roster-token-${u.unitType}`}>
@@ -796,7 +874,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                           </div>
                           <div className="unit-info">
                             <span className="unit-name">{u.name}</span>
-                            <span className="unit-tier">{u.tier} · {u.unitType}</span>
+                            <span className="unit-tier">{t(`army.tier.${u.tier}`)} · {t(`common:unitType.${u.unitType}`)}</span>
                           </div>
                           <div className="unit-stats">
                             <span className="stat-with-bar">
@@ -804,11 +882,11 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                               <i style={{ '--stat-percent': `${healthPercent}%` } as React.CSSProperties} />
                             </span>
                             <span><b>XP</b> {u.experience}</span>
-                            <span className={`readiness-chip readiness-${readiness.toLowerCase()}`}><b>{readiness}</b>{u.unitType}</span>
+                            <span className={`readiness-chip readiness-${readinessKey}`}><b>{t(`army.readiness.${readinessKey}`)}</b>{t(`common:unitType.${u.unitType}`)}</span>
                           </div>
                           <div className="unit-actions">
-                            <button onClick={() => onRefill(u.id, 'rookie')}>REFILL</button>
-                            <button onClick={() => onDismiss(u.id)}>DISMISS</button>
+                            <button onClick={() => onRefill(u.id, 'rookie')}>{t('army.refill')}</button>
+                            <button onClick={() => onDismiss(u.id)}>{t('army.dismiss')}</button>
                           </div>
                         </div>
                       );
@@ -818,7 +896,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               )}
               {reserves.length > 0 && (
                 <div className="reserve-roster">
-                  <h3>IN TRANSIT</h3>
+                  <h3>{t('army.inTransit')}</h3>
                   {reserves.map((u) => (
                     <div key={u.id} className="unit-row reserve-row">
                       <div className={`roster-token roster-token-${u.unitType}`}>
@@ -827,14 +905,14 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                       </div>
                       <div className="unit-info">
                         <span className="unit-name">{u.name}</span>
-                        <span className="unit-tier">{u.tier} · {u.unitType}</span>
+                        <span className="unit-tier">{t(`army.tier.${u.tier}`)} · {t(`common:unitType.${u.unitType}`)}</span>
                       </div>
                       <div className="unit-stats">
                         <span className="stat-with-bar">
                           <b>HP</b> {u.currentHealth}/{u.maxHealth}
                           <i style={{ '--stat-percent': `${Math.max(0, Math.min(100, Math.round((u.currentHealth / u.maxHealth) * 100)))}%` } as React.CSSProperties} />
                         </span>
-                        <span><b>READY</b> T{u.availableOnTurn ?? turn + 1}</span>
+                        <span><b>{t('army.readiness.ready')}</b> T{u.availableOnTurn ?? turn + 1}</span>
                       </div>
                     </div>
                   ))}
@@ -842,7 +920,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               )}
             </div>
             <div className="recruit-panel">
-              <h3>RECRUIT</h3>
+              <h3>{t('army.recruit')}</h3>
               <div className="recruit-options">
                 {availableUnits.map((u) => (
                   <button
@@ -856,21 +934,21 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                     <span>{u.name}</span>
                     <span className="recruit-meta">
                       {!u.unlocked
-                        ? 'LOCKED'
+                        ? t('army.locked')
                         : u.unitType === 'hero' && u.ownedCount > 0
-                          ? 'IN FORCE'
+                          ? t('army.inForce')
                           : u.unitType === 'hero' && u.reserveCount > 0
-                            ? 'IN TRANSIT'
-                            : `${u.cost} CR · ${u.canAfford ? 'T+2' : 'NEED FUNDS'}`}
+                            ? t('army.inTransit')
+                            : `${u.cost} CR · ${u.canAfford ? t('army.turnPlus2') : t('army.needFunds')}`}
                     </span>
                   </button>
                 ))}
               </div>
               <div className="recruit-intel">
-                <span>FORCE PLAN</span>
-                <b>{forceFocusUnit ? armySectionLabel(armySectionKey(forceFocusUnit)) : 'RESERVE'} ANCHOR</b>
-                <p>{army.length} field units · {woundedUnits} damaged · {reserves.length} in transit</p>
-                <i>Next purchase should fill the weakest section, not duplicate the anchor.</i>
+                <span>{t('army.forcePlan')}</span>
+                <b>{forceFocusUnit ? armySectionLabel(armySectionKey(forceFocusUnit), t) : t('army.reserve')} {t('army.anchor')}</b>
+                <p>{t('army.fieldUnitsSummary', { field: army.length, damaged: woundedUnits, transit: reserves.length })}</p>
+                <i>{t('army.nextPurchaseHint')}</i>
               </div>
             </div>
           </div>
@@ -882,10 +960,10 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               <div className="research-status-main">
                 {currentResearch ? (
                   <div className="active-research">
-                    <h3>CURRENTLY RESEARCHING</h3>
+                    <h3>{t('research.currentlyResearching')}</h3>
                     <div className="research-progress">
                       <span className="research-name">{activeResearchTopic?.name ?? currentResearch.topicId}</span>
-                      <span className="research-remaining">{currentResearch.remaining} RP remaining</span>
+                      <span className="research-remaining">{t('research.rpRemaining', { count: currentResearch.remaining })}</span>
                     </div>
                     <div className="research-progress-bar" aria-hidden="true">
                       <i style={{ '--research-progress': `${activeResearchProgress}%` } as React.CSSProperties} />
@@ -893,28 +971,28 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                   </div>
                 ) : (
                   <div className="no-research">
-                    <h3>NO ACTIVE RESEARCH</h3>
-                    <p>Select a topic below to begin research</p>
+                    <h3>{t('research.noActiveResearch')}</h3>
+                    <p>{t('research.selectTopicHint')}</p>
                   </div>
                 )}
               </div>
               <div className="research-kpis">
-                <span><b>{Math.round(research)}</b>RP banked</span>
-                <span><b>{completedResearch.size}</b>complete</span>
-                <span><b>{readyResearchCount}</b>ready</span>
+                <span><b>{Math.round(research)}</b>{t('research.rpBanked')}</span>
+                <span><b>{completedResearch.size}</b>{t('research.complete')}</span>
+                <span><b>{readyResearchCount}</b>{t('research.ready')}</span>
               </div>
             </div>
             <div className="research-tree">
               <div className="research-network-header">
-                <h3>RESEARCH NETWORK</h3>
+                <h3>{t('research.network')}</h3>
                 {focusResearchTopic && (
                   <div className={`research-focus research-focus-${focusResearchBranch}`}>
-                    <span>{currentResearch ? 'ACTIVE PROJECT' : 'RECOMMENDED NEXT'}</span>
+                    <span>{currentResearch ? t('research.activeProject') : t('research.recommendedNext')}</span>
                     <b>{focusResearchTopic.name}</b>
-                    <small>{researchBranchLabel(focusResearchBranch)} · {focusResearchTopic.cost} RP</small>
+                    <small>{researchBranchLabel(focusResearchBranch, t)} · {focusResearchTopic.cost} RP</small>
                     <div>
-                      <i>UNLOCKS</i><strong>{focusResearchUnlocks}</strong>
-                      <i>REQUIRES</i><strong>{focusResearchRequires}</strong>
+                      <i>{t('research.unlocks')}</i><strong>{focusResearchUnlocks}</strong>
+                      <i>{t('research.requires')}</i><strong>{focusResearchRequires}</strong>
                     </div>
                   </div>
                 )}
@@ -926,7 +1004,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                 {researchColumns.map((topics, tierIndex) => (
                   <section key={tierIndex} className={`research-column research-column-tier-${tierIndex + 1}`}>
                     <div className="research-column-header">
-                      <span>TIER {tierIndex + 1}</span>
+                      <span>{t('research.tier', { n: tierIndex + 1 })}</span>
                       <b>{topics.length}</b>
                     </div>
                     {topics.map((topic) => {
@@ -937,7 +1015,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                       const isLocked = missingRequirements.length > 0;
                       const isWaiting = Boolean(currentResearch) && !isActive;
                       const isRecommended = topic.id === recommendedResearchId && !isCompleted && !isActive && !isLocked && !isWaiting;
-                      const stateLabel = isCompleted ? 'DONE' : isActive ? 'ACTIVE' : isLocked ? 'LOCKED' : isWaiting ? 'WAIT' : isRecommended ? 'PRIORITY' : 'READY';
+                      const stateKey = isCompleted ? 'done' : isActive ? 'active' : isLocked ? 'locked' : isWaiting ? 'wait' : isRecommended ? 'priority' : 'ready';
                       const branch = researchBranch(topic);
                       const isPathNode = focusResearchPathIds.has(topic.id);
                       return (
@@ -945,27 +1023,27 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                           key={topic.id}
                           className={`research-card research-branch-${branch} ${isPathNode ? 'research-path-node' : ''} ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked-node' : ''} ${isWaiting ? 'waiting-node' : ''} ${isRecommended ? 'recommended-node' : ''} ${!isCompleted && !isActive && !isLocked && !isWaiting ? 'ready-node' : ''}`}
                         >
-                          <span className="research-branch-label">{researchBranchLabel(branch)}</span>
+                          <span className="research-branch-label">{researchBranchLabel(branch, t)}</span>
                           <span className="research-node-index">{topic.id.toUpperCase()}</span>
-                          <span className="research-node-state">{stateLabel}</span>
+                          <span className="research-node-state">{t(`research.state.${stateKey}`)}</span>
                           <h4>{topic.name}</h4>
                           <p>{topic.description}</p>
                           <div className="research-requirements">
-                            <span>REQ</span>
-                            <b>{requirementNames.length ? requirementNames.join(' / ') : 'BASELINE'}</b>
+                            <span>{t('research.req')}</span>
+                            <b>{requirementNames.length ? requirementNames.join(' / ') : t('research.baseline')}</b>
                           </div>
-                          <div className="research-cost">Cost: {topic.cost} RP</div>
+                          <div className="research-cost">{t('research.cost', { cost: topic.cost })}</div>
                           {isCompleted ? (
-                            <span className="research-done">COMPLETED</span>
+                            <span className="research-done">{t('research.completed')}</span>
                           ) : isActive ? (
-                            <span className="research-progress-label">IN PROGRESS</span>
+                            <span className="research-progress-label">{t('research.inProgress')}</span>
                           ) : (
                             <button
                               className="research-btn"
                               disabled={!!currentResearch || isLocked}
                               onClick={() => onResearch(topic.id)}
                             >
-                              {isLocked ? `LOCKED: ${missingRequirements.map((id) => researchById.get(id)?.name ?? id).join(' / ')}` : isRecommended ? 'QUEUE PRIORITY PROJECT' : 'QUEUE PROJECT'}
+                              {isLocked ? t('research.lockedBy', { list: missingRequirements.map((id) => researchById.get(id)?.name ?? id).join(' / ') }) : isRecommended ? t('research.queuePriorityProject') : t('research.queueProject')}
                             </button>
                           )}
                         </div>
@@ -976,7 +1054,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               </div>
             </div>
             <div className="sp-conversion">
-              <h3>CONVERT STRATEGIC POINTS</h3>
+              <h3>{t('research.convertPoints')}</h3>
               <div className="conversion-buttons">
                 <button onClick={() => onConvertMoney(5)} disabled={strategic < 5}>
                   5 SP → $5

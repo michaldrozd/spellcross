@@ -1,0 +1,39 @@
+{
+  "title": "SPELLCROSS",
+  "subtitle": "POSLEDNÁ BITKA",
+  "intel": {
+    "campaignLink": "Spojenie s kampaňou",
+    "slotReady": "Slot {{slot}} pripravený",
+    "noActiveCampaign": "Žiadna aktívna kampaň",
+    "statusLine": "Kolo {{turn}} / {{territories}} sektorov / {{battleStatus}}",
+    "battlePending": "bitka čaká",
+    "fieldHq": "poľné veliteľstvo",
+    "savedSlotsDetected": "Nájdených uložených slotov: {{count}}"
+  },
+  "buttons": {
+    "continue": "Pokračovať",
+    "loadGame": "Načítať hru",
+    "newGame": "Nová hra",
+    "settings": "Nastavenia",
+    "manual": "Manuál",
+    "turnDetail": "Kolo {{turn}}"
+  },
+  "footer": {
+    "copyright": "Spellcross Remake © 2025",
+    "version": "v0.1.0 Alpha"
+  },
+  "slotModal": {
+    "title": "Vyber slot",
+    "slotLabel": "Slot {{slot}}",
+    "turnLabel": "Kolo {{turn}}",
+    "moneyLine": "${{money}} | {{territories}} území",
+    "empty": "- Prázdny -",
+    "load": "Načítať",
+    "newGame": "Nová hra",
+    "back": "Späť"
+  },
+  "language": {
+    "en": "EN",
+    "sk": "SK"
+  }
+}

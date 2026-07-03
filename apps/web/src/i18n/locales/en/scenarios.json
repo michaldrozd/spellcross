@@ -1,0 +1,186 @@
+{
+  "evacuation-run": {
+    "name": "Evacuation Run",
+    "brief": "Punch through raiders and reach the evac signal before the line collapses.",
+    "objectives": {
+      "reach-evac": "Move any allied unit onto the evac flare.",
+      "keep-commander": "Do not lose Captain Alexander."
+    }
+  },
+  "crossroads-defense": {
+    "name": "Crossroads Defense",
+    "brief": "Hold a ruined hamlet against a probing attack.",
+    "objectives": {
+      "eliminate": "Destroy the enemy spearhead.",
+      "protect-bridge": "Hold the central square for 4 rounds."
+    }
+  },
+  "enemy-counterstrike": {
+    "name": "Hamlet Counterattack",
+    "brief": "Enemy forces push back toward the crossroads. Hold the square until they break.",
+    "objectives": {
+      "hold-square": "Hold the town square for 3 rounds.",
+      "protect-captain": "Keep Captain Alexander alive."
+    }
+  },
+  "bridgehead": {
+    "name": "Bridgehead Raid",
+    "brief": "Plant charges on the bridge span or rout its guard before the assault window closes.",
+    "objectives": {
+      "eliminate": "Destroy or rout all defenders.",
+      "reach-bridge": "Plant charges on the bridge span."
+    }
+  },
+  "outpost-night": {
+    "name": "Forward Outpost Night Raid",
+    "brief": "Break the siege line under cover of darkness and silence enemy sorcery.",
+    "objectives": {
+      "eliminate-commander": "Eliminate the enemy coven leaders.",
+      "hold-relay": "Secure the comms relay for 3 rounds."
+    }
+  },
+  "black-spire-assault": {
+    "name": "Black Spire Assault",
+    "brief": "Crash the ritual spire, break the beasts, and stop the portal ignition.",
+    "objectives": {
+      "eliminate-portal": "Destroy the ritual guardians.",
+      "hold-spire": "Hold the spire grounds for 3 rounds."
+    }
+  },
+  "city-sector-paris": {
+    "name": "Paris Outskirts",
+    "brief": "Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.",
+    "objectives": {
+      "sector-paris-reach": "Move any unit to the extraction flare.",
+      "sector-paris-protect": "Do not lose Captain Alexander."
+    }
+  },
+  "city-sector-lyon": {
+    "name": "Lyon Industrial Zone",
+    "brief": "Hold the factory strongpoint against the demonic raid on the arms works.",
+    "objectives": {
+      "sector-lyon-hold": "Hold the central strongpoint for 3 rounds.",
+      "sector-lyon-protect": "Keep Captain Alexander alive."
+    }
+  },
+  "city-sector-strasbourg": {
+    "name": "Strasbourg Crossing",
+    "brief": "Force the Rhine: rout the bridge guard or plant charges before the assault window closes.",
+    "objectives": {
+      "sector-strasbourg-eliminate": "Destroy or rout the defenders.",
+      "sector-strasbourg-reach": "Plant charges at the far objective."
+    }
+  },
+  "city-sector-munich": {
+    "name": "Munich Defensive Line",
+    "brief": "Raid the forward line under cover of darkness and silence the enemy sorcery.",
+    "objectives": {
+      "sector-munich-eliminate": "Silence the enemy coven leaders.",
+      "sector-munich-hold": "Secure the relay for 3 rounds."
+    }
+  },
+  "city-sector-zurich": {
+    "name": "Alpine Fortress",
+    "brief": "Hold the mountain pass strongpoint while the bunkers are cleared.",
+    "objectives": {
+      "sector-zurich-hold": "Hold the central strongpoint for 3 rounds.",
+      "sector-zurich-protect": "Keep Captain Alexander alive."
+    }
+  },
+  "city-sector-vienna": {
+    "name": "Vienna Siege",
+    "brief": "Break the siege of the old city: rout the besiegers and breach to the inner ring.",
+    "objectives": {
+      "sector-vienna-eliminate": "Destroy or rout the defenders.",
+      "sector-vienna-reach": "Plant charges at the far objective."
+    }
+  },
+  "city-sector-brussels": {
+    "name": "Brussels Command",
+    "brief": "Extract the classified intel to the evac point before the HQ falls.",
+    "objectives": {
+      "sector-brussels-reach": "Move any unit to the extraction flare.",
+      "sector-brussels-protect": "Do not lose Captain Alexander."
+    }
+  },
+  "city-sector-amsterdam": {
+    "name": "Amsterdam Harbor",
+    "brief": "Fight across the canals and seize the far quay through the harbor fog.",
+    "objectives": {
+      "sector-amsterdam-eliminate": "Destroy or rout the defenders.",
+      "sector-amsterdam-reach": "Plant charges at the far objective."
+    }
+  },
+  "city-sector-copenhagen": {
+    "name": "Copenhagen Strait",
+    "brief": "Hold the coastal strongpoint and deny the Baltic flanking approach.",
+    "objectives": {
+      "sector-copenhagen-hold": "Hold the central strongpoint for 3 rounds.",
+      "sector-copenhagen-protect": "Keep Captain Alexander alive."
+    }
+  },
+  "city-sector-prague": {
+    "name": "Prague Old Town",
+    "brief": "Raid the old-town warren by night and disrupt the dark ritual.",
+    "objectives": {
+      "sector-prague-eliminate": "Silence the enemy coven leaders.",
+      "sector-prague-hold": "Secure the relay for 3 rounds."
+    }
+  },
+  "city-sector-berlin": {
+    "name": "Berlin Ruins",
+    "brief": "Storm the ruined capital through the fog and break the ritual guardians.",
+    "objectives": {
+      "sector-berlin-eliminate": "Destroy the ritual guardians.",
+      "sector-berlin-hold": "Hold the spire grounds for 3 rounds."
+    }
+  },
+  "city-sector-warsaw": {
+    "name": "Warsaw Front",
+    "brief": "Break the eastern line through the rubble and seize the far strongpoint.",
+    "objectives": {
+      "sector-warsaw-eliminate": "Destroy or rout the defenders.",
+      "sector-warsaw-reach": "Plant charges at the far objective."
+    }
+  },
+  "city-sector-krakow": {
+    "name": "Krakow Citadel",
+    "brief": "Assault the citadel turned portal-nexus and hold its grounds to seal it.",
+    "objectives": {
+      "sector-krakow-eliminate": "Destroy the ritual guardians.",
+      "sector-krakow-hold": "Hold the spire grounds for 3 rounds."
+    }
+  },
+  "city-sector-kyiv": {
+    "name": "Kyiv Siege",
+    "brief": "Night raid through the ruined metropolis to silence the coven and hold the relay.",
+    "objectives": {
+      "sector-kyiv-eliminate": "Silence the enemy coven leaders.",
+      "sector-kyiv-hold": "Secure the relay for 3 rounds."
+    }
+  },
+  "city-sector-carpathian": {
+    "name": "Carpathian Pass",
+    "brief": "Hold the high pass strongpoint and clear the patrol-ridden ridges.",
+    "objectives": {
+      "sector-carpathian-hold": "Hold the central strongpoint for 3 rounds.",
+      "sector-carpathian-protect": "Keep Captain Alexander alive."
+    }
+  },
+  "city-sector-blacksea": {
+    "name": "Black Sea Coast",
+    "brief": "Push along the foggy coast, rout the shore-spawn and seize the far cape.",
+    "objectives": {
+      "sector-blacksea-eliminate": "Destroy or rout the defenders.",
+      "sector-blacksea-reach": "Plant charges at the far objective."
+    }
+  },
+  "city-sector-rift": {
+    "name": "The Eastern Rift",
+    "brief": "Cross the scorched rift, destroy the guardians and hold the portal grounds.",
+    "objectives": {
+      "sector-rift-eliminate": "Destroy the ritual guardians.",
+      "sector-rift-hold": "Hold the spire grounds for 3 rounds."
+    }
+  }
+}

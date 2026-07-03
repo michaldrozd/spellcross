@@ -73,7 +73,7 @@ test('UI-driven tactical play: embark, move, disembark, attack, AI reacts', asyn
   // Attack an enemy by clicking it
   const attacked = await page.evaluate(() => (window as any).__battleControl?.attackFirst?.());
   expect(attacked).toBeTruthy();
-  await expect(page.locator('.log-entries')).toContainText(/hit|missed/);
+  await expect(page.locator('.log-entries')).toContainText(/Hit:|Miss:/);
 
   // End turn and verify AI turn processed
   await page.evaluate(() => (window as any).__battleControl?.endTurn?.());

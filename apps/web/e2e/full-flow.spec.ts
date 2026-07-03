@@ -37,7 +37,7 @@ test('research, battle entry, retreat, and autosave', async ({ page }) => {
   await expect(page.getByRole('button', { name: /^Start Battle$/i })).toBeVisible();
   const canvas = page.locator('canvas').first();
   await expect(canvas).toBeVisible();
-  await expect(page.getByText(/Evacuation Run/i)).toBeVisible();
+  await expect(page.getByText(/Paris Outskirts/i)).toBeVisible();
 
   // Retreat back to strategic
   const retreatButton = page.getByRole('button', { name: /^Retreat$/ });

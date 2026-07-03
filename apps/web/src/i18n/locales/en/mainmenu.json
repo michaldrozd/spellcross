@@ -1,0 +1,39 @@
+{
+  "title": "SPELLCROSS",
+  "subtitle": "THE LAST BATTLE",
+  "intel": {
+    "campaignLink": "Campaign Link",
+    "slotReady": "Slot {{slot}} ready",
+    "noActiveCampaign": "No active campaign",
+    "statusLine": "Turn {{turn}} / {{territories}} sectors / {{battleStatus}}",
+    "battlePending": "battle pending",
+    "fieldHq": "field HQ",
+    "savedSlotsDetected": "{{count}} saved slots detected"
+  },
+  "buttons": {
+    "continue": "Continue",
+    "loadGame": "Load Game",
+    "newGame": "New Game",
+    "settings": "Settings",
+    "manual": "Manual",
+    "turnDetail": "Turn {{turn}}"
+  },
+  "footer": {
+    "copyright": "Spellcross Remake © 2025",
+    "version": "v0.1.0 Alpha"
+  },
+  "slotModal": {
+    "title": "Select Slot",
+    "slotLabel": "Slot {{slot}}",
+    "turnLabel": "Turn {{turn}}",
+    "moneyLine": "${{money}} | {{territories}} territories",
+    "empty": "- Empty -",
+    "load": "Load",
+    "newGame": "New Game",
+    "back": "Back"
+  },
+  "language": {
+    "en": "EN",
+    "sk": "SK"
+  }
+}

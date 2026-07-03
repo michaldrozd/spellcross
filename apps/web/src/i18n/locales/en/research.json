@@ -1,0 +1,46 @@
+{
+  "optics-i": {
+    "name": "Optics I",
+    "description": "Scoped sights and rangefinders improve hit odds at distance."
+  },
+  "optics-ii": {
+    "name": "Optics II",
+    "description": "Thermal and low-light sights improve reconnaissance in poor visibility."
+  },
+  "armor-upfit": {
+    "name": "Composite Plating",
+    "description": "Layered armor kits for frontline vehicles."
+  },
+  "esprit-de-corps": {
+    "name": "Esprit de Corps",
+    "description": "Unit cohesion drills that boost morale recovery."
+  },
+  "siege-ops": {
+    "name": "Siege Operations",
+    "description": "Ballistics tables and spotter protocols for heavy artillery."
+  },
+  "sanctified-ammo": {
+    "name": "Sanctified Ammunition",
+    "description": "Blessed rounds to disrupt spectral enemies."
+  },
+  "mobile-supply": {
+    "name": "Mobile Supply Corps",
+    "description": "Field supply trucks to resupply ammo mid-battle."
+  },
+  "arcane-shielding": {
+    "name": "Arcane Shielding",
+    "description": "Reinforced plating and wards for late-war artillery and SAM cover."
+  },
+  "wyrm-slayer": {
+    "name": "Wyrm Slayer Doctrine",
+    "description": "Anti-beast tactics and tracking for flying horrors."
+  },
+  "field-fortification": {
+    "name": "Field Fortification",
+    "description": "Entrenching drills and body armor: +1 armor to all infantry you field."
+  },
+  "extended-barrels": {
+    "name": "Extended Barrels",
+    "description": "Longer gun tubes and better charges: +1 range to all artillery you field."
+  }
+}

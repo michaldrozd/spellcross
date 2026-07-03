@@ -179,7 +179,7 @@ function generate(cfg: CityConfig): Generated {
       if (rng() < 0.7 && dq !== 0) cq += dq; else if (dr !== 0) cr += dr; else cq += dq;
     }
     roadPath.push({ q: tq, r: tr });
-    for (const c of roadPath) if (inB(c.q, c.r, w, h)) kind[c.r][c.q] = kind[c.r][c.q] === 'water' ? 'road' : 'road';
+    for (const c of roadPath) if (inB(c.q, c.r, w, h)) kind[c.r][c.q] = 'road';
   }
 
   // build tiles

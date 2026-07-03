@@ -1,16 +1,17 @@
 import './styles.css';
-
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { Stage, Graphics, Sprite, Text } from '@pixi/react';
 import * as PIXI from 'pixi.js';
 import type { ChangeEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import i18n from './i18n/index.js';
 import { BattlefieldStage, AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
 import { MainMenu } from './components/MainMenu.js';
+import type { SaveSlot } from './components/MainMenu.js';
 import { StrategicHQ } from './components/StrategicHQ.js';
 import { AudioManager } from './services/AudioManager.js';
 import { ToastContainer, showToast } from './components/Toast.js';
-
 import { OverwatchButton } from './components/OverwatchButton.js';
 import { SupplyButton } from './components/SupplyButton.js';
 import { HealButton } from './components/HealButton.js';
@@ -18,7 +19,9 @@ import { ObjectiveHud } from './components/ObjectiveHud.js';
 import { unitPortrait } from './components/unitVisuals.js';
 import {
   applyBattleOutcome,
+  calculateAttackRange,
   calculateHitChance,
+  CampaignError,
   canAffordAttack,
   canWeaponTarget,
   convertStrategicToMoney,
@@ -28,8 +31,9 @@ import {
   endStrategicTurn,
   estimateHitDamage,
   evaluateBattleOutcome,
-  hexWithinRange,
   isoDistance as axialDistance,
+  isoNeighbors,
+  isoWithinRange,
   coordinateKey,
   hydrateCampaignState,
   isObjectiveMet,
@@ -53,7 +57,6 @@ import {
 } from '@spellcross/core';
 import type { BattleEvent, BattlefieldMap, CampaignState, HexCoordinate, TacticalBattleState, UnitInstance } from '@spellcross/core';
 import { validatedStarterBundle } from '@spellcross/data';
-
 const bundle = validatedStarterBundle;
 const CAMPAIGN_STORAGE_KEY = 'spellcross:campaign-state';
 const CAMPAIGN_SLOT_KEY = 'spellcross:campaign-slot';
@@ -74,7 +77,6 @@ const terrainTextures: Record<string, PIXI.Texture> = {
   swamp: isoTileTexture,
   structure: isoTileTexture
 };
-
 const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
   const dq = to.q - from.q;
   const dr = to.r - from.r;
@@ -88,7 +90,6 @@ const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
   if (dq < 0 && dr < 0) return 7;
   return 0;
 };
-
 const movingUnitDuration = (moving: MovingUnit) => {
   const movementDuration = (moving.path.length - 1) * moving.stepDuration;
   const segmentTurnDuration = moving.segmentTurnDuration ?? 0;
@@ -102,7 +103,6 @@ const movingUnitDuration = (moving: MovingUnit) => {
   }
   return (moving.preAlignDuration ?? 0) + movementDuration + turnDuration;
 };
-
 // When the glide reaches a given path tile, accounting for segment-turn pauses (M113) so the reaction
 // muzzle/HIT lands exactly as the sprite arrives there rather than a corner-turn too early.
 const arrivalDelayForPath = (moving: MovingUnit, coord: HexCoordinate) => {
@@ -118,12 +118,9 @@ const arrivalDelayForPath = (moving: MovingUnit, coord: HexCoordinate) => {
   }
   return t;
 };
-
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
-
 // Man-portable "artillery" that is actually a foot crew (mortar team) — walks, doesn't track.
 const isFootCrew = (definitionId: string) => definitionId.includes('mortar');
-
 // Pick the realistic movement-audio profile for a unit: air = rotor chop, supply trucks = wheeled
 // engine + tyres, self-propelled guns/tanks/APCs = diesel engine + track clatter, foot crews and
 // infantry = footsteps.
@@ -133,7 +130,6 @@ const movementProfileFor = (unitType: string, isTruck: boolean, definitionId = '
       : isFootCrew(definitionId) ? 'foot'
         : (unitType === 'vehicle' || unitType === 'artillery') ? 'track'
           : 'foot';
-
 const unitTextures: Record<string, PIXI.Texture> = {
   infantry: PIXI.Texture.from('/units/infantry.png'),
   vehicle: PIXI.Texture.from('/units/tank.png'),
@@ -142,7 +138,6 @@ const unitTextures: Record<string, PIXI.Texture> = {
   hero: PIXI.Texture.from('/units/infantry.png'),
   air: PIXI.Texture.from('/units/tank.png')
 };
-
 interface SlotSummary {
   turn: number;
   resources: CampaignState['resources'];
@@ -150,13 +145,11 @@ interface SlotSummary {
   updated: number;
   activeBattle: boolean;
 }
-
 const hexToPixel = (coord: HexCoordinate, size: number) => {
   const x = size * (Math.sqrt(3) * coord.q + (Math.sqrt(3) / 2) * coord.r);
   const y = size * (1.5 * coord.r);
   return { x, y };
 };
-
 const terrainColor: Record<string, number> = {
   plain: 0x2e4f36,
   road: 0x6b4c2a,
@@ -167,12 +160,10 @@ const terrainColor: Record<string, number> = {
   swamp: 0x2c4a3a,
   structure: 0x3f3f46
 };
-
 const borderColor: Record<string, number> = {
   alliance: 0x38bdf8,
   otherSide: 0xf472b6
 };
-
 interface HexProps {
   coord: HexCoordinate;
   size: number;
@@ -181,7 +172,6 @@ interface HexProps {
   highlight?: boolean;
   visibility?: 'visible' | 'explored' | 'fog';
 }
-
 const HexTile: React.FC<HexProps> = ({ coord, size, terrain, onClick, highlight, visibility = 'visible' }) => {
   const { x, y } = hexToPixel(coord, size);
   const tex = terrainTextures[terrain] ?? terrainTextures.plain;
@@ -201,14 +191,12 @@ const HexTile: React.FC<HexProps> = ({ coord, size, terrain, onClick, highlight,
     />
   );
 };
-
 interface UnitMarkerProps {
   unit: UnitInstance;
   size: number;
   selected: boolean;
   onClick: () => void;
 }
-
 const UnitMarker: React.FC<UnitMarkerProps> = ({ unit, size, selected, onClick }) => {
   const { x, y } = hexToPixel(unit.coordinate, size);
   const color = borderColor[unit.faction];
@@ -271,12 +259,10 @@ const UnitMarker: React.FC<UnitMarkerProps> = ({ unit, size, selected, onClick }
     </>
   );
 };
-
 function ensureCampaignStorageSchema() {
   if (typeof window === 'undefined') return;
   const stored = window.localStorage.getItem(CAMPAIGN_SCHEMA_KEY);
   if (stored === CAMPAIGN_SCHEMA_VERSION) return;
-
   // Record the new schema version without discarding existing saves. Loading is
   // resilient per slot (hydrate falls back to a fresh campaign on a parse failure),
   // so a schema bump no longer wipes every slot — at worst one incompatible slot
@@ -286,7 +272,6 @@ function ensureCampaignStorageSchema() {
   }
   window.localStorage.setItem(CAMPAIGN_SCHEMA_KEY, CAMPAIGN_SCHEMA_VERSION);
 }
-
 function loadSavedCampaign(slot: number): CampaignState {
   if (typeof window === 'undefined') {
     return createCampaign(bundle);
@@ -302,7 +287,6 @@ function loadSavedCampaign(slot: number): CampaignState {
     return createCampaign(bundle);
   }
 }
-
 function loadSummary(slot: number): SlotSummary | null {
   if (typeof window === 'undefined') return null;
   ensureCampaignStorageSchema();
@@ -314,7 +298,6 @@ function loadSummary(slot: number): SlotSummary | null {
     return null;
   }
 }
-
 function useCampaign() {
   const initialSlot = typeof window === 'undefined' ? 1 : Number(window.localStorage.getItem(CAMPAIGN_SLOT_KEY) ?? 1);
   const [slot, setSlot] = useState<number>(Number.isNaN(initialSlot) ? 1 : initialSlot);
@@ -322,16 +305,19 @@ function useCampaign() {
   // changeSlot() followed by reset() (New Game) would otherwise write the fresh campaign into the
   // PREVIOUS slot's keys and destroy that save.
   const slotRef = useRef<number>(Number.isNaN(initialSlot) ? 1 : initialSlot);
-  const ref = useRef<CampaignState>(loadSavedCampaign(slot));
+  // Lazy init — a plain useRef(loadSavedCampaign(slot)) re-parses the whole save on every render.
+  const ref = useRef<CampaignState | null>(null);
+  if (!ref.current) ref.current = loadSavedCampaign(slot);
   const [, rerender] = useState(0);
-  const [summary, setSummary] = useState<SlotSummary | null>(loadSummary(slot));
+  const [summary, setSummary] = useState<SlotSummary | null>(() => loadSummary(slot));
   const updateSummary = () => {
+    const state = ref.current!;
     const next: SlotSummary = {
-      turn: ref.current.turn,
-      resources: { ...ref.current.resources },
-      territories: ref.current.territories.length,
+      turn: state.turn,
+      resources: { ...state.resources },
+      territories: state.territories.length,
       updated: Date.now(),
-      activeBattle: Boolean(ref.current.activeBattle)
+      activeBattle: Boolean(state.activeBattle)
     };
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(`${CAMPAIGN_SUMMARY_KEY}:${slotRef.current}`, JSON.stringify(next));
@@ -341,7 +327,7 @@ function useCampaign() {
   const persist = () => {
     if (typeof window !== 'undefined') {
       try {
-        window.localStorage.setItem(`${CAMPAIGN_STORAGE_KEY}:${slotRef.current}`, JSON.stringify(serializeCampaignState(ref.current)));
+        window.localStorage.setItem(`${CAMPAIGN_STORAGE_KEY}:${slotRef.current}`, JSON.stringify(serializeCampaignState(ref.current!)));
       } catch (err) {
         console.warn('Failed to persist campaign', err);
       }
@@ -350,7 +336,7 @@ function useCampaign() {
     rerender((n) => n + 1);
   };
   const mutate = (fn: (state: CampaignState) => void) => {
-    fn(ref.current);
+    fn(ref.current!);
     persist();
   };
   const reset = () => {
@@ -369,46 +355,90 @@ function useCampaign() {
     rerender((n) => n + 1);
     return ref.current;
   };
-  return { campaign: ref.current, mutate, persist, reset, slot, changeSlot, summary };
+  return { campaign: ref.current!, mutate, persist, reset, slot, changeSlot, summary };
 }
-
 function formatNumber(n: number) {
   return Math.round(n);
 }
-
+// Localization lookups for static content-bundle data (unit/research/territory/scenario/objective
+// names+text). Content stays English/id-stable in packages/data; the display layer prefers the active
+// locale's translation (keyed by the content's stable id) and falls back to the English source string
+// so nothing goes blank if a translation is ever missing.
+function localizedUnitName(definitionId: string, fallback: string) {
+  return i18n.t(`units:${definitionId}.name`, { defaultValue: fallback });
+}
+function localizedScenarioName(scenarioId: string, fallback: string) {
+  return i18n.t(`scenarios:${scenarioId}.name`, { defaultValue: fallback });
+}
+function localizedScenarioBrief(scenarioId: string, fallback: string) {
+  return i18n.t(`scenarios:${scenarioId}.brief`, { defaultValue: fallback });
+}
+function localizedObjectiveText(scenarioId: string, objectiveId: string, fallback: string) {
+  return i18n.t(`scenarios:${scenarioId}.objectives.${objectiveId}`, { defaultValue: fallback });
+}
+function localizedResearchName(topicId: string, fallback: string) {
+  return i18n.t(`research:${topicId}.name`, { defaultValue: fallback });
+}
+function localizedResearchDescription(topicId: string, fallback: string) {
+  return i18n.t(`research:${topicId}.description`, { defaultValue: fallback });
+}
+// Territories synthesized at runtime (raids/counterattacks) carry a nameKey/briefKey into the `campaign`
+// namespace (set in packages/core campaign.ts); static content-bundle territories are looked up by id.
+// Their keyParams hold the raw English name of the raided sector next to its stable id — re-resolve it
+// through the active locale before interpolating (mirrors localizedLogParams in StrategicHQ).
+function localizedTerritoryKeyParams(params?: Record<string, string | number>) {
+  if (!params) return params;
+  if (typeof params.targetId === 'string' && typeof params.target === 'string') {
+    return { ...params, target: i18n.t(`territories:${params.targetId}.name`, { defaultValue: params.target }) };
+  }
+  return params;
+}
+function localizedTerritoryName(territory: { id: string; name: string; nameKey?: string; keyParams?: Record<string, string | number> }) {
+  if (territory.nameKey) return i18n.t(`campaign:${territory.nameKey}`, localizedTerritoryKeyParams(territory.keyParams));
+  return i18n.t(`territories:${territory.id}.name`, { defaultValue: territory.name });
+}
+function localizedTerritoryBrief(territory: { id: string; brief: string; briefKey?: string; keyParams?: Record<string, string | number> }) {
+  if (territory.briefKey) return i18n.t(`campaign:${territory.briefKey}`, localizedTerritoryKeyParams(territory.keyParams));
+  return i18n.t(`territories:${territory.id}.brief`, { defaultValue: territory.brief });
+}
+// Resolves a unit id to its player-facing name, preferring the active locale's translation (keyed by
+// definitionId in the `units` namespace) and falling back to the English content-bundle name.
 function unitDisplayName(unitId: string, battleState: TacticalBattleState) {
   for (const side of Object.values(battleState.sides)) {
     const unit = side.units.get(unitId);
     if (!unit) continue;
     const def = bundle.units.find((candidate) => candidate.id === unit.definitionId);
-    return def?.name ?? unit.definitionId;
+    return localizedUnitName(unit.definitionId, def?.name ?? unit.definitionId);
   }
   return unitId.replace(/[-_][A-Za-z0-9]{6,}$/, '');
 }
-
+// Combat-log lines. Templates use a colon/arrow style ("Hit: X → Y") rather than full prose sentences —
+// unit/place names are interpolated from one fixed (nominative) form and Slovak declines nouns by case,
+// so a template like "X zasiahol Y" would need to grammatically decline Y as a direct object. The
+// colon-label format sidesteps that entirely and reads naturally in both languages.
 function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState): string {
+  const faction = (f: string) => i18n.t(`common:faction.${f === 'alliance' ? 'alliance' : 'otherSide'}`);
   switch (event.kind) {
     case 'round:started':
-      return `Round ${event.round}: ${event.activeFaction === 'alliance' ? 'Alliance' : 'Enemy'} turn`;
+      return i18n.t('log:round', { round: event.round, faction: faction(event.activeFaction) });
     case 'unit:moved':
-      return `Move ${unitDisplayName(event.unitId, battleState)} advances through cover`;
+      return i18n.t('log:moved', { unit: unitDisplayName(event.unitId, battleState) });
     case 'unit:attacked':
       return event.hit
-        ? `${unitDisplayName(event.attackerId, battleState)} hits ${unitDisplayName(event.defenderId, battleState)} for ${event.damage} damage`
-        : `${unitDisplayName(event.attackerId, battleState)} fires at ${unitDisplayName(event.defenderId, battleState)} - missed`;
+        ? i18n.t('log:hit', { attacker: unitDisplayName(event.attackerId, battleState), defender: unitDisplayName(event.defenderId, battleState), damage: event.damage })
+        : i18n.t('log:miss', { attacker: unitDisplayName(event.attackerId, battleState), defender: unitDisplayName(event.defenderId, battleState) });
     case 'unit:defeated':
-      return `${unitDisplayName(event.unitId, battleState)} destroyed`;
+      return i18n.t('log:destroyed', { unit: unitDisplayName(event.unitId, battleState) });
     case 'unit:xp':
-      return `${unitDisplayName(event.unitId, battleState)} gains field experience`;
+      return i18n.t('log:xpGained', { unit: unitDisplayName(event.unitId, battleState) });
     case 'tile:destroyed':
-      return `Tile destroyed at ${event.at.q},${event.at.r}`;
+      return i18n.t('log:tileDestroyed', { q: event.at.q, r: event.at.r });
     case 'unit:level':
-      return `${unitDisplayName(event.unitId, battleState)} reached level ${event.level}`;
+      return i18n.t('log:levelUp', { unit: unitDisplayName(event.unitId, battleState), level: event.level });
     default:
-      return 'Battle event';
+      return i18n.t('log:genericEvent');
   }
 }
-
 function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: string, defenderId: string) {
   if (!events) return { hit: false, damage: 0 };
   for (let i = events.length - 1; i >= 0; i--) {
@@ -423,17 +453,14 @@ function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: s
   }
   return { hit: false, damage: 0 };
 }
-
 // Monotonic id for combat notices — Date.now() collided when several notices were created in the
 // same millisecond (e.g. rapid attacks), producing duplicate React keys.
 let combatNoticeSeq = 0;
 const nextNoticeId = () => (combatNoticeSeq += 1);
-
 // Same collision applies to attack-effect keys when one attacker hits the same target
 // repeatedly in a single tick — a monotonic suffix keeps each effect's React key unique.
 let attackEffectSeq = 0;
 const nextEffectId = () => (attackEffectSeq += 1);
-
 // Classify an attack by the actual WEAPON, not by the unit's chassis. Keying off unit type made every
 // vehicle/creature "explode" (wolves, sword-cavalry) and defaulted everything else to a rifle burst
 // (longbows, great-axes, snipers). Keyword order matters — earlier categories win.
@@ -460,7 +487,6 @@ function effectTypeForAttack(attacker: UnitInstance, defender: UnitInstance, wea
   if (has('sniper', 'marksman', 'railgun', 'railrifle', 'dmr')) return 'sniper';
   return 'gunshot';
 }
-
 function soundForAttackEffect(effectType: AttackEffect['type']) {
   switch (effectType) {
     case 'explosion':
@@ -479,7 +505,6 @@ function soundForAttackEffect(effectType: AttackEffect['type']) {
       return 'gunshot';
   }
 }
-
 // The sound a weapon makes when FIRED. A mortar leaves the tube with a hollow launch thump, not the
 // blast its shell makes downrange — so it gets its own cue instead of the generic artillery explosion.
 function firingSound(attacker: UnitInstance, defender: UnitInstance, weaponId: string) {
@@ -487,7 +512,6 @@ function firingSound(attacker: UnitInstance, defender: UnitInstance, weaponId: s
   if (id.includes('mortar') || weaponId.toLowerCase().includes('mortar')) return 'mortar' as const;
   return soundForAttackEffect(effectTypeForAttack(attacker, defender, weaponId));
 }
-
 // Indirect fire (mortars, howitzers, rocket batteries) lobs its shell in a high ballistic arc rather
 // than a flat tracer. Direct-fire tank shells stay flat even though they're also 'explosion' type.
 function isIndirectFire(attacker: UnitInstance, weaponId: string, effectType: AttackEffect['type']) {
@@ -495,7 +519,6 @@ function isIndirectFire(attacker: UnitInstance, weaponId: string, effectType: At
   const tag = `${attacker.definitionId} ${weaponId}`.toLowerCase();
   return attacker.unitType === 'artillery' || /mortar|howitzer|rocket|mlrs|catapult|ballista|arc/.test(tag);
 }
-
 // Timbre of the struck target: armour clangs, flesh thuds, the demonic invaders ring dissonantly.
 function impactMaterialFor(unit: UnitInstance): 'metal' | 'flesh' | 'undead' {
   if (unit.unitType === 'vehicle' || unit.unitType === 'artillery') return 'metal';
@@ -503,35 +526,27 @@ function impactMaterialFor(unit: UnitInstance): 'metal' | 'flesh' | 'undead' {
   if (id.includes('ghoul') || id.includes('zombie') || id.includes('undead') || id.includes('demon') || id.includes('spawn')) return 'undead';
   return 'flesh';
 }
-
 // Coarse stereo placement from the unit's isometric screen-x (q - r), so hits pan toward where they land.
 function impactPanFor(unit: UnitInstance, map: BattlefieldMap): number {
   const screenX = unit.coordinate.q - unit.coordinate.r;
   return Math.max(-1, Math.min(1, (screenX / Math.max(map.width, map.height)) * 0.7));
 }
-
 function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: BattlefieldMap, weather?: TacticalBattleState['weather']): { weapon: string; hit: number } | null {
   let choice: { weapon: string; hit: number } | null = null;
   let bestScore = 0;
   const distance = axialDistance(attacker.coordinate, defender.coordinate);
-
   for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
-    const range = attacker.stats.weaponRanges[weaponId] ?? 0;
-
-    // Check range first
-    if (distance > range) {
+    // calculateAttackRange matches the engine's check — raw weaponRanges misses the elevation
+    // bonus, which showed hill shots at bonus range as BLOCKED.
+    if (distance > calculateAttackRange(attacker, weaponId, map)) {
       continue;
     }
-
     // Check if weapon can target this unit type
     if (!canWeaponTarget(attacker, weaponId, defender)) {
       continue;
     }
-
     const hit = calculateHitChance({ attacker, defender, weaponId, map, weather });
-
     if (hit <= 0) continue;
-
     // Pick the weapon with the best expected EFFECTIVE damage (hit × armour/type-aware damage), so the
     // anti-tank gun is chosen against a tank and the MG against infantry — not just the most accurate.
     const score = hit * Math.max(1, estimateHitDamage(attacker, defender, weaponId, map));
@@ -541,242 +556,8 @@ function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: Battlef
       choice = { weapon: weaponId, hit: hitPercent };
     }
   }
-
-  // Fallback: if no weapon found via normal checks, try any weapon in range
-  if (!choice) {
-    for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
-      const range = attacker.stats.weaponRanges[weaponId] ?? 0;
-      if (distance <= range) {
-        const hit = calculateHitChance({ attacker, defender, weaponId, map, weather });
-        choice = { weapon: weaponId, hit: Math.max(5, Math.round(hit * 100)) }; // At least 5% chance
-        break;
-      }
-    }
-  }
-
   return choice;
 }
-
-const StrategicView: React.FC<{
-  campaign: CampaignState;
-  summary: SlotSummary | null;
-  slot: number;
-  onSlotChange: (slot: number) => void;
-  onRecruit: (id: string, tier: 'rookie' | 'veteran' | 'elite') => void;
-  onRefill: (id: string, tier: 'rookie' | 'veteran' | 'elite') => void;
-  onRearm: (id: string, newDef: string) => void;
-  onDismiss: (id: string) => void;
-  onResearch: (topicId: string) => void;
-  onStartBattle: (territoryId: string) => void;
-  onEndTurn: () => void;
-  onConvertMoney: (amount: number) => void;
-  onConvertResearch: (amount: number) => void;
-  onReset: () => void;
-  popups: CampaignState['popups'];
-  onDismissPopups: () => void;
-}> = ({
-  campaign,
-  summary,
-  slot,
-  onSlotChange,
-  onRecruit,
-  onRefill,
-  onRearm,
-  onDismiss,
-  onResearch,
-  onStartBattle,
-  onEndTurn,
-  onConvertMoney,
-  onConvertResearch,
-  onReset,
-  popups,
-  onDismissPopups
-}) => {
-  const availableUnits = bundle.units.filter((u) => u.faction === 'alliance');
-  const researchTopics = bundle.research;
-
-  return (
-    <div className="grid">
-      <div className="card">
-        <header className="card-head">
-          <div>
-            <p className="eyebrow">Turn {campaign.turn} · War clock {campaign.globalTimer}</p>
-            <h2>Command Board</h2>
-          </div>
-          <div className="inline-actions">
-            <label className="muted">
-              Slot&nbsp;
-              <select value={slot} onChange={(e: ChangeEvent<HTMLSelectElement>) => onSlotChange(Number(e.target.value))}>
-                {[1, 2, 3].map((n) => (
-                  <option key={n} value={n}>{`Slot ${n}`}</option>
-                ))}
-              </select>
-            </label>
-            <button className="secondary" onClick={onReset}>Reset</button>
-            <button className="primary" onClick={onEndTurn}>End Turn</button>
-          </div>
-          {summary && (
-            <p className="muted" data-testid="slot-summary">
-              Autosave · Turn {summary.turn} · ${formatNumber(summary.resources.money)} / RP {formatNumber(summary.resources.research)} / SP {formatNumber(summary.resources.strategic)} · {new Date(summary.updated).toLocaleTimeString()}
-            </p>
-          )}
-        </header>
-        <div className="resources">
-          <div>
-            <p className="label">Money</p>
-            <p className="value">{formatNumber(campaign.resources.money)}</p>
-            <button onClick={() => onConvertMoney(5)}>Convert 5 SP → $</button>
-          </div>
-          <div>
-            <p className="label">Research</p>
-            <p className="value">{formatNumber(campaign.resources.research)}</p>
-            <button onClick={() => onConvertResearch(3)}>Convert 3 SP → RP</button>
-          </div>
-          <div>
-            <p className="label">Strategic Points</p>
-            <p className="value">{formatNumber(campaign.resources.strategic)}</p>
-          </div>
-        </div>
-        <div className="log-panel">
-          <h3>Operations Log</h3>
-          <ul>
-            {campaign.log.slice(-5).map((entry, idx) => (
-              <li key={`${entry}-${idx}`} className="muted">
-                {entry}
-              </li>
-            ))}
-          </ul>
-          {campaign.events && campaign.events.length > 0 && (
-            <>
-              <h4>Events</h4>
-              <ul>
-                {campaign.events.slice(-3).map((evt, idx) => (
-                  <li key={`${evt.message}-${idx}`} className="muted">
-                    Turn {evt.turn}: {evt.message}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {popups && popups.length > 0 && (
-            <div className="popup-panel" role="alertdialog" aria-label="Briefings">
-              {popups.map((p, idx) => (
-                <div key={`${p.title}-${idx}`} className={`popup ${p.kind}`}>
-                  <strong>{p.title}</strong>
-                  <p className="muted">{p.body}</p>
-                  <p className="muted">Turn {p.turn}</p>
-                </div>
-              ))}
-              <button className="secondary" onClick={onDismissPopups}>
-                Dismiss briefings
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="territories">
-          <h3>Territories</h3>
-          <ul>
-            {campaign.territories.map((t) => (
-              <li key={t.id}>
-                <div>
-                  <strong>{t.name}</strong> — {t.brief}
-                  <p className="muted">
-                    Status: {t.status} {t.remainingTimer != null ? `(timer ${t.remainingTimer})` : ''}
-                  </p>
-                </div>
-                <button
-                  disabled={t.status !== 'available'}
-                  onClick={() => onStartBattle(t.id)}
-                >
-                  Attack
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Army</h2>
-        <ul className="roster">
-          {campaign.army.map((u) => {
-            const def = bundle.units.find((d) => d.id === u.definitionId)!;
-            return (
-              <li key={u.id}>
-                <div>
-                  <strong>{def.name}</strong> <span className="muted">({u.tier})</span>
-                  <p className="muted">HP {formatNumber(u.currentHealth ?? def.stats.maxHealth)}/{def.stats.maxHealth} · XP {u.experience}</p>
-                </div>
-                <div className="inline-actions">
-                  <button onClick={() => onRefill(u.id, 'rookie')}>Refill</button>
-                  <button
-                    onClick={() => onRearm(u.id, 'leopard-2')}
-                    disabled={!isUnitUnlocked(campaign, bundle, 'leopard-2')}
-                    title={isUnitUnlocked(campaign, bundle, 'leopard-2') ? '' : 'Research Composite Plating first'}
-                  >
-                    Rearm
-                  </button>
-                  <button onClick={() => onDismiss(u.id)}>Dismiss</button>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-        <div className="recruit">
-          <h3>Recruit</h3>
-          <div className="inline-actions">
-            {availableUnits.slice(0, 4).map((u) => {
-              const unlocked = isUnitUnlocked(campaign, bundle, u.id);
-              return (
-                <button
-                  key={u.id}
-                  onClick={() => onRecruit(u.id, 'rookie')}
-                  disabled={!unlocked}
-                  title={unlocked ? '' : 'Complete the required research first'}
-                >
-                  {u.name}
-                  {!unlocked ? ' (locked)' : ''}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <h2>Research</h2>
-        <p className="muted">
-          {campaign.research.inProgress
-            ? `Researching ${campaign.research.inProgress.topicId} (${campaign.research.inProgress.remaining} RP left)`
-            : 'No project running'}
-        </p>
-        <p className="muted">Known tech: {[...campaign.research.completed].join(', ') || 'none'}</p>
-        <ul className="research-list">
-          {researchTopics.map((topic) => (
-            <li key={topic.id}>
-              <div>
-                <strong>{topic.name}</strong>
-                <p className="muted">{topic.description}</p>
-                <p className="muted">Cost {topic.cost}</p>
-              </div>
-              <button
-                disabled={Boolean(campaign.research.inProgress) || campaign.research.completed.has(topic.id)}
-                onClick={() => onResearch(topic.id)}
-              >
-                {campaign.research.completed.has(topic.id)
-                  ? 'Done'
-                  : campaign.research.inProgress?.topicId === topic.id
-                    ? 'In progress'
-                    : 'Start'}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-};
-
 // For a planned move, work out which tiles along the path expose the unit to enemy reaction fire
 // and how hard the worst tile could hit. Mirrors the engine's reaction-fire step (reactionThreats),
 // so the on-map warning matches what would actually happen.
@@ -802,7 +583,6 @@ function analyzePathThreat(
   }
   return { threatenedKeys, worstTileDamage };
 }
-
 type BattleOutcomeData = {
   status: 'victory' | 'defeat';
   sectorName: string;
@@ -814,7 +594,6 @@ type BattleOutcomeData = {
   objectives: Array<{ text: string; met: boolean }>;
   reward?: { money: number; research: number; strategic: number };
 };
-
 const BattleView: React.FC<{
   campaign: CampaignState;
   onVictory: () => void;
@@ -822,6 +601,7 @@ const BattleView: React.FC<{
   onRetreat: () => void;
   persist: () => void;
 }> = ({ campaign, onVictory, onDefeat, onRetreat, persist }) => {
+  const { t } = useTranslation(['battle', 'common', 'campaign']);
   const battle = campaign.activeBattle!;
   const { map } = battle.state;
   const [selected, setSelected] = useState<string | null>(null);
@@ -842,8 +622,12 @@ const BattleView: React.FC<{
   const [battleOutcome, setBattleOutcome] = useState<BattleOutcomeData | null>(null);
   const outcomeShownRef = useRef(false);
   const size = 26;
-  const width = Math.max(1100, map.width * size * 2.4);
-  const height = Math.max(800, map.height * size * 2.2);
+  const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
+  useEffect(() => {
+    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const processor = useMemo(() => new TurnProcessor(battle.state), [battle.state]);
   const visibleTiles = battle.state.vision.alliance.visibleTiles;
   const exploredTiles = battle.state.vision.alliance.exploredTiles;
@@ -915,16 +699,13 @@ const BattleView: React.FC<{
   }, [plannedPath, selectedUnit, battle.state]);
   const [showRanges, setShowRanges] = useState(false);
   const [attackEffects, setAttackEffects] = useState<AttackEffect[]>([]);
-
   // Movement animation state
   const [movingUnit, setMovingUnit] = useState<MovingUnit | null>(null);
-
   // Battlefield ambience bed for as long as this view is mounted; weather sets the mood.
   useEffect(() => {
     AudioManager.startAmbience('battle', battle.state.weather ?? 'clear');
     return () => AudioManager.stopAmbience();
   }, [battle.state.weather]);
-
   const deployModeRef = useRef(deployMode);
   // Pending staged enemy-turn SFX timeouts, so they can be cancelled if the battle ends mid-stagger
   // (otherwise gunfire/explosions bleed over the victory/defeat screen).
@@ -942,58 +723,56 @@ const BattleView: React.FC<{
   const selectedRef = useRef<string | null>(selected);
   const targetedEnemyRef = useRef<UnitInstance | null>(targetedEnemy);
   const plannedDestinationRef = useRef<HexCoordinate | null>(plannedDestination);
-
   useEffect(() => { deployModeRef.current = deployMode; }, [deployMode]);
   useEffect(() => { movingUnitRef.current = movingUnit; }, [movingUnit]);
   useEffect(() => { selectedRef.current = selected; }, [selected]);
   useEffect(() => { targetedEnemyRef.current = targetedEnemy; }, [targetedEnemy]);
   useEffect(() => { plannedDestinationRef.current = plannedDestination; }, [plannedDestination]);
-
-  const describeMoveRejection = (unitId: string, target: HexCoordinate, fallback = 'Move blocked') => {
+  // Pathfinder failures carry machine tokens ('unreachable'/'unit_not_found'), not display text.
+  const moveFailureText = (reason?: string) => {
+    if (reason === 'unreachable') return t('battle:reject.unreachable');
+    if (reason === 'unit_not_found') return t('battle:reject.noSelectedUnit');
+    return reason ?? t('battle:reject.moveBlocked');
+  };
+  const describeMoveRejection = (unitId: string, target: HexCoordinate, fallback = t('battle:reject.moveBlocked')) => {
     const unit =
       battle.state.sides.alliance.units.get(unitId) ??
       battle.state.sides.otherSide.units.get(unitId);
-    if (!unit) return 'No selected unit';
+    if (!unit) return t('battle:reject.noSelectedUnit');
     if (target.q < 0 || target.r < 0 || target.q >= map.width || target.r >= map.height) {
-      return 'Outside battlefield';
+      return t('battle:reject.outsideBattlefield');
     }
-
     const targetTile = map.tiles[tileIndex(target)];
-    if (!targetTile) return 'Outside battlefield';
-
+    if (!targetTile) return t('battle:reject.outsideBattlefield');
     for (const side of Object.values(battle.state.sides)) {
       for (const other of side.units.values()) {
         if (other.id === unit.id || other.stance === 'destroyed' || other.embarkedOn) continue;
         if (other.coordinate.q === target.q && other.coordinate.r === target.r) {
-          return other.faction === unit.faction ? 'Occupied by allied unit' : 'Occupied by hostile unit';
+          return other.faction === unit.faction ? t('battle:reject.occupiedAllied') : t('battle:reject.occupiedHostile');
         }
       }
     }
-
     if (!targetTile.passable || targetTile.terrain === 'structure') {
-      return `Blocked by ${terrainLabel(targetTile.terrain)}`;
+      return t('battle:reject.blockedByTerrain', { terrain: t(`common:terrain.${targetTile.terrain}`) });
     }
     if (targetTile.terrain === 'water' && unit.unitType !== 'air') {
-      return 'Blocked by water';
+      return t('battle:reject.blockedByWater');
     }
     if (targetTile.terrain === 'forest' && unit.unitType !== 'infantry' && unit.unitType !== 'hero') {
-      return 'Forest blocks this unit type';
+      return t('battle:reject.forestBlocks');
     }
-
     const originalAp = unit.actionPoints;
     unit.actionPoints = 999;
     const unrestrictedPath = planPathForUnit(battle.state, unitId, target);
     unit.actionPoints = originalAp;
     if (unrestrictedPath.success && unrestrictedPath.path.length > 0 && Number.isFinite(unrestrictedPath.cost)) {
-      return `Out of range: needs ${compactNumber(unrestrictedPath.cost)} AP, has ${displayActionPoints(originalAp)}`;
+      return t('battle:reject.outOfRange', { needed: compactNumber(unrestrictedPath.cost), has: displayActionPoints(originalAp) });
     }
     if (unrestrictedPath.success && unrestrictedPath.path.length === 0) {
-      return 'Already at destination';
+      return t('battle:reject.alreadyAtDestination');
     }
-
     return fallback;
   };
-
   // Clean up expired attack effects
   useEffect(() => {
     if (attackEffects.length === 0) return;
@@ -1003,14 +782,12 @@ const BattleView: React.FC<{
     }, 100);
     return () => clearInterval(timer);
   }, [attackEffects.length]);
-
   // Cancel any staged SFX timeouts when the battle view unmounts (e.g. retreat mid-Auto-Turn), so
   // gunfire/impact sounds don't play over the strategic screen.
   useEffect(() => () => {
     aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
     aiSfxTimeoutsRef.current = [];
   }, []);
-
   // Clean up movement animation when complete
   useEffect(() => {
     if (!movingUnit) return;
@@ -1021,32 +798,20 @@ const BattleView: React.FC<{
     }, totalDuration + 50); // small buffer
     return () => clearTimeout(timer);
   }, [movingUnit]);
-
-  const attackTiles = useMemo(() => {
-    if (!selectedUnit) return new Set<string>();
-    const best = Object.keys(selectedUnit.stats.weaponRanges)[0];
-    if (!best) return new Set<string>();
-    const range = selectedUnit.stats.weaponRanges[best] ?? 0;
-    const coords = hexWithinRange(selectedUnit.coordinate, range);
-    const valid = new Set<string>();
-    for (const c of coords) {
-      if (!visibleTiles.has(tileIndex(c))) continue;
-      valid.add(`${c.q},${c.r}`);
-    }
-    return valid;
-  }, [selectedUnit, visibleTiles, map.width]);
   const globalRangeTiles = useMemo(() => {
     if (!showRanges || !selectedUnit) return new Set<string>();
     const acc = new Set<string>();
     for (const weapon of Object.keys(selectedUnit.stats.weaponRanges)) {
-      const range = selectedUnit.stats.weaponRanges[weapon] ?? 0;
-      for (const coord of hexWithinRange(selectedUnit.coordinate, range)) {
+      // isoWithinRange + calculateAttackRange mirror the engine's Chebyshev range check (incl.
+      // elevation bonus) — the old hexWithinRange drew a hex-metric ring the engine never uses.
+      const range = calculateAttackRange(selectedUnit, weapon, map);
+      for (const coord of isoWithinRange(selectedUnit.coordinate, range)) {
         acc.add(`${coord.q},${coord.r}`);
       }
     }
     return acc;
-  }, [selectedUnit, showRanges]);
-
+    // the engine moves units by mutating coordinate in place, so the object identity alone would go stale
+  }, [selectedUnit, showRanges, selectedUnit?.coordinate.q, selectedUnit?.coordinate.r, map]);
   useEffect(() => {
     // Resume a saved in-progress battle straight into play; only a fresh battle opens DEPLOYMENT.
     setDeployMode(!battle.deployed);
@@ -1075,7 +840,6 @@ const BattleView: React.FC<{
       }
       return occ;
     };
-
     (window as any).__battleControl = {
       moveFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
@@ -1108,17 +872,22 @@ const BattleView: React.FC<{
             const rb = Math.max(...Object.values(b.stats.weaponRanges));
             return rb - ra;
           })[0];
-        const foe = Array.from(battle.state.sides.otherSide.units.values()).find((u) => u.stance !== 'destroyed');
-        if (!first || !foe) return false;
+        const living = Array.from(battle.state.sides.otherSide.units.values()).filter((u) => u.stance !== 'destroyed');
+        if (!first || living.length === 0) return false;
+        const foe = living.sort((a, b) => axialDistance(first.coordinate, a.coordinate) - axialDistance(first.coordinate, b.coordinate))[0];
         const weapon = Object.keys(first.stats.weaponRanges).sort((a, b) => (first.stats.weaponRanges[b] ?? 0) - (first.stats.weaponRanges[a] ?? 0))[0];
         if (!weapon) return false;
         const proc = new TurnProcessor(battle.state);
-        const path = planPathForUnit(battle.state, first.id, foe.coordinate);
-        if (path.success && path.path.length) {
-          // move up to three steps toward the enemy to get in range
-          proc.moveUnit({ unitId: first.id, path: path.path.slice(0, 3) });
+        // The foe's own tile is always occupied, so pathing straight to it is always 'unreachable' —
+        // path to the closest reachable tile next to the foe instead.
+        const approachTile = isoNeighbors(battle.state.map, foe.coordinate)
+          .map((tile) => ({ tile, path: planPathForUnit(battle.state, first.id, tile) }))
+          .filter((candidate) => candidate.path.success)
+          .sort((a, b) => a.path.cost - b.path.cost)[0];
+        if (approachTile) {
+          proc.moveUnit({ unitId: first.id, path: approachTile.path.path });
         }
-        const distNow = Math.max(Math.abs(first.coordinate.q - foe.coordinate.q), Math.abs(first.coordinate.r - foe.coordinate.r));
+        const distNow = axialDistance(first.coordinate, foe.coordinate);
         if (distNow > (first.stats.weaponRanges[weapon] ?? 0)) return false;
         const res = proc.attackUnit({ attackerId: first.id, defenderId: foe.id, weaponId: weapon });
         persist();
@@ -1136,7 +905,7 @@ const BattleView: React.FC<{
         const proc = new TurnProcessor(battle.state);
         const res = proc.attackUnit({ attackerId, defenderId, weaponId: weapon });
         if (!res.success) {
-          setCombatNotices((existing) => [{ id: nextNoticeId(), message: res.error || 'Attack failed' }, ...existing].slice(0, 4));
+          setCombatNotices((existing) => [{ id: nextNoticeId(), message: res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:attackFailed') }, ...existing].slice(0, 4));
         }
         persist();
         resolveOutcome();
@@ -1258,7 +1027,6 @@ const BattleView: React.FC<{
         if (distanceAfter > maxRange) {
           return { success: false, error: 'still_out_of_range', distance: distanceAfter, range: maxRange };
         }
-
         const res = proc.attackTile({ attackerId: attacker.id, target: { q, r }, weaponId: weapon });
         persist();
         resolveOutcome();
@@ -1417,7 +1185,6 @@ const BattleView: React.FC<{
       delete (window as any).__battleControl;
     };
   }, [battle.state, map.width, map.height]);
-
   const handleSelect = (unit: UnitInstance) => {
     if (battle.state.activeFaction !== 'alliance') return;
     if (unit.faction !== 'alliance') return;
@@ -1429,7 +1196,6 @@ const BattleView: React.FC<{
     clearTargeting(true);
     setInvalidMoveFeedback(null);
   };
-
   const resolveOutcome = () => {
     // evaluateBattleOutcome ticks hold objectives (idempotent per round); a change means progress.
     const holdBefore = JSON.stringify(battle.holdProgress);
@@ -1452,7 +1218,6 @@ const BattleView: React.FC<{
       persist();
     }
   };
-
   // Snapshot the just-finished battle into a result card. Reads battle.state directly (still intact —
   // applyBattleOutcome, which mutates the campaign, is deferred until the player hits Continue).
   const buildBattleOutcome = (status: 'victory' | 'defeat'): BattleOutcomeData => {
@@ -1470,20 +1235,19 @@ const BattleView: React.FC<{
     const rosterUnits = allyUnits.filter((u) => deployedTacticalIds.has(u.id));
     return {
       status,
-      sectorName: battle.scenario.name,
+      sectorName: localizedScenarioName(battle.scenario.id, battle.scenario.name),
       rounds: battle.state.round,
       enemiesTotal: enemyUnits.length,
       enemiesDestroyed: enemyUnits.filter(isDead).length,
       squadsLost: rosterUnits.filter(isDead).length,
       squadsSurviving: rosterUnits.filter((u) => !isDead(u)).length,
       objectives: (battle.scenario.objectives ?? []).map((o) => ({
-        text: o.description,
+        text: localizedObjectiveText(battle.scenario.id, o.id, o.description),
         met: isObjectiveMet(o, battle)
       })),
       reward: status === 'victory' && territory ? { ...territory.reward } : undefined
     };
   };
-
   // Player dismissed the result card → now commit the outcome to the campaign and leave the battle.
   const confirmBattleOutcome = () => {
     if (!battleOutcome) return;
@@ -1494,7 +1258,6 @@ const BattleView: React.FC<{
     if (status === 'victory') onVictory();
     else onDefeat();
   };
-
   const addCombatNotice = (message: string, ttlMs = 1800) => {
     const id = nextNoticeId(); // monotonic — Date.now() collided when several notices fired in one ms
     setCombatNotices((existing) => [{ id, message }, ...existing].slice(0, 4));
@@ -1502,7 +1265,6 @@ const BattleView: React.FC<{
       setCombatNotices((existing) => existing.filter((notice) => notice.id !== id));
     }, ttlMs);
   };
-
   // Impact audio for a connecting hit: weight/timbre/stereo from the target, plus a critical-health
   // sting when this blow drops a survivor below 25% (edge-triggered so it fires once, after the hit).
   const playImpact = (defender: UnitInstance, damage: number, hpBeforeRatio: number, delayMs = 0) => {
@@ -1524,7 +1286,6 @@ const BattleView: React.FC<{
     if (delayMs > 0) aiSfxTimeoutsRef.current.push(window.setTimeout(emit, delayMs));
     else emit();
   };
-
   // Visualize reaction/overwatch fire provoked by a move: muzzle + HIT/MISS + shot/impact sound, anchored
   // to the tile the mover was crossing (defenderAt) and timed to when its glide reaches that tile. Used by
   // the player's move, the auto-player turn, AND the enemy turn — so the player's overwatch shots are never
@@ -1549,7 +1310,6 @@ const BattleView: React.FC<{
       shots += 1;
     }
   };
-
   function clearTargeting(restoreCamera = false) {
     if (restoreCamera && targetedEnemy) {
       setCameraRestoreSignal((current) => current + 1);
@@ -1557,16 +1317,13 @@ const BattleView: React.FC<{
     setTargetedEnemy(null);
     setPendingAttack(null);
   }
-
   const showPhaseNotice = (title: string, detail: string, tone: 'enemy' | 'alliance' = 'alliance') => {
     const id = nextNoticeId(); // monotonic — Date.now() collided when several notices fired in one ms
-
     setPhaseNotice({ id, title, detail, tone });
     window.setTimeout(() => {
       setPhaseNotice((current) => current?.id === id ? null : current);
     }, 1300);
   };
-
   const findBattleUnit = (unitId: string) => {
     for (const side of Object.values(battle.state.sides)) {
       const unit = side.units.get(unitId);
@@ -1574,7 +1331,6 @@ const BattleView: React.FC<{
     }
     return undefined;
   };
-
   const addAttackEffect = (
     attacker: UnitInstance,
     defender: UnitInstance,
@@ -1587,10 +1343,10 @@ const BattleView: React.FC<{
     const effectType = effectTypeForAttack(attacker, defender, weaponId);
     const arc = isIndirectFire(attacker, weaponId, effectType);
     const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
-    const noticeTitle = outcome.hit ? 'Hit Confirmed' : 'Shot Missed';
+    const noticeTitle = outcome.hit ? t('battle:notice.hitTitle') : t('battle:notice.missTitle');
     const noticeDetail = outcome.hit
-      ? `${unitDisplayName(defender.id, battle.state)} - ${outcome.damage} damage`
-      : `${unitDisplayName(attacker.id, battle.state)} missed ${unitDisplayName(defender.id, battle.state)}`;
+      ? t('battle:notice.hitDetail', { defender: unitDisplayName(defender.id, battle.state), damage: outcome.damage })
+      : t('battle:notice.missDetail', { attacker: unitDisplayName(attacker.id, battle.state), defender: unitDisplayName(defender.id, battle.state) });
     window.setTimeout(() => showPhaseNotice(noticeTitle, noticeDetail, noticeTone), delay);
     setAttackEffects(prev => [...prev, {
       id: `${attacker.id}-${defender.id}-${nextEffectId()}`,
@@ -1605,8 +1361,7 @@ const BattleView: React.FC<{
       hit: outcome.hit
     }]);
   };
-
-  const rejectMove = (coord: HexCoordinate, message = 'Move blocked') => {
+  const rejectMove = (coord: HexCoordinate, message = t('battle:reject.moveBlocked')) => {
     AudioManager.play('error');
     const time = Date.now();
     setInvalidMoveFeedback({ coordinate: { ...coord }, time, message });
@@ -1615,7 +1370,6 @@ const BattleView: React.FC<{
       setInvalidMoveFeedback((current) => current?.time === time ? null : current);
     }, 1800);
   };
-
   const actMove = (unitId: string, target: HexCoordinate, force = false) => {
     if (autoTurnBusyRef.current || enemyTurnBusyRef.current) return false; // CPU is acting
     if (deployModeRef.current) return false;
@@ -1625,12 +1379,10 @@ const BattleView: React.FC<{
     const rejectionCoord = targetInBounds ? target : (unit?.coordinate ?? { q: 0, r: 0 });
     const path = planPathForUnit(battle.state, unitId, target);
     if (!path.success || path.cost === undefined || path.path.length === 0) {
-      rejectMove(rejectionCoord, describeMoveRejection(unitId, target, path.reason ?? 'Move blocked'));
+      rejectMove(rejectionCoord, describeMoveRejection(unitId, target, moveFailureText(path.reason)));
       return false;
     }
-
     if (!unit) return false;
-
     // Warn before walking a fragile unit into enemy reaction fire — the route crosses tiles where
     // enemies can shoot, and either the unit is already low or one tile's fire could outright kill it.
     if (!force) {
@@ -1641,23 +1393,20 @@ const BattleView: React.FC<{
         const lethal = unit.currentHealth <= worstTileDamage;
         if (lowHp || lethal) {
           const def = bundle.units.find((d) => d.id === unit.definitionId);
-          setRiskyMove({ unitId, target, unitName: def?.name ?? unit.definitionId, lethal });
+          setRiskyMove({ unitId, target, unitName: localizedUnitName(unit.definitionId, def?.name ?? unit.definitionId), lethal });
           return false;
         }
       }
     }
-
     const startCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
-
     const timelineBefore = battle.state.timeline.length;
     const moveResult = processor.moveUnit({ unitId, path: path.path });
     if (!moveResult.success) {
       setPlannedPath(null);
       setPlannedDestination(null);
-      rejectMove(rejectionCoord, moveResult.error || 'Move order blocked');
+      rejectMove(rejectionCoord, moveResult.errorKey ? t(`errors:${moveResult.errorKey}`) : t('battle:reject.moveOrderBlocked'));
       return false;
     }
-
     // Set up the glide FIRST so we know its timing, then sync the reaction-fire VFX to it — otherwise the
     // engine resolves reaction fire instantly against the destination and the muzzle/HIT appeared on the
     // target tile before the unit had visually arrived ("enemies shoot an empty destination").
@@ -1665,14 +1414,12 @@ const BattleView: React.FC<{
     const isTruck = unitType === 'support' && unit.definitionId.toLowerCase().includes('truck');
     const isVehicleMove = (unitType === 'vehicle' || unitType === 'artillery' || isTruck) && !isFootCrew(unit.definitionId);
     const moveProfile = movementProfileFor(unitType, isTruck, unit.definitionId);
-
     const finalCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
     const actualPath: HexCoordinate[] = [];
     for (const step of path.path) {
       actualPath.push(step);
       if (step.q === finalCoord.q && step.r === finalCoord.r) break;
     }
-
     const fullPath = [startCoord, ...actualPath];
     const stepDuration = isVehicleMove ? 420 : 180;
     const isM113Move = unit.definitionId.toLowerCase().includes('m113');
@@ -1696,9 +1443,7 @@ const BattleView: React.FC<{
     } else {
       AudioManager.playMovement(moveProfile, stepDuration);
     }
-
     playReactionVfx(unitId, moving, timelineBefore);
-
     setSelected(unitId);
     setPlannedPath(null);
     setPlannedDestination(null);
@@ -1707,7 +1452,6 @@ const BattleView: React.FC<{
     resolveOutcome();
     return true;
   };
-
   // Glide a unit's sprite along its path after the engine has already committed the move, and return the
   // animation length in ms so a scripted (auto/AI) loop can await it. Mirrors actMove's visual setup —
   // without it, auto-played and enemy moves snap the sprite straight to the destination (teleport).
@@ -1743,51 +1487,49 @@ const BattleView: React.FC<{
     });
     return moving;
   };
-
   const actSupply = (supplierId: string) => {
     if (deployModeRef.current || !supplyTargetId) return;
     const proc = new TurnProcessor(battle.state);
     const res = proc.supply({ supplierId, targetId: supplyTargetId });
     if (res.success) {
       AudioManager.play('select');
-      addCombatNotice('Ammunition resupplied');
+      addCombatNotice(t('battle:notice.resupplied'));
       persist();
       resolveOutcome();
     } else {
       AudioManager.play('error');
-      showToast(res.error || 'Resupply failed', 'error');
+      showToast(res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:resupplyFailed'), 'error');
     }
   };
-
   const actHeal = (medicId: string) => {
     if (deployModeRef.current || !healTargetId) return;
     const proc = new TurnProcessor(battle.state);
     const res = proc.heal({ medicId, targetId: healTargetId });
     if (res.success) {
       AudioManager.play('select');
-      addCombatNotice('Casualty stabilized');
+      addCombatNotice(t('battle:notice.stabilized'));
       persist();
       resolveOutcome();
     } else {
       AudioManager.play('error');
-      showToast(res.error || 'Heal failed', 'error');
+      showToast(res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:healFailed'), 'error');
     }
   };
-
   const actAttack = (attackerId: string, defender: UnitInstance) => {
     if (autoTurnBusyRef.current || enemyTurnBusyRef.current || movingUnitRef.current) return; // CPU acting, or a unit is still gliding
-    // Exit deploy mode when attacking
+    // Exit deploy mode when attacking. Same synchronous exit as the click-to-move path: without
+    // battle.deployed a reload would reopen DEPLOYMENT, and the ref must flip before actMove reads it.
     if (deployMode) {
+      deployModeRef.current = false;
       setDeployMode(false);
+      battle.deployed = true;
       battle.state.activeFaction = 'alliance';
     }
-
     const attacker = battle.state.sides.alliance.units.get(attackerId);
     if (!attacker) {
       AudioManager.play('error');
       return;
     }
-
     const weapon = bestWeapon(attacker, defender, battle.state.map, battle.state.weather);
     if (!weapon) {
       // Try to use any weapon
@@ -1795,7 +1537,6 @@ const BattleView: React.FC<{
       if (anyWeapon) {
         const hpBefore = defender.currentHealth / (defender.stats.maxHealth || 100);
         const result = processor.attackUnit({ attackerId, defenderId: defender.id, weaponId: anyWeapon });
-
         if (result.success) {
           const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
           // Play attack sound only on success
@@ -1810,20 +1551,20 @@ const BattleView: React.FC<{
           resolveOutcome();
         } else {
           AudioManager.play('error');
-          showToast(result.error || 'Attack failed', 'error');
-          addCombatNotice(result.error || 'Attack failed');
+          const reason = result.errorKey ? t(`errors:${result.errorKey}`) : t('errors:attackFailed');
+          showToast(reason, 'error');
+          addCombatNotice(reason);
         }
       }
       return;
     }
-
     const hpBefore = defender.currentHealth / (defender.stats.maxHealth || 100);
     const result = processor.attackUnit({ attackerId, defenderId: defender.id, weaponId: weapon.weapon });
-
     if (!result.success) {
       AudioManager.play('error');
-      showToast(result.error || 'Attack failed', 'error');
-      addCombatNotice(result.error || 'Attack failed');
+      const reason = result.errorKey ? t(`errors:${result.errorKey}`) : t('errors:attackFailed');
+      showToast(reason, 'error');
+      addCombatNotice(reason);
     } else {
       const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
       // Play attack sound and effects only on success
@@ -1834,11 +1575,9 @@ const BattleView: React.FC<{
         playImpact(defender, attackOutcome.damage, hpBefore);
       }
     }
-
     persist();
     resolveOutcome();
   };
-
   const handleHexClick = (coord: HexCoordinate) => {
     if (autoTurnBusyRef.current || enemyTurnBusyRef.current) return; // ignore clicks while the CPU plays
     // Clear targeted enemy when clicking elsewhere. Only enemies on a CURRENTLY VISIBLE tile count as a
@@ -1851,7 +1590,6 @@ const BattleView: React.FC<{
     if (!foe) {
       clearTargeting(true);
     }
-
     if (deployMode) {
       const ally = Array.from(battle.state.sides.alliance.units.values()).find(
         (u) => u.coordinate.q === coord.q && u.coordinate.r === coord.r && u.stance !== 'destroyed'
@@ -1894,11 +1632,12 @@ const BattleView: React.FC<{
       }
       return;
     }
-    // If nothing selected or enemy turn, auto-select the first ready ally to allow quick move clicks
-    if (!selected || battle.state.activeFaction !== 'alliance') {
+    // If nothing selected, auto-select the first ready ally to allow quick move clicks. The old
+    // force-flip of activeFaction here could hijack a stuck enemy turn; runAiTurn's finally-backstop
+    // now guarantees the handoff instead.
+    if (!selected) {
       const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
       if (first) setSelected(first.id);
-      battle.state.activeFaction = 'alliance';
     }
     const ally = Array.from(battle.state.sides.alliance.units.values()).find(
       (u) => u.coordinate.q === coord.q && u.coordinate.r === coord.r && u.stance !== 'destroyed'
@@ -1940,7 +1679,7 @@ const BattleView: React.FC<{
       }
       const path = planPathForUnit(battle.state, selected, coord);
       if (!path.success || path.path.length === 0) {
-        rejectMove(coord, describeMoveRejection(selected, coord, path.reason ?? 'Move blocked'));
+        rejectMove(coord, describeMoveRejection(selected, coord, moveFailureText(path.reason)));
         return;
       }
       const unit = battle.state.sides.alliance.units.get(selected);
@@ -1950,7 +1689,6 @@ const BattleView: React.FC<{
       setInvalidMoveFeedback(null);
     }
   };
-
   const runAiTurn = async () => {
     // Also bail if Auto Turn is mid-flight or a unit is still animating — otherwise clicking End Turn
     // during Auto Turn starts a second concurrent enemy turn over the same state (double round/AP).
@@ -1961,7 +1699,7 @@ const BattleView: React.FC<{
     aiSfxTimeoutsRef.current = [];
     const aiProcessor = new TurnProcessor(battle.state);
     aiProcessor.endTurn(); // player ends, AI starts
-    showPhaseNotice('Enemy Turn', 'Hostile units are acting', 'enemy');
+    showPhaseNotice(t('battle:notice.enemyTurnTitle'), t('battle:notice.enemyTurnDetail'), 'enemy');
     let safety = 0;
     let attacksMade = 0;
     let phaseUpdated = false;
@@ -2054,7 +1792,7 @@ const BattleView: React.FC<{
             attacksMade += 1;
             if (!phaseUpdated) {
               phaseUpdated = true;
-              showPhaseNotice('Enemy Phase', `${unitDisplayName(action.attackerId, battle.state)} attacking`, 'enemy');
+              showPhaseNotice(t('battle:notice.enemyPhaseTitle'), t('battle:notice.enemyPhaseDetail', { unit: unitDisplayName(action.attackerId, battle.state) }), 'enemy');
             }
             await sleep(enemyKilled ? 140 : enemyHit ? 70 : 0); // let the kill/hit land before moving on
             await sleep(700);
@@ -2081,7 +1819,9 @@ const BattleView: React.FC<{
           await sleep(250);
         }
       }
-      // Backstop: never leave control stuck on the enemy turn (e.g. the safety cap tripped).
+    } finally {
+      // Backstop: never leave control stuck on the enemy turn — the safety cap tripped, or the
+      // engine threw mid-loop. Runs in finally so a throw can't skip it while the busy flag clears.
       if (battle.state.activeFaction === 'otherSide') {
         aiProcessor.endTurn();
       }
@@ -2090,11 +1830,9 @@ const BattleView: React.FC<{
         AudioManager.play('turnStart'); // control handed back to the player
       }
       resolveOutcome();
-    } finally {
       enemyTurnBusyRef.current = false;
     }
   };
-
   // "Auto Turn": let the computer play the player's turn — commit deployment, then drive every
   // alliance unit with the same planner the enemy uses, and finally hand off to the enemy turn.
   const runAutoPlayerTurn = async () => {
@@ -2110,7 +1848,6 @@ const BattleView: React.FC<{
     autoTurnBusyRef.current = true;
     autoTurnAbortRef.current = false;
     setAutoTurnPhase('player');
-
     aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
     aiSfxTimeoutsRef.current = [];
     const proc = new TurnProcessor(battle.state);
@@ -2126,7 +1863,6 @@ const BattleView: React.FC<{
     const visitedTiles = new Map<string, Set<string>>();
     const tileKey = (c: HexCoordinate) => `${c.q},${c.r}`;
     let safety = 0;
-
     while (battle.state.activeFaction === 'alliance' && safety < 80) {
       safety += 1;
       if (autoTurnAbortRef.current) break; // player clicked Stop — hand the rest of the turn back to them
@@ -2234,7 +1970,6 @@ const BattleView: React.FC<{
     }
     setAutoTurnPhase(null);
   };
-
   return (
     <div className="battle-screen">
       <div className="battle-map-layer">
@@ -2258,8 +1993,8 @@ const BattleView: React.FC<{
           targetLethal={previewLethal}
           onUnitHover={setHoveredEnemyId}
           viewerFaction="alliance"
-          width={window.innerWidth}
-          height={window.innerHeight}
+          width={viewport.width}
+          height={viewport.height}
           cameraMode="follow"
           rangeOverlayCoords={showRanges ? globalRangeTiles : undefined}
           objectiveCoords={battle.scenario.objectives.map((objective) => objective.target).filter((coord): coord is HexCoordinate => Boolean(coord))}
@@ -2268,15 +2003,14 @@ const BattleView: React.FC<{
           movingUnit={movingUnit}
         />
       </div>
-
       <div className="battle-ui-layer">
         {autoTurnPhase ? (
           <div className={`auto-turn-banner ${autoTurnPhase}`}>
             <span className="auto-turn-spinner" />
-            <strong>AUTO TURN</strong>
-            <span>{autoTurnPhase === 'player' ? 'The computer is playing your turn…' : 'Enemy turn…'}</span>
+            <strong>{t('battle:autoTurn.label')}</strong>
+            <span>{autoTurnPhase === 'player' ? t('battle:autoTurn.playerPhase') : t('battle:autoTurn.enemyPhase')}</span>
             {autoTurnPhase === 'player' ? (
-              <button className="auto-turn-stop" onClick={() => { autoTurnAbortRef.current = true; }}>Stop &amp; take over</button>
+              <button className="auto-turn-stop" onClick={() => { autoTurnAbortRef.current = true; }}>{t('battle:autoTurn.stopAndTakeOver')}</button>
             ) : null}
           </div>
         ) : null}
@@ -2288,23 +2022,21 @@ const BattleView: React.FC<{
         ) : null}
         {deployMode ? (
           <div className="deploy-banner">
-            <strong>DEPLOYMENT</strong>
-            <span>Click a unit, then a glowing tile to reposition it. Press Start Battle when ready.</span>
+            <strong>{t('battle:deploy.title')}</strong>
+            <span>{t('battle:deploy.hint')}</span>
             <span className="deploy-count">
-              {Array.from(battle.state.sides.alliance.units.values()).filter((u) => u.stance !== 'destroyed').length} units ready
+              {t('battle:deploy.unitsReady', { count: Array.from(battle.state.sides.alliance.units.values()).filter((u) => u.stance !== 'destroyed').length })}
             </span>
           </div>
         ) : null}
         {riskyMove ? (
-          <div className="risky-move-backdrop" role="alertdialog" aria-label="Risky move warning">
+          <div className="risky-move-backdrop" role="alertdialog" aria-label={t('battle:risky.ariaLabel')}>
             <div className="risky-move-dialog">
-              <strong>⚠ Move Under Fire</strong>
+              <strong>{t('battle:risky.title')}</strong>
               <p>
-                Route for <strong>{riskyMove.unitName}</strong> crosses enemy fire.{' '}
                 {riskyMove.lethal
-                  ? 'Reaction fire could destroy it.'
-                  : 'This unit is wounded and may take heavy losses.'}
-                {' '}Move anyway?
+                  ? t('battle:risky.routeLethal', { unit: riskyMove.unitName })
+                  : t('battle:risky.routeWounded', { unit: riskyMove.unitName })}
               </p>
               <div className="risky-move-actions">
                 <button
@@ -2315,10 +2047,10 @@ const BattleView: React.FC<{
                     actMove(move.unitId, move.target, true);
                   }}
                 >
-                  Move Anyway
+                  {t('battle:risky.moveAnyway')}
                 </button>
                 <button className="risky-move-cancel" onClick={() => setRiskyMove(null)}>
-                  Cancel
+                  {t('common:action.cancel')}
                 </button>
               </div>
             </div>
@@ -2326,25 +2058,25 @@ const BattleView: React.FC<{
         ) : null}
         {showRanges && selectedUnit ? (
           <div className="battle-mode-badge">
-            <span>Range Overlay</span>
-            <strong>{selectedDefinition?.name ?? selectedUnit.definitionId}</strong>
+            <span>{t('battle:rangeOverlay.label')}</span>
+            <strong>{localizedUnitName(selectedUnit.definitionId, selectedDefinition?.name ?? selectedUnit.definitionId)}</strong>
           </div>
         ) : null}
         <div className="battle-top-bar">
           <div className="mission-info">
-            <h2>{battle.scenario.name}</h2>
-            <p className="muted">{battle.scenario.brief}</p>
+            <h2>{localizedScenarioName(battle.scenario.id, battle.scenario.name)}</h2>
+            <p className="muted">{localizedScenarioBrief(battle.scenario.id, battle.scenario.brief)}</p>
             {!deployMode ? <ObjectiveHud battle={battle} /> : null}
           </div>
           <div className="battle-controls">
-            <button className={showRanges ? 'active' : undefined} onClick={() => setShowRanges((v) => !v)}>{showRanges ? 'Hide Ranges' : 'Show Ranges'}</button>
+            <button className={showRanges ? 'active' : undefined} onClick={() => setShowRanges((v) => !v)}>{showRanges ? t('battle:action.hideRanges') : t('battle:action.showRanges')}</button>
             <OverwatchButton unit={deployMode ? undefined : selectedUnit} onOverwatch={() => {
               if (!selectedUnit || deployMode) return;
               const proc = new TurnProcessor(battle.state);
               const res = proc.setOverwatch(selectedUnit.id);
               if (!res.success) {
                 AudioManager.play('error');
-                showToast(res.error || 'Cannot set overwatch', 'error');
+                showToast(res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:cannotSetOverwatch'), 'error');
                 return;
               }
               persist();
@@ -2374,41 +2106,44 @@ const BattleView: React.FC<{
                 runAiTurn();
               }}
             >
-              {deployMode ? 'Start Battle' : 'End Turn'}
+              {deployMode ? t('common:action.startBattle') : t('common:action.endTurn')}
             </button>
             <button
               className={`auto-turn-btn${autoTurnPhase ? ' running' : ''}`}
               title={autoTurnPhase
-                ? 'Stop Auto Turn and finish the turn manually'
-                : 'Let the computer deploy and play this turn for you'}
+                ? t('battle:autoTurn.stopTooltip')
+                : t('battle:autoTurn.startTooltip')}
               disabled={autoTurnPhase === 'enemy'}
               onClick={() => {
                 if (autoTurnPhase) { autoTurnAbortRef.current = true; }
                 else { runAutoPlayerTurn(); }
               }}
             >
-              {autoTurnPhase ? 'Stop Auto' : deployMode ? 'Auto Deploy & Play' : 'Auto Turn'}
+              {autoTurnPhase ? t('common:action.stopAuto') : deployMode ? t('common:action.autoDeployAndPlay') : t('common:action.autoTurn')}
             </button>
             <button
               className="secondary-btn"
+              disabled={!!autoTurnPhase}
               onClick={() => {
+                // Retreating mid-CPU-turn unmounts the view under a still-running async battle loop
+                // (which keeps mutating state and playing sounds over the strategic screen).
+                if (autoTurnPhase || autoTurnBusyRef.current || enemyTurnBusyRef.current) return;
                 retreatFromBattle(campaign);
                 persist();
                 onRetreat();
               }}
             >
-              Retreat
+              {t('common:action.retreat')}
             </button>
           </div>
         </div>
-
         <div className="battle-bottom-bar">
           <div className="unit-card">
-            <h3>Selected Unit</h3>
+            <h3>{t('battle:panel.selectedUnit')}</h3>
             {selected ? (
               (() => {
                 const unit = battle.state.sides.alliance.units.get(selected);
-                if (!unit) return <p className="muted">None</p>;
+                if (!unit) return <p className="muted">{t('battle:panel.none')}</p>;
                 const carrier = unit.stats.transportCapacity && unit.stats.transportCapacity > 0;
                 const embarked = unit.embarkedOn;
                 const tile = battle.state.map.tiles[unit.coordinate.r * battle.state.map.width + unit.coordinate.q];
@@ -2416,6 +2151,7 @@ const BattleView: React.FC<{
                 const healthPct = Math.max(0, Math.min(100, Math.round((unit.currentHealth / unit.stats.maxHealth) * 100)));
                 const apPct = Math.max(0, Math.min(100, Math.round((unit.actionPoints / unit.maxActionPoints) * 100)));
                 const moralePct = Math.max(0, Math.min(100, unit.currentMorale));
+                const displayName = localizedUnitName(unit.definitionId, def?.name ?? unit.definitionId);
                 return (
                   <div className="unit-details">
                     <div className="unit-monitor">
@@ -2423,17 +2159,17 @@ const BattleView: React.FC<{
                         <img
                           className="unit-scope-portrait"
                           src={unitPortrait(unit.unitType, unit.definitionId, true)}
-                          alt={def?.name ?? unit.unitType}
+                          alt={displayName}
                           draggable={false}
                         />
                       </div>
                       <div className="unit-readout">
-                        <span>{unit.unitType}</span>
-                        <strong>{def?.name ?? unit.definitionId}</strong>
+                        <span>{t(`common:unitType.${unit.unitType}`)}</span>
+                        <strong>{displayName}</strong>
                       </div>
                     </div>
                     <div className="unit-stats">
-                      <strong>{def?.name ?? unit.unitType}</strong>
+                      <strong>{displayName}</strong>
                       <p className="unit-stat-line">
                         HP <span className={unit.currentHealth < unit.stats.maxHealth * 0.5 ? 'warn' : ''}>{compactNumber(unit.currentHealth)}</span>/{compactNumber(unit.stats.maxHealth)}
                         <i style={{ '--unit-stat-percent': `${healthPct}%` } as React.CSSProperties} />
@@ -2442,30 +2178,29 @@ const BattleView: React.FC<{
                         AP {displayActionPoints(unit.actionPoints)}/{displayActionPoints(unit.maxActionPoints)}
                         <i style={{ '--unit-stat-percent': `${apPct}%` } as React.CSSProperties} />
                       </p>
-                      <p>Ammo {unit.stats.ammoCapacity ? `${unit.currentAmmo}/${unit.stats.ammoCapacity}` : '∞'}</p>
+                      <p>{t('battle:panel.ammo')} {unit.stats.ammoCapacity ? `${unit.currentAmmo}/${unit.stats.ammoCapacity}` : '∞'}</p>
                     </div>
                     <div className="unit-status">
                       <p className="unit-stat-line">
-                        Morale {unit.currentMorale}
+                        {t('battle:panel.morale')} {unit.currentMorale}
                         <i style={{ '--unit-stat-percent': `${moralePct}%` } as React.CSSProperties} />
                       </p>
                       {(() => {
                         const coverVal = (tile?.cover ?? 0) + (unit.entrench ?? 0);
-                        const terrainLabel: Record<string, string> = { plain: 'Open', road: 'Road', forest: 'Forest', urban: 'Urban', hill: 'Hill', swamp: 'Swamp', structure: 'Rubble', water: 'Water' };
-                        const coverWord = coverVal >= 3 ? 'Heavy' : coverVal === 2 ? 'Solid' : coverVal === 1 ? 'Light' : 'None';
+                        const coverWord = coverVal >= 3 ? t('battle:panel.coverHeavy') : coverVal === 2 ? t('battle:panel.coverSolid') : coverVal === 1 ? t('battle:panel.coverLight') : t('battle:panel.coverNone');
                         return (
                           <>
-                            <p>Cover <b>{coverWord}</b>{coverVal > 0 ? ` · ${terrainLabel[tile?.terrain ?? 'plain'] ?? tile?.terrain}` : ''}</p>
+                            <p>{t('battle:panel.cover')} <b>{coverWord}</b>{coverVal > 0 ? ` · ${t(`common:terrain.${tile?.terrain ?? 'plain'}`)}` : ''}</p>
                             <div className="unit-tags">
-                              {coverVal > 0 && <span className="badge badge-cover">IN COVER</span>}
-                              {tile?.blocksVision && <span className="badge badge-conceal">CONCEALED</span>}
-                              {unit.statusEffects.has('overwatch') && <span className="badge">OVERWATCH</span>}
-                              {(unit.entrench ?? 0) > 0 && <span className="badge">DUG IN</span>}
+                              {coverVal > 0 && <span className="badge badge-cover">{t('battle:panel.inCover')}</span>}
+                              {tile?.blocksVision && <span className="badge badge-conceal">{t('battle:panel.concealed')}</span>}
+                              {unit.statusEffects.has('overwatch') && <span className="badge">{t('battle:panel.overwatch')}</span>}
+                              {(unit.entrench ?? 0) > 0 && <span className="badge">{t('battle:panel.dugIn')}</span>}
                             </div>
                           </>
                         );
                       })()}
-                      {carrier && <p>Cargo {unit.carrying?.length ?? 0}/{unit.stats.transportCapacity}</p>}
+                      {carrier && <p>{t('battle:panel.cargo')} {unit.carrying?.length ?? 0}/{unit.stats.transportCapacity}</p>}
                     </div>
                     <div className="unit-armory">
                       <p className="unit-armory-top">
@@ -2512,7 +2247,7 @@ const BattleView: React.FC<{
                             }
                           }}
                         >
-                          Embark Adj
+                          {t('battle:action.embarkAdj')}
                         </button>
                       )}
                       {carrier && (unit.carrying?.length ?? 0) > 0 && (
@@ -2521,9 +2256,7 @@ const BattleView: React.FC<{
                           onClick={() => {
                             const passengerId = unit.carrying?.[0];
                             if (!passengerId) return;
-                            const neighbors = hexWithinRange(unit.coordinate, 1).filter(
-                              (c) => coordinateKey(c) !== coordinateKey(unit.coordinate)
-                            );
+                            const neighbors = isoNeighbors(battle.state.map, unit.coordinate);
                             const open = neighbors.find((c) => {
                               const tile = battle.state.map.tiles[c.r * battle.state.map.width + c.q];
                               if (!tile?.passable) return false;
@@ -2543,7 +2276,7 @@ const BattleView: React.FC<{
                             }
                           }}
                         >
-                          Unload
+                          {t('battle:action.unload')}
                         </button>
                       )}
                       {embarked && (
@@ -2552,9 +2285,7 @@ const BattleView: React.FC<{
                           onClick={() => {
                             const carrierUnit = battle.state.sides.alliance.units.get(embarked);
                             if (!carrierUnit) return;
-                            const neighbors = hexWithinRange(carrierUnit.coordinate, 1).filter(
-                              (c) => coordinateKey(c) !== coordinateKey(carrierUnit.coordinate)
-                            );
+                            const neighbors = isoNeighbors(battle.state.map, carrierUnit.coordinate);
                             const open = neighbors.find((c) => {
                               const tile = battle.state.map.tiles[c.r * battle.state.map.width + c.q];
                               if (!tile?.passable) return false;
@@ -2578,7 +2309,7 @@ const BattleView: React.FC<{
                             }
                           }}
                         >
-                          Disembark
+                          {t('battle:action.disembark')}
                         </button>
                       )}
                     </div>
@@ -2586,57 +2317,56 @@ const BattleView: React.FC<{
                 );
               })()
             ) : (
-              <p className="muted">Select a unit to view details</p>
+              <p className="muted">{t('battle:panel.selectUnitHint')}</p>
             )}
           </div>
-
           {targetedEnemy && selected && (
             <div className="unit-card target-card">
-              <h3>Fire Control</h3>
+              <h3>{t('battle:panel.fireControl')}</h3>
               {(() => {
                 const attacker = battle.state.sides.alliance.units.get(selected);
                 const def = bundle.units.find(d => d.id === targetedEnemy.definitionId);
                 const weapon = attacker ? bestWeapon(attacker, targetedEnemy, battle.state.map, battle.state.weather) : null;
                 const canAttackNow = Boolean(attacker && weapon && canAffordAttack(attacker));
                 const attackBlockReason = !weapon
-                  ? 'Blocked by range'
+                  ? t('battle:fireControl.blockedByRange')
                   : attacker && !canAffordAttack(attacker)
-                    ? attacker.currentAmmo !== Infinity && attacker.currentAmmo <= 0 ? 'No ammo' : 'Need 2 AP'
+                    ? attacker.currentAmmo !== Infinity && attacker.currentAmmo <= 0 ? t('errors:noAmmo') : t('battle:fireControl.need2Ap')
                     : '';
                 const distance = attacker ? axialDistance(attacker.coordinate, targetedEnemy.coordinate) : 999;
                 return (
                   <div className="fire-control">
                     <div className="fire-control-target">
-                      <span>Hostile Contact</span>
-                      <strong>{def?.name ?? targetedEnemy.unitType}</strong>
+                      <span>{t('battle:fireControl.hostileContact')}</span>
+                      <strong>{localizedUnitName(targetedEnemy.definitionId, def?.name ?? targetedEnemy.unitType)}</strong>
                       <small>HP {targetedEnemy.currentHealth}/{targetedEnemy.stats.maxHealth}</small>
                     </div>
                     <div className="fire-control-metrics">
                       <span>
                         <strong>{distance}</strong>
-                        Hex
+                        {t('battle:fireControl.hex')}
                       </span>
                       {weapon ? (
                         <>
                           <span>
                             <strong>{weapon.hit}%</strong>
-                            Hit
+                            {t('battle:fireControl.hit')}
                           </span>
                           <span>
                             <strong>{weapon.weapon}</strong>
-                            Weapon
+                            {t('battle:fireControl.weapon')}
                           </span>
                         </>
                       ) : (
                         <span className="fire-control-warning">
-                          <strong>Blocked</strong>
-                          Range
+                          <strong>{t('battle:fireControl.blocked')}</strong>
+                          {t('battle:fireControl.range')}
                         </span>
                       )}
                       {attackBlockReason && (
                         <span className="fire-control-warning">
                           <strong>{attackBlockReason}</strong>
-                          Status
+                          {t('battle:fireControl.status')}
                         </span>
                       )}
                     </div>
@@ -2646,7 +2376,7 @@ const BattleView: React.FC<{
                         disabled={!canAttackNow}
                         onClick={() => {
                           if (!canAttackNow) {
-                            addCombatNotice(attackBlockReason || 'Attack unavailable');
+                            addCombatNotice(attackBlockReason || t('battle:fireControl.attackUnavailable'));
                             AudioManager.play('error');
                             return;
                           }
@@ -2654,13 +2384,13 @@ const BattleView: React.FC<{
                           clearTargeting(false);
                         }}
                       >
-                        Attack
+                        {t('common:action.attack')}
                       </button>
                       <button
                         className="sm-btn"
                         onClick={() => clearTargeting(true)}
                       >
-                        Cancel
+                        {t('common:action.cancel')}
                       </button>
                     </div>
                   </div>
@@ -2668,10 +2398,9 @@ const BattleView: React.FC<{
               })()}
             </div>
           )}
-
           {previewEnemy && !deployMode && selectedUnit ? (
             <div className="target-card">
-              <h3>Target</h3>
+              <h3>{t('battle:panel.target')}</h3>
               <div className="target-intel">
                 <strong>{unitDisplayName(previewEnemy.id, battle.state)}</strong>
                 <p className="unit-stat-line">
@@ -2680,23 +2409,22 @@ const BattleView: React.FC<{
                 </p>
                 {targetWeaponPreview ? (
                   <>
-                    <p className="target-hit">Hit <b>{Math.round((previewHitChance ?? 0) * 100)}%</b>
-                      <span className="target-dmg">Dmg ~<b>{previewDamage ?? 0}</b></span>
+                    <p className="target-hit">{t('battle:fireControl.hit')} <b>{Math.round((previewHitChance ?? 0) * 100)}%</b>
+                      <span className="target-dmg">{t('battle:panel.dmgApprox')} <b>{previewDamage ?? 0}</b></span>
                     </p>
                     <p className={`target-eff ${previewEff >= 1.2 ? 'eff-strong' : previewEff <= 0.65 ? 'eff-weak' : 'eff-ok'}`}>
-                      {targetWeaponPreview.weapon}: {previewEff >= 1.2 ? 'STRONG' : previewEff <= 0.65 ? 'WEAK' : 'OK'} <span>×{previewEff.toFixed(2)}</span>
+                      {targetWeaponPreview.weapon}: {previewEff >= 1.2 ? t('battle:panel.effStrong') : previewEff <= 0.65 ? t('battle:panel.effWeak') : t('battle:panel.effOk')} <span>×{previewEff.toFixed(2)}</span>
                     </p>
-                    {previewLethal ? <span className="badge badge-kill">LIKELY KILL</span> : null}
+                    {previewLethal ? <span className="badge badge-kill">{t('battle:panel.likelyKill')}</span> : null}
                   </>
                 ) : (
-                  <p className="muted">No weapon can hit this target</p>
+                  <p className="muted">{t('battle:panel.noWeaponCanHit')}</p>
                 )}
               </div>
             </div>
           ) : null}
-
           <div className="battle-log-panel">
-            <h3>Combat Log</h3>
+            <h3>{t('battle:panel.combatLog')}</h3>
             <div className="log-entries">
               {combatNotices.length > 0 || battle.state.timeline.length > 0 ? (
                 <>
@@ -2716,9 +2444,9 @@ const BattleView: React.FC<{
                 </>
               ) : (
                 <>
-                  <div className="log-line log-line-muted">TACTICAL LINK READY</div>
-                  <div className="log-line log-line-muted">SENSOR GRID ONLINE</div>
-                  <div className="log-line log-line-muted">AWAITING FIRE ORDER</div>
+                  <div className="log-line log-line-muted">{t('battle:panel.tacticalLinkReady')}</div>
+                  <div className="log-line log-line-muted">{t('battle:panel.sensorGridOnline')}</div>
+                  <div className="log-line log-line-muted">{t('battle:panel.awaitingFireOrder')}</div>
                 </>
               )}
             </div>
@@ -2733,20 +2461,18 @@ const BattleView: React.FC<{
           </div>
         </div>
       </div>
-
       {battleOutcome ? (
         <div className={`battle-outcome-overlay ${battleOutcome.status}`}>
           <div className="battle-outcome-card">
             <div className="battle-outcome-stamp">
-              {battleOutcome.status === 'victory' ? 'SECTOR SECURED' : 'MISSION FAILED'}
+              {battleOutcome.status === 'victory' ? t('battle:outcome.sectorSecured') : t('battle:outcome.missionFailed')}
             </div>
             <p className="battle-outcome-sector">{battleOutcome.sectorName}</p>
             <p className="battle-outcome-flavor">
               {battleOutcome.status === 'victory'
-                ? 'The ground is ours. Survivors are regrouping and the sector falls under Alliance control.'
-                : 'The line broke. What remains of the strike force is pulling back to regroup.'}
+                ? t('battle:outcome.victoryFlavor')
+                : t('battle:outcome.defeatFlavor')}
             </p>
-
             {battleOutcome.objectives.length ? (
               <ul className="battle-outcome-objectives">
                 {battleOutcome.objectives.map((o, i) => (
@@ -2757,25 +2483,22 @@ const BattleView: React.FC<{
                 ))}
               </ul>
             ) : null}
-
             <dl className="battle-outcome-stats">
-              <div><dt>Enemies destroyed</dt><dd>{battleOutcome.enemiesDestroyed}/{battleOutcome.enemiesTotal}</dd></div>
-              <div><dt>Squads surviving</dt><dd>{battleOutcome.squadsSurviving}</dd></div>
-              <div><dt>Squads lost</dt><dd className={battleOutcome.squadsLost > 0 ? 'loss' : ''}>{battleOutcome.squadsLost}</dd></div>
-              <div><dt>Rounds</dt><dd>{battleOutcome.rounds}</dd></div>
+              <div><dt>{t('battle:outcome.enemiesDestroyed')}</dt><dd>{battleOutcome.enemiesDestroyed}/{battleOutcome.enemiesTotal}</dd></div>
+              <div><dt>{t('battle:outcome.squadsSurviving')}</dt><dd>{battleOutcome.squadsSurviving}</dd></div>
+              <div><dt>{t('battle:outcome.squadsLost')}</dt><dd className={battleOutcome.squadsLost > 0 ? 'loss' : ''}>{battleOutcome.squadsLost}</dd></div>
+              <div><dt>{t('battle:outcome.rounds')}</dt><dd>{battleOutcome.rounds}</dd></div>
             </dl>
-
             {battleOutcome.reward ? (
               <div className="battle-outcome-spoils">
-                <span className="spoils-label">Spoils</span>
+                <span className="spoils-label">{t('battle:outcome.spoils')}</span>
                 <span className="spoils-item">+{battleOutcome.reward.money} <em>CR</em></span>
                 <span className="spoils-item">+{battleOutcome.reward.research} <em>RP</em></span>
                 <span className="spoils-item">+{battleOutcome.reward.strategic} <em>SP</em></span>
               </div>
             ) : null}
-
             <button className="primary-btn battle-outcome-continue" onClick={confirmBattleOutcome}>
-              {battleOutcome.status === 'victory' ? 'Return to HQ' : 'Regroup at HQ'}
+              {battleOutcome.status === 'victory' ? t('battle:outcome.returnToHq') : t('battle:outcome.regroupAtHq')}
             </button>
           </div>
         </div>
@@ -2783,22 +2506,20 @@ const BattleView: React.FC<{
     </div>
   );
 };
-
-function loadAllSummaries(): (SlotSummary | null)[] {
+function loadAllSummaries(): (SaveSlot | null)[] {
   if (typeof window === 'undefined') return [null, null, null];
   return [1, 2, 3].map((slot) => {
     const saved = window.localStorage.getItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
     if (!saved) return null;
     try {
       const data = JSON.parse(saved);
+      // Stored summaries nest resources; MainMenu's SaveSlot wants them flat.
       return {
         slot,
         turn: data.turn,
-        resources: {
-          money: data.resources?.money ?? 0,
-          research: data.resources?.research ?? 0,
-          strategic: data.resources?.strategic ?? 0,
-        },
+        money: data.resources?.money ?? 0,
+        research: data.resources?.research ?? 0,
+        strategic: data.resources?.strategic ?? 0,
         territories: data.territories ?? 0,
         updated: data.updated ?? 0,
         activeBattle: data.activeBattle ?? false,
@@ -2808,13 +2529,12 @@ function loadAllSummaries(): (SlotSummary | null)[] {
     }
   });
 }
-
 export function App() {
+  const { t } = useTranslation(['common', 'campaign']);
   const { campaign, mutate, persist, reset, slot, changeSlot, summary } = useCampaign();
   const dismissPopups = () => mutate((s) => { s.popups = []; });
   const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
-  const [savedSlots, setSavedSlots] = useState<(SlotSummary | null)[]>(() => loadAllSummaries());
-
+  const [savedSlots, setSavedSlots] = useState<(SaveSlot | null)[]>(() => loadAllSummaries());
   // Campaign-end sting. Ref-guarded so the frequent strategic re-renders can't re-trigger it.
   const campaignOutcomeStingRef = useRef<string | null>(null);
   useEffect(() => {
@@ -2823,27 +2543,25 @@ export function App() {
     campaignOutcomeStingRef.current = campaign.outcome;
     AudioManager.play(campaign.outcome === 'victory' ? 'victory' : 'defeat');
   }, [campaign.outcome]);
-
   const reportBattleLaunchError = (err: unknown) => {
-    const message = err instanceof Error ? err.message : 'Operation could not be launched';
+    const reason = err instanceof CampaignError
+      ? t(`campaign:errors.${err.key}`, err.params)
+      : err instanceof Error ? err.message : t('campaign:errors.genericLaunchFailed');
     mutate((state) => {
-      const body = `${message}. Open the Army tab and rebuild the force before launching.`;
       const existing = state.popups ?? [];
-      state.popups = existing.some((popup) => popup.title === 'Deployment blocked' && popup.body === body)
+      state.popups = existing.some((popup) => popup.key === 'deploymentBlocked' && popup.params?.reason === reason)
         ? existing
-        : [...existing, { turn: state.turn, title: 'Deployment blocked', body, kind: 'warning' }];
-      state.log.push(`Launch blocked: ${message}`);
+        : [...existing, { turn: state.turn, key: 'deploymentBlocked', params: { reason }, kind: 'warning' }];
+      state.log.push({ key: 'launchBlocked', params: { reason } });
     });
-    showToast(message, 'warning');
+    showToast(reason, 'warning');
   };
-
   // Reload saved slots when returning to menu
   useEffect(() => {
     if (mode === 'menu') {
       setSavedSlots(loadAllSummaries());
     }
   }, [mode]);
-
   const startBattle = (territoryId: string) => {
     try {
       mutate((state) => {
@@ -2854,18 +2572,15 @@ export function App() {
       reportBattleLaunchError(err);
     }
   };
-
   const handleNewGame = (newSlot: number) => {
     changeSlot(newSlot);
     reset();
     setMode('strategic');
   };
-
   const handleContinue = (continueSlot: number) => {
     const loaded = changeSlot(continueSlot);
     setMode(loaded.activeBattle ? 'battle' : 'strategic');
   };
-
   useEffect(() => {
     if (typeof window === 'undefined' || !import.meta.env.DEV) return;
     (window as any).__campaignControl = {
@@ -2939,7 +2654,6 @@ export function App() {
       delete (window as any).__campaignControl;
     };
   }, [campaign, mode, changeSlot, mutate, reset, reportBattleLaunchError]);
-
   // Show menu
   if (mode === 'menu') {
     return (
@@ -2948,13 +2662,12 @@ export function App() {
         <MainMenu
           onNewGame={handleNewGame}
           onContinue={handleContinue}
-          savedSlots={savedSlots as any}
+          savedSlots={savedSlots}
           currentSlot={slot}
         />
       </>
     );
   }
-
   // Show battle
   if (campaign.activeBattle && mode === 'battle') {
     return (
@@ -2970,7 +2683,6 @@ export function App() {
       </>
     );
   }
-
   // Show strategic HQ
   const availableUnits = bundle.units
     .filter((u) => u.faction === 'alliance')
@@ -2983,7 +2695,7 @@ export function App() {
       const uniqueHeroAlreadyQueued = u.type === 'hero' && (ownedCount > 0 || reserveCount > 0);
       return {
         id: u.id,
-        name: u.name,
+        name: localizedUnitName(u.id, u.name),
         unitType: u.type,
         unlocked,
         cost: u.cost,
@@ -2993,13 +2705,12 @@ export function App() {
         reserveCount,
       };
     });
-
   const toArmyUnit = (u: (typeof campaign.army)[number]) => {
     const def = bundle.units.find((d) => d.id === u.definitionId)!;
     return {
       id: u.id,
       definitionId: u.definitionId,
-      name: def?.name ?? 'Unknown',
+      name: localizedUnitName(u.definitionId, def?.name ?? u.definitionId),
       unitType: def?.type ?? 'unit',
       tier: u.tier,
       currentHealth: u.currentHealth ?? def?.stats.maxHealth ?? 100,
@@ -3010,11 +2721,10 @@ export function App() {
   };
   const armyUnits = campaign.army.map(toArmyUnit);
   const reserveUnits = campaign.reserves.map(toArmyUnit);
-
   const territories = campaign.territories.map((t) => ({
     id: t.id,
-    name: t.name,
-    brief: t.brief,
+    name: localizedTerritoryName(t),
+    brief: localizedTerritoryBrief(t),
     status: t.status,
     remainingTimer: t.remainingTimer,
     mapPosition: t.mapPosition,
@@ -3022,40 +2732,44 @@ export function App() {
     region: t.region,
     difficulty: t.difficulty,
   }));
-
+  const researchTopics = bundle.research.map((topic) => ({
+    ...topic,
+    name: localizedResearchName(topic.id, topic.name),
+    description: localizedResearchDescription(topic.id, topic.description),
+  }));
   return (
     <>
       <ToastContainer />
       {campaign.outcome ? (
         <div className="gameover-overlay">
           <div className={`gameover-panel ${campaign.outcome}`}>
-            <h1>{campaign.outcome === 'victory' ? 'CAMPAIGN WON' : 'CAMPAIGN LOST'}</h1>
+            <h1>{campaign.outcome === 'victory' ? t('campaign:gameover.won') : t('campaign:gameover.lost')}</h1>
             <p className="gameover-flavor">
               {campaign.outcome === 'victory'
-                ? 'Every sector is secured — the invasion corridor is shattered. The front holds.'
-                : 'The war clock ran out and the front collapsed. The invasion has overrun the continent.'}
+                ? t('campaign:gameover.victoryFlavor')
+                : t('campaign:gameover.defeatFlavor')}
             </p>
             <dl className="gameover-summary">
               <div className="gameover-stat">
-                <dt>Sectors cleared</dt>
+                <dt>{t('campaign:gameover.sectorsCleared')}</dt>
                 <dd>{campaign.territories.filter((t) => t.status === 'cleared').length}/{campaign.territories.length}</dd>
               </div>
               <div className="gameover-stat">
-                <dt>Turns taken</dt>
+                <dt>{t('campaign:gameover.turnsTaken')}</dt>
                 <dd>{campaign.turn}</dd>
               </div>
               <div className="gameover-stat">
-                <dt>Units surviving</dt>
-                <dd>{campaign.army.length}{campaign.reserves.length ? ` (+${campaign.reserves.length} reserve)` : ''}</dd>
+                <dt>{t('campaign:gameover.unitsSurviving')}</dt>
+                <dd>{campaign.army.length}{campaign.reserves.length ? ` (${t('campaign:gameover.reserveSuffix', { count: campaign.reserves.length })})` : ''}</dd>
               </div>
               <div className="gameover-stat">
-                <dt>Tech researched</dt>
+                <dt>{t('campaign:gameover.techResearched')}</dt>
                 <dd>{campaign.research.completed.size}</dd>
               </div>
             </dl>
             <div className="gameover-actions">
-              <button className="primary-btn" onClick={() => { reset(); }}>New Campaign</button>
-              <button className="secondary-btn" onClick={() => setMode('menu')}>Main Menu</button>
+              <button className="primary-btn" onClick={() => { reset(); }}>{t('campaign:gameover.newCampaign')}</button>
+              <button className="secondary-btn" onClick={() => setMode('menu')}>{t('campaign:gameover.mainMenu')}</button>
             </div>
           </div>
         </div>
@@ -3069,7 +2783,7 @@ export function App() {
         army={armyUnits}
         reserves={reserveUnits}
         territories={territories}
-        researchTopics={bundle.research}
+        researchTopics={researchTopics}
         currentResearch={campaign.research.inProgress ?? null}
         completedResearch={campaign.research.completed}
         log={campaign.log}
@@ -3080,18 +2794,25 @@ export function App() {
           try {
             mutate((s) => recruitUnit(s, bundle, id, tier));
           } catch (err) {
-            const message = err instanceof Error ? err.message : 'Recruitment failed';
-            showToast(message, 'error');
+            const reason = err instanceof CampaignError ? t(`campaign:errors.${err.key}`, err.params) : t('campaign:errors.genericRecruitFailed');
+            showToast(reason, 'error');
           }
         }}
-        onRefill={(id, tier) => mutate((s) => refillUnit(s, bundle, id, tier))}
+        onRefill={(id, tier) => {
+          try {
+            mutate((s) => refillUnit(s, bundle, id, tier));
+          } catch (err) {
+            const reason = err instanceof CampaignError ? t(`campaign:errors.${err.key}`, err.params) : t('campaign:errors.genericRefillFailed');
+            showToast(reason, 'error');
+          }
+        }}
         onDismiss={(id) => mutate((s) => dismissUnit(s, id))}
         onResearch={(topic) => {
           try {
             mutate((s) => startResearch(s, bundle, topic));
           } catch (err) {
-            const message = err instanceof Error ? err.message : 'Research could not be queued';
-            showToast(message, 'error');
+            const reason = err instanceof CampaignError ? t(`campaign:errors.${err.key}`, err.params) : t('campaign:errors.genericResearchFailed');
+            showToast(reason, 'error');
           }
         }}
         onConvertMoney={(amt) => mutate((s) => convertStrategicToMoney(s, amt))}
@@ -3103,7 +2824,6 @@ export function App() {
     </>
   );
 }
-
 export default App;
 const UnitLabel: React.FC<{ unit: UnitInstance; size: number; name: string }> = ({ unit, size, name }) => {
   const { x, y } = hexToPixel(unit.coordinate, size);

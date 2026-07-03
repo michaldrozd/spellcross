@@ -90,6 +90,8 @@ export function updateFactionVision(
   }
 
   const rangeModifier = options.rangeModifier ?? DEFAULT_RANGE_MODIFIER;
+  // Deliberately NOT defaulted from state.weather: campaign battles model weather by adjusting
+  // unit vision stats at setup (asymmetric via optics-ii), so a state fallback would double-penalize.
   const weatherPenalty = options.weather === 'fog' ? 1 : options.weather === 'night' ? 0.5 : 0;
 
   const visibleTiles = new Set<number>();
@@ -129,6 +131,9 @@ export function updateFactionVision(
   const enemyUnits = state.sides[enemyFaction]?.units;
   if (enemyUnits) {
     for (const u of enemyUnits.values()) {
+      // Corpses and embarked passengers (frozen coordinate) must not blank out their tile —
+      // isUnitDetected reports them undetected, which would permanently fog the ground under them.
+      if (u.stance === 'destroyed' || u.embarkedOn) continue;
       const idx = tileIndex(state.map, u.coordinate);
       if (!visibleTiles.has(idx)) continue;
       if (!isUnitDetected(state, faction, u, state.map)) {

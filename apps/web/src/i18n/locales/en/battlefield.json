@@ -1,0 +1,34 @@
+{
+  "help": {
+    "title": "How to play",
+    "clickSelect": "Click a unit to select it",
+    "clickMove": "Click a highlighted tile to move",
+    "clickAttack": "Click an enemy to attack it",
+    "overwatchHint": "Overwatch holds fire until an enemy moves",
+    "startBattleHint": "Start Battle ends deployment",
+    "endTurnHint": "End Turn, or Auto Turn to let the AI play",
+    "hotkeysTitle": "Hotkeys",
+    "hotkeys": {
+      "pan": "Arrow keys — Pan camera",
+      "zoom": "Mouse wheel — Zoom",
+      "minimap": "Tab — Toggle minimap",
+      "help": "H / F1 / ? — Toggle help"
+    }
+  },
+  "tooltip": {
+    "toggleMinimap": "Toggle minimap (Tab)",
+    "toggleHelp": "Toggle help (H / F1 / ?)"
+  },
+  "controls": {
+    "map": "Map"
+  },
+  "combat": {
+    "miss": "MISS",
+    "kill": "KILL"
+  },
+  "webglRequired": {
+    "title": "WEBGL REQUIRED",
+    "message": "Tactical combat needs WebGL. Enable browser hardware acceleration or open the game in a browser/profile where WebGL is available, then reload and launch the battle again.",
+    "reload": "Reload"
+  }
+}

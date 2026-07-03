@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 
+import i18n from './i18n/index.js';
 import App from './App.js';
 
 type RuntimeFallbackState = {
@@ -34,8 +35,8 @@ class RuntimeFallback extends React.Component<React.PropsWithChildren, RuntimeFa
         fontFamily: 'monospace',
         padding: 24
       }}>
-        <h1 style={{ color: '#d4a520', marginTop: 0 }}>Runtime fault</h1>
-        <p>The tactical renderer stopped unexpectedly. Reset local state and reload, then launch the battle again.</p>
+        <h1 style={{ color: '#d4a520', marginTop: 0 }}>{i18n.t('common:runtimeFault.title')}</h1>
+        <p>{i18n.t('common:runtimeFault.detail')}</p>
         <pre style={{
           whiteSpace: 'pre-wrap',
           background: '#111827',
@@ -62,14 +63,18 @@ class RuntimeFallback extends React.Component<React.PropsWithChildren, RuntimeFa
             cursor: 'pointer'
           }}
         >
-          Reset Local State
+          {i18n.t('common:resetLocalState')}
         </button>
       </div>
     );
   }
 }
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+// Reuse the root across Vite HMR re-executions of this module; calling createRoot twice on the
+// same container mounts a second app instance and floods the console with warnings in dev.
+const container = document.getElementById('root') as HTMLElement & { _reactRoot?: ReactDOM.Root };
+const root = container._reactRoot ?? (container._reactRoot = ReactDOM.createRoot(container));
+root.render(
   <RuntimeFallback>
     <App />
   </RuntimeFallback>

@@ -8,6 +8,6 @@ test('army recruit queue shows incoming units with readiness turn', async ({ pag
   await expect(page.getByRole('button', { name: /Captain John Alexander/i })).toBeDisabled();
   await page.getByRole('button', { name: /Light Infantry/i }).click();
 
-  await expect(page.getByText('IN TRANSIT')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'IN TRANSIT' })).toBeVisible();
   await expect(page.locator('.reserve-row').filter({ hasText: /Light Infantry/i })).toContainText(/READY T\d+/);
 });

@@ -8,7 +8,7 @@ test('varied tactical combat: vehicle/artillery, destructibles, fog/night', asyn
   test.setTimeout(70_000);
 
   await startFreshCampaign(page);
-  await convertResearch(page);
+  await convertResearch(page, 20);
   await queueResearch(page, 'optics-ii');
   await endStrategicTurns(page);
   await page.getByRole('button', { name: /Research/i }).click();

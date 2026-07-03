@@ -1,0 +1,33 @@
+{
+  "objective": {
+    "heading": "Ciele",
+    "enemies": "Nepriatelia {{surviving}}/{{total}}",
+    "held": "Udržané {{held}}/{{limit}}",
+    "byTurn": "Do kola {{limit}}",
+    "reached": "Splnené",
+    "notReached": "Nesplnené",
+    "protected": "Ochránené",
+    "lost": "Stratené"
+  },
+  "overwatch": {
+    "label": "Pohotovosť",
+    "reasonSelectUnit": "Vyber jednotku",
+    "reasonNeedsAp": "Vyžaduje 2 AP",
+    "reasonNoAmmo": "Bez munície",
+    "reasonSuppressed": "Jednotka pritlačená k zemi",
+    "reasonAlreadyActed": "Už konala",
+    "tooltip": "Za 2 AP pripraví paľbu na reakciu"
+  },
+  "supply": {
+    "label": "Zásobovanie",
+    "reasonNeedsAp": "Vyžaduje 2 AP",
+    "reasonNoAdjacentAlly": "Žiadny susedný spojenec",
+    "tooltip": "Za 2 AP doplní muníciu susednej jednotke"
+  },
+  "heal": {
+    "label": "Ošetriť",
+    "reasonNeedsAp": "Vyžaduje 2 AP",
+    "reasonNoWoundedAdjacent": "Žiadny zranený spojenec vedľa",
+    "tooltip": "Za 2 AP ošetrí zranenú jednotku vedľa"
+  }
+}

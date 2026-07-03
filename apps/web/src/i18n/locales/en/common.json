@@ -1,0 +1,45 @@
+{
+  "action": {
+    "confirm": "Confirm",
+    "cancel": "Cancel",
+    "close": "Close",
+    "back": "Back",
+    "continue": "Continue",
+    "retry": "Retry",
+    "attack": "Attack",
+    "move": "Move",
+    "endTurn": "End Turn",
+    "autoTurn": "Auto Turn",
+    "stopAuto": "Stop Auto",
+    "retreat": "Retreat",
+    "startBattle": "Start Battle",
+    "autoDeployAndPlay": "Auto Deploy & Play"
+  },
+  "unitType": {
+    "infantry": "Infantry",
+    "vehicle": "Vehicle",
+    "air": "Air",
+    "artillery": "Artillery",
+    "support": "Support",
+    "hero": "Hero"
+  },
+  "faction": {
+    "alliance": "Alliance",
+    "otherSide": "Enemy"
+  },
+  "terrain": {
+    "plain": "Open",
+    "road": "Road",
+    "forest": "Forest",
+    "urban": "Urban",
+    "hill": "Hill",
+    "swamp": "Swamp",
+    "structure": "Rubble",
+    "water": "Water"
+  },
+  "resetLocalState": "Reset Local State",
+  "runtimeFault": {
+    "title": "Runtime fault",
+    "detail": "The tactical renderer stopped unexpectedly. Reset local state and reload, then launch the battle again."
+  }
+}

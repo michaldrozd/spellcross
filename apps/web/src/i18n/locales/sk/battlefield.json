@@ -1,0 +1,34 @@
+{
+  "help": {
+    "title": "Ako hrať",
+    "clickSelect": "Kliknutím na jednotku ju vyberiete",
+    "clickMove": "Kliknutím na zvýraznené políčko sa presuniete",
+    "clickAttack": "Kliknutím na nepriateľa naň zaútočíte",
+    "overwatchHint": "Pohotovostná paľba čaká, kým sa nepriateľ nepohne",
+    "startBattleHint": "Začiatok bitky ukončí rozmiestňovanie",
+    "endTurnHint": "Ukončiť ťah, alebo Automatický ťah necháte hrať AI",
+    "hotkeysTitle": "Klávesové skratky",
+    "hotkeys": {
+      "pan": "Šípky — Posun kamery",
+      "zoom": "Koliesko myši — Priblíženie",
+      "minimap": "Tab — Prepnúť minimapu",
+      "help": "H / F1 / ? — Prepnúť pomocníka"
+    }
+  },
+  "tooltip": {
+    "toggleMinimap": "Prepnúť minimapu (Tab)",
+    "toggleHelp": "Prepnúť pomocníka (H / F1 / ?)"
+  },
+  "controls": {
+    "map": "Mapa"
+  },
+  "combat": {
+    "miss": "MIMO",
+    "kill": "SMRTEĽNÉ"
+  },
+  "webglRequired": {
+    "title": "VYŽADUJE SA WEBGL",
+    "message": "Taktický boj vyžaduje WebGL. Povoľ hardvérovú akceleráciu prehliadača alebo otvor hru v prehliadači či profile, kde je WebGL dostupné, potom obnov stránku a znova spusti bitku.",
+    "reload": "Obnoviť"
+  }
+}

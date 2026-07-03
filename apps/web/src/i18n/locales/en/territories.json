@@ -1,0 +1,89 @@
+{
+  "sector-paris": {
+    "name": "Paris Outskirts",
+    "brief": "The capital evacuation is underway. Secure the perimeter while civilians escape."
+  },
+  "sector-lyon": {
+    "name": "Lyon Industrial Zone",
+    "brief": "Protect the arms factories from demonic saboteurs."
+  },
+  "sector-strasbourg": {
+    "name": "Strasbourg Crossing",
+    "brief": "The Rhine bridge is our only supply line. Hold it at all costs."
+  },
+  "sector-munich": {
+    "name": "Munich Defensive Line",
+    "brief": "German forces are holding. Reinforce their position before the next wave."
+  },
+  "sector-zurich": {
+    "name": "Alpine Fortress",
+    "brief": "Swiss bunkers provide excellent defensive positions. Clear the tunnels."
+  },
+  "sector-vienna": {
+    "name": "Vienna Siege",
+    "brief": "The ancient city is under siege. Break through and liberate the defenders."
+  },
+  "sector-brussels": {
+    "name": "Brussels Command",
+    "brief": "NATO headquarters is compromised. Extract classified intel before it falls."
+  },
+  "sector-amsterdam": {
+    "name": "Amsterdam Harbor",
+    "brief": "Control of the port is essential for naval supply routes."
+  },
+  "sector-copenhagen": {
+    "name": "Copenhagen Strait",
+    "brief": "The Baltic access point. Secure it to prevent naval flanking."
+  },
+  "sector-prague": {
+    "name": "Prague Underground",
+    "brief": "Ancient catacombs hide a dark ritual. Descend and disrupt it."
+  },
+  "sector-berlin": {
+    "name": "Berlin Ruins",
+    "brief": "The fallen capital. Push through the devastation to reclaim the heart of Europe."
+  },
+  "sector-warsaw": {
+    "name": "Warsaw Front",
+    "brief": "The eastern defense line. Polish forces need immediate reinforcement."
+  },
+  "sector-krakow": {
+    "name": "Krakow Citadel",
+    "brief": "An ancient fortress converted to a portal nexus. Assault and seal it."
+  },
+  "sector-kyiv": {
+    "name": "Kyiv Siege",
+    "brief": "The largest city still standing in the east. A critical strategic target."
+  },
+  "sector-carpathian": {
+    "name": "Carpathian Pass",
+    "brief": "Mountain passages crawling with enemy patrols. Clear the route."
+  },
+  "sector-blacksea": {
+    "name": "Black Sea Coast",
+    "brief": "Secure the southern flank. Naval demons are emerging from the depths."
+  },
+  "sector-rift": {
+    "name": "The Eastern Rift",
+    "brief": "The main invasion portal. Destroy it to turn the tide of war."
+  },
+  "mapLabel": {
+    "sector-paris": "Paris",
+    "sector-lyon": "Lyon",
+    "sector-strasbourg": "Strasbourg",
+    "sector-munich": "Munich",
+    "sector-zurich": "Alpine Fortress",
+    "sector-vienna": "Vienna",
+    "sector-brussels": "Brussels",
+    "sector-amsterdam": "Amsterdam",
+    "sector-copenhagen": "Copenhagen",
+    "sector-prague": "Prague",
+    "sector-berlin": "Berlin",
+    "sector-warsaw": "Warsaw",
+    "sector-krakow": "Krakow",
+    "sector-kyiv": "Kyiv",
+    "sector-carpathian": "Carpathian Pass",
+    "sector-blacksea": "Black Sea",
+    "sector-rift": "Rift"
+  }
+}

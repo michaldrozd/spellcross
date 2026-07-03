@@ -5,8 +5,8 @@ test('late-game spire assault loads and can be exited', async ({ page }) => {
   test.setTimeout(90_000);
   await startBattle(page, 'sector-rift');
 
-  await expect(page.getByRole('heading', { name: /Black Spire Assault/i })).toBeVisible();
-  await expect(page.getByText(/ritual spire/i)).toBeVisible();
+  await expect(page.getByRole('heading', { name: /The Eastern Rift/i })).toBeVisible();
+  await expect(page.getByText(/scorched rift/i)).toBeVisible();
 
   // Ensure the foggy battle renders enemy presence
   const visibleCount = await page.evaluate(() => (window as any).__battleControl?.visibleEnemyCount?.() ?? 0);

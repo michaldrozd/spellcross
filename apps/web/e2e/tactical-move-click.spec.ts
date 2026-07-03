@@ -74,8 +74,12 @@ test('animated movement path starts from the unit origin', async ({ page }) => {
     const allies = ctrl?.allyUnits?.() ?? [];
     const unit = allies.find((candidate: any) => candidate.type === 'infantry') ?? allies[0];
     if (!unit) return null;
-    for (let r = 0; r < 7; r++) {
-      for (let q = 0; q < 10; q++) {
+    const origin = unit.coord;
+    for (let dr = -8; dr <= 8; dr++) {
+      for (let dq = -10; dq <= 10; dq++) {
+        const q = origin.q + dq;
+        const r = origin.r + dr;
+        if (q < 0 || r < 0) continue;
         const path = ctrl?.pathForUnit?.(unit.id, q, r);
         if (path?.success && path.path.length) {
           return {
@@ -324,12 +328,18 @@ test('m113 movement keeps turn-boundary animation time for multi-step paths', as
   });
   expect(actualTurnCount).toBeGreaterThan(0);
 
-  const waitUntilFirstTurn = await page.evaluate((targetAge) => {
-    const moving = (window as any).__battleControl?.animationState?.();
-    return moving ? Math.max(0, moving.startTime + targetAge - Date.now()) : 0;
+  // Wait and probe inside the page: an in-page timeout shares the event loop with the animation's
+  // clear timer, so under CPU load both lag together and the probe still fires first. Waiting via
+  // waitForTimeout + a separate evaluate raced the clear timer on loaded runners.
+  const survivedFirstTurn = await page.evaluate(async (targetAge) => {
+    const ctrl = (window as any).__battleControl;
+    const moving = ctrl?.animationState?.();
+    if (!moving) return false;
+    const wait = Math.max(0, moving.startTime + targetAge - Date.now());
+    await new Promise((resolve) => setTimeout(resolve, wait));
+    return ctrl?.animationState?.() != null;
   }, state.stepDuration + 20);
-  await page.waitForTimeout(waitUntilFirstTurn);
-  expect(await page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null)).not.toBeNull();
+  expect(survivedFirstTurn).toBeTruthy();
 
   await expect.poll(async () => {
     return page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);

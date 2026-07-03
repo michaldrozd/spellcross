@@ -1,0 +1,45 @@
+{
+  "action": {
+    "confirm": "Potvrdiť",
+    "cancel": "Zrušiť",
+    "close": "Zavrieť",
+    "back": "Späť",
+    "continue": "Pokračovať",
+    "retry": "Skúsiť znova",
+    "attack": "Útok",
+    "move": "Presun",
+    "endTurn": "Ukončiť ťah",
+    "autoTurn": "Auto ťah",
+    "stopAuto": "Zastaviť auto",
+    "retreat": "Ústup",
+    "startBattle": "Spustiť bitku",
+    "autoDeployAndPlay": "Auto nasadenie a hra"
+  },
+  "unitType": {
+    "infantry": "Pechota",
+    "vehicle": "Vozidlo",
+    "air": "Vzduch",
+    "artillery": "Delostrelectvo",
+    "support": "Podpora",
+    "hero": "Hrdina"
+  },
+  "faction": {
+    "alliance": "Aliancia",
+    "otherSide": "Nepriateľ"
+  },
+  "terrain": {
+    "plain": "Otvorený terén",
+    "road": "Cesta",
+    "forest": "Les",
+    "urban": "Zástavba",
+    "hill": "Kopec",
+    "swamp": "Močiar",
+    "structure": "Ruiny",
+    "water": "Voda"
+  },
+  "resetLocalState": "Resetovať lokálny stav",
+  "runtimeFault": {
+    "title": "Chyba behu",
+    "detail": "Taktický vykresľovač neočakávane zastal. Resetuj lokálny stav a znova načítaj stránku, potom spusti bitku znova."
+  }
+}

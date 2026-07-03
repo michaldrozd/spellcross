@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance, MapProp, EdgeDir } from '@spellcross/core';
 import { movementMultiplierForStance } from '@spellcross/core';
@@ -1064,6 +1065,9 @@ const drawRoofVents = (
 const PROP_BASE_Y_OFFSET = 0;
 const PROP_SHADOW_Y = 4;
 const PROP_ANCHOR_Y = 0.97; // base sits on the tile surface; 0.9 sank ~10% of each prop into the ground
+// Everything under /props/ is authored hi-res (96-1024px sources) and renders at half scale.
+const HI_RES_PROP_PATHS = ['/props/'];
+const isHiResPropTexture = (path: string) => HI_RES_PROP_PATHS.some((prefix) => path.includes(prefix));
 const missingLabelStyle = new TextStyle({
   fontSize: 9,
   fill: 0xffffff,
@@ -1071,6 +1075,38 @@ const missingLabelStyle = new TextStyle({
   strokeThickness: 3,
   align: 'center'
 });
+// TextStyle construction re-rasterizes on every render; keep the recurring styles as constants.
+const combatLabelStyle = (fontSize: number, fill: number) =>
+  new TextStyle({
+    fontFamily: 'Courier New',
+    fontSize,
+    fontWeight: '700',
+    fill,
+    stroke: 0x120604,
+    strokeThickness: 3,
+    align: 'center'
+  });
+const invalidMoveLabelStyle = combatLabelStyle(14, 0xffe6a6);
+const targetReadoutStyle = combatLabelStyle(11, 0xffe6a6);
+const targetReadoutLethalStyle = combatLabelStyle(11, 0xff7a6a);
+// Damage numbers ramp size/colour by magnitude, so cache the handful of concrete variants.
+const damageTextStyles = new Map<string, TextStyle>();
+const damageTextStyle = (hit: boolean, big: boolean, fontSize: number, fill: string) => {
+  const key = `${fontSize}:${fill}`;
+  let style = damageTextStyles.get(key);
+  if (!style) {
+    style = new TextStyle({
+      fontFamily: 'monospace',
+      fontSize,
+      fontWeight: '800',
+      fill,
+      stroke: hit ? (big ? '#5a0d00' : '#3a1308') : '#17130d',
+      strokeThickness: hit ? 4 : 3
+    });
+    damageTextStyles.set(key, style);
+  }
+  return style;
+};
 const worldCornerOfTile = (
   q: number,
   r: number,
@@ -1107,6 +1143,99 @@ const ensureImageDecodable = async (blob: Blob) => {
   });
 };
 
+const detectBitmapColorMode = (bmp: ImageBitmap): 'colored' | 'grayscale' => {
+  const SAMPLE = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = SAMPLE;
+  canvas.height = SAMPLE;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return 'colored';
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(bmp, 0, 0, SAMPLE, SAMPLE);
+  const data = ctx.getImageData(0, 0, SAMPLE, SAMPLE).data;
+  let colorScore = 0;
+  const pixels = data.length / 4;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i], g = data[i + 1], b = data[i + 2];
+    colorScore += Math.abs(r - g) + Math.abs(g - b) + Math.abs(r - b);
+  }
+  const avgDelta = colorScore / Math.max(1, pixels);
+  return avgDelta > 18 ? 'colored' : 'grayscale';
+};
+
+// Terrain art is immutable per session, but each battle entry used to re-fetch every ground image
+// into a fresh blob URL — and Pixi caches BaseTextures per URL string, so every mount pinned another
+// full set of decoded textures (~tens of MB). Cache the load per stable asset URL and never destroy.
+const externalTerrainTextureCache = new Map<string, Promise<Texture | null>>();
+const loadExternalTerrainTexture = (name: string) => {
+  const cacheKey = `/textures/terrain/${name}`;
+  let pending = externalTerrainTextureCache.get(cacheKey);
+  if (!pending) {
+    pending = (async () => {
+      // Prefer a compact .jpg (opaque ground textures don't need alpha), fall back to .png.
+      let res: Response | null = null;
+      for (const ext of ['jpg', 'png']) {
+        try {
+          const r = await fetch(`${cacheKey}.${ext}`, { method: 'GET' });
+          if (r.ok && (r.headers.get('content-type') ?? '').startsWith('image/')) { res = r; break; }
+        } catch { /* try next ext */ }
+      }
+      if (!res) return null;
+      try {
+        const blob = await res.blob();
+        await ensureImageDecodable(blob);
+        const objUrl = URL.createObjectURL(blob);
+        const loaded = crispTexture(Texture.from(objUrl));
+        // Painted ground is sampled across many tiles; mipmaps + linear keep it smooth and
+        // painterly instead of shimmering into a crisp pixel-art grid when zoomed out.
+        loaded.baseTexture.scaleMode = SCALE_MODES.LINEAR;
+        loaded.baseTexture.mipmap = MIPMAP_MODES.ON;
+        (loaded.baseTexture as any).wrapMode = WRAP_MODES.REPEAT; // tile painted ground textures seamlessly
+        loaded.baseTexture.update();
+        const revoke = () => URL.revokeObjectURL(objUrl);
+        if (loaded.baseTexture.valid) revoke();
+        else loaded.baseTexture.once('loaded', revoke);
+        return loaded;
+      } catch {
+        return null;
+      }
+    })();
+    externalTerrainTextureCache.set(cacheKey, pending);
+  }
+  return pending;
+};
+
+const TERRAIN_SHEET_ORDER = ['plain', 'road', 'forest', 'urban', 'hill', 'water', 'swamp', 'structure'] as const;
+const terrainSheetCache = new Map<
+  string,
+  Promise<{ textures: Record<string, Texture>; detectedMode: 'colored' | 'grayscale' } | null>
+>();
+const loadTerrainSheet = (url: string) => {
+  let pending = terrainSheetCache.get(url);
+  if (!pending) {
+    pending = (async () => {
+      try {
+        const res = await fetch(url, { method: 'GET' });
+        if (!res.ok) return null;
+        const blob = await res.blob();
+        const bmp = await createImageBitmap(blob);
+        const cols = 4, rows = 2;
+        const cellW = Math.floor(bmp.width / cols);
+        const cellH = Math.floor(bmp.height / rows);
+        const base = crispTexture(Texture.from(bmp)).baseTexture;
+        const coords: Array<[number, number]> = [[0, 0], [1, 0], [2, 0], [3, 0], [0, 1], [1, 1], [2, 1], [3, 1]];
+        const textures: Record<string, Texture> = {};
+        TERRAIN_SHEET_ORDER.forEach((key, i) => {
+          textures[key] = crispTexture(new Texture(base, new Rectangle(coords[i][0] * cellW, coords[i][1] * cellH, cellW, cellH)));
+        });
+        return { textures, detectedMode: detectBitmapColorMode(bmp) };
+      } catch { return null; }
+    })();
+    terrainSheetCache.set(url, pending);
+  }
+  return pending;
+};
+
 
 function shade(c: number, f: number) {
   const { r, g, b } = hexToRgb(c);
@@ -1118,6 +1247,161 @@ function shade(c: number, f: number) {
 
 
   return `rgb(${nr},${ng},${nb})`;
+}
+
+// Procedural terrain textures (tiny, generated once per session — regenerating per mount leaked a
+// fresh set of canvas-backed BaseTextures on every battle entry)
+let proceduralTerrainTextures: Record<string, Texture> | null = null;
+function getProceduralTerrainTextures() {
+  if (proceduralTerrainTextures) return proceduralTerrainTextures;
+
+  const grassBase = terrainPalette.plain;
+  const forestBase = terrainPalette.forest;
+  const roadBase = terrainPalette.road;
+  const urbanBase = terrainPalette.urban;
+  const hillBase = terrainPalette.hill;
+  const waterBase = terrainPalette.water;
+  const swampBase = terrainPalette.swamp;
+  const structureBase = terrainPalette.structure;
+
+  const dot = (ctx: CanvasRenderingContext2D, x: number, y: number, c: string, a = 1) => {
+    ctx.fillStyle = c; ctx.globalAlpha = a; ctx.fillRect(x, y, 1, 1); ctx.globalAlpha = 1;
+  };
+
+  const grass = makeCanvasTexture((ctx, w, h) => {
+    ctx.fillStyle = shade(grassBase, 1.0); ctx.fillRect(0, 0, w, h);
+    // mottled patches for painterly tonal variation (lighter/darker greens)
+    for (let i = 0; i < 28; i++) {
+      const t = ((i * 37) % 100) / 100;
+      ctx.globalAlpha = 0.5;
+      ctx.fillStyle = shade(grassBase, 0.78 + t * 0.5);
+      ctx.fillRect((i * 19) % w, (i * 29) % h, 6 + (i % 9), 4 + (i % 5));
+    }
+    ctx.globalAlpha = 1;
+    // grass blades, dark then bright
+    ctx.fillStyle = shade(grassBase, 0.7);
+    for (let i = 0; i < 16; i++) ctx.fillRect((i * 23) % w, (i * 31) % h, 9 + (i % 6), 2);
+    ctx.fillStyle = shade(grassBase, 1.24);
+    for (let i = 0; i < 14; i++) ctx.fillRect((i * 13) % w, (i * 19) % h, 7 + (i % 5), 1);
+    // dry/dirt flecks + highlight speckle
+    for (let i = 0; i < w * h * 0.02; i++) { dot(ctx, (i * 41) % w, (i * 23) % h, '#6b5a3a', 0.5); }
+    for (let i = 0; i < w * h * 0.05; i++) { dot(ctx, (i * 29) % w, (i * 53) % h, shade(grassBase, 1.16), 0.7); }
+    for (let i = 0; i < w * h * 0.035; i++) { dot(ctx, (i * 17) % w, (i * 41) % h, shade(grassBase, 0.8), 0.72); }
+  });
+
+  const forest = makeCanvasTexture((ctx, w, h) => {
+    ctx.fillStyle = shade(forestBase, 1.0); ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = shade(forestBase, 0.72);
+    for (let i = 0; i < 20; i++) ctx.fillRect((i * 19) % w, (i * 37) % h, 7 + (i % 4), 3);
+    for (let i = 0; i < w * h * 0.065; i++) { dot(ctx, (i*13)%w, (i*37)%h, shade(forestBase, 0.78), 0.82); }
+    for (let i = 0; i < w * h * 0.045; i++) { dot(ctx, (i*23)%w, (i*19)%h, shade(forestBase, 1.16), 0.78); }
+  });
+
+  const road = makeCanvasTexture((ctx, w, h) => {
+    ctx.fillStyle = shade(roadBase, 0.95); ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = shade(roadBase, 0.75);
+    for (let y = 0; y < h; y += 4) { ctx.fillRect(0, y, w, 1); }
+    ctx.fillStyle = shade(roadBase, 1.12);
+    for (let i = 0; i < 18; i++) ctx.fillRect((i * 17) % w, (i * 11) % h, 5 + (i % 5), 1);
+    ctx.fillStyle = shade(roadBase, 0.55);
+    for (let i = 0; i < 10; i++) ctx.fillRect((i * 29) % w, (i * 23) % h, 3 + (i % 4), 1);
+  });
+
+  const urban = makeCanvasTexture((ctx, w, h) => {
+    ctx.fillStyle = shade(urbanBase, 0.95); ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = shade(urbanBase, 0.8);
+    for (let x = 0; x < w; x += 4) ctx.fillRect(x, 0, 1, h);
+    for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
+    ctx.fillStyle = shade(urbanBase, 1.16);
+    for (let i = 0; i < 12; i++) ctx.fillRect((i * 31) % w, (i * 17) % h, 3 + (i % 3), 2);
+    ctx.fillStyle = shade(urbanBase, 0.62);
+    for (let i = 0; i < 10; i++) ctx.fillRect((i * 13) % w, (i * 29) % h, 5, 1);
+  });
+
+  const hill = makeCanvasTexture((ctx, w, h) => {
+    ctx.fillStyle = shade(hillBase, 1.0); ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = shade(hillBase, 0.85);
+    for (let y = 0; y < h; y += 5) { ctx.fillRect(0, y, w, 1); }
+    ctx.fillStyle = shade(hillBase, 1.14);
+    for (let i = 0; i < 12; i++) ctx.fillRect((i * 17) % w, (i * 29) % h, 8 + (i % 5), 1);
+  });
+
+  const water = makeCanvasTexture((ctx, w, h) => {
+    ctx.fillStyle = shade(waterBase, 0.9); ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = shade(waterBase, 1.1);
+    for (let i = 0; i < w; i++) ctx.fillRect((i*7)%w, (i*3)%h, 1, 1);
+    ctx.fillStyle = shade(waterBase, 1.28);
+    for (let i = 0; i < 18; i++) ctx.fillRect((i * 19) % w, (i * 13) % h, 8 + (i % 8), 1);
+    ctx.fillStyle = shade(waterBase, 0.68);
+    for (let i = 0; i < 12; i++) ctx.fillRect((i * 23) % w, (i * 31) % h, 7, 1);
+  });
+
+  const swamp = makeCanvasTexture((ctx, w, h) => {
+    ctx.fillStyle = shade(swampBase, 1.0); ctx.fillRect(0, 0, w, h);
+    for (let i = 0; i < w * h * 0.045; i++) { dot(ctx, (i*11)%w, (i*17)%h, shade(swampBase, 0.78), 0.78); }
+    for (let i = 0; i < w * h * 0.035; i++) { dot(ctx, (i*31)%w, (i*23)%h, '#3b2f2f', 0.72); }
+    ctx.fillStyle = '#1b2d19';
+    for (let i = 0; i < 10; i++) ctx.fillRect((i * 17) % w, (i * 37) % h, 8, 2);
+  });
+
+  const structure = makeCanvasTexture((ctx, w, h) => {
+    ctx.fillStyle = shade(structureBase, 1.0); ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = shade(structureBase, 0.8);
+    for (let x = 0; x < w; x += 4) ctx.fillRect(x, 0, 1, h);
+    ctx.fillStyle = shade(structureBase, 1.16);
+    for (let i = 0; i < 12; i++) ctx.fillRect((i * 19) % w, (i * 23) % h, 4 + (i % 4), 2);
+    ctx.fillStyle = shade(structureBase, 0.58);
+    for (let i = 0; i < 8; i++) ctx.fillRect((i * 31) % w, (i * 13) % h, 6, 1);
+  });
+
+  proceduralTerrainTextures = { plain: grass, road, forest, urban, hill, water, swamp, structure };
+  return proceduralTerrainTextures;
+}
+
+// Procedural prop sprites, same once-per-session treatment as the terrain canvases above.
+let propAtlas: { bush: Texture; rock: Texture } | null = null;
+function getPropAtlasTextures() {
+  if (propAtlas) return propAtlas;
+
+  const bush = makeCanvasTexture((ctx) => {
+    const leaf = (x: number, y: number, w: number, h: number, color: string) => {
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, w, h);
+    };
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(10, 25, 28, 4);
+    leaf(13, 15, 10, 8, '#1f421b');
+    leaf(21, 11, 13, 10, '#2e5b25');
+    leaf(29, 16, 9, 8, '#1a3416');
+    leaf(16, 22, 16, 5, '#162b13');
+    leaf(10, 20, 8, 5, '#315e25');
+    leaf(32, 22, 7, 5, '#3f7130');
+    leaf(20, 14, 4, 2, '#638a43');
+    leaf(30, 18, 5, 2, '#5a813d');
+    leaf(15, 23, 5, 1, '#0c180b');
+    leaf(25, 25, 9, 1, '#0c180b');
+  }, 48, 36);
+
+  const rock = makeCanvasTexture((ctx) => {
+    ctx.fillStyle = 'rgba(0,0,0,0.24)';
+    ctx.fillRect(8, 25, 31, 5);
+    ctx.fillStyle = '#45443c';
+    ctx.fillRect(12, 18, 12, 7);
+    ctx.fillRect(22, 15, 11, 10);
+    ctx.fillRect(31, 20, 7, 5);
+    ctx.fillStyle = '#666458';
+    ctx.fillRect(14, 15, 9, 5);
+    ctx.fillRect(24, 13, 8, 4);
+    ctx.fillStyle = '#858171';
+    ctx.fillRect(16, 14, 5, 1);
+    ctx.fillRect(25, 12, 5, 1);
+    ctx.fillStyle = '#25241f';
+    ctx.fillRect(12, 24, 10, 2);
+    ctx.fillRect(26, 23, 10, 2);
+  }, 48, 36);
+
+  propAtlas = { bush, rock };
+  return propAtlas;
 }
 
 
@@ -1149,6 +1433,7 @@ export function BattlefieldStage({
   attackEffects = [],
   movingUnit
 }: BattlefieldStageProps) {
+  const { t } = useTranslation('battlefield');
   const [webglAvailable] = useState(hasWebGLRenderer);
   const map = battleState.map;
   const viewerVision = battleState.vision[viewerFaction];
@@ -1327,109 +1612,7 @@ export function BattlefieldStage({
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Procedural terrain textures (tiny, generated once per mount)
-  const terrainTextures = useMemo(() => {
-    const grassBase = terrainPalette.plain;
-    const forestBase = terrainPalette.forest;
-    const roadBase = terrainPalette.road;
-    const urbanBase = terrainPalette.urban;
-    const hillBase = terrainPalette.hill;
-    const waterBase = terrainPalette.water;
-    const swampBase = terrainPalette.swamp;
-    const structureBase = terrainPalette.structure;
-
-    const dot = (ctx: CanvasRenderingContext2D, x: number, y: number, c: string, a = 1) => {
-      ctx.fillStyle = c; ctx.globalAlpha = a; ctx.fillRect(x, y, 1, 1); ctx.globalAlpha = 1;
-    };
-
-    const grass = makeCanvasTexture((ctx, w, h) => {
-      ctx.fillStyle = shade(grassBase, 1.0); ctx.fillRect(0, 0, w, h);
-      // mottled patches for painterly tonal variation (lighter/darker greens)
-      for (let i = 0; i < 28; i++) {
-        const t = ((i * 37) % 100) / 100;
-        ctx.globalAlpha = 0.5;
-        ctx.fillStyle = shade(grassBase, 0.78 + t * 0.5);
-        ctx.fillRect((i * 19) % w, (i * 29) % h, 6 + (i % 9), 4 + (i % 5));
-      }
-      ctx.globalAlpha = 1;
-      // grass blades, dark then bright
-      ctx.fillStyle = shade(grassBase, 0.7);
-      for (let i = 0; i < 16; i++) ctx.fillRect((i * 23) % w, (i * 31) % h, 9 + (i % 6), 2);
-      ctx.fillStyle = shade(grassBase, 1.24);
-      for (let i = 0; i < 14; i++) ctx.fillRect((i * 13) % w, (i * 19) % h, 7 + (i % 5), 1);
-      // dry/dirt flecks + highlight speckle
-      for (let i = 0; i < w * h * 0.02; i++) { dot(ctx, (i * 41) % w, (i * 23) % h, '#6b5a3a', 0.5); }
-      for (let i = 0; i < w * h * 0.05; i++) { dot(ctx, (i * 29) % w, (i * 53) % h, shade(grassBase, 1.16), 0.7); }
-      for (let i = 0; i < w * h * 0.035; i++) { dot(ctx, (i * 17) % w, (i * 41) % h, shade(grassBase, 0.8), 0.72); }
-    });
-
-    const forest = makeCanvasTexture((ctx, w, h) => {
-      ctx.fillStyle = shade(forestBase, 1.0); ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = shade(forestBase, 0.72);
-      for (let i = 0; i < 20; i++) ctx.fillRect((i * 19) % w, (i * 37) % h, 7 + (i % 4), 3);
-      for (let i = 0; i < w * h * 0.065; i++) { dot(ctx, (i*13)%w, (i*37)%h, shade(forestBase, 0.78), 0.82); }
-      for (let i = 0; i < w * h * 0.045; i++) { dot(ctx, (i*23)%w, (i*19)%h, shade(forestBase, 1.16), 0.78); }
-    });
-
-    const road = makeCanvasTexture((ctx, w, h) => {
-      ctx.fillStyle = shade(roadBase, 0.95); ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = shade(roadBase, 0.75);
-      for (let y = 0; y < h; y += 4) { ctx.fillRect(0, y, w, 1); }
-      ctx.fillStyle = shade(roadBase, 1.12);
-      for (let i = 0; i < 18; i++) ctx.fillRect((i * 17) % w, (i * 11) % h, 5 + (i % 5), 1);
-      ctx.fillStyle = shade(roadBase, 0.55);
-      for (let i = 0; i < 10; i++) ctx.fillRect((i * 29) % w, (i * 23) % h, 3 + (i % 4), 1);
-    });
-
-    const urban = makeCanvasTexture((ctx, w, h) => {
-      ctx.fillStyle = shade(urbanBase, 0.95); ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = shade(urbanBase, 0.8);
-      for (let x = 0; x < w; x += 4) ctx.fillRect(x, 0, 1, h);
-      for (let y = 0; y < h; y += 4) ctx.fillRect(0, y, w, 1);
-      ctx.fillStyle = shade(urbanBase, 1.16);
-      for (let i = 0; i < 12; i++) ctx.fillRect((i * 31) % w, (i * 17) % h, 3 + (i % 3), 2);
-      ctx.fillStyle = shade(urbanBase, 0.62);
-      for (let i = 0; i < 10; i++) ctx.fillRect((i * 13) % w, (i * 29) % h, 5, 1);
-    });
-
-    const hill = makeCanvasTexture((ctx, w, h) => {
-      ctx.fillStyle = shade(hillBase, 1.0); ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = shade(hillBase, 0.85);
-      for (let y = 0; y < h; y += 5) { ctx.fillRect(0, y, w, 1); }
-      ctx.fillStyle = shade(hillBase, 1.14);
-      for (let i = 0; i < 12; i++) ctx.fillRect((i * 17) % w, (i * 29) % h, 8 + (i % 5), 1);
-    });
-
-    const water = makeCanvasTexture((ctx, w, h) => {
-      ctx.fillStyle = shade(waterBase, 0.9); ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = shade(waterBase, 1.1);
-      for (let i = 0; i < w; i++) ctx.fillRect((i*7)%w, (i*3)%h, 1, 1);
-      ctx.fillStyle = shade(waterBase, 1.28);
-      for (let i = 0; i < 18; i++) ctx.fillRect((i * 19) % w, (i * 13) % h, 8 + (i % 8), 1);
-      ctx.fillStyle = shade(waterBase, 0.68);
-      for (let i = 0; i < 12; i++) ctx.fillRect((i * 23) % w, (i * 31) % h, 7, 1);
-    });
-
-    const swamp = makeCanvasTexture((ctx, w, h) => {
-      ctx.fillStyle = shade(swampBase, 1.0); ctx.fillRect(0, 0, w, h);
-      for (let i = 0; i < w * h * 0.045; i++) { dot(ctx, (i*11)%w, (i*17)%h, shade(swampBase, 0.78), 0.78); }
-      for (let i = 0; i < w * h * 0.035; i++) { dot(ctx, (i*31)%w, (i*23)%h, '#3b2f2f', 0.72); }
-      ctx.fillStyle = '#1b2d19';
-      for (let i = 0; i < 10; i++) ctx.fillRect((i * 17) % w, (i * 37) % h, 8, 2);
-    });
-
-    const structure = makeCanvasTexture((ctx, w, h) => {
-      ctx.fillStyle = shade(structureBase, 1.0); ctx.fillRect(0, 0, w, h);
-      ctx.fillStyle = shade(structureBase, 0.8);
-      for (let x = 0; x < w; x += 4) ctx.fillRect(x, 0, 1, h);
-      ctx.fillStyle = shade(structureBase, 1.16);
-      for (let i = 0; i < 12; i++) ctx.fillRect((i * 19) % w, (i * 23) % h, 4 + (i % 4), 2);
-      ctx.fillStyle = shade(structureBase, 0.58);
-      for (let i = 0; i < 8; i++) ctx.fillRect((i * 31) % w, (i * 13) % h, 6, 1);
-    });
-
-    return { plain: grass, road, forest, urban, hill, water, swamp, structure } as Record<string, Texture>;
-  }, []);
+  const terrainTextures = useMemo(getProceduralTerrainTextures, []);
   // Optional external texture override (drop PNGs in /public/textures/terrain or a spritesheet in /public/textures/textures_black.png)
   const [externalTerrainTextures, setExternalTerrainTextures] = useState<Record<string, Texture> | null>(null);
   const [externalTexturesAreColored, setExternalTexturesAreColored] = useState<boolean>(false);
@@ -1456,26 +1639,6 @@ export function BattlefieldStage({
     let cancelled = false;
     const names = ['plain','road','forest','urban','hill','water','swamp','structure'] as const;
 
-    const detectBitmapColorMode = (bmp: ImageBitmap): 'colored' | 'grayscale' => {
-      const SAMPLE = 64;
-      const canvas = document.createElement('canvas');
-      canvas.width = SAMPLE;
-      canvas.height = SAMPLE;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return 'colored';
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(bmp, 0, 0, SAMPLE, SAMPLE);
-      const data = ctx.getImageData(0, 0, SAMPLE, SAMPLE).data;
-      let colorScore = 0;
-      const pixels = data.length / 4;
-      for (let i = 0; i < data.length; i += 4) {
-        const r = data[i], g = data[i + 1], b = data[i + 2];
-        colorScore += Math.abs(r - g) + Math.abs(g - b) + Math.abs(r - b);
-      }
-      const avgDelta = colorScore / Math.max(1, pixels);
-      return avgDelta > 18 ? 'colored' : 'grayscale';
-    };
-
     (async () => {
       try {
         const out: Record<string, Texture> = {} as any;
@@ -1485,65 +1648,31 @@ export function BattlefieldStage({
         // 1) Per-terrain PNGs (highest priority if present)
         await Promise.all(
           names.map(async (n) => {
-            // Prefer a compact .jpg (opaque ground textures don't need alpha), fall back to .png.
-            let res: Response | null = null;
-            for (const ext of ['jpg', 'png']) {
-              try {
-                const r = await fetch(`/textures/terrain/${n}.${ext}`, { method: 'GET', cache: 'no-store' });
-                if (r.ok && (r.headers.get('content-type') ?? '').startsWith('image/')) { res = r; break; }
-              } catch { /* try next ext */ }
-            }
-            try {
-              if (!res) {
-                missing.add(`${n}.png`);
-                return;
-              }
-              const blob = await res.blob();
-              await ensureImageDecodable(blob);
-              const objUrl = URL.createObjectURL(blob);
-              const loaded = crispTexture(Texture.from(objUrl));
-              // Painted ground is sampled across many tiles; mipmaps + linear keep it smooth and
-              // painterly instead of shimmering into a crisp pixel-art grid when zoomed out.
-              loaded.baseTexture.scaleMode = SCALE_MODES.LINEAR;
-              loaded.baseTexture.mipmap = MIPMAP_MODES.ON;
-              (loaded.baseTexture as any).wrapMode = WRAP_MODES.REPEAT; // tile painted ground textures seamlessly
-              loaded.baseTexture.update();
-              out[n] = loaded;
-              anyLoaded = true;
-              explicitColorTextures = true;
-            } catch {
+            const loaded = await loadExternalTerrainTexture(n);
+            if (!loaded) {
               missing.add(`${n}.png`);
+              return;
             }
+            out[n] = loaded;
+            anyLoaded = true;
+            explicitColorTextures = true;
           })
         );
 
         // 2) Spritesheet fallback(s): prefer COLORED sheet if present; else grayscale
         const trySheet = async (url: string, forcedMode?: 'colored' | 'grayscale'): Promise<'colored' | 'grayscale' | null> => {
-          try {
-            const res = await fetch(url, { method: 'GET' });
-            if (!res.ok) return null;
-            const blob = await res.blob();
-            const bmp = await createImageBitmap(blob);
-            const cols = 4, rows = 2;
-            const cellW = Math.floor(bmp.width / cols);
-            const cellH = Math.floor(bmp.height / rows);
-            const base = crispTexture(Texture.from(bmp)).baseTexture;
-            const rect = (x: number, y: number, w: number, h: number) => new Rectangle(x, y, w, h);
-            const sub = (cx: number, cy: number) => crispTexture(new Texture(base, rect(cx * cellW, cy * cellH, cellW, cellH)));
-            const order = ['plain','road','forest','urban','hill','water','swamp','structure'] as const;
-            const coords: Array<[number, number]> = [[0,0],[1,0],[2,0],[3,0],[0,1],[1,1],[2,1],[3,1]];
-            let loaded = false;
-            for (let i = 0; i < order.length; i++) {
-              const key = order[i];
-              if (!out[key]) { // don't overwrite explicit per-terrain PNGs
-                out[key] = sub(coords[i][0], coords[i][1]);
-                anyLoaded = true;
-                loaded = true;
-              }
+          const sheet = await loadTerrainSheet(url);
+          if (!sheet) return null;
+          let loaded = false;
+          for (const key of names) {
+            if (!out[key]) { // don't overwrite explicit per-terrain PNGs
+              out[key] = sheet.textures[key];
+              anyLoaded = true;
+              loaded = true;
             }
-            if (!loaded) return null;
-            return forcedMode ?? detectBitmapColorMode(bmp);
-          } catch { return null; }
+          }
+          if (!loaded) return null;
+          return forcedMode ?? sheet.detectedMode;
         };
         let sheetMode: 'colored' | 'grayscale' | null = null;
         const sheetCandidates: Array<{ url: string; forcedMode?: 'colored' | 'grayscale' }> = [
@@ -2208,6 +2337,38 @@ export function BattlefieldStage({
     unitByCoord,
     viewerFaction
   ]);
+
+  // The full-screen tap catcher sits above the world container, so per-unit pointerover/pointerout
+  // never fire — replicate the enemy hover (shot preview + crosshair cursor) with the same hit test
+  // the tap handler uses.
+  const hoveredEnemyIdRef = useRef<string | null>(null);
+  const handleBattlefieldHover = useCallback((event: FederatedPointerEvent) => {
+    const local = event.getLocalPosition?.(event.currentTarget as any) ?? event.global;
+    const worldPoint = {
+      x: (local.x - offsetX) / scale - (ISO_MODE ? isoBaseX : 0),
+      y: (local.y - offsetY) / scale
+    };
+    const enemyHit = interactionUnits.find((unit) => {
+      if (unit.faction === viewerFaction) return false;
+      const localX = worldPoint.x - unit.x;
+      const localY = worldPoint.y - unit.y;
+      return localX >= unit.hitArea.x
+        && localX <= unit.hitArea.x + unit.hitArea.width
+        && localY >= unit.hitArea.y
+        && localY <= unit.hitArea.y + unit.hitArea.height;
+    });
+    const hoveredId = enemyHit?.id ?? null;
+    if (hoveredId === hoveredEnemyIdRef.current) return;
+    hoveredEnemyIdRef.current = hoveredId;
+    (event.currentTarget as any).cursor = hoveredId ? 'crosshair' : 'pointer';
+    onUnitHover?.(hoveredId);
+  }, [interactionUnits, isoBaseX, offsetX, offsetY, onUnitHover, scale, viewerFaction]);
+  const handleBattlefieldHoverEnd = useCallback((event: FederatedPointerEvent) => {
+    if (hoveredEnemyIdRef.current === null) return;
+    hoveredEnemyIdRef.current = null;
+    (event.currentTarget as any).cursor = 'pointer';
+    onUnitHover?.(null);
+  }, [onUnitHover]);
 
 
   const battlefieldBackdrop = useMemo(() => {
@@ -3381,7 +3542,7 @@ export function BattlefieldStage({
     // Do not draw highlight on the origin tile to avoid clutter
 
     return elements.filter((el) => (el as any).key !== `mv-${start.q}-${start.r}`);
-  }, [battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, exploredTiles, externalTexturesAreColored, topGeomFor, plannedDestination, plannedPath]);
+  }, [battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, visibleTiles, externalTexturesAreColored, topGeomFor, plannedDestination, plannedPath]);
 
   const globalRangeOverlays = useMemo(() => {
     if (!rangeOverlayCoords || rangeOverlayCoords.size === 0) return null;
@@ -3581,7 +3742,7 @@ export function BattlefieldStage({
 
     // don't draw over origin to keep selection ring readable
     return elements.filter((el) => (el as any).key !== `atk-${start.q}-${start.r}`);
-  }, [showAttackOverlay, battleState.map, battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, exploredTiles, externalTexturesAreColored, topGeomFor]);
+  }, [showAttackOverlay, battleState.map, battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, visibleTiles, externalTexturesAreColored, topGeomFor]);
 
 
 
@@ -3756,7 +3917,7 @@ export function BattlefieldStage({
     const x = p.x;
     const y = p.y - geom.avgHeight * ELEV_Y_OFFSET;
 
-    const feedbackLabel = invalidMoveFeedback.message ?? 'Move blocked';
+    const feedbackLabel = invalidMoveFeedback.message ?? t('battle:reject.moveBlocked');
 
     return (
       <Container key={`invalid-move-${invalidMoveFeedback.time}`} zIndex={60000} x={x} y={y}>
@@ -3856,20 +4017,12 @@ export function BattlefieldStage({
             anchor={{ x: 0.5, y: 0.5 }}
             resolution={2}
             alpha={Math.min(0.98, 0.6 + pulse * 0.4)}
-            style={new TextStyle({
-              fontFamily: 'Courier New',
-              fontSize: 14,
-              fontWeight: '700',
-              fill: 0xffe6a6,
-              stroke: 0x120604,
-              strokeThickness: 3,
-              align: 'center'
-            })}
+            style={invalidMoveLabelStyle}
           />
         </Container>
       </Container>
     );
-  }, [invalidMoveFeedback, map.height, map.width, now, topGeomFor, toScreen, scale, tileSize]);
+  }, [invalidMoveFeedback, map.height, map.width, now, topGeomFor, toScreen, scale, tileSize, t]);
 
   // Elevation walls drawn above overlays for correct occlusion
   const tileWalls = useMemo(() => {
@@ -3962,46 +4115,7 @@ export function BattlefieldStage({
 
   const propTextureCache = useMemo(() => new Map<string, Texture>(), []);
   const unitTextureCache = useMemo(() => new Map<string, Texture>(), []);
-  const propAtlasTextures = useMemo(() => {
-    const bush = makeCanvasTexture((ctx) => {
-      const leaf = (x: number, y: number, w: number, h: number, color: string) => {
-        ctx.fillStyle = color;
-        ctx.fillRect(x, y, w, h);
-      };
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      ctx.fillRect(10, 25, 28, 4);
-      leaf(13, 15, 10, 8, '#1f421b');
-      leaf(21, 11, 13, 10, '#2e5b25');
-      leaf(29, 16, 9, 8, '#1a3416');
-      leaf(16, 22, 16, 5, '#162b13');
-      leaf(10, 20, 8, 5, '#315e25');
-      leaf(32, 22, 7, 5, '#3f7130');
-      leaf(20, 14, 4, 2, '#638a43');
-      leaf(30, 18, 5, 2, '#5a813d');
-      leaf(15, 23, 5, 1, '#0c180b');
-      leaf(25, 25, 9, 1, '#0c180b');
-    }, 48, 36);
-
-    const rock = makeCanvasTexture((ctx) => {
-      ctx.fillStyle = 'rgba(0,0,0,0.24)';
-      ctx.fillRect(8, 25, 31, 5);
-      ctx.fillStyle = '#45443c';
-      ctx.fillRect(12, 18, 12, 7);
-      ctx.fillRect(22, 15, 11, 10);
-      ctx.fillRect(31, 20, 7, 5);
-      ctx.fillStyle = '#666458';
-      ctx.fillRect(14, 15, 9, 5);
-      ctx.fillRect(24, 13, 8, 4);
-      ctx.fillStyle = '#858171';
-      ctx.fillRect(16, 14, 5, 1);
-      ctx.fillRect(25, 12, 5, 1);
-      ctx.fillStyle = '#25241f';
-      ctx.fillRect(12, 24, 10, 2);
-      ctx.fillRect(26, 23, 10, 2);
-    }, 48, 36);
-
-    return { bush, rock };
-  }, []);
+  const propAtlasTextures = useMemo(getPropAtlasTextures, []);
 
 
   const deathMarkerSprites = useMemo(() => {
@@ -4107,7 +4221,7 @@ export function BattlefieldStage({
     const explicitTarget = targetHitChance !== undefined;
     const aimColor = targetLethal ? 0xff5747 : 0xffe27a;
     const readout = explicitTarget
-      ? `${Math.round((targetHitChance ?? 0) * 100)}%${targetDamagePreview !== undefined ? `  -${targetDamagePreview}` : ''}${targetLethal ? '  KILL' : ''}`
+      ? `${Math.round((targetHitChance ?? 0) * 100)}%${targetDamagePreview !== undefined ? `  -${targetDamagePreview}` : ''}${targetLethal ? `  ${t('combat.kill')}` : ''}`
       : '';
     return (
       <Container sortableChildren zIndex={30000}>
@@ -4178,20 +4292,12 @@ export function BattlefieldStage({
           y={to.y - tileSize * 0.62}
           anchor={{ x: 0.5, y: 1 }}
           resolution={2}
-          style={new TextStyle({
-            fontFamily: 'Courier New',
-            fontSize: 11,
-            fontWeight: '700',
-            fill: targetLethal ? 0xff7a6a : 0xffe6a6,
-            stroke: 0x120604,
-            strokeThickness: 3,
-            align: 'center'
-          })}
+          style={targetLethal ? targetReadoutLethalStyle : targetReadoutStyle}
         />
       ) : null}
       </Container>
     );
-  }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetDamagePreview, targetLethal, targetUnitId, toScreen, topGeomFor, visibleTiles, tileSize]);
+  }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetDamagePreview, targetLethal, targetUnitId, toScreen, topGeomFor, visibleTiles, tileSize, t]);
 
   const objectiveOverlays = useMemo(() => {
     if (objectiveCoords.length === 0) return [];
@@ -4503,7 +4609,15 @@ export function BattlefieldStage({
         // Keep a just-killed unit on screen (faded, darkened) while its hit effect is still playing, so
         // the "HIT -N" always overlays the dying enemy instead of bare ground — otherwise a killing blow
         // culls the sprite the same frame the number appears ("I shot something but nothing is there").
-        const dyingShown = isDestroyed && !isEmbarked && Boolean(incomingHit || recentHitTarget);
+        // Damage applies synchronously and reaction fire can be future-dated, so match the killing
+        // effect from its scheduled start — gating on the 240ms jolt window (incomingHit) blinked the
+        // corpse out before the death animation began.
+        const killingEffect = isDestroyed
+          ? attackEffects.find((effect) => now - effect.startTime <= 2500
+              && effect.toQ === unit.coordinate.q
+              && effect.toR === unit.coordinate.r)
+          : undefined;
+        const dyingShown = isDestroyed && !isEmbarked && Boolean(killingEffect);
         if ((isDestroyed && !movingThisUnit && !dyingShown) || isEmbarked) {
           return [];
         }
@@ -5722,17 +5836,10 @@ export function BattlefieldStage({
                 scale={(1 / scale) * Math.max(0.2, pop)}
               >
                 <Text
-                  text={effect.hit ? `-${dmg}` : 'MISS'}
+                  text={effect.hit ? `-${dmg}` : t('combat.miss')}
                   anchor={{ x: 0.5, y: 0.5 }}
                   resolution={2}
-                  style={new TextStyle({
-                    fontFamily: 'monospace',
-                    fontSize,
-                    fontWeight: '800',
-                    fill,
-                    stroke: effect.hit ? (big ? '#5a0d00' : '#3a1308') : '#17130d',
-                    strokeThickness: effect.hit ? 4 : 3
-                  })}
+                  style={damageTextStyle(Boolean(effect.hit), big, fontSize, fill)}
                   alpha={Math.max(0, 0.95 - (elapsed - 220) / 2300)}
                 />
               </Container>
@@ -5741,7 +5848,7 @@ export function BattlefieldStage({
         </Container>
       );
     }).filter(Boolean) as JSX.Element[];
-  }, [attackEffects, battleState.sides, now, map.width, map.tiles, topGeomFor, toScreen, scale]);
+  }, [attackEffects, battleState.sides, now, map.width, map.tiles, topGeomFor, toScreen, scale, t]);
 
   const propsSprites = useMemo(() => {
     const props = (map.props ?? []).filter((prop) => prop.kind !== 'proc-building');
@@ -5785,7 +5892,9 @@ export function BattlefieldStage({
         const texturePath = assetUrl(prop.texture ?? defaultTexturePath);
         const textureMissing = missingPropPaths.has(texturePath);
         const texture = textureMissing || proceduralProp ? null : getTexture(texturePath);
-        const bitmapScale = texture && texture.width >= 96 ? scale * 0.5 : scale;
+        // Halving decided by path, not texture.width — width reads 1 until the async load lands,
+        // which painted hi-res props at 2x on their first frame.
+        const bitmapScale = texture && isHiResPropTexture(texturePath) ? scale * 0.5 : scale;
         const bitmapScaleX = bitmapScale * (prop.flipX ? -1 : 1);
         // Fade a tree to a ghost when a unit stands on it or up to ~2 rows up-screen behind its canopy
         // (same iso column), within its horizontal span — so units are never fully hidden.
@@ -6385,7 +6494,7 @@ export function BattlefieldStage({
             }
             const coord = selected?.coordinate ?? { q: Math.floor(map.width / 2), r: Math.floor(map.height / 2) };
             const p = toScreen(coord);
-            return { x: p.x, y: p.y };
+            return { x: p.x + (ISO_MODE ? isoBaseX : 0), y: p.y };
           })();
           const s = scaleRef.current || 1;
           const next = {
@@ -6402,7 +6511,7 @@ export function BattlefieldStage({
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [hostSize.h, hostSize.w, battleState.sides, map.width, map.height, selectedUnitId, stageDimensions.height, stageDimensions.width]);
+  }, [hostSize.h, hostSize.w, battleState.sides, isoBaseX, map.width, map.height, selectedUnitId, stageDimensions.height, stageDimensions.width]);
 
   const rangeOverlayLayer = (
     <>
@@ -6414,6 +6523,136 @@ export function BattlefieldStage({
       {startZoneOverlays}
     </>
   );
+
+  // Memoized: @pixi/react re-runs a Graphics draw callback whenever its identity changes, and these
+  // two rebuild their whole geometry — inline closures re-tessellated them on every render tick.
+  const drawOverlayMask = useCallback((g: PixiGraphics) => {
+    g.clear();
+    g.beginFill(0xffffff, 1);
+    g.drawRect(-10000, -10000, 20000, 20000);
+    const EDGE_KEYS: EdgeKey[] = ['N', 'E', 'S', 'W'];
+    const EDGE_VECTORS: Record<EdgeKey, { dq: number; dr: number }> = {
+      N: { dq: 0, dr: -1 },
+      E: { dq: +1, dr: 0 },
+      S: { dq: 0, dr: +1 },
+      W: { dq: -1, dr: 0 }
+    };
+    const idxAt = (qq: number, rr: number) => rr * map.width + qq;
+    const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
+    for (let rr = 0; rr < map.height; rr++) {
+      for (let qq = 0; qq < map.width; qq++) {
+        const index = idxAt(qq, rr);
+        if (!visibleTiles.has(index)) continue;
+        const tileCorners = snappedCorners.getCorners(qq, rr);
+        const avgHeight = averageCornerHeight(tileCorners);
+        const localPoints = makeCornerPoints(tileCorners, avgHeight);
+        const worldPos = toScreen({ q: qq, r: rr });
+        const worldOffsetY = worldPos.y - avgHeight * ELEV_Y_OFFSET;
+        const worldPoints: Record<CornerKey, { x: number; y: number }> = {
+          NW: { x: worldPos.x + localPoints.NW.x, y: worldOffsetY + localPoints.NW.y },
+          NE: { x: worldPos.x + localPoints.NE.x, y: worldOffsetY + localPoints.NE.y },
+          SE: { x: worldPos.x + localPoints.SE.x, y: worldOffsetY + localPoints.SE.y },
+          SW: { x: worldPos.x + localPoints.SW.x, y: worldOffsetY + localPoints.SW.y }
+        };
+        const myHeights: Record<CornerKey, number> = {
+          NW: tileCorners.hNW,
+          NE: tileCorners.hNE,
+          SE: tileCorners.hSE,
+          SW: tileCorners.hSW
+        };
+        EDGE_KEYS.forEach((edge) => {
+          const vec = EDGE_VECTORS[edge];
+          const nq = qq + vec.dq;
+          const nr = rr + vec.dr;
+          const neighborIdx = inb(nq, nr) ? idxAt(nq, nr) : -1;
+          const neighborCorners = neighborIdx >= 0 ? snappedCorners.getCorners(nq, nr) : null;
+          const neighborHeights: Record<CornerKey, number> | null = neighborCorners
+            ? {
+                NW: neighborCorners.hNW,
+                NE: neighborCorners.hNE,
+                SE: neighborCorners.hSE,
+                SW: neighborCorners.hSW
+              }
+            : null;
+          const [myA, myB] = EDGE_TO_CORNERS[edge];
+          const [oppA, oppB] = EDGE_TO_CORNERS[OPP_EDGE[edge]];
+          const myAvg = (myHeights[myA] + myHeights[myB]) / 2;
+          const neighborAvg = neighborHeights
+            ? (neighborHeights[oppA] + neighborHeights[oppB]) / 2
+            : 0;
+          const delta = myAvg - neighborAvg;
+          if (delta < 2) return;
+          const topA = worldPoints[myA];
+          const topB = worldPoints[myB];
+          const depth = delta * CLIFF_DEPTH;
+          const bottomA = { x: topA.x, y: topA.y + depth };
+          const bottomB = { x: topB.x, y: topB.y + depth };
+          g.beginHole();
+          g.moveTo(topA.x, topA.y);
+          g.lineTo(topB.x, topB.y);
+          g.lineTo(bottomB.x, bottomB.y);
+          g.lineTo(bottomA.x, bottomA.y);
+          g.closePath();
+          g.endHole();
+        });
+      }
+    }
+    g.endFill();
+  }, [map.height, map.width, snappedCorners, visibleTiles]);
+
+  const drawMinimap = useCallback((g: PixiGraphics) => {
+    const mmW = 160;
+    const mmH = 120;
+    const sx = mmW / stageDimensions.width;
+    const sy = mmH / stageDimensions.height;
+    g.clear();
+    // frame
+    g.beginFill(0x000000, 0.35);
+    g.drawRoundedRect(-4, -4, mmW + 8, mmH + 8, 6);
+    g.endFill();
+    g.beginFill(0x0b1a2b, 0.85);
+    g.drawRect(0, 0, mmW, mmH);
+    g.endFill();
+    // fog-of-war overlay (unexplored=dark, explored-not-visible=dim)
+    for (let r = 0; r < map.height; r++) {
+      for (let q = 0; q < map.width; q++) {
+        const idx = r * map.width + q;
+        const p = toScreen({ q, r });
+        const tx = (p.x + (ISO_MODE ? isoBaseX : 0)) * sx;
+        const ty = p.y * sy;
+        if (!exploredTiles.has(idx)) {
+          g.beginFill(0x000000, 0.7);
+          g.drawRect(tx - 1.5, ty - 1.5, 3, 3);
+          g.endFill();
+        } else if (!visibleTiles.has(idx)) {
+          g.beginFill(0x000000, 0.35);
+          g.drawRect(tx - 1.5, ty - 1.5, 3, 3);
+          g.endFill();
+        }
+      }
+    }
+    // units dots (respect fog-of-war: show enemies only if visible to viewer)
+    const allUnits = Object.values(battleState.sides).flatMap((side: any) => Array.from((side as any).units.values()) as any[]);
+    for (const u of allUnits) {
+      const tileIdx = u.coordinate.r * map.width + u.coordinate.q;
+      const isFriendly = u.faction === viewerFaction;
+      const isVisible = visibleTiles.has(tileIdx);
+      if (!isFriendly && !isVisible) continue;
+      const p = toScreen(u.coordinate);
+      const ux = (p.x + (ISO_MODE ? isoBaseX : 0)) * sx;
+      const uy = p.y * sy;
+      g.beginFill(u.faction === 'alliance' ? 0x5dade2 : 0xe74c3c, 0.95);
+      g.drawRect(ux - 1, uy - 1, 2, 2);
+      g.endFill();
+    }
+    // viewport rectangle
+    const viewWorldX = (-offsetX) / scale;
+    const viewWorldY = (-offsetY) / scale;
+    const viewWorldW = hostSize.w / scale;
+    const viewWorldH = hostSize.h / scale;
+    g.lineStyle(1, 0xffffff, 0.9);
+    g.drawRect(viewWorldX * sx, viewWorldY * sy, viewWorldW * sx, viewWorldH * sy);
+  }, [battleState.sides, exploredTiles, hostSize.h, hostSize.w, isoBaseX, map.height, map.width, offsetX, offsetY, scale, stageDimensions.height, stageDimensions.width, viewerFaction, visibleTiles]);
 
   return (
     <div
@@ -6471,30 +6710,30 @@ export function BattlefieldStage({
       {/* Minimap + help toggles (top-right; mirror the keyboard shortcuts for discoverability) */}
       <button data-testid="minimap-toggle" onClick={() => setMinimapVisible((v) => !v)}
         style={{ position: 'absolute', top: 8, right: 42, height: 28, padding: '0 9px', borderRadius: 4, border: '1px solid #2a3b55', background: minimapVisible ? '#1d3a57' : '#112238', color: '#e6eefc', cursor: 'pointer', fontSize: 12 }}
-        title="Toggle minimap (Tab)"
-      >Map</button>
+        title={t('tooltip.toggleMinimap')}
+      >{t('controls.map')}</button>
       <button data-testid="keyboard-help-toggle" onClick={() => setHelpVisible((v) => !v)}
         style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 4, border: '1px solid #2a3b55', background: helpVisible ? '#1d3a57' : '#112238', color: '#e6eefc', cursor: 'pointer' }}
-        title="Toggle help (H / F1 / ?)"
+        title={t('tooltip.toggleHelp')}
       >?</button>
 
       {helpVisible && (
         <div data-testid="keyboard-help" style={{ position: 'absolute', top: 40, right: 8, background: 'rgba(11,26,43,0.94)', color: '#fefefe', padding: '10px 12px', borderRadius: 6, fontSize: 12, lineHeight: 1.45, maxWidth: 282 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>How to play</div>
+          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>{t('help.title')}</div>
           <ul style={{ margin: '0 0 8px', paddingLeft: 16 }}>
-            <li>Click a unit to select it</li>
-            <li>Click a highlighted tile to move</li>
-            <li>Click an enemy to attack it</li>
-            <li>Overwatch holds fire until an enemy moves</li>
-            <li>Start Battle ends deployment</li>
-            <li>End Turn, or Auto Turn to let the AI play</li>
+            <li>{t('help.clickSelect')}</li>
+            <li>{t('help.clickMove')}</li>
+            <li>{t('help.clickAttack')}</li>
+            <li>{t('help.overwatchHint')}</li>
+            <li>{t('help.startBattleHint')}</li>
+            <li>{t('help.endTurnHint')}</li>
           </ul>
-          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>Hotkeys</div>
+          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>{t('help.hotkeysTitle')}</div>
           <ul style={{ margin: 0, paddingLeft: 16 }}>
-            <li>Arrow keys — Pan camera</li>
-            <li>Mouse wheel — Zoom</li>
-            <li>Tab — Toggle minimap</li>
-            <li>H / F1 / ? — Toggle help</li>
+            <li>{t('help.hotkeys.pan')}</li>
+            <li>{t('help.hotkeys.zoom')}</li>
+            <li>{t('help.hotkeys.minimap')}</li>
+            <li>{t('help.hotkeys.help')}</li>
           </ul>
         </div>
       )}
@@ -6523,10 +6762,10 @@ export function BattlefieldStage({
             }}
           >
             <div style={{ color: '#d4a520', fontWeight: 800, fontSize: 22, letterSpacing: 1.5, marginBottom: 12 }}>
-              WEBGL REQUIRED
+              {t('webglRequired.title')}
             </div>
             <div style={{ fontSize: 14, lineHeight: 1.55, color: '#edf4e8', marginBottom: 18 }}>
-              Tactical combat needs WebGL. Enable browser hardware acceleration or open the game in a browser/profile where WebGL is available, then reload and launch the battle again.
+              {t('webglRequired.message')}
             </div>
             <button
               onClick={() => window.location.reload()}
@@ -6540,7 +6779,7 @@ export function BattlefieldStage({
                 textTransform: 'uppercase'
               }}
             >
-              Reload
+              {t('webglRequired.reload')}
             </button>
           </div>
         </div>
@@ -6567,82 +6806,7 @@ export function BattlefieldStage({
             {tileOverlays}
             {terrainMissingTexts}
             {/* Top-only overlay mask: punch holes for all vertical wall faces (E/S) */}
-            <Graphics
-              ref={setOverlayMaskNode}
-              draw={(g) => {
-                g.clear();
-                g.beginFill(0xffffff, 1);
-                g.drawRect(-10000, -10000, 20000, 20000);
-                const EDGE_KEYS: EdgeKey[] = ['N', 'E', 'S', 'W'];
-                const EDGE_VECTORS: Record<EdgeKey, { dq: number; dr: number }> = {
-                  N: { dq: 0, dr: -1 },
-                  E: { dq: +1, dr: 0 },
-                  S: { dq: 0, dr: +1 },
-                  W: { dq: -1, dr: 0 }
-                };
-                const idxAt = (qq: number, rr: number) => rr * map.width + qq;
-                const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
-                for (let rr = 0; rr < map.height; rr++) {
-                  for (let qq = 0; qq < map.width; qq++) {
-                    const index = idxAt(qq, rr);
-                    if (!visibleTiles.has(index)) continue;
-                    const tileCorners = snappedCorners.getCorners(qq, rr);
-                    const avgHeight = averageCornerHeight(tileCorners);
-                    const localPoints = makeCornerPoints(tileCorners, avgHeight);
-                    const worldPos = toScreen({ q: qq, r: rr });
-                    const offsetY = worldPos.y - avgHeight * ELEV_Y_OFFSET;
-                    const worldPoints: Record<CornerKey, { x: number; y: number }> = {
-                      NW: { x: worldPos.x + localPoints.NW.x, y: offsetY + localPoints.NW.y },
-                      NE: { x: worldPos.x + localPoints.NE.x, y: offsetY + localPoints.NE.y },
-                      SE: { x: worldPos.x + localPoints.SE.x, y: offsetY + localPoints.SE.y },
-                      SW: { x: worldPos.x + localPoints.SW.x, y: offsetY + localPoints.SW.y }
-                    };
-                    const myHeights: Record<CornerKey, number> = {
-                      NW: tileCorners.hNW,
-                      NE: tileCorners.hNE,
-                      SE: tileCorners.hSE,
-                      SW: tileCorners.hSW
-                    };
-                    EDGE_KEYS.forEach((edge) => {
-                      const vec = EDGE_VECTORS[edge];
-                      const nq = qq + vec.dq;
-                      const nr = rr + vec.dr;
-                      const neighborIdx = inb(nq, nr) ? idxAt(nq, nr) : -1;
-                      const neighborCorners = neighborIdx >= 0 ? snappedCorners.getCorners(nq, nr) : null;
-                      const neighborHeights: Record<CornerKey, number> | null = neighborCorners
-                        ? {
-                            NW: neighborCorners.hNW,
-                            NE: neighborCorners.hNE,
-                            SE: neighborCorners.hSE,
-                            SW: neighborCorners.hSW
-                          }
-                        : null;
-                      const [myA, myB] = EDGE_TO_CORNERS[edge];
-                      const [oppA, oppB] = EDGE_TO_CORNERS[OPP_EDGE[edge]];
-                      const myAvg = (myHeights[myA] + myHeights[myB]) / 2;
-                      const neighborAvg = neighborHeights
-                        ? (neighborHeights[oppA] + neighborHeights[oppB]) / 2
-                        : 0;
-                      const delta = myAvg - neighborAvg;
-                      if (delta < 2) return;
-                      const topA = worldPoints[myA];
-                      const topB = worldPoints[myB];
-                      const depth = delta * CLIFF_DEPTH;
-                      const bottomA = { x: topA.x, y: topA.y + depth };
-                      const bottomB = { x: topB.x, y: topB.y + depth };
-                      g.beginHole();
-                      g.moveTo(topA.x, topA.y);
-                      g.lineTo(topB.x, topB.y);
-                      g.lineTo(bottomB.x, bottomB.y);
-                      g.lineTo(bottomA.x, bottomA.y);
-                      g.closePath();
-                      g.endHole();
-                    });
-                  }
-                }
-                g.endFill();
-              }}
-            />
+            <Graphics ref={setOverlayMaskNode} draw={drawOverlayMask} />
 
             {/* Overlays clipped by the mask (no spill over walls) */}
             {activeOverlayMask ? (
@@ -6689,6 +6853,8 @@ export function BattlefieldStage({
           eventMode="static"
           cursor="pointer"
           pointertap={handleBattlefieldTap}
+          pointermove={handleBattlefieldHover}
+          pointerout={handleBattlefieldHoverEnd}
           draw={(g) => {
             g.clear();
             g.beginFill(0x000000, 0.001);
@@ -6717,61 +6883,7 @@ export function BattlefieldStage({
             }}
             pointerup={() => setMinimapDragging(false)}
           >
-            <Graphics
-              draw={(g) => {
-                const mmW = 160;
-                const mmH = 120;
-                const sx = mmW / stageDimensions.width;
-                const sy = mmH / stageDimensions.height;
-                g.clear();
-                // frame
-                g.beginFill(0x000000, 0.35);
-                g.drawRoundedRect(-4, -4, mmW + 8, mmH + 8, 6);
-                g.endFill();
-                g.beginFill(0x0b1a2b, 0.85);
-                g.drawRect(0, 0, mmW, mmH);
-                g.endFill();
-                // fog-of-war overlay (unexplored=dark, explored-not-visible=dim)
-                for (let r = 0; r < map.height; r++) {
-                  for (let q = 0; q < map.width; q++) {
-                    const idx = r * map.width + q;
-                    const p = toScreen({ q, r });
-                    const tx = (p.x + (ISO_MODE ? isoBaseX : 0)) * sx;
-                    const ty = p.y * sy;
-                    if (!exploredTiles.has(idx)) {
-                      g.beginFill(0x000000, 0.7);
-                      g.drawRect(tx - 1.5, ty - 1.5, 3, 3);
-                      g.endFill();
-                    } else if (!visibleTiles.has(idx)) {
-                      g.beginFill(0x000000, 0.35);
-                      g.drawRect(tx - 1.5, ty - 1.5, 3, 3);
-                      g.endFill();
-                    }
-                  }
-                }
-                // units dots (respect fog-of-war: show enemies only if visible to viewer)
-                const allUnits = Object.values(battleState.sides).flatMap((side: any) => Array.from((side as any).units.values()) as any[]);
-                for (const u of allUnits) {
-                  const tileIdx = u.coordinate.r * map.width + u.coordinate.q;
-                  const isFriendly = u.faction === viewerFaction;
-                  const isVisible = visibleTiles.has(tileIdx);
-                  if (!isFriendly && !isVisible) continue;
-                  const p = toScreen(u.coordinate);
-                  const ux = (p.x + (ISO_MODE ? isoBaseX : 0)) * sx;
-                  const uy = p.y * sy;
-                  g.beginFill(u.faction === 'alliance' ? 0x5dade2 : 0xe74c3c, 0.95);
-                  g.drawRect(ux - 1, uy - 1, 2, 2);
-                  g.endFill();
-                }
-                // viewport rectangle
-                const viewWorldX = (-offsetX) / scale;
-                const viewWorldY = (-offsetY) / scale;
-                const viewWorldW = hostSize.w / scale;
-                const viewWorldH = hostSize.h / scale;
-                g.lineStyle(1, 0xffffff, 0.9);
-                g.drawRect(viewWorldX * sx, viewWorldY * sy, viewWorldW * sx, viewWorldH * sy);
-              }}
-            />
+            <Graphics draw={drawMinimap} />
           </Container>
         )}
 

@@ -78,7 +78,7 @@ describe('campaign core', () => {
     endStrategicTurn(state, starterBundle);
 
     expect(state.territories.some((territory) => territory.name === 'Enemy Raid near Enemy Counterattack')).toBe(false);
-    expect(state.log.some((entry) => /Enemy raid threatens Enemy Counterattack/i.test(entry))).toBe(false);
+    expect(state.log.some((entry) => entry.key === 'raidThreatens' && entry.params?.target === 'Enemy Counterattack')).toBe(false);
   });
 
   it('applies retreat losses for units off start tiles', () => {
@@ -193,7 +193,7 @@ describe('campaign core', () => {
     state.resources.money = 321;
     state.turn = 3;
     state.research.inProgress = { topicId: 'armor-upfit', remaining: 15 };
-    state.popups = [{ turn: 3, title: 'Report', body: 'Recovered report', kind: 'reward' }];
+    state.popups = [{ turn: 3, key: 'testReport', params: { note: 'Recovered report' }, kind: 'reward' }];
 
     const snapshot = serializeCampaignState(state);
     const restored = hydrateCampaignState(starterBundle, snapshot);
@@ -203,7 +203,25 @@ describe('campaign core', () => {
     expect(restored.research.inProgress?.topicId).toBe('armor-upfit');
     expect(restored.research.completed.has('optics-i')).toBe(true);
     expect(isUnitUnlocked(restored, starterBundle, 'rangers')).toBe(true);
-    expect(restored.popups?.[0]?.title).toBe('Report');
+    expect(restored.popups?.[0]?.key).toBe('testReport');
+    expect(restored.popups?.[0]?.params?.note).toBe('Recovered report');
+  });
+
+  it('hydrates pre-i18n saves whose log entries and popups are raw strings', () => {
+    const snapshot = JSON.parse(JSON.stringify(serializeCampaignState(createCampaign(starterBundle))));
+    snapshot.log = ['Campaign First Contact initialized', 'Research completed: Optics I'];
+    snapshot.popups = [{ turn: 1, title: 'Intel: Sorcerers', body: 'Enemy sorcerers sighted.', kind: 'briefing' }];
+
+    const restored = hydrateCampaignState(starterBundle, snapshot);
+
+    expect(restored.log[0]).toEqual({ key: 'legacy', params: { text: 'Campaign First Contact initialized' } });
+    expect(restored.log[1]).toEqual({ key: 'legacy', params: { text: 'Research completed: Optics I' } });
+    expect(restored.popups?.[0]).toEqual({
+      turn: 1,
+      key: 'legacy',
+      params: { title: 'Intel: Sorcerers', body: 'Enemy sorcerers sighted.' },
+      kind: 'briefing'
+    });
   });
 
   it('credits hold objectives once per round and wins after the turn limit', () => {

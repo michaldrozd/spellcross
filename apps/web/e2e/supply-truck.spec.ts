@@ -22,6 +22,7 @@ test('supply truck resupplies ammo mid-battle', async ({ page }) => {
   await page.evaluate(() => (window as any).__battleControl?.moveTo?.(1, 2));
   await page.getByRole('button', { name: /^End Turn$/i }).click({ timeout: 1000 }).catch(() => {});
   await page.evaluate(() => (window as any).__battleControl?.endTurn?.());
+  await page.evaluate(() => (window as any).__battleControl?.endTurn?.());
   const refilled = await page.evaluate(() => (window as any).__battleControl?.ammoFirst?.()?.ammo ?? null);
   expect(refilled).toBeGreaterThanOrEqual(initialAmmo as number);
 

@@ -17,7 +17,7 @@ test('campaign deep flow: research, outpost strike, slot swap', async ({ page })
   test.setTimeout(45_000);
   await startFreshCampaign(page);
 
-  await convertResearch(page);
+  await convertResearch(page, 20);
   await queueResearch(page, 'optics-ii');
 
   const turnStart = await getTurn(page);
@@ -27,7 +27,7 @@ test('campaign deep flow: research, outpost strike, slot swap', async ({ page })
   await page.getByRole('button', { name: /Territories/i }).click();
 
   await launchBattle(page, 'sector-munich');
-  await expect(page.getByRole('heading', { name: /Outpost Night/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Munich Defensive Line/i })).toBeVisible();
   await expect(page.locator('canvas').first()).toBeVisible();
 
   await retreatToHq(page);

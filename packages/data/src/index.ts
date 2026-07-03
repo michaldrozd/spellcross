@@ -747,9 +747,10 @@ export const starterUnits: UnitData[] = [
       morale: 60,
       ammoCapacity: 0,
       transportCapacity: 1,
-      weaponRanges: { smg: 3 },
-      weaponPower: { smg: 8 },
-      weaponAccuracy: { smg: 0.55 }
+      // unarmed: ammoCapacity 0 marks it as a supply unit, so any weapon here could never fire
+      weaponRanges: {},
+      weaponPower: {},
+      weaponAccuracy: {}
     }
   },
   {
@@ -1257,6 +1258,11 @@ const borderMap = makeMap('evac-corridor', 14, 10, (q, r) => {
   if ((q === 2 && r >= 2 && r <= 4) || (q === 8 && r >= 4 && r <= 6)) {
     return tile({ terrain: 'urban', cover: 3, movementCostModifier: 2, providesVisionBoost: true });
   }
+  // footprints of the storehouse / roadblock / watch-post props — without urban tiles here the
+  // buildings render solid but units walk straight through them with zero cover
+  if ((q === 3 && (r === 1 || r === 4)) || (q === 7 && r === 1)) {
+    return tile({ terrain: 'urban', cover: 3, movementCostModifier: 2, providesVisionBoost: true });
+  }
   if (r === 0 || r === 9 || (q >= 10 && r <= 2)) {
     return tile({ terrain: 'forest', cover: 2, movementCostModifier: 2 });
   }
@@ -1285,7 +1291,6 @@ const borderMap = makeMap('evac-corridor', 14, 10, (q, r) => {
   { id: 'evac-bush-8', kind: 'bush', coordinate: { q: 5, r: 2 }, u: 0.66, v: 0.44, scale: 0.55 },
   { id: 'evac-bush-9', kind: 'bush', coordinate: { q: 6, r: 1 }, u: 0.36, v: 0.62, scale: 0.6 },
   { id: 'evac-rock-6', kind: 'rock', coordinate: { q: 0, r: 7 }, u: 0.5, v: 0.48, scale: 0.58 },
-  { id: 'evac-rock-7', kind: 'rock', coordinate: { q: 3, r: 1 }, u: 0.62, v: 0.54, scale: 0.54 },
   { id: 'evac-rock-8', kind: 'rock', coordinate: { q: 5, r: 6 }, u: 0.45, v: 0.48, scale: 0.62 },
   { id: 'evac-tree-6', kind: 'tree', coordinate: { q: 2, r: 7 }, texture: '/props/pine2.png', scale: 0.38, flipX: true },
   { id: 'evac-tree-7', kind: 'tree', coordinate: { q: 1, r: 1 }, texture: '/props/pine1.png', scale: 0.36 },
@@ -1710,7 +1715,8 @@ export const starterScenarios: TacticalScenario[] = [
     map: hamletMap,
     startZones: {
       alliance: [
-        { q: 2, r: 2 },
+        // (2,2) sits under hamlet-house-1 — the first deploy slot would spawn inside the building
+        { q: 0, r: 2 },
         { q: 2, r: 3 },
         { q: 1, r: 2 },
         { q: 2, r: 4 },

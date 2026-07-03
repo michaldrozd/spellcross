@@ -25,7 +25,10 @@ export interface TurnContext {
 export interface ActionResult {
   success: boolean;
   events?: TacticalBattleState['timeline'];
+  // `error` is the English fallback message; `errorKey` is a stable identifier the UI can translate
+  // (`t('errors:' + errorKey)`) so a rejected action reads in the player's language instead of always English.
   error?: string;
+  errorKey?: string;
 }
 
 export interface MoveActionInput {
@@ -97,6 +100,8 @@ export function reactionAttackers(state: TacticalBattleState, mover: UnitInstanc
       // get free reaction fire either, or the move-threat preview predicts phantom shots from routed foes.
       if (defender.stance === 'destroyed' || defender.stance === 'routed' || defender.embarkedOn) continue;
       const viaOverwatch = defender.statusEffects.has('overwatch');
+      // Overwatch banks the AP when it's set, but an empty gun still can't fire a reaction shot.
+      if (defender.currentAmmo !== Infinity && defender.currentAmmo <= 0) continue;
       if (!viaOverwatch && !canAffordAttack(defender)) continue;
       if (!hasLineOfSight(state.map, defender.coordinate, mover.coordinate)) continue;
 
@@ -159,9 +164,8 @@ export class TurnProcessor {
       // embarked passengers ride inside the carrier; their coordinate is frozen at the embark tile,
       // so entrenching / morale-by-proximity here would use a stale position.
       if (unit.embarkedOn) continue;
-      // air cannot entrench
-      if (unit.unitType === 'air') continue;
-      if (!unit.movedThisRound) {
+      // air cannot entrench, but still recovers morale and resets its move flag below
+      if (!unit.movedThisRound && unit.unitType !== 'air') {
         unit.entrench = Math.min(3, (unit.entrench ?? 0) + 1);
       }
       // reset move flag for next time
@@ -170,7 +174,7 @@ export class TurnProcessor {
       const enemySide = this.#state.sides[next];
       let nearbyEnemy = false;
       for (const enemy of enemySide.units.values()) {
-        if (enemy.stance === 'destroyed') continue;
+        if (enemy.stance === 'destroyed' || enemy.embarkedOn) continue;
         if (isoDistance(enemy.coordinate, unit.coordinate) <= 1) { nearbyEnemy = true; break; }
       }
       const baseRecovery = 3 + (unit.entrench ?? 0);
@@ -181,7 +185,9 @@ export class TurnProcessor {
       // Commander aura (+2 morale if any friendly hero within 2 hexes). Non-stacking.
       const hasCommanderNearby = (() => {
         for (const f of justEnded.units.values()) {
-          if (f.stance === 'destroyed') continue;
+          // the aura inspires nearby troops, not the commander itself; embarked heroes have a
+          // frozen coordinate and would project it from the embark tile
+          if (f.id === unit.id || f.stance === 'destroyed' || f.embarkedOn) continue;
           if (f.unitType === 'hero' && isoDistance(f.coordinate, unit.coordinate) <= 2) return true;
         }
         return false;
@@ -198,7 +204,7 @@ export class TurnProcessor {
       if (!unit.stats.fear) {
         let dread = 0;
         for (const enemy of enemySide.units.values()) {
-          if (enemy.stance === 'destroyed') continue;
+          if (enemy.stance === 'destroyed' || enemy.embarkedOn) continue;
           const f = enemy.stats.fear ?? 0;
           if (f > 0 && isoDistance(enemy.coordinate, unit.coordinate) <= 2) {
             dread = Math.max(dread, f);
@@ -254,7 +260,7 @@ export class TurnProcessor {
     const unit = side.units.get(input.unitId);
 
     if (!unit) {
-      return { success: false, error: `Unit ${input.unitId} not found` };
+      return { success: false, error: `Unit ${input.unitId} not found`, errorKey: 'unitNotFound' };
     }
 
     const occupied = new Set<string>();
@@ -278,23 +284,23 @@ export class TurnProcessor {
     let accumulatedCost = 0;
     for (const step of input.path) {
       if (!isNeighbor(origin, step) && !isIsoNeighbor(origin, step)) {
-        return { success: false, error: 'Path contains non-adjacent steps' };
+        return { success: false, error: 'Path contains non-adjacent steps', errorKey: 'pathNonAdjacent' };
       }
 
       const tile = getTile(this.#state.map, step);
       if (!tile || !tile.passable) {
-        return { success: false, error: 'Destination tile is not passable' };
+        return { success: false, error: 'Destination tile is not passable', errorKey: 'destinationNotPassable' };
       }
       if (!this.#canUnitEnterTile(unit, tile)) {
-        return { success: false, error: 'Unit cannot enter terrain' };
+        return { success: false, error: 'Unit cannot enter terrain', errorKey: 'unitCannotEnterTerrain' };
       }
 
       if (visited.has(coordinateKey(step))) {
-        return { success: false, error: 'Path loops back on itself' };
+        return { success: false, error: 'Path loops back on itself', errorKey: 'pathLoopsBack' };
       }
 
       if (occupied.has(coordinateKey(step))) {
-        return { success: false, error: 'Path collides with another unit' };
+        return { success: false, error: 'Path collides with another unit', errorKey: 'pathCollision' };
       }
 
       accumulatedCost += tile.movementCostModifier * movementMultiplier * weatherMoveMod;
@@ -303,7 +309,7 @@ export class TurnProcessor {
     }
 
     if (accumulatedCost > unit.actionPoints) {
-      return { success: false, error: 'Not enough action points' };
+      return { success: false, error: 'Not enough action points', errorKey: 'notEnoughActionPoints' };
     }
 
     if (input.path.length > 0) {
@@ -412,51 +418,51 @@ export class TurnProcessor {
     const attackerSide = this.#state.sides[this.#state.activeFaction];
     const attacker = attackerSide.units.get(input.attackerId);
     if (!attacker) {
-      return { success: false, error: `Unit ${input.attackerId} not found` };
+      return { success: false, error: `Unit ${input.attackerId} not found`, errorKey: 'unitNotFound' };
     }
 
     const defender = findUnitInState(this.#state, input.defenderId);
     if (!defender) {
-      return { success: false, error: `Target ${input.defenderId} not found` };
+      return { success: false, error: `Target ${input.defenderId} not found`, errorKey: 'targetNotFound' };
     }
 
     if (!canAffordAttack(attacker)) {
-      return { success: false, error: 'Not enough action points to attack' };
+      return { success: false, error: 'Not enough action points to attack', errorKey: 'notEnoughApToAttack' };
     }
     if (attacker.currentAmmo !== Infinity && attacker.currentAmmo <= 0) {
-      return { success: false, error: 'No ammo' };
+      return { success: false, error: 'No ammo', errorKey: 'noAmmo' };
     }
 
     if (!(input.weaponId in attacker.stats.weaponRanges)) {
-      return { success: false, error: `Weapon ${input.weaponId} unavailable` };
+      return { success: false, error: `Weapon ${input.weaponId} unavailable`, errorKey: 'weaponUnavailable' };
     }
 
     // Verify weapon target-type rules
     if (!canWeaponTarget(attacker, input.weaponId, defender)) {
-      return { success: false, error: 'Weapon cannot target this unit type' };
+      return { success: false, error: 'Weapon cannot target this unit type', errorKey: 'weaponCannotTarget' };
     }
 
     if (defender.faction === attacker.faction) {
-      return { success: false, error: 'Cannot attack friendly unit' };
+      return { success: false, error: 'Cannot attack friendly unit', errorKey: 'cannotAttackFriendly' };
     }
 
     if (defender.stance === 'destroyed') {
-      return { success: false, error: 'Target already destroyed' };
+      return { success: false, error: 'Target already destroyed', errorKey: 'targetAlreadyDestroyed' };
     }
 
     if (defender.embarkedOn) {
-      return { success: false, error: 'Target is embarked' };
+      return { success: false, error: 'Target is embarked', errorKey: 'targetEmbarked' };
     }
 
     if (attacker.stance === 'routed') {
-      return { success: false, error: 'Routed units cannot attack' };
+      return { success: false, error: 'Routed units cannot attack', errorKey: 'routedCannotAttack' };
     }
 
     const maxRange = calculateAttackRange(attacker, input.weaponId, this.#state.map);
     const distance = isoDistance(attacker.coordinate, defender.coordinate);
 
     if (distance > maxRange) {
-      return { success: false, error: 'Target out of range' };
+      return { success: false, error: 'Target out of range', errorKey: 'targetOutOfRange' };
     }
 
     // Fog of war: you can't deliberately fire on an enemy your side cannot currently see. Without this
@@ -466,7 +472,7 @@ export class TurnProcessor {
     if (vision) {
       const defIdx = defender.coordinate.r * this.#state.map.width + defender.coordinate.q;
       if (!vision.visibleTiles.has(defIdx)) {
-        return { success: false, error: 'Target not visible' };
+        return { success: false, error: 'Target not visible', errorKey: 'targetNotVisible' };
       }
     }
 
@@ -514,9 +520,9 @@ export class TurnProcessor {
   setOverwatch(unitId: string): ActionResult {
     const side = this.#state.sides[this.#state.activeFaction];
     const unit = side.units.get(unitId);
-    if (!unit) return { success: false, error: 'Unit not found' };
-    if (!canAffordAttack(unit)) return { success: false, error: 'Not enough AP for overwatch' };
-    if (unit.currentAmmo !== Infinity && unit.currentAmmo <= 0) return { success: false, error: 'No ammo' };
+    if (!unit) return { success: false, error: 'Unit not found', errorKey: 'unitNotFound' };
+    if (!canAffordAttack(unit)) return { success: false, error: 'Not enough AP for overwatch', errorKey: 'notEnoughApOverwatch' };
+    if (unit.currentAmmo !== Infinity && unit.currentAmmo <= 0) return { success: false, error: 'No ammo', errorKey: 'noAmmo' };
     unit.statusEffects.add('overwatch');
     unit.actionPoints -= 2;
     this.#state.timeline.push({ kind: 'unit:xp', unitId: unit.id, amount: 0, reason: 'hit' });
@@ -527,20 +533,23 @@ export class TurnProcessor {
     const side = this.#state.sides[this.#state.activeFaction];
     const carrier = side.units.get(input.carrierId);
     const passenger = findUnitInState(this.#state, input.passengerId);
-    if (!carrier || !passenger) return { success: false, error: 'Unit not found' };
-    if (carrier.faction !== passenger.faction) return { success: false, error: 'Faction mismatch' };
+    if (!carrier || !passenger) return { success: false, error: 'Unit not found', errorKey: 'unitNotFound' };
+    if (carrier.stance === 'destroyed' || passenger.stance === 'destroyed') {
+      return { success: false, error: 'Unit destroyed', errorKey: 'unitDestroyed' };
+    }
+    if (carrier.faction !== passenger.faction) return { success: false, error: 'Faction mismatch', errorKey: 'factionMismatch' };
     if (carrier.stats.transportCapacity == null || carrier.stats.transportCapacity <= 0) {
-      return { success: false, error: 'Carrier has no transport capacity' };
+      return { success: false, error: 'Carrier has no transport capacity', errorKey: 'carrierNoCapacity' };
     }
     if (carrier.carrying && carrier.carrying.length >= carrier.stats.transportCapacity) {
-      return { success: false, error: 'Carrier full' };
+      return { success: false, error: 'Carrier full', errorKey: 'carrierFull' };
     }
-    if (passenger.embarkedOn) return { success: false, error: 'Passenger already embarked' };
+    if (passenger.embarkedOn) return { success: false, error: 'Passenger already embarked', errorKey: 'passengerAlreadyEmbarked' };
     if (passenger.unitType !== 'infantry' && passenger.unitType !== 'support' && passenger.unitType !== 'hero') {
-      return { success: false, error: 'Only infantry/support can embark' };
+      return { success: false, error: 'Only infantry/support can embark', errorKey: 'onlyInfantrySupportEmbark' };
     }
     if (!isNeighbor(carrier.coordinate, passenger.coordinate) && !isIsoNeighbor(carrier.coordinate, passenger.coordinate) && coordinateKey(carrier.coordinate) !== coordinateKey(passenger.coordinate)) {
-      return { success: false, error: 'Not adjacent to carrier' };
+      return { success: false, error: 'Not adjacent to carrier', errorKey: 'notAdjacentToCarrier' };
     }
     passenger.embarkedOn = carrier.id;
     passenger.statusEffects.add('embarked');
@@ -552,15 +561,15 @@ export class TurnProcessor {
 
   disembark(input: DisembarkActionInput): ActionResult {
     const passenger = findUnitInState(this.#state, input.passengerId);
-    if (!passenger) return { success: false, error: 'Passenger not found' };
-    if (!passenger.embarkedOn) return { success: false, error: 'Not embarked' };
+    if (!passenger) return { success: false, error: 'Passenger not found', errorKey: 'passengerNotFound' };
+    if (!passenger.embarkedOn) return { success: false, error: 'Not embarked', errorKey: 'notEmbarked' };
     const carrier = findUnitInState(this.#state, passenger.embarkedOn);
-    if (!carrier) return { success: false, error: 'Carrier missing' };
+    if (!carrier) return { success: false, error: 'Carrier missing', errorKey: 'carrierMissing' };
     if (!isNeighbor(carrier.coordinate, input.target) && !isIsoNeighbor(carrier.coordinate, input.target) && coordinateKey(carrier.coordinate) !== coordinateKey(input.target)) {
-      return { success: false, error: 'Disembark target not adjacent' };
+      return { success: false, error: 'Disembark target not adjacent', errorKey: 'disembarkNotAdjacent' };
     }
     const tile = getTile(this.#state.map, input.target);
-    if (!tile || !tile.passable) return { success: false, error: 'Target not passable' };
+    if (!tile || !tile.passable) return { success: false, error: 'Target not passable', errorKey: 'targetNotPassable' };
     const occupied = new Set<string>();
     for (const side of Object.values(this.#state.sides)) {
       for (const u of side.units.values()) {
@@ -568,7 +577,7 @@ export class TurnProcessor {
         occupied.add(coordinateKey(u.coordinate));
       }
     }
-    if (occupied.has(coordinateKey(input.target))) return { success: false, error: 'Target occupied' };
+    if (occupied.has(coordinateKey(input.target))) return { success: false, error: 'Target occupied', errorKey: 'targetOccupied' };
     passenger.embarkedOn = undefined;
     passenger.statusEffects.delete('embarked');
     passenger.coordinate = { ...input.target };
@@ -585,23 +594,23 @@ export class TurnProcessor {
     const side = this.#state.sides[this.#state.activeFaction];
     const supplier = side.units.get(input.supplierId);
     const target = findUnitInState(this.#state, input.targetId);
-    if (!supplier || !target) return { success: false, error: 'Unit not found' };
-    if (supplier.id === target.id) return { success: false, error: 'Cannot resupply self' };
-    if (supplier.faction !== target.faction) return { success: false, error: 'Faction mismatch' };
-    if (supplier.stance === 'destroyed' || target.stance === 'destroyed') return { success: false, error: 'Unit destroyed' };
-    if (target.embarkedOn) return { success: false, error: 'Target is embarked' };
-    if (!isSupplyUnit(supplier)) return { success: false, error: 'Unit cannot resupply' };
+    if (!supplier || !target) return { success: false, error: 'Unit not found', errorKey: 'unitNotFound' };
+    if (supplier.id === target.id) return { success: false, error: 'Cannot resupply self', errorKey: 'cannotResupplySelf' };
+    if (supplier.faction !== target.faction) return { success: false, error: 'Faction mismatch', errorKey: 'factionMismatch' };
+    if (supplier.stance === 'destroyed' || target.stance === 'destroyed') return { success: false, error: 'Unit destroyed', errorKey: 'unitDestroyed' };
+    if (target.embarkedOn) return { success: false, error: 'Target is embarked', errorKey: 'targetEmbarked' };
+    if (!isSupplyUnit(supplier)) return { success: false, error: 'Unit cannot resupply', errorKey: 'unitCannotResupply' };
     if (
       !isNeighbor(supplier.coordinate, target.coordinate) &&
       !isIsoNeighbor(supplier.coordinate, target.coordinate)
     ) {
-      return { success: false, error: 'Target not adjacent' };
+      return { success: false, error: 'Target not adjacent', errorKey: 'targetNotAdjacent' };
     }
     const cap = target.stats.ammoCapacity;
-    if (cap === undefined || cap === Infinity) return { success: false, error: 'Target has no ammo store' };
-    if (target.currentAmmo >= cap) return { success: false, error: 'Target ammo already full' };
+    if (cap === undefined || cap === Infinity) return { success: false, error: 'Target has no ammo store', errorKey: 'targetNoAmmoStore' };
+    if (target.currentAmmo >= cap) return { success: false, error: 'Target ammo already full', errorKey: 'targetAmmoFull' };
     // Supply doesn't consume the supplier's own ammo (it carries none), so check AP directly.
-    if (supplier.actionPoints < SUPPLY_AP_COST) return { success: false, error: 'Not enough action points to resupply' };
+    if (supplier.actionPoints < SUPPLY_AP_COST) return { success: false, error: 'Not enough action points to resupply', errorKey: 'notEnoughApResupply' };
     target.currentAmmo = cap;
     supplier.actionPoints -= SUPPLY_AP_COST;
     return { success: true, events: this.#state.timeline };
@@ -612,21 +621,21 @@ export class TurnProcessor {
     const side = this.#state.sides[this.#state.activeFaction];
     const medic = side.units.get(input.medicId);
     const target = findUnitInState(this.#state, input.targetId);
-    if (!medic || !target) return { success: false, error: 'Unit not found' };
-    if (medic.id === target.id) return { success: false, error: 'Cannot heal self' };
-    if (medic.faction !== target.faction) return { success: false, error: 'Faction mismatch' };
-    if (medic.stance === 'destroyed' || target.stance === 'destroyed') return { success: false, error: 'Unit destroyed' };
-    if (target.embarkedOn) return { success: false, error: 'Target is embarked' };
-    if (!isMedicUnit(medic)) return { success: false, error: 'Unit cannot heal' };
+    if (!medic || !target) return { success: false, error: 'Unit not found', errorKey: 'unitNotFound' };
+    if (medic.id === target.id) return { success: false, error: 'Cannot heal self', errorKey: 'cannotHealSelf' };
+    if (medic.faction !== target.faction) return { success: false, error: 'Faction mismatch', errorKey: 'factionMismatch' };
+    if (medic.stance === 'destroyed' || target.stance === 'destroyed') return { success: false, error: 'Unit destroyed', errorKey: 'unitDestroyed' };
+    if (target.embarkedOn) return { success: false, error: 'Target is embarked', errorKey: 'targetEmbarked' };
+    if (!isMedicUnit(medic)) return { success: false, error: 'Unit cannot heal', errorKey: 'unitCannotHeal' };
     if (
       !isNeighbor(medic.coordinate, target.coordinate) &&
       !isIsoNeighbor(medic.coordinate, target.coordinate)
     ) {
-      return { success: false, error: 'Target not adjacent' };
+      return { success: false, error: 'Target not adjacent', errorKey: 'targetNotAdjacent' };
     }
-    if (target.currentHealth >= target.stats.maxHealth) return { success: false, error: 'Target at full health' };
+    if (target.currentHealth >= target.stats.maxHealth) return { success: false, error: 'Target at full health', errorKey: 'targetFullHealth' };
     // The medic carries ammo so canAffordAttack would also gate on it; heal only needs AP.
-    if (medic.actionPoints < HEAL_AP_COST) return { success: false, error: 'Not enough action points to heal' };
+    if (medic.actionPoints < HEAL_AP_COST) return { success: false, error: 'Not enough action points to heal', errorKey: 'notEnoughApHeal' };
     target.currentHealth = Math.min(target.stats.maxHealth, target.currentHealth + HEAL_AMOUNT);
     medic.actionPoints -= HEAL_AP_COST;
     this.#state.timeline.push({ kind: 'unit:xp', unitId: medic.id, amount: 0, reason: 'hit' });
@@ -636,30 +645,33 @@ export class TurnProcessor {
   attackTile(input: { attackerId: string; target: HexCoordinate; weaponId: string }): ActionResult {
     const attackerSide = this.#state.sides[this.#state.activeFaction];
     const attacker = attackerSide.units.get(input.attackerId);
-    if (!attacker) return { success: false, error: `Unit ${input.attackerId} not found` };
+    if (!attacker) return { success: false, error: `Unit ${input.attackerId} not found`, errorKey: 'unitNotFound' };
+    if (attacker.stance === 'routed') {
+      return { success: false, error: 'Routed units cannot attack', errorKey: 'routedCannotAttack' };
+    }
 
     const tile = getTile(this.#state.map, input.target);
-    if (!tile) return { success: false, error: 'Target tile out of bounds' };
+    if (!tile) return { success: false, error: 'Target tile out of bounds', errorKey: 'targetTileOutOfBounds' };
     if (!tile.destructible || !tile.hp || tile.hp <= 0) {
-      return { success: false, error: 'Tile is not destructible' };
+      return { success: false, error: 'Tile is not destructible', errorKey: 'tileNotDestructible' };
     }
 
     if (!canAffordAttack(attacker)) {
-      return { success: false, error: 'Not enough action points to attack' };
+      return { success: false, error: 'Not enough action points to attack', errorKey: 'notEnoughApToAttack' };
     }
 
     // Range and LoS check against the tile
     const distance = isoDistance(attacker.coordinate, input.target);
     const maxRange = calculateAttackRange(attacker, input.weaponId, this.#state.map);
-    if (distance > maxRange) return { success: false, error: 'Target out of range' };
+    if (distance > maxRange) return { success: false, error: 'Target out of range', errorKey: 'targetOutOfRange' };
     if (!hasLineOfSight(this.#state.map, attacker.coordinate, input.target)) {
-      return { success: false, error: 'No line of sight to tile' };
+      return { success: false, error: 'No line of sight to tile', errorKey: 'noLineOfSightTile' };
     }
 
     const power = attacker.stats.weaponPower[input.weaponId] ?? 0;
     const damage = Math.max(0, Math.round(power));
     // Refuse a no-op demolition: it would spend AP + ammo to chip 0 HP off the tile.
-    if (damage <= 0) return { success: false, error: 'Weapon cannot damage structures' };
+    if (damage <= 0) return { success: false, error: 'Weapon cannot damage structures', errorKey: 'weaponCannotDamageStructures' };
 
     tile.hp = Math.max(0, (tile.hp ?? 0) - damage);
 

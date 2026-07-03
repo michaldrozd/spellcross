@@ -1,0 +1,33 @@
+{
+  "objective": {
+    "heading": "Objectives",
+    "enemies": "Enemies {{surviving}}/{{total}}",
+    "held": "Held {{held}}/{{limit}}",
+    "byTurn": "By turn {{limit}}",
+    "reached": "Reached",
+    "notReached": "Not reached",
+    "protected": "Protected",
+    "lost": "Lost"
+  },
+  "overwatch": {
+    "label": "Overwatch",
+    "reasonSelectUnit": "Select a unit",
+    "reasonNeedsAp": "Needs 2 AP",
+    "reasonNoAmmo": "No ammo",
+    "reasonSuppressed": "Unit suppressed",
+    "reasonAlreadyActed": "Already acted",
+    "tooltip": "Spend 2 AP to prepare reaction fire"
+  },
+  "supply": {
+    "label": "Resupply",
+    "reasonNeedsAp": "Needs 2 AP",
+    "reasonNoAdjacentAlly": "No adjacent ally",
+    "tooltip": "Spend 2 AP to refill an adjacent unit's ammo"
+  },
+  "heal": {
+    "label": "Treat",
+    "reasonNeedsAp": "Needs 2 AP",
+    "reasonNoWoundedAdjacent": "No wounded ally adjacent",
+    "tooltip": "Spend 2 AP to heal an adjacent wounded unit"
+  }
+}

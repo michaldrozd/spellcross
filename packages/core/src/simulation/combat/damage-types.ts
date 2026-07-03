@@ -29,7 +29,8 @@ export function weaponDamageRole(weaponId: string): DamageRole {
   if (has('flame', 'flamer', 'hellfire', 'magma', 'breath', 'pyro', 'oil', 'incend')) return 'fire';
   if (has('bow', 'arrow', 'dart', 'crossbow', 'quarrel')) return 'arrow';
   if (has('sam', 'aa', 'flak', 'stinger')) return 'aa';
-  if (has('at', 'antitank', 'cannon', 'railgun', 'sabot', 'siege', 'lance', 'tow') && !has('auto')) return 'ap';
+  // 'at' must match as a token, not a substring — otherwise e.g. 'greataxe' reads as anti-tank
+  if ((/(^|[^a-z])at([^a-z]|$)/.test(w) || has('antitank', 'cannon', 'railgun', 'sabot', 'siege', 'lance', 'tow')) && !has('auto')) return 'ap';
   if (has('shell', 'rocket', 'mortar', 'howitzer', 'boulder', 'grenade', 'missile', 'quake', 'charge')) return 'he';
   if (has('autocannon', 'hmg')) return 'autocannon';
   if (has('axe', 'blade', 'sword', 'maul', 'slam', 'fang', 'bite', 'mandible', 'claw', 'cleaver', 'talon',
