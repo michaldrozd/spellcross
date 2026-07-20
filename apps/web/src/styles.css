@@ -36,14 +36,48 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #0a0a12 0%, #151520 50%, #0a0a12 100%);
+  overflow-y: auto;
+  padding: 1.5rem;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(111, 105, 73, 0.12), transparent 30%),
+    radial-gradient(circle at 50% 72%, rgba(18, 66, 55, 0.09), transparent 34%),
+    linear-gradient(135deg, #0a0a12 0%, #151520 50%, #0a0a12 100%);
 }
 
 .menu-backdrop {
   position: absolute;
   inset: 0;
-  background: url('/bg-pattern.png') repeat;
-  opacity: 0.05;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(0deg, rgba(136, 150, 124, 0.028) 0 1px, transparent 1px 4px),
+    repeating-linear-gradient(90deg, rgba(136, 150, 124, 0.035) 0 1px, transparent 1px 42px),
+    repeating-linear-gradient(0deg, transparent 0 41px, rgba(136, 150, 124, 0.025) 41px 42px);
+  opacity: 0.9;
+}
+
+.menu-backdrop::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(76vw, 900px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(99, 137, 111, 0.08);
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 49.9%, rgba(92, 134, 111, 0.07) 50%, transparent 50.1%),
+    linear-gradient(0deg, transparent 49.9%, rgba(92, 134, 111, 0.07) 50%, transparent 50.1%),
+    conic-gradient(from 22deg, transparent 0 78%, rgba(87, 152, 111, 0.09) 88%, transparent 100%);
+  box-shadow: 0 0 70px rgba(30, 72, 56, 0.08), inset 0 0 70px rgba(30, 72, 56, 0.05);
+  transform: translate(-50%, -50%);
+  animation: menuRadarSweep 18s linear infinite;
+}
+
+.menu-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 36%, rgba(3, 4, 8, 0.78) 100%);
 }
 
 .menu-container {
@@ -52,7 +86,25 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3rem;
+  gap: clamp(1.4rem, 4vh, 3rem);
+  width: min(560px, 100%);
+}
+
+.menu-logo {
+  position: relative;
+}
+
+.menu-logo::after {
+  content: "COMMAND AUTHORITY // ALLIANCE";
+  position: absolute;
+  left: 50%;
+  bottom: -1.35rem;
+  color: rgba(120, 151, 130, 0.58);
+  font-family: "Courier New", monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+  transform: translateX(-50%);
 }
 
 .menu-logo h1 {
@@ -181,10 +233,14 @@ body {
 }
 
 .slot-modal-content {
+  position: relative;
   background: var(--panel);
   border: 1px solid var(--stroke);
   padding: 2rem;
   width: 400px;
+  max-width: calc(100vw - 2rem);
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
 }
 
 .slot-modal-content h2 {
@@ -242,6 +298,186 @@ body {
 .menu-btn-secondary {
   background: transparent;
   border-color: var(--stroke);
+}
+
+.menu-modal-content {
+  width: min(680px, calc(100vw - 2rem));
+  border: 2px solid;
+  border-color: #70786c #1b2220 #121716 #525b51;
+  background:
+    repeating-linear-gradient(90deg, rgba(116, 123, 99, 0.07) 0 1px, transparent 1px 18px),
+    linear-gradient(180deg, rgba(29, 35, 33, 0.99), rgba(8, 11, 12, 0.99));
+  box-shadow: inset 1px 1px 0 rgba(230, 220, 170, 0.12), 0 24px 70px rgba(0, 0, 0, 0.72);
+  font-family: "Courier New", monospace;
+}
+
+.menu-modal-heading {
+  margin-bottom: 1.2rem;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid rgba(188, 177, 127, 0.28);
+}
+
+.menu-modal-heading > span,
+.manual-sections section > span {
+  color: #809485;
+  font-size: 0.6rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.menu-modal-heading h2 {
+  margin: 0.25rem 0 0.4rem;
+}
+
+.menu-modal-heading p {
+  margin: 0;
+  color: #aab4a6;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.audio-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(126, 146, 130, 0.38);
+  background: rgba(7, 11, 10, 0.46);
+}
+
+.audio-toggle label {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.audio-toggle strong {
+  color: #d9dfce;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.audio-toggle small {
+  color: #849084;
+  font-size: 0.66rem;
+}
+
+.audio-toggle input {
+  width: 1.15rem;
+  height: 1.15rem;
+  accent-color: #d4a520;
+}
+
+.audio-settings {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+  transition: opacity 0.2s;
+}
+
+.audio-settings.disabled {
+  opacity: 0.45;
+}
+
+.audio-range {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.audio-range span {
+  display: flex;
+  justify-content: space-between;
+  color: #aab4a6;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.audio-range b {
+  color: #d7bd64;
+}
+
+.audio-range input {
+  width: 100%;
+  accent-color: #d4a520;
+}
+
+.manual-content {
+  width: min(840px, calc(100vw - 2rem));
+}
+
+.manual-sections {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.manual-sections section {
+  padding: 0.8rem;
+  border: 1px solid rgba(126, 146, 130, 0.34);
+  background:
+    linear-gradient(180deg, rgba(78, 90, 74, 0.08), rgba(5, 8, 8, 0.34)),
+    repeating-linear-gradient(90deg, rgba(116, 123, 99, 0.05) 0 1px, transparent 1px 14px);
+}
+
+.manual-sections h3 {
+  margin: 0.25rem 0 0.55rem;
+  color: #d7bd64;
+  font-size: 0.88rem;
+  text-transform: uppercase;
+}
+
+.manual-sections ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding-left: 1rem;
+  color: #b8c2b4;
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.manual-sections li::marker {
+  color: #809b72;
+}
+
+.modal-back {
+  width: 100%;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.modal-close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border-color: rgba(126, 146, 130, 0.45);
+  background: rgba(7, 11, 10, 0.72);
+  color: #aab4a6;
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+@keyframes menuRadarSweep {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-backdrop::before { animation: none; }
+}
+
+@media (max-width: 620px) {
+  .main-menu { padding: 1rem; }
+  .menu-logo h1 { font-size: clamp(2rem, 12vw, 3rem); }
+  .menu-subtitle { font-size: 0.82rem; letter-spacing: 0.32em; }
+  .menu-buttons { width: min(320px, 100%); }
+  .manual-sections { grid-template-columns: 1fr; }
 }
 
 .toast-stack {
@@ -3224,7 +3460,7 @@ header.app-header {
   border-color: #858979 #1c2221 #151918 #62685e;
   padding: 0.78rem 0.82rem 0.82rem;
   border-radius: 2px;
-  min-width: 455px;
+  min-width: 490px;
   max-width: 560px;
   box-shadow:
     inset 1px 1px 0 rgba(231, 219, 172, 0.16),
@@ -3789,8 +4025,8 @@ header.app-header {
   }
 
   .unit-card {
-    min-width: 318px;
-    max-width: 350px;
+    min-width: 420px;
+    max-width: 460px;
     padding: 0.68rem 0.66rem 0.72rem;
   }
 
@@ -3810,7 +4046,7 @@ header.app-header {
   }
 
   .unit-details {
-    grid-template-columns: 86px minmax(126px, 1fr) minmax(86px, 0.54fr);
+    grid-template-columns: 86px minmax(180px, 1fr) minmax(90px, 0.55fr);
     gap: 0.42rem;
     font-size: 0.72rem;
   }
@@ -3860,6 +4096,63 @@ header.app-header {
 
   .unit-monitor {
     min-height: 64px;
+  }
+
+  .unit-status,
+  .unit-actions {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 1100px) and (min-width: 701px) {
+  .hq-topbar {
+    flex-wrap: wrap;
+    gap: 0.7rem 1rem;
+    padding: 0.8rem 1rem;
+  }
+
+  .hq-title {
+    flex: 1 1 100%;
+    gap: 0.8rem;
+  }
+
+  .hq-resources {
+    flex: 1 1 0;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .resource {
+    min-width: 0;
+  }
+
+  .hq-topbar > .end-turn-btn {
+    flex: 0 0 132px;
+    min-height: 58px;
+  }
+
+  .hq-content {
+    padding: 1rem;
+  }
+
+  .strategic-map-view {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    height: auto;
+    min-height: 0;
+  }
+
+  .strategic-map-container {
+    width: 100%;
+    height: clamp(430px, 62vw, 560px);
+    min-height: 430px;
+  }
+
+  .territory-info-panel {
+    min-height: 360px;
   }
 }
 

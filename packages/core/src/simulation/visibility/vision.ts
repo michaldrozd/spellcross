@@ -20,8 +20,6 @@ const DEFAULT_RANGE_MODIFIER = ({
 }) => unitVision + (tileProvidesBoost ? 1 : 0) + (elevation >= 1 ? 1 : 0);
 
 const MAX_VISION_RANGE = 10;
-const BASE_STEALTH_PENALTY = 1;
-
 function tileBlocksVision(map: BattlefieldMap, coordinate: HexCoordinate): boolean {
   const tile = getTile(map, coordinate);
   if (!tile) {

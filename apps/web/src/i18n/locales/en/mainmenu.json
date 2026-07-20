@@ -32,6 +32,59 @@
     "newGame": "New Game",
     "back": "Back"
   },
+  "settings": {
+    "systemCode": "Audio control / SYS-04",
+    "title": "Settings",
+    "description": "Balance the command channel, battlefield effects, and ambient sound bed.",
+    "audioEnabled": "Audio enabled",
+    "audioEnabledHint": "Master switch for all game sound",
+    "masterVolume": "Master output",
+    "effectsVolume": "Weapons and interface",
+    "ambienceVolume": "Battlefield ambience"
+  },
+  "manual": {
+    "fieldGuide": "Field guide / FM-97",
+    "title": "Commander Manual",
+    "intro": "The essentials for keeping your force alive and the invasion moving east.",
+    "sections": {
+      "campaign": {
+        "code": "01 / HQ",
+        "title": "Run the campaign",
+        "lines": {
+          "0": "Choose an available sector before its turn clock expires.",
+          "1": "Recruit, refill, and research between operations; new units may need a turn to arrive.",
+          "2": "The war clock advances when you end the strategic turn. Spend time deliberately."
+        }
+      },
+      "battle": {
+        "code": "02 / TAC",
+        "title": "Fight the battle",
+        "lines": {
+          "0": "Reposition squads on the glowing deployment tiles, then start the battle.",
+          "1": "Select a unit and click a reachable tile to move. Select a visible enemy to prepare fire.",
+          "2": "Action points pay for movement and attacks; ammunition does not refill by itself."
+        }
+      },
+      "controls": {
+        "code": "03 / INPUT",
+        "title": "Control the field",
+        "lines": {
+          "0": "Drag or use the arrow keys to pan, and use the mouse wheel to zoom.",
+          "1": "Tab toggles the minimap; H, F1, or ? opens the battlefield help.",
+          "2": "Overwatch spends the rest of a unit's turn to fire at enemies that move into sight."
+        }
+      },
+      "survival": {
+        "code": "04 / LOG",
+        "title": "Keep the force alive",
+        "lines": {
+          "0": "Cover, elevation, flanking, morale, weather, and wounds all change combat odds.",
+          "1": "Use medics for wounded troops and supply vehicles for finite-ammo units.",
+          "2": "Retreat is safer from the starting zone; squads left outside it may be lost."
+        }
+      }
+    }
+  },
   "language": {
     "en": "EN",
     "sk": "SK"

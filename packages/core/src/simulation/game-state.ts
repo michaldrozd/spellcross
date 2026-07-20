@@ -86,7 +86,7 @@ export function createBattleState(options: CreateBattleStateOptions): TacticalBa
     sides: Object.fromEntries(sideStates) as TacticalBattleState['sides'],
     round: 1,
     activeFaction,
-    weather: options.weather ?? (map as any).weather ?? 'clear',
+    weather: options.weather ?? 'clear',
     supplyZones: options.supplyZones,
     pickups: options.pickups?.map((p) => ({ ...p, picked: false })),
     vision: {

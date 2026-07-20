@@ -32,6 +32,59 @@
     "newGame": "Nová hra",
     "back": "Späť"
   },
+  "settings": {
+    "systemCode": "Ovládanie zvuku / SYS-04",
+    "title": "Nastavenia",
+    "description": "Vyváž komunikačný kanál, bojové efekty a zvukovú kulisu bojiska.",
+    "audioEnabled": "Zapnúť zvuk",
+    "audioEnabledHint": "Hlavný prepínač všetkých zvukov hry",
+    "masterVolume": "Hlavná hlasitosť",
+    "effectsVolume": "Zbrane a rozhranie",
+    "ambienceVolume": "Atmosféra bojiska"
+  },
+  "manual": {
+    "fieldGuide": "Poľná príručka / FM-97",
+    "title": "Manuál veliteľa",
+    "intro": "Základy pre udržanie jednotiek nažive a zatlačenie invázie späť na východ.",
+    "sections": {
+      "campaign": {
+        "code": "01 / HQ",
+        "title": "Veď kampaň",
+        "lines": {
+          "0": "Vyber dostupný sektor skôr, než vyprší jeho časový limit.",
+          "1": "Medzi operáciami verbuj, dopĺňaj stavy a skúmaj; nové jednotky môžu prísť až o kolo.",
+          "2": "Vojnové hodiny sa pohnú po ukončení strategického kola. Čas míňaj rozvážne."
+        }
+      },
+      "battle": {
+        "code": "02 / TAC",
+        "title": "Bojuj na bojisku",
+        "lines": {
+          "0": "Rozmiestni družstvá na žiariace štartovacie polia a potom spusti bitku.",
+          "1": "Vyber jednotku a klikni na dostupné pole pre pohyb. Viditeľného nepriateľa vyber pre streľbu.",
+          "2": "Akčné body platia pohyb aj útoky; munícia sa sama nedopĺňa."
+        }
+      },
+      "controls": {
+        "code": "03 / INPUT",
+        "title": "Ovládaj bojisko",
+        "lines": {
+          "0": "Ťahaním alebo šípkami posúvaj mapu a kolieskom myši približuj.",
+          "1": "Tab prepína minimapu; H, F1 alebo ? otvorí pomocníka na bojisku.",
+          "2": "Krycia paľba minie zvyšok kola jednotky na streľbu po nepriateľoch, ktorí vojdú do dohľadu."
+        }
+      },
+      "survival": {
+        "code": "04 / LOG",
+        "title": "Udrž jednotky nažive",
+        "lines": {
+          "0": "Krytie, výška, obchvat, morálka, počasie aj zranenia menia šance v boji.",
+          "1": "Zranených lieč medikmi a jednotkám s obmedzenou muníciou pomáhaj zásobovacími vozidlami.",
+          "2": "Ústup je bezpečnejší zo štartovacej zóny; družstvá mimo nej môžeš stratiť."
+        }
+      }
+    }
+  },
   "language": {
     "en": "EN",
     "sk": "SK"

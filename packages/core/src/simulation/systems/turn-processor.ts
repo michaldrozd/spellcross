@@ -277,7 +277,7 @@ export class TurnProcessor {
     let origin = { ...unit.coordinate };
     const visited = new Set<string>([coordinateKey(origin)]);
     const movementMultiplier = movementMultiplierForStance(unit.stance);
-    const weather = (this.#state as any).weather as ('clear' | 'night' | 'fog' | undefined);
+    const weather = this.#state.weather;
     const weatherMoveMod = weather === 'fog' ? 1.2 : weather === 'night' ? 1.1 : 1;
 
     // First pass: validate path and compute total cost
@@ -481,7 +481,7 @@ export class TurnProcessor {
       defender,
       weaponId: input.weaponId,
       map: this.#state.map,
-      weather: (this.#state as any).weather ?? 'clear',
+      weather: this.#state.weather ?? 'clear',
       random: this.#random
     });
     attacker.orientation = isoDirectionIndex(attacker.coordinate, defender.coordinate);

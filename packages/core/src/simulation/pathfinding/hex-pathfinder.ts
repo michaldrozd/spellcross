@@ -170,7 +170,7 @@ export function planPathForUnit(
     }
   }
 
-  const weather = (state as any).weather as ('clear' | 'night' | 'fog' | undefined);
+  const weather = state.weather;
   const weatherMoveMod = weather === 'fog' ? 1.2 : weather === 'night' ? 1.1 : 1;
   const movementMultiplier = movementMultiplierForStance(unit.stance) * weatherMoveMod;
 

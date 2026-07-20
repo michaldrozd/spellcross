@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { setAppLanguage, SUPPORTED_LANGUAGES } from '../i18n/index.js';
+import { AudioManager } from '../services/AudioManager.js';
 
 export interface SaveSlot {
   slot: number;
@@ -21,6 +22,38 @@ interface MainMenuProps {
   currentSlot: number;
 }
 
+interface AudioPreferences {
+  enabled: boolean;
+  master: number;
+  effects: number;
+  ambience: number;
+}
+
+const AUDIO_PREFERENCES_KEY = 'spellcross:audio';
+const DEFAULT_AUDIO_PREFERENCES: AudioPreferences = {
+  enabled: true,
+  master: 0.7,
+  effects: 0.8,
+  ambience: 0.5,
+};
+
+function loadAudioPreferences(): AudioPreferences {
+  if (typeof window === 'undefined') return DEFAULT_AUDIO_PREFERENCES;
+  try {
+    const stored = window.localStorage.getItem(AUDIO_PREFERENCES_KEY);
+    if (!stored) return DEFAULT_AUDIO_PREFERENCES;
+    const parsed = JSON.parse(stored) as Partial<AudioPreferences>;
+    return {
+      enabled: parsed.enabled ?? DEFAULT_AUDIO_PREFERENCES.enabled,
+      master: typeof parsed.master === 'number' ? parsed.master : DEFAULT_AUDIO_PREFERENCES.master,
+      effects: typeof parsed.effects === 'number' ? parsed.effects : DEFAULT_AUDIO_PREFERENCES.effects,
+      ambience: typeof parsed.ambience === 'number' ? parsed.ambience : DEFAULT_AUDIO_PREFERENCES.ambience,
+    };
+  } catch {
+    return DEFAULT_AUDIO_PREFERENCES;
+  }
+}
+
 export const MainMenu: React.FC<MainMenuProps> = ({
   onNewGame,
   onContinue,
@@ -29,7 +62,29 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 }) => {
   const { t, i18n } = useTranslation('mainmenu');
   const [selectedSlot, setSelectedSlot] = useState(currentSlot);
-  const [showSlots, setShowSlots] = useState(false);
+  const [activePanel, setActivePanel] = useState<'slots' | 'settings' | 'manual' | null>(null);
+  const [audioPreferences, setAudioPreferences] = useState(loadAudioPreferences);
+
+  useEffect(() => {
+    AudioManager.setEnabled(audioPreferences.enabled);
+    AudioManager.setMasterVolume(audioPreferences.master);
+    AudioManager.setSfxVolume(audioPreferences.effects);
+    AudioManager.setMusicVolume(audioPreferences.ambience);
+  }, [audioPreferences]);
+
+  useEffect(() => {
+    if (!activePanel) return;
+    const closePanel = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setActivePanel(null);
+    };
+    window.addEventListener('keydown', closePanel);
+    return () => window.removeEventListener('keydown', closePanel);
+  }, [activePanel]);
+
+  const updateAudioPreferences = (next: AudioPreferences) => {
+    setAudioPreferences(next);
+    window.localStorage.setItem(AUDIO_PREFERENCES_KEY, JSON.stringify(next));
+  };
 
   const hasAnySave = savedSlots.some(s => s !== null);
   const currentSave = savedSlots[currentSlot - 1];
@@ -85,18 +140,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
           <button
             className="menu-btn"
-            onClick={() => setShowSlots(true)}
+            onClick={() => setActivePanel('slots')}
           >
             <span className="btn-icon">📋</span>
             {hasAnySave ? t('buttons.loadGame') : t('buttons.newGame')}
           </button>
 
-          <button className="menu-btn" disabled>
+          <button className="menu-btn" onClick={() => setActivePanel('settings')}>
             <span className="btn-icon">⚙</span>
             {t('buttons.settings')}
           </button>
 
-          <button className="menu-btn" disabled>
+          <button className="menu-btn" onClick={() => setActivePanel('manual')}>
             <span className="btn-icon">📖</span>
             {t('buttons.manual')}
           </button>
@@ -108,10 +163,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         </div>
       </div>
 
-      {showSlots && (
-        <div className="slot-modal">
+      {activePanel === 'slots' && (
+        <div className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="slot-modal-title">
           <div className="slot-modal-content">
-            <h2>{t('slotModal.title')}</h2>
+            <h2 id="slot-modal-title">{t('slotModal.title')}</h2>
             <div className="slot-list">
               {[1, 2, 3].map((slotNum) => {
                 const save = savedSlots[slotNum - 1];
@@ -151,11 +206,91 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               </button>
               <button
                 className="menu-btn menu-btn-secondary"
-                onClick={() => setShowSlots(false)}
+                onClick={() => setActivePanel(null)}
               >
                 {t('slotModal.back')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activePanel === 'settings' && (
+        <div className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+          <div className="slot-modal-content menu-modal-content">
+            <button className="modal-close" aria-label={t('slotModal.back')} onClick={() => setActivePanel(null)}>×</button>
+            <div className="menu-modal-heading">
+              <span>{t('settings.systemCode')}</span>
+              <h2 id="settings-modal-title">{t('settings.title')}</h2>
+              <p>{t('settings.description')}</p>
+            </div>
+            <div className="audio-toggle">
+              <label htmlFor="audio-enabled">
+                <strong>{t('settings.audioEnabled')}</strong>
+                <small>{t('settings.audioEnabledHint')}</small>
+              </label>
+              <input
+                id="audio-enabled"
+                type="checkbox"
+                aria-label={t('settings.audioEnabled')}
+                checked={audioPreferences.enabled}
+                onChange={(event) => updateAudioPreferences({ ...audioPreferences, enabled: event.target.checked })}
+              />
+            </div>
+            <div className={`audio-settings ${audioPreferences.enabled ? '' : 'disabled'}`}>
+              {([
+                ['master', 'settings.masterVolume'],
+                ['effects', 'settings.effectsVolume'],
+                ['ambience', 'settings.ambienceVolume'],
+              ] as const).map(([field, label]) => (
+                <label key={field} className="audio-range">
+                  <span>{t(label)} <b>{Math.round(audioPreferences[field] * 100)}%</b></span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(audioPreferences[field] * 100)}
+                    disabled={!audioPreferences.enabled}
+                    onChange={(event) => updateAudioPreferences({
+                      ...audioPreferences,
+                      [field]: Number(event.target.value) / 100,
+                    })}
+                  />
+                </label>
+              ))}
+            </div>
+            <button className="menu-btn menu-btn-secondary modal-back" onClick={() => setActivePanel(null)}>
+              {t('slotModal.back')}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activePanel === 'manual' && (
+        <div className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="manual-modal-title">
+          <div className="slot-modal-content menu-modal-content manual-content">
+            <button className="modal-close" aria-label={t('slotModal.back')} onClick={() => setActivePanel(null)}>×</button>
+            <div className="menu-modal-heading">
+              <span>{t('manual.fieldGuide')}</span>
+              <h2 id="manual-modal-title">{t('manual.title')}</h2>
+              <p>{t('manual.intro')}</p>
+            </div>
+            <div className="manual-sections">
+              {(['campaign', 'battle', 'controls', 'survival'] as const).map((section) => (
+                <section key={section}>
+                  <span>{t(`manual.sections.${section}.code`)}</span>
+                  <h3>{t(`manual.sections.${section}.title`)}</h3>
+                  <ul>
+                    {([0, 1, 2] as const).map((line) => (
+                      <li key={line}>{t(`manual.sections.${section}.lines.${line}`)}</li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+            <button className="menu-btn menu-btn-secondary modal-back" onClick={() => setActivePanel(null)}>
+              {t('slotModal.back')}
+            </button>
           </div>
         </div>
       )}
