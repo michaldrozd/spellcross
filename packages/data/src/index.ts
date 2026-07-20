@@ -171,6 +171,24 @@ export interface ScenarioUnit {
   isKey?: boolean;
 }
 
+export type TacticalEventMessageKey =
+  | 'evacPursuit'
+  | 'rescueHunters'
+  | 'holdAssault'
+  | 'bridgeReserves'
+  | 'convoyIntercept'
+  | 'nightAmbush'
+  | 'portalSurge';
+
+export interface TacticalScenarioEvent {
+  id: string;
+  triggerRound: number;
+  triggerEnemyRemaining?: number;
+  messageKey: TacticalEventMessageKey;
+  faction: FactionId;
+  reinforcements: ScenarioUnit[];
+}
+
 export interface TacticalScenario {
   id: string;
   name: string;
@@ -184,6 +202,7 @@ export interface TacticalScenario {
   allianceForces?: ScenarioUnit[];
   otherSideForces: ScenarioUnit[];
   objectives: TacticalObjective[];
+  events?: TacticalScenarioEvent[];
 }
 
 export interface TerritorySpec {
@@ -329,6 +348,23 @@ const scenarioUnitSchema = z.object({
   isKey: z.boolean().optional()
 });
 
+const tacticalScenarioEventSchema = z.object({
+  id: z.string(),
+  triggerRound: z.number().int().positive(),
+  triggerEnemyRemaining: z.number().int().nonnegative().optional(),
+  messageKey: z.enum([
+    'evacPursuit',
+    'rescueHunters',
+    'holdAssault',
+    'bridgeReserves',
+    'convoyIntercept',
+    'nightAmbush',
+    'portalSurge'
+  ]),
+  faction: z.enum(['alliance', 'otherSide']),
+  reinforcements: z.array(scenarioUnitSchema).min(1)
+});
+
 const tacticalObjectiveSchema = z.object({
   id: z.string(),
   kind: z.enum(['eliminate', 'reach', 'protect', 'hold']),
@@ -350,7 +386,8 @@ const scenarioSchema = z.object({
   }),
   allianceForces: z.array(scenarioUnitSchema).optional(),
   otherSideForces: z.array(scenarioUnitSchema),
-  objectives: z.array(tacticalObjectiveSchema)
+  objectives: z.array(tacticalObjectiveSchema),
+  events: z.array(tacticalScenarioEventSchema).optional()
 });
 
 const territorySchema = z.object({

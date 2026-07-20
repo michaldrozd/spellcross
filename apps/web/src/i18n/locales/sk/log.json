@@ -7,5 +7,6 @@
   "xpGained": "Skúsenosti: {{unit}}",
   "tileDestroyed": "Zničené políčko na {{q}},{{r}}",
   "levelUp": "Level up: {{unit}} (úroveň {{level}})",
+  "reinforcements": "Posily: {{count}} jednotiek nastúpilo za stranu {{faction}}",
   "genericEvent": "Udalosť bitky"
 }

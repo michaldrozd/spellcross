@@ -32,6 +32,36 @@
     "enemyPhaseTitle": "Enemy Phase",
     "enemyPhaseDetail": "{{unit}} attacking"
   },
+  "scriptedEvents": {
+    "evacPursuit": {
+      "title": "Pursuit Force Detected",
+      "detail": "Hostile pursuit units are entering the battlefield: {{count}} contacts."
+    },
+    "rescueHunters": {
+      "title": "Hunters Closing In",
+      "detail": "Enemy hunters have located the rescue team: {{count}} contacts."
+    },
+    "holdAssault": {
+      "title": "Counterattack Incoming",
+      "detail": "A reserve assault group is moving on the strongpoint: {{count}} contacts."
+    },
+    "bridgeReserves": {
+      "title": "Bridge Reserves Committed",
+      "detail": "The defenders have released their reserve: {{count}} contacts."
+    },
+    "convoyIntercept": {
+      "title": "Convoy Intercepted",
+      "detail": "Hostile raiders are converging on the convoy: {{count}} contacts."
+    },
+    "nightAmbush": {
+      "title": "Movement in the Dark",
+      "detail": "An enemy ambush has emerged from concealment: {{count}} contacts."
+    },
+    "portalSurge": {
+      "title": "Portal Surge",
+      "detail": "The rift has discharged another enemy wave: {{count}} contacts."
+    }
+  },
   "autoTurn": {
     "label": "AUTO TURN",
     "playerPhase": "The computer is playing your turn…",

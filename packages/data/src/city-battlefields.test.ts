@@ -29,7 +29,7 @@ describe('Per-city battlefields', () => {
       });
 
       it('spawns every enemy on a unique in-bounds passable tile', () => {
-        const seen = new Set<string>();
+        const seen = new Set((sc.allianceForces ?? []).map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`));
         for (const u of sc.otherSideForces) {
           expect(passable(u.coordinate.q, u.coordinate.r), `${u.id} @ ${u.coordinate.q},${u.coordinate.r}`).toBe(true);
           const k = `${u.coordinate.q},${u.coordinate.r}`;
@@ -37,6 +37,24 @@ describe('Per-city battlefields', () => {
           seen.add(k);
         }
         expect(sc.otherSideForces.length).toBeGreaterThan(0);
+      });
+
+      it('defines a valid reserve event without overlapping its own arrivals', () => {
+        expect(sc.events).toHaveLength(1);
+        const occupied = new Set([
+          ...sc.otherSideForces.map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`),
+          ...(sc.allianceForces ?? []).map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`)
+        ]);
+        for (const event of sc.events ?? []) {
+          const arrivals = new Set<string>();
+          for (const reinforcement of event.reinforcements) {
+            const key = `${reinforcement.coordinate.q},${reinforcement.coordinate.r}`;
+            expect(passable(reinforcement.coordinate.q, reinforcement.coordinate.r), `${reinforcement.id} @ ${key}`).toBe(true);
+            expect(occupied.has(key), `${reinforcement.id} overlaps an initial unit at ${key}`).toBe(false);
+            expect(arrivals.has(key), `${reinforcement.id} overlaps another arrival at ${key}`).toBe(false);
+            arrivals.add(key);
+          }
+        }
       });
 
       it('puts every objective target on a passable tile', () => {
@@ -84,4 +102,20 @@ describe('Per-city battlefields', () => {
       });
     });
   }
+
+  it('adds a key rescue team with matching reach and protect objectives in Brussels', () => {
+    const scenario = cityScenarios.find((candidate) => candidate.id === 'city-sector-brussels');
+    const rescueTeam = scenario?.allianceForces?.find((unit) => unit.id === 'sector-brussels-pilot');
+    expect(rescueTeam?.definitionId).toBe('rangers');
+    expect(rescueTeam?.isKey).toBe(true);
+    expect(scenario?.objectives.filter((objective) => objective.unitIds?.includes('sector-brussels-pilot')).map((objective) => objective.kind).sort()).toEqual(['protect', 'reach']);
+  });
+
+  it('adds a key supply convoy with matching reach and protect objectives in Amsterdam', () => {
+    const scenario = cityScenarios.find((candidate) => candidate.id === 'city-sector-amsterdam');
+    const convoy = scenario?.allianceForces?.find((unit) => unit.id === 'sector-amsterdam-convoy');
+    expect(convoy?.definitionId).toBe('supply-truck');
+    expect(convoy?.isKey).toBe(true);
+    expect(scenario?.objectives.filter((objective) => objective.unitIds?.includes('sector-amsterdam-convoy')).map((objective) => objective.kind).sort()).toEqual(['protect', 'reach']);
+  });
 });

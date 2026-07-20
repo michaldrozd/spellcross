@@ -26,6 +26,7 @@ import {
   isSupplyUnit,
   isUnitUnlocked,
   planPathForUnitIso as planPathForUnit,
+  processTacticalEvents,
   reactionThreats,
   recruitUnit,
   dismissUnit,
@@ -40,13 +41,13 @@ import {
   calculateStrengthModifier,
   updateAllFactionsVision
 } from '@spellcross/core';
-import type { BattleEvent, BattlefieldMap, CampaignDifficulty, CampaignState, HexCoordinate, TacticalBattleState, UnitInstance } from '@spellcross/core';
+import type { BattleEvent, BattlefieldMap, CampaignDifficulty, CampaignState, HexCoordinate, TacticalBattleState, TriggeredTacticalEvent, UnitInstance } from '@spellcross/core';
 import { validatedStarterBundle } from '@spellcross/data';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import type { AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
+import type { ArrivalEffect, AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
 import { HealButton } from './components/HealButton.js';
 import { MainMenu } from './components/MainMenu.js';
 import type { SaveSlot } from './components/MainMenu.js';
@@ -307,6 +308,8 @@ function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState)
       return i18n.t('log:tileDestroyed', { q: event.at.q, r: event.at.r });
     case 'unit:level':
       return i18n.t('log:levelUp', { unit: unitDisplayName(event.unitId, battleState), level: event.level });
+    case 'reinforcements:arrived':
+      return i18n.t('log:reinforcements', { count: event.unitIds.length, faction: faction(event.faction) });
     default:
       return i18n.t('log:genericEvent');
   }
@@ -484,7 +487,7 @@ const BattleView: React.FC<{
   const [riskyMove, setRiskyMove] = useState<{ unitId: string; target: HexCoordinate; unitName: string; lethal: boolean } | null>(null);
   const [retreatConfirmOpen, setRetreatConfirmOpen] = useState(false);
   const [combatNotices, setCombatNotices] = useState<Array<{ id: number; message: string }>>([]);
-  const [phaseNotice, setPhaseNotice] = useState<{ id: number; title: string; detail: string; tone: 'enemy' | 'alliance' } | null>(null);
+  const [phaseNotice, setPhaseNotice] = useState<{ id: number; title: string; detail: string; tone: 'enemy' | 'alliance'; duration: number } | null>(null);
   const [pendingAttack, setPendingAttack] = useState<{ id: string; time: number } | null>(null);
   const [targetedEnemy, setTargetedEnemy] = useState<UnitInstance | null>(null);
   const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null);
@@ -571,6 +574,7 @@ const BattleView: React.FC<{
   }, [plannedPath, selectedUnit, battle.state]);
   const [showRanges, setShowRanges] = useState(false);
   const [attackEffects, setAttackEffects] = useState<AttackEffect[]>([]);
+  const [arrivalEffects, setArrivalEffects] = useState<ArrivalEffect[]>([]);
   // Movement animation state
   const [movingUnit, setMovingUnit] = useState<MovingUnit | null>(null);
   // Battlefield ambience bed for as long as this view is mounted; weather sets the mood.
@@ -654,6 +658,14 @@ const BattleView: React.FC<{
     }, 100);
     return () => clearInterval(timer);
   }, [attackEffects.length]);
+  useEffect(() => {
+    if (arrivalEffects.length === 0) return;
+    const timer = window.setInterval(() => {
+      const cutoff = Date.now() - 4200;
+      setArrivalEffects((effects) => effects.filter((effect) => effect.startTime >= cutoff));
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [arrivalEffects.length]);
   // Cancel any staged SFX timeouts when the battle view unmounts (e.g. retreat mid-Auto-Turn), so
   // gunfire/impact sounds don't play over the strategic screen.
   useEffect(() => () => {
@@ -1201,12 +1213,34 @@ const BattleView: React.FC<{
     setTargetedEnemy(null);
     setPendingAttack(null);
   }
-  const showPhaseNotice = (title: string, detail: string, tone: 'enemy' | 'alliance' = 'alliance') => {
+  const showPhaseNotice = (title: string, detail: string, tone: 'enemy' | 'alliance' = 'alliance', duration = 1300) => {
     const id = nextNoticeId(); // monotonic — Date.now() collided when several notices fired in one ms
-    setPhaseNotice({ id, title, detail, tone });
+    setPhaseNotice({ id, title, detail, tone, duration });
     window.setTimeout(() => {
       setPhaseNotice((current) => current?.id === id ? null : current);
-    }, 1300);
+    }, duration);
+  };
+  const presentTacticalEvents = (events: TriggeredTacticalEvent[]) => {
+    if (events.length === 0) return;
+    const startedAt = Date.now();
+    setArrivalEffects((effects) => [
+      ...effects,
+      ...events.flatMap((event) => event.units.map((unit) => ({
+        id: `${event.id}:${unit.id}:${startedAt}`,
+        coordinate: unit.coordinate,
+        faction: event.faction,
+        startTime: startedAt
+      })))
+    ]);
+    const event = events[0];
+    const count = events.reduce((total, current) => total + current.units.length, 0);
+    showPhaseNotice(
+      t(`battle:scriptedEvents.${event.messageKey}.title`),
+      t(`battle:scriptedEvents.${event.messageKey}.detail`, { count }),
+      event.faction === 'otherSide' ? 'enemy' : 'alliance',
+      4200
+    );
+    AudioManager.play(event.messageKey === 'portalSurge' || event.messageKey === 'nightAmbush' ? 'magic' : 'objective');
   };
   const findBattleUnit = (unitId: string) => {
     for (const side of Object.values(battle.state.sides)) {
@@ -1713,6 +1747,7 @@ const BattleView: React.FC<{
       if (battle.state.activeFaction === 'otherSide') {
         aiProcessor.endTurn();
       }
+      presentTacticalEvents(processTacticalEvents(campaign, bundle));
       persist();
       if (evaluateBattleOutcome(battle) === 'ongoing') {
         AudioManager.play('turnStart'); // control handed back to the player
@@ -1907,6 +1942,7 @@ const BattleView: React.FC<{
             objectiveCoords={battle.scenario.objectives.map((objective) => objective.target).filter((coord): coord is HexCoordinate => Boolean(coord))}
             startZoneCoords={deployMode ? battle.startTiles : undefined}
             attackEffects={attackEffects}
+            arrivalEffects={arrivalEffects}
             movingUnit={movingUnit}
           />
         </React.Suspense>
@@ -1923,7 +1959,7 @@ const BattleView: React.FC<{
           </div>
         ) : null}
         {phaseNotice ? (
-          <div className={`battle-phase-notice ${phaseNotice.tone}`}>
+          <div className={`battle-phase-notice ${phaseNotice.tone}`} style={{ animationDuration: `${phaseNotice.duration}ms` }}>
             <strong>{phaseNotice.title}</strong>
             <span>{phaseNotice.detail}</span>
           </div>

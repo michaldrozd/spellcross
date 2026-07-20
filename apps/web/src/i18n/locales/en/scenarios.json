@@ -97,18 +97,18 @@
   },
   "city-sector-brussels": {
     "name": "Brussels Command",
-    "brief": "Extract the classified intel to the evac point before the HQ falls.",
+    "brief": "Reach the isolated reconnaissance team and bring it back before the headquarters perimeter falls.",
     "objectives": {
-      "sector-brussels-reach": "Escort Captain Alexander to the extraction flare.",
-      "sector-brussels-protect": "Do not lose Captain Alexander."
+      "sector-brussels-reach": "Bring the isolated reconnaissance team back to the extraction zone.",
+      "sector-brussels-protect": "Keep the reconnaissance team alive."
     }
   },
   "city-sector-amsterdam": {
     "name": "Amsterdam Harbor",
-    "brief": "Fight across the canals and seize the far quay through the harbor fog.",
+    "brief": "Escort a supply convoy through the fog-bound canals to the forward quay.",
     "objectives": {
-      "sector-amsterdam-eliminate": "Destroy or rout the defenders.",
-      "sector-amsterdam-reach": "Plant charges at the far objective."
+      "sector-amsterdam-reach": "Escort the supply convoy to the forward delivery zone.",
+      "sector-amsterdam-protect": "Keep the convoy operational."
     }
   },
   "city-sector-copenhagen": {

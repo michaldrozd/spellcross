@@ -7,5 +7,6 @@
   "xpGained": "XP gained: {{unit}}",
   "tileDestroyed": "Tile destroyed at {{q}},{{r}}",
   "levelUp": "Level up: {{unit}} (level {{level}})",
+  "reinforcements": "Reinforcements: {{count}} units joined {{faction}}",
   "genericEvent": "Battle event"
 }

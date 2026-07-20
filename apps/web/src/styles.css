@@ -740,7 +740,7 @@ body {
 .battle-phase-notice {
   position: absolute;
   top: 4.65rem;
-  left: 1rem;
+  right: 1rem;
   z-index: 48;
   display: grid;
   min-width: 210px;

@@ -10,7 +10,7 @@ Last reviewed: 2026-07-20.
 | Area | State |
 | --- | --- |
 | Strategic layer | Playable campaign loop with territories, timers, resources, research, recruitment, refills, formations, events, saves, and campaign outcome handling. |
-| Tactical layer | Playable isometric battles with action points, fog of war, line of sight, morale, XP, cover, elevation, overwatch reaction fire, ammo, supply, healing, transports, objectives, victory, defeat, and retreat. |
+| Tactical layer | Playable isometric battles with action points, fog of war, line of sight, morale, XP, cover, elevation, overwatch reaction fire, ammo, supply, healing, transports, mission events, objectives, victory, defeat, and retreat. |
 | Units and factions | Alliance and Other Side rosters cover the main expected battlefield roles, including infantry, scouts, armor, artillery, air, support, commanders, undead, monsters, casters, flyers, siege units, and static defenses. |
 | Opponent turn logic | Objective-aware movement, target scoring, difficulty modifiers, demolition targeting, supply and healing behavior, and fog-aware attack gating are implemented. |
 | Audio and visual polish | Weapon, movement, impact, ambient, UI, limiter, camera, shake, hit-stop, hover preview, wrecks, smoke, fog memory, shadows, props, and unit sprites are implemented. |
@@ -44,7 +44,7 @@ Missing or deferred:
 - Resource allocation slider.
 - Blind research.
 - Full officer attachment system.
-- Scripted story interludes or cutscenes.
+- Full-motion story interludes or cutscenes.
 - Limited save/ironman rules.
 
 ## Tactical Layer
@@ -60,6 +60,10 @@ Implemented:
 - Hover and target preview with hit chance, expected damage, and lethal indication.
 - Supply trucks, field medics, transports, embark/disembark, supply zones, and pickups.
 - Objectives: eliminate, reach, protect, and hold.
+- Scenario-authored reserve events triggered by battle round or enemy attrition.
+- Difficulty-scaled reinforcement waves: none on Story, two units on Commander, three on Veteran,
+  and four on Veteran in the hardest sectors.
+- Dedicated rescue and convoy operations with key units that must reach extraction or delivery zones alive.
 - Retreat rules that can destroy deployed units outside the start zone.
 
 Partially implemented or simplified:
@@ -67,7 +71,7 @@ Partially implemented or simplified:
 - Opportunity fire does not yet use a separate initiative contest.
 - Attack categories are broad unit classes rather than a deep armor/light/heavy/object matrix.
 - Radar deploy/pack behavior is not implemented.
-- Reinforcements and ambush triggers are not a general scenario scripting system yet.
+- Tactical events currently spawn units and messages; object, dialogue, and cutscene actions remain future extensions.
 
 ## Units
 
@@ -115,8 +119,22 @@ Still open:
 
 ## Best Next Improvements
 
-1. Add deeper tactical scripting: ambushes, reinforcements, forced retreats, and special objectives.
+1. Extend tactical event actions with object state changes, map dialogue, and forced-retreat phases.
 2. Give caster, monster, radar, and commander units more distinct active abilities.
 3. Expand formation and officer management in the strategic UI.
 4. Add more scenario-specific story flavor without copying original text.
 5. Keep splitting the renderer into smaller modules as visual systems stabilize.
+
+## Original Data Audit
+
+The installed 1998 game data was reviewed alongside the manuals and gameplay footage. Its extracted
+mission definitions contain 95 tactical mission files, 41 missions with special-event triggers, and
+six objective families: destroy all units, destroy a named unit, destroy an object, discover a place,
+transport a unit, and save a unit. The most memorable operations use several of these together, such
+as locating stores, escorting a convoy, transporting specialists, and finding a landmark before
+engaging a named commander.
+
+The remake now covers these patterns through eliminate, reach, protect, and hold objectives, plus
+rescue/convoy key units and scripted reserve waves. The original still has more authored mid-mission
+dialogue, named bosses, object-specific objectives, and cinematics. Those are content-depth gaps, not
+missing foundations in the combat engine.

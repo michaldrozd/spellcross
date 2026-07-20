@@ -97,18 +97,18 @@
   },
   "city-sector-brussels": {
     "name": "Bruselské velenie",
-    "brief": "Vyneste utajené informácie k evakuačnému bodu skôr, než veliteľstvo padne.",
+    "brief": "Nájdite izolovaný prieskumný tím a priveďte ho späť skôr, než padne perimeter veliteľstva.",
     "objectives": {
-      "sector-brussels-reach": "Dopravte kapitána Alexandra k evakuačnej svetlici.",
-      "sector-brussels-protect": "Nepríďte o kapitána Alexandra."
+      "sector-brussels-reach": "Dopravte izolovaný prieskumný tím späť do evakuačnej zóny.",
+      "sector-brussels-protect": "Udržte prieskumný tím nažive."
     }
   },
   "city-sector-amsterdam": {
     "name": "Amsterdamský prístav",
-    "brief": "Bojujte naprieč kanálmi a cez prístavnú hmlu obsaďte vzdialené mólo.",
+    "brief": "Sprevádzajte zásobovací konvoj cez zahmlené kanály k predsunutému mólu.",
     "objectives": {
-      "sector-amsterdam-eliminate": "Zničte alebo rozprášte obrancov.",
-      "sector-amsterdam-reach": "Nastražte nálože pri vzdialenom cieli."
+      "sector-amsterdam-reach": "Sprevádzajte zásobovací konvoj do predsunutého odovzdávacieho priestoru.",
+      "sector-amsterdam-protect": "Udržte konvoj prevádzkyschopný."
     }
   },
   "city-sector-copenhagen": {

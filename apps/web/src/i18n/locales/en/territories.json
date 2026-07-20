@@ -25,11 +25,11 @@
   },
   "sector-brussels": {
     "name": "Brussels Command",
-    "brief": "NATO headquarters is compromised. Extract classified intel before it falls."
+    "brief": "An isolated reconnaissance team is trapped beyond the headquarters perimeter. Bring it home."
   },
   "sector-amsterdam": {
     "name": "Amsterdam Harbor",
-    "brief": "Control of the port is essential for naval supply routes."
+    "brief": "Escort a supply convoy through the fog-bound canals to the forward quay."
   },
   "sector-copenhagen": {
     "name": "Copenhagen Strait",

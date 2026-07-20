@@ -11,12 +11,13 @@ import type {
   MapTile,
   TacticalObjective,
   TacticalScenario,
+  TacticalScenarioEvent,
   ScenarioUnit,
   TerrainType
 } from './index.js';
 
 type Coord = { q: number; r: number };
-type GameplayType = 'evac' | 'hold' | 'bridgehead' | 'raid-night' | 'spire';
+type GameplayType = 'evac' | 'rescue' | 'hold' | 'bridgehead' | 'convoy' | 'raid-night' | 'spire';
 
 interface CityConfig {
   territoryId: string;
@@ -422,7 +423,13 @@ function pickSpread(pool: Coord[], n: number, rng: () => number): Coord[] {
   return out.slice(0, n);
 }
 
-function buildObjectives(cfg: CityConfig, g: Generated, rng: () => number): { objectives: TacticalObjective[]; weather?: 'clear' | 'night' | 'fog' } {
+interface MissionDefinition {
+  objectives: TacticalObjective[];
+  allianceForces?: ScenarioUnit[];
+  weather?: 'clear' | 'night' | 'fog';
+}
+
+function buildMission(cfg: CityConfig, g: Generated, rng: () => number): MissionDefinition {
   const id = cfg.territoryId;
   // objective anchor: a REACHABLE tile deep in enemy territory (top-right region)
   const deep = g.reachable.filter((c) => c.r <= cfg.height * 0.4 && c.q >= cfg.width * 0.45);
@@ -433,6 +440,7 @@ function buildObjectives(cfg: CityConfig, g: Generated, rng: () => number): { ob
     (Math.abs(a.q - cx) + Math.abs(a.r - cy)) - (Math.abs(b.q - cx) + Math.abs(b.r - cy))
   )[0] ?? { q: Math.floor(cx), r: Math.floor(cy) };
   const objs: TacticalObjective[] = [];
+  let allianceForces: ScenarioUnit[] | undefined;
   switch (cfg.gameplay) {
     case 'evac':
       objs.push({
@@ -444,6 +452,25 @@ function buildObjectives(cfg: CityConfig, g: Generated, rng: () => number): { ob
       });
       objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Do not lose Captain Alexander.', unitIds: ['captain'] });
       break;
+    case 'rescue': {
+      const rescueId = `${id}-pilot`;
+      const rescuePool = g.reachable.filter((c) => (
+        c.q >= cfg.width * 0.32 && c.q <= cfg.width * 0.62
+        && c.r >= cfg.height * 0.3 && c.r <= cfg.height * 0.7
+      ));
+      const rescueTile = (rescuePool.length ? pickSpread(rescuePool, 1, rng)[0] : hold) ?? hold;
+      const extract = g.allianceZone[0] ?? { q: 1, r: cfg.height - 2 };
+      allianceForces = [{ id: rescueId, definitionId: 'rangers', coordinate: rescueTile, isKey: true }];
+      objs.push({
+        id: `${id}-reach`,
+        kind: 'reach',
+        description: 'Bring the isolated reconnaissance team back to the extraction zone.',
+        target: extract,
+        unitIds: [rescueId]
+      });
+      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Keep the reconnaissance team alive.', unitIds: [rescueId] });
+      break;
+    }
     case 'hold':
       objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Hold the central strongpoint for 3 rounds.', target: hold, turnLimit: 3 });
       objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Keep Captain Alexander alive.', unitIds: ['captain'] });
@@ -455,6 +482,25 @@ function buildObjectives(cfg: CityConfig, g: Generated, rng: () => number): { ob
       // the deadline). Win by reaching the charge point OR routing the defenders — reach is the fast lane.
       objs.push({ id: `${id}-reach`, kind: 'reach', description: 'Plant charges at the far objective.', target: anchor });
       break;
+    case 'convoy': {
+      const convoyId = `${id}-convoy`;
+      const allianceZoneKeys = new Set(g.allianceZone.map((c) => `${c.q},${c.r}`));
+      const stagingPool = g.reachable.filter((c) => (
+        c.q <= cfg.width * 0.3 && c.r >= cfg.height * 0.52
+        && !allianceZoneKeys.has(`${c.q},${c.r}`)
+      ));
+      const staging = (stagingPool.length ? pickSpread(stagingPool, 1, rng)[0] : hold) ?? hold;
+      allianceForces = [{ id: convoyId, definitionId: 'supply-truck', coordinate: staging, isKey: true }];
+      objs.push({
+        id: `${id}-reach`,
+        kind: 'reach',
+        description: 'Escort the supply convoy to the forward delivery zone.',
+        target: anchor,
+        unitIds: [convoyId]
+      });
+      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Keep the convoy operational.', unitIds: [convoyId] });
+      break;
+    }
     case 'raid-night':
       objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Silence the enemy coven leaders.' });
       objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Secure the relay for 3 rounds.', target: hold, turnLimit: 3 });
@@ -464,12 +510,66 @@ function buildObjectives(cfg: CityConfig, g: Generated, rng: () => number): { ob
       objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Hold the spire grounds for 3 rounds.', target: hold, turnLimit: 3 });
       break;
   }
-  return { objectives: objs, weather: cfg.weather };
+  return { objectives: objs, allianceForces, weather: cfg.weather };
+}
+
+function buildEvents(
+  cfg: CityConfig,
+  g: Generated,
+  roster: string[],
+  otherSideForces: ScenarioUnit[],
+  allianceForces: ScenarioUnit[] | undefined,
+  rng: () => number
+): TacticalScenarioEvent[] {
+  const occupied = new Set(
+    [...otherSideForces, ...(allianceForces ?? [])].map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`)
+  );
+  const edgePool = [
+    ...g.otherSideZone,
+    ...g.reachable.filter((c) => c.q >= cfg.width * 0.68 || c.r <= cfg.height * 0.24)
+  ].filter((c, index, all) => (
+    !occupied.has(`${c.q},${c.r}`)
+    && all.findIndex((candidate) => candidate.q === c.q && candidate.r === c.r) === index
+  ));
+  const spots = pickSpread(edgePool.length ? edgePool : g.reachable, 4, rng);
+  const reserveOffset = Math.ceil(roster.length / 2);
+  const reinforcements: ScenarioUnit[] = spots.map((coordinate, index) => ({
+    id: `${cfg.territoryId}-reserve-${index}`,
+    definitionId: roster[(reserveOffset + index) % roster.length],
+    coordinate
+  }));
+  const messageByGameplay: Record<GameplayType, TacticalScenarioEvent['messageKey']> = {
+    evac: 'evacPursuit',
+    rescue: 'rescueHunters',
+    hold: 'holdAssault',
+    bridgehead: 'bridgeReserves',
+    convoy: 'convoyIntercept',
+    'raid-night': 'nightAmbush',
+    spire: 'portalSurge'
+  };
+  const roundByGameplay: Record<GameplayType, number> = {
+    evac: 3,
+    rescue: 3,
+    hold: 3,
+    bridgehead: 4,
+    convoy: 3,
+    'raid-night': 2,
+    spire: 3
+  };
+  return [{
+    id: `${cfg.territoryId}-reserve-wave`,
+    triggerRound: roundByGameplay[cfg.gameplay],
+    triggerEnemyRemaining: Math.max(1, Math.floor(otherSideForces.length / 3)),
+    messageKey: messageByGameplay[cfg.gameplay],
+    faction: 'otherSide',
+    reinforcements
+  }];
 }
 
 function buildScenario(cfg: CityConfig): TacticalScenario {
   const rng = makeRng(`${cfg.territoryId}:forces`);
   const g = generate(cfg);
+  const mission = buildMission(cfg, g, rng);
 
   // enemies: count scales with difficulty (the starter army of 6 stomped the old 3-4), placed spread
   // across the REACHABLE enemy half so the player can engage every one (no forced timeouts). Units cycle
@@ -478,8 +578,10 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
   // scale with both difficulty and map area so the enlarged battlefields don't feel empty (diff1 ~7 … diff5 ~13)
   // Cap the area term so big Rift maps no longer stack both a swarm of bodies AND the heavies on top.
   const enemyCount = 3 + cfg.difficulty + Math.min(3, Math.floor((cfg.width * cfg.height) / 320));
-  const enemyArea = g.reachable.filter((c) => c.r <= cfg.height * 0.6);
-  const pool = enemyArea.length >= enemyCount ? enemyArea : g.reachable;
+  const alliedCoordinates = new Set((mission.allianceForces ?? []).map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`));
+  const enemyArea = g.reachable.filter((c) => c.r <= cfg.height * 0.6 && !alliedCoordinates.has(`${c.q},${c.r}`));
+  const fallbackEnemyArea = g.reachable.filter((c) => !alliedCoordinates.has(`${c.q},${c.r}`));
+  const pool = enemyArea.length >= enemyCount ? enemyArea : fallbackEnemyArea;
   const spots = pickSpread(pool, enemyCount, rng);
   const otherSideForces: ScenarioUnit[] = spots.map((c, i) => ({
     id: `${cfg.territoryId}-foe-${i}`,
@@ -487,17 +589,19 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
     coordinate: c
   }));
 
-  const { objectives, weather } = buildObjectives(cfg, g, rng);
+  const events = buildEvents(cfg, g, roster, otherSideForces, mission.allianceForces, rng);
 
   return {
     id: `city-${cfg.territoryId}`,
     name: cfg.name,
     brief: cfg.brief,
-    weather,
+    weather: mission.weather,
     map: g.map,
     startZones: { alliance: g.allianceZone, otherSide: g.otherSideZone },
+    allianceForces: mission.allianceForces,
     otherSideForces,
-    objectives
+    objectives: mission.objectives,
+    events
   };
 }
 
@@ -509,8 +613,8 @@ const CITY_CONFIGS: CityConfig[] = [
   { territoryId: 'sector-munich', name: 'Munich Defensive Line', brief: 'Raid the forward line under cover of darkness and silence the enemy sorcery.', theme: 'forest', gameplay: 'raid-night', width: 32, height: 21, weather: 'night', difficulty: 2 },
   { territoryId: 'sector-zurich', name: 'Alpine Fortress', brief: 'Hold the mountain pass strongpoint while the bunkers are cleared.', theme: 'alpine', gameplay: 'hold', width: 32, height: 21, weather: 'clear', difficulty: 2 },
   { territoryId: 'sector-vienna', name: 'Vienna Siege', brief: 'Break the siege of the old city: rout the besiegers and breach to the inner ring.', theme: 'oldtown', gameplay: 'bridgehead', width: 34, height: 22, weather: 'clear', difficulty: 3 },
-  { territoryId: 'sector-brussels', name: 'Brussels Command', brief: 'Extract the classified intel to the evac point before the HQ falls.', theme: 'urban', gameplay: 'evac', width: 30, height: 20, weather: 'clear', difficulty: 1 },
-  { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Fight across the canals and seize the far quay through the harbor fog.', theme: 'canal', gameplay: 'bridgehead', width: 32, height: 21, weather: 'fog', difficulty: 2 },
+  { territoryId: 'sector-brussels', name: 'Brussels Command', brief: 'Reach the isolated reconnaissance team and bring it back before the headquarters perimeter falls.', theme: 'urban', gameplay: 'rescue', width: 30, height: 20, weather: 'clear', difficulty: 1 },
+  { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Escort a supply convoy through the fog-bound canals to the forward quay.', theme: 'canal', gameplay: 'convoy', width: 32, height: 21, weather: 'fog', difficulty: 2 },
   { territoryId: 'sector-copenhagen', name: 'Copenhagen Strait', brief: 'Hold the coastal strongpoint and deny the Baltic flanking approach.', theme: 'coast', gameplay: 'hold', width: 32, height: 21, weather: 'clear', difficulty: 2 },
   { territoryId: 'sector-prague', name: 'Prague Old Town', brief: 'Raid the old-town warren by night and disrupt the dark ritual.', theme: 'oldtown', gameplay: 'raid-night', width: 34, height: 22, weather: 'night', difficulty: 3 },
   { territoryId: 'sector-berlin', name: 'Berlin Ruins', brief: 'Storm the ruined capital through the fog and break the ritual guardians.', theme: 'ruins', gameplay: 'spire', width: 36, height: 24, weather: 'fog', difficulty: 4 },

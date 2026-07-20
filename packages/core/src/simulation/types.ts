@@ -215,6 +215,13 @@ export type BattleEvent =
       activeFaction: FactionId;
     }
   | {
+      kind: 'reinforcements:arrived';
+      eventId: string;
+      faction: FactionId;
+      unitIds: string[];
+      coordinates: HexCoordinate[];
+    }
+  | {
       kind: 'unit:moved';
       unitId: string;
       from: HexCoordinate;

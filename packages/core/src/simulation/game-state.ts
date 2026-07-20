@@ -23,6 +23,35 @@ export interface CreateBattleStateOptions {
   weather?: 'clear' | 'night' | 'fog';
 }
 
+export function createUnitInstance(
+  definition: UnitDefinition,
+  faction: FactionId,
+  coordinate: HexCoordinate,
+  id = `${definition.id}-${nanoid(8)}`
+): UnitInstance {
+  return {
+    id,
+    definitionId: definition.id,
+    unitType: definition.type,
+    faction,
+    coordinate: { ...coordinate },
+    orientation: 0,
+    currentHealth: definition.stats.maxHealth,
+    currentMorale: definition.stats.morale,
+    maxActionPoints: definition.stats.mobility,
+    actionPoints: definition.stats.mobility,
+    stats: structuredClone(definition.stats),
+    currentAmmo: definition.stats.ammoCapacity ?? Infinity,
+    stance: 'ready',
+    experience: 0,
+    level: 1,
+    statusEffects: new Set(),
+    carrying: [],
+    entrench: 0,
+    movedThisRound: false
+  };
+}
+
 /**
  * Creates a minimal tactical battle state for sandbox simulations.
  */
@@ -46,29 +75,8 @@ export function createBattleState(options: CreateBattleStateOptions): TacticalBa
       }
       occupied.add(key);
 
-      const id = `${unitSpec.definition.id}-${nanoid(8)}`;
-      units.set(id, {
-        id,
-        definitionId: unitSpec.definition.id,
-        unitType: unitSpec.definition.type,
-        faction: side.faction,
-        coordinate: unitSpec.coordinate,
-        orientation: 0,
-        currentHealth: unitSpec.definition.stats.maxHealth,
-        currentMorale: unitSpec.definition.stats.morale,
-        maxActionPoints: unitSpec.definition.stats.mobility,
-        actionPoints: unitSpec.definition.stats.mobility,
-        // Clone stats so battle-time tweaks (e.g. night/fog vision penalty) never mutate the shared bundle def.
-        stats: structuredClone(unitSpec.definition.stats),
-        currentAmmo: unitSpec.definition.stats.ammoCapacity ?? Infinity,
-        stance: 'ready',
-        experience: 0,
-        level: 1,
-        statusEffects: new Set(),
-        carrying: [],
-        entrench: 0,
-        movedThisRound: false
-      });
+      const instance = createUnitInstance(unitSpec.definition, side.faction, unitSpec.coordinate);
+      units.set(instance.id, instance);
     }
 
     sideStates.set(side.faction, {

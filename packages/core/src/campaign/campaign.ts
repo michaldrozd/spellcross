@@ -1,6 +1,8 @@
 import type {
   CampaignSpec,
   ContentBundle,
+  FactionId,
+  TacticalEventMessageKey,
   TacticalObjective,
   TacticalScenario,
   TerritorySpec,
@@ -8,7 +10,7 @@ import type {
 } from '@spellcross/data';
 import { nanoid } from 'nanoid';
 
-import { createBattleState } from '../simulation/game-state.js';
+import { createBattleState, createUnitInstance } from '../simulation/game-state.js';
 import type { HexCoordinate, TacticalBattleState, UnitDefinition } from '../simulation/types.js';
 import { coordinateKey } from '../simulation/utils/grid.js';
 import { updateAllFactionsVision } from '../simulation/visibility/vision.js';
@@ -93,6 +95,7 @@ export interface ActiveBattle {
   // the objective to survive the following enemy phase before it is secured.
   reachClaimedRound: Record<string, number>;
   difficulty: CampaignDifficulty;
+  triggeredEventIds: string[];
   // True once the player has left deployment. Persisted so a reloaded in-progress battle resumes in
   // normal play (with saved unit positions/AP) instead of re-opening DEPLOYMENT and allowing free moves.
   deployed?: boolean;
@@ -839,6 +842,7 @@ export function startBattleForTerritory(
   const { tacticalUnits, startTiles } = buildArmySide(state, bundle, scenario, selectedUnitIds);
 
   const alliedSupport = (scenario.allianceForces ?? []).map((u) => ({
+    scenarioId: u.id,
     definition: findUnitDef(bundle, u.definitionId),
     coordinate: u.coordinate
   }));
@@ -847,37 +851,7 @@ export function startBattleForTerritory(
     throw new CampaignError('noDeployableUnits', 'No deployable units available for this operation');
   }
 
-  const enemyForces = [...scenario.otherSideForces];
-  const difficultyRules = getCampaignDifficultyRules(state.difficulty);
-  const reinforcementCount = difficultyRules.reinforcementBase + (
-    state.difficulty === 'veteran' && (territory.difficulty ?? 1) >= 4 ? 1 : 0
-  );
-  if (reinforcementCount > 0 && enemyForces.length > 0) {
-    const occupied = new Set(
-      [...enemyForces.map((unit) => unit.coordinate), ...scenario.startZones.alliance]
-        .map((coordinate) => coordinateKey(coordinate))
-    );
-    const reinforcementTiles = scenario.startZones.otherSide.filter((coordinate) => (
-      !occupied.has(coordinateKey(coordinate))
-      && scenario.map.tiles[coordinate.r * scenario.map.width + coordinate.q]?.passable
-    ));
-    const reinforcementDefinitions = [...new Set(enemyForces.map((unit) => unit.definitionId))]
-      .map((definitionId) => findUnitDef(bundle, definitionId))
-      .sort((a, b) => {
-        const threat = (unit: UnitData) => unit.stats.maxHealth
-          + unit.stats.armor * 6
-          + Math.max(...Object.values(unit.stats.weaponPower)) * 2;
-        return threat(a) - threat(b);
-      });
-    for (let index = 0; index < Math.min(reinforcementCount, reinforcementTiles.length); index += 1) {
-      const definition = reinforcementDefinitions[index % reinforcementDefinitions.length];
-      enemyForces.push({
-        id: `${territoryId}-line-reinforcement-${index}`,
-        definitionId: definition.id,
-        coordinate: reinforcementTiles[index]
-      });
-    }
-  }
+  const enemyForces = scenario.otherSideForces;
 
   const enemyUnits = enemyForces.map((unit) => ({
     definition: findUnitDef(bundle, unit.definitionId),
@@ -941,6 +915,10 @@ export function startBattleForTerritory(
       }
     }
   }
+  for (let i = 0; i < alliedSupport.length; i += 1) {
+    const tacticalUnit = allianceUnits[tacticalUnits.length + i];
+    if (tacticalUnit) deployment[alliedSupport[i].scenarioId] = tacticalUnit.id;
+  }
 
   const activeBattle: ActiveBattle = {
     territoryId,
@@ -951,11 +929,136 @@ export function startBattleForTerritory(
     holdProgress: {},
     holdCountedRound: {},
     reachClaimedRound: {},
-    difficulty: state.difficulty
+    difficulty: state.difficulty,
+    triggeredEventIds: []
   };
   state.lastOperationTurn = state.turn;
   state.activeBattle = activeBattle;
   return activeBattle;
+}
+
+export interface TriggeredTacticalEvent {
+  id: string;
+  messageKey: TacticalEventMessageKey;
+  faction: FactionId;
+  units: Array<{ id: string; coordinate: HexCoordinate }>;
+}
+
+const reinforcementCountForBattle = (battle: ActiveBattle, sectorDifficulty = 1) => (
+  getCampaignDifficultyRules(battle.difficulty).reinforcementBase
+  + (battle.difficulty === 'veteran' && sectorDifficulty >= 4 ? 1 : 0)
+);
+
+const pendingHostileReinforcementEvents = (battle: ActiveBattle) => {
+  if (reinforcementCountForBattle(battle) === 0) return [];
+  const triggered = new Set(battle.triggeredEventIds ?? []);
+  return (battle.scenario.events ?? []).filter((event) => (
+    event.faction === 'otherSide'
+    && event.reinforcements.length > 0
+    && !triggered.has(event.id)
+  ));
+};
+
+const livingUnitCount = (battle: ActiveBattle, faction: FactionId) =>
+  Array.from(battle.state.sides[faction].units.values())
+    .filter((unit) => unit.stance !== 'destroyed' && !unit.embarkedOn).length;
+
+const openReinforcementCoordinate = (
+  battle: ActiveBattle,
+  preferred: HexCoordinate,
+  occupied: Set<string>
+): HexCoordinate | undefined => {
+  const { map } = battle.state;
+  const available = (coordinate: HexCoordinate) => {
+    if (coordinate.q < 0 || coordinate.r < 0 || coordinate.q >= map.width || coordinate.r >= map.height) return false;
+    const tile = map.tiles[coordinate.r * map.width + coordinate.q];
+    return Boolean(tile?.passable) && !occupied.has(coordinateKey(coordinate));
+  };
+  if (available(preferred)) return { ...preferred };
+
+  const candidates: HexCoordinate[] = [];
+  for (let r = 0; r < map.height; r += 1) {
+    for (let q = 0; q < map.width; q += 1) {
+      const coordinate = { q, r };
+      if (available(coordinate)) candidates.push(coordinate);
+    }
+  }
+  candidates.sort((left, right) => {
+    const leftDistance = Math.max(Math.abs(left.q - preferred.q), Math.abs(left.r - preferred.r));
+    const rightDistance = Math.max(Math.abs(right.q - preferred.q), Math.abs(right.r - preferred.r));
+    return leftDistance - rightDistance || left.r - right.r || left.q - right.q;
+  });
+  return candidates[0];
+};
+
+export function processTacticalEvents(
+  state: CampaignState,
+  bundle: ContentBundle
+): TriggeredTacticalEvent[] {
+  const battle = state.activeBattle;
+  if (!battle || battle.state.activeFaction !== 'alliance') return [];
+
+  battle.triggeredEventIds ??= [];
+  const triggered = new Set(battle.triggeredEventIds);
+  const enemyRemaining = livingUnitCount(battle, 'otherSide');
+  const sectorDifficulty = state.territories.find((territory) => territory.id === battle.territoryId)?.difficulty ?? 1;
+  const waveSize = reinforcementCountForBattle(battle, sectorDifficulty);
+  const arrivals: TriggeredTacticalEvent[] = [];
+
+  for (const event of battle.scenario.events ?? []) {
+    if (triggered.has(event.id)) continue;
+    const dueByRound = battle.state.round >= event.triggerRound;
+    const dueByAttrition = event.triggerEnemyRemaining != null && enemyRemaining <= event.triggerEnemyRemaining;
+    if (!dueByRound && !dueByAttrition) continue;
+
+    battle.triggeredEventIds.push(event.id);
+    triggered.add(event.id);
+    const requestedUnits = event.reinforcements.slice(0, waveSize);
+    if (requestedUnits.length === 0) continue;
+
+    const occupied = new Set<string>();
+    for (const side of Object.values(battle.state.sides)) {
+      for (const unit of side.units.values()) {
+        if (unit.stance !== 'destroyed' && !unit.embarkedOn) occupied.add(coordinateKey(unit.coordinate));
+      }
+    }
+
+    const spawnedUnits: TriggeredTacticalEvent['units'] = [];
+    for (const reinforcement of requestedUnits) {
+      const coordinate = openReinforcementCoordinate(battle, reinforcement.coordinate, occupied);
+      if (!coordinate) continue;
+      const definition = findUnitDef(bundle, reinforcement.definitionId);
+      const tacticalId = `${event.id}:${reinforcement.id}`;
+      const unit = createUnitInstance(definition, event.faction, coordinate, tacticalId);
+      unit.orientation = reinforcement.orientation ?? 0;
+
+      const hasThermalOptics = event.faction === 'alliance' && state.research.completed.has('optics-ii');
+      const weatherVisionLoss = battle.state.weather === 'night'
+        ? (hasThermalOptics ? 0 : 1)
+        : battle.state.weather === 'fog'
+          ? (hasThermalOptics ? 1 : 2)
+          : 0;
+      unit.stats.vision = Math.max(1, unit.stats.vision - weatherVisionLoss);
+
+      battle.state.sides[event.faction].units.set(unit.id, unit);
+      occupied.add(coordinateKey(coordinate));
+      spawnedUnits.push({ id: unit.id, coordinate });
+    }
+
+    if (spawnedUnits.length > 0) {
+      battle.state.timeline.push({
+        kind: 'reinforcements:arrived',
+        eventId: event.id,
+        faction: event.faction,
+        unitIds: spawnedUnits.map((unit) => unit.id),
+        coordinates: spawnedUnits.map((unit) => unit.coordinate)
+      });
+      arrivals.push({ id: event.id, messageKey: event.messageKey, faction: event.faction, units: spawnedUnits });
+    }
+  }
+
+  if (arrivals.length > 0) updateAllFactionsVision(battle.state);
+  return arrivals;
 }
 
 const unitsOccupyingReachObjective = (objective: TacticalObjective, battle: ActiveBattle) => {
@@ -983,7 +1086,7 @@ export const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattl
       const remaining = Array.from(battle.state.sides.otherSide.units.values()).filter(
         (u) => u.stance !== 'destroyed'
       );
-      return remaining.length === 0;
+      return remaining.length === 0 && pendingHostileReinforcementEvents(battle).length === 0;
     }
     case 'reach': {
       if (!isReachObjectiveOccupied(objective, battle)) return false;
@@ -1076,7 +1179,7 @@ export function evaluateBattleOutcome(battle: ActiveBattle): 'victory' | 'defeat
   const survivingEnemies = Array.from(battle.state.sides.otherSide.units.values()).filter(
     (u) => u.stance !== 'destroyed'
   );
-  if (survivingEnemies.length === 0) return 'victory';
+  if (survivingEnemies.length === 0 && pendingHostileReinforcementEvents(battle).length === 0) return 'victory';
 
   // reach/hold with turn limit missed?
   const turn = battle.state.round;
@@ -1347,6 +1450,7 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     activeBattle.reachClaimedRound ??= {};
     activeBattle.holdProgress ??= {};
     activeBattle.holdCountedRound ??= {};
+    activeBattle.triggeredEventIds ??= [];
   }
 
   const state: CampaignState = {

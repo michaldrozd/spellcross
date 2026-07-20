@@ -219,6 +219,13 @@ export interface InvalidMoveFeedback {
   message?: string;
 }
 
+export interface ArrivalEffect {
+  id: string;
+  coordinate: HexCoordinate;
+  faction: FactionId;
+  startTime: number;
+}
+
 export interface BattlefieldStageProps {
   battleState: TacticalBattleState;
   onSelectUnit?: (unitId: string) => void;
@@ -245,6 +252,7 @@ export interface BattlefieldStageProps {
   objectiveCoords?: HexCoordinate[];
   startZoneCoords?: HexCoordinate[];
   attackEffects?: AttackEffect[];
+  arrivalEffects?: ArrivalEffect[];
   movingUnit?: MovingUnit | null;
 }
 
@@ -1418,6 +1426,7 @@ export function BattlefieldStage({
   objectiveCoords = [],
   startZoneCoords = [],
   attackEffects = [],
+  arrivalEffects = [],
   movingUnit
 }: BattlefieldStageProps) {
   const { t } = useTranslation('battlefield');
@@ -1440,10 +1449,10 @@ export function BattlefieldStage({
   );
   // Update more frequently during animations (and while a wreck smokes, at a lighter 16fps).
   useEffect(() => {
-    const interval = (movingUnit || attackEffects.length > 0) ? 16 : hasSmokingWreck ? 60 : 250;
+    const interval = (movingUnit || attackEffects.length > 0 || arrivalEffects.length > 0) ? 16 : hasSmokingWreck ? 60 : 250;
     const id = window.setInterval(() => setNow(Date.now()), interval);
     return () => window.clearInterval(id);
-  }, [movingUnit, attackEffects.length, hasSmokingWreck]);
+  }, [movingUnit, attackEffects.length, arrivalEffects.length, hasSmokingWreck]);
 
   const stageDimensions = useMemo(() => {
     if (ISO_MODE) {
@@ -4362,6 +4371,55 @@ export function BattlefieldStage({
     }).filter(Boolean) as JSX.Element[];
   }, [objectiveCoords, map.width, exploredTiles, visibleTiles, now, topGeomFor, prefersReducedMotion]);
 
+  const arrivalOverlays = useMemo(() => {
+    return arrivalEffects.flatMap((effect) => {
+      const age = now - effect.startTime;
+      if (age < 0 || age > 4200) return [];
+      const tileIndex = effect.coordinate.r * map.width + effect.coordinate.q;
+
+      const pos = toScreen(effect.coordinate);
+      const geom = topGeomFor(effect.coordinate.q, effect.coordinate.r);
+      const y = pos.y - geom.avgHeight * ELEV_Y_OFFSET;
+      const progress = prefersReducedMotion ? 0.72 : Math.min(1, age / 2600);
+      const fade = age < 3000 ? 1 : Math.max(0, 1 - (age - 3000) / 1200);
+      const pulse = prefersReducedMotion ? 0.5 : (Math.sin(age / 95) + 1) / 2;
+      const sensorAlpha = visibleTiles.has(tileIndex) ? 1 : 0.78;
+      const primary = effect.faction === 'otherSide' ? 0xd63b62 : 0x4ed6ff;
+      const glow = effect.faction === 'otherSide' ? 0xff82a3 : 0xb9f3ff;
+      const ring = geom.inset(Math.max(0.48, 0.88 - progress * 0.22));
+
+      return [(
+        <Graphics
+          key={effect.id}
+          x={pos.x}
+          y={y}
+          draw={(g) => {
+            g.clear();
+            g.beginFill(primary, (0.1 + pulse * 0.08) * fade * sensorAlpha);
+            drawPoly(g as PixiGraphics, ring);
+            g.endFill();
+            g.lineStyle(4.5, 0x07080b, 0.7 * fade * sensorAlpha);
+            drawPoly(g as PixiGraphics, ring);
+            g.lineStyle(2.2, primary, (0.82 + pulse * 0.16) * fade * sensorAlpha);
+            drawPoly(g as PixiGraphics, ring);
+            g.lineStyle(1.1, glow, 0.86 * fade * sensorAlpha);
+            const inner = geom.inset(0.45 + pulse * 0.08);
+            drawPoly(g as PixiGraphics, inner);
+            g.lineStyle(3, primary, 0.18 * fade * sensorAlpha);
+            g.moveTo(0, -8);
+            g.lineTo(0, -58 - pulse * 12);
+            g.lineStyle(1.2, glow, 0.74 * fade * sensorAlpha);
+            g.moveTo(0, -10);
+            g.lineTo(0, -55 - pulse * 10);
+            g.beginFill(glow, (0.55 + pulse * 0.3) * fade * sensorAlpha);
+            g.drawCircle(0, -58 - pulse * 10, 2.2 + pulse * 1.2);
+            g.endFill();
+          }}
+        />
+      )];
+    });
+  }, [arrivalEffects, map.width, now, prefersReducedMotion, topGeomFor, visibleTiles]);
+
   // Deployment start zone: a cool pulsing tint so "click a glowing tile" is literally true.
   const startZoneOverlays = useMemo(() => {
     if (startZoneCoords.length === 0) return [];
@@ -6545,6 +6603,7 @@ export function BattlefieldStage({
       {attackRangeOverlays}
       {plannedHighlights}
       {objectiveOverlays}
+      {arrivalOverlays}
       {startZoneOverlays}
     </>
   );

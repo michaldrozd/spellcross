@@ -32,6 +32,36 @@
     "enemyPhaseTitle": "Nepriateľská fáza",
     "enemyPhaseDetail": "{{unit}} útočí"
   },
+  "scriptedEvents": {
+    "evacPursuit": {
+      "title": "Prenasledovatelia odhalení",
+      "detail": "Na bojisko vstupuje nepriateľská stíhacia skupina: {{count}} kontaktov."
+    },
+    "rescueHunters": {
+      "title": "Lovci sa približujú",
+      "detail": "Nepriateľ vystopoval záchranný tím: {{count}} kontaktov."
+    },
+    "holdAssault": {
+      "title": "Prichádza protiútok",
+      "detail": "K pevnému bodu postupujú nepriateľské zálohy: {{count}} kontaktov."
+    },
+    "bridgeReserves": {
+      "title": "Zálohy pri moste",
+      "detail": "Obrancovia nasadili svoju rezervu: {{count}} kontaktov."
+    },
+    "convoyIntercept": {
+      "title": "Konvoj zachytený",
+      "detail": "Ku konvoju sa zbiehajú nepriateľskí útočníci: {{count}} kontaktov."
+    },
+    "nightAmbush": {
+      "title": "Pohyb v temnote",
+      "detail": "Nepriateľský prepad vyšiel z úkrytu: {{count}} kontaktov."
+    },
+    "portalSurge": {
+      "title": "Výboj portálu",
+      "detail": "Trhlina vypustila ďalšiu nepriateľskú vlnu: {{count}} kontaktov."
+    }
+  },
   "autoTurn": {
     "label": "AUTO ŤAH",
     "playerPhase": "Počítač hrá tvoj ťah…",

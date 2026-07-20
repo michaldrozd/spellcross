@@ -17,7 +17,8 @@ import {
   serializeCampaignState,
   startBattleForTerritory,
   hydrateCampaignState,
-  isUnitUnlocked
+  isUnitUnlocked,
+  processTacticalEvents
 } from './campaign.js';
 import { TurnProcessor } from '../simulation/systems/turn-processor.js';
 
@@ -407,7 +408,7 @@ describe('campaign core', () => {
     expect(evaluateBattleOutcome(battle)).toBe('victory');
   });
 
-  it('adds the configured line reinforcements to Commander and Veteran operations', () => {
+  it('holds difficulty-scaled reserve waves off-map until their tactical event fires', () => {
     const storyState = createCampaign(starterBundle, undefined, 'story');
     const commanderState = createCampaign(starterBundle, undefined, 'commander');
     const veteranState = createCampaign(starterBundle, undefined, 'veteran');
@@ -416,8 +417,63 @@ describe('campaign core', () => {
     const veteranBattle = startBattleForTerritory(veteranState, starterBundle, 'sector-paris');
 
     const storyEnemyCount = storyBattle.state.sides.otherSide.units.size;
-    expect(commanderBattle.state.sides.otherSide.units.size).toBe(storyEnemyCount + 2);
-    expect(veteranBattle.state.sides.otherSide.units.size).toBe(storyEnemyCount + 3);
+    expect(commanderBattle.state.sides.otherSide.units.size).toBe(storyEnemyCount);
+    expect(veteranBattle.state.sides.otherSide.units.size).toBe(storyEnemyCount);
+
+    for (const unit of commanderBattle.state.sides.otherSide.units.values()) {
+      unit.stance = 'destroyed';
+      unit.currentHealth = 0;
+    }
+    expect(evaluateBattleOutcome(commanderBattle)).toBe('ongoing');
+    const commanderArrivals = processTacticalEvents(commanderState, starterBundle);
+    expect(commanderArrivals).toHaveLength(1);
+    expect(commanderArrivals[0]?.units).toHaveLength(2);
+    expect(Array.from(commanderBattle.state.sides.otherSide.units.values()).filter((unit) => unit.stance !== 'destroyed')).toHaveLength(2);
+    expect(processTacticalEvents(commanderState, starterBundle)).toEqual([]);
+
+    for (const unit of veteranBattle.state.sides.otherSide.units.values()) {
+      unit.stance = 'destroyed';
+      unit.currentHealth = 0;
+    }
+    expect(processTacticalEvents(veteranState, starterBundle)[0]?.units).toHaveLength(3);
+
+    for (const unit of storyBattle.state.sides.otherSide.units.values()) {
+      unit.stance = 'destroyed';
+      unit.currentHealth = 0;
+    }
+    expect(processTacticalEvents(storyState, starterBundle)).toEqual([]);
+    expect(evaluateBattleOutcome(storyBattle)).toBe('victory');
+
+    const lateVeteranState = createCampaign(starterBundle, undefined, 'veteran');
+    const rift = lateVeteranState.territories.find((territory) => territory.id === 'sector-rift');
+    if (!rift) throw new Error('expected Rift territory');
+    rift.status = 'available';
+    const lateVeteranBattle = startBattleForTerritory(lateVeteranState, starterBundle, rift.id);
+    for (const unit of lateVeteranBattle.state.sides.otherSide.units.values()) {
+      unit.stance = 'destroyed';
+      unit.currentHealth = 0;
+    }
+    expect(processTacticalEvents(lateVeteranState, starterBundle)[0]?.units).toHaveLength(4);
+  });
+
+  it.each([
+    ['sector-brussels', 'sector-brussels-pilot', 'rangers'],
+    ['sector-amsterdam', 'sector-amsterdam-convoy', 'supply-truck']
+  ] as const)('maps the scripted key unit into %s objectives', (territoryId, scenarioUnitId, definitionId) => {
+    const state = createCampaign(starterBundle, undefined, 'story');
+    const territory = state.territories.find((candidate) => candidate.id === territoryId);
+    if (!territory) throw new Error(`expected ${territoryId}`);
+    territory.status = 'available';
+    const battle = startBattleForTerritory(state, starterBundle, territoryId);
+    const tacticalId = battle.deployment[scenarioUnitId];
+    const keyUnit = battle.state.sides.alliance.units.get(tacticalId);
+    const objectiveKinds = battle.scenario.objectives
+      .filter((objective) => objective.unitIds?.includes(scenarioUnitId))
+      .map((objective) => objective.kind)
+      .sort();
+
+    expect(keyUnit?.definitionId).toBe(definitionId);
+    expect(objectiveKinds).toEqual(['protect', 'reach']);
   });
 
   it('always deploys units required by reach objectives even when the start zone overflows', () => {
@@ -450,6 +506,7 @@ describe('campaign core', () => {
     unit.statusEffects.add('suppressed');
     unit.currentAmmo = Infinity;
     battle.holdProgress['hold-square'] = 2;
+    battle.triggeredEventIds.push('sector-lyon-reserve-wave');
 
     // Mirror the app's persistence: serialize -> JSON string -> parse -> hydrate.
     const roundTripped = JSON.parse(JSON.stringify(serializeCampaignState(state)));
@@ -463,6 +520,7 @@ describe('campaign core', () => {
     expect(restoredUnit?.statusEffects.has('suppressed')).toBe(true);
     expect(restoredUnit?.currentAmmo).toBe(Infinity);
     expect(restoredBattle.holdProgress['hold-square']).toBe(2);
+    expect(restoredBattle.triggeredEventIds).toEqual(['sector-lyon-reserve-wave']);
   });
 
   it('converts strategic points at the documented ratios', () => {
