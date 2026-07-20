@@ -1,6 +1,6 @@
 import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MainMenu } from './MainMenu.js';
 import i18n from '../i18n/index.js';
@@ -8,6 +8,7 @@ import i18n from '../i18n/index.js';
 describe('MainMenu', () => {
   let container: HTMLDivElement;
   let root: Root;
+  const onNewGame = vi.fn();
 
   beforeEach(async () => {
     Object.defineProperty(window, 'AudioContext', {
@@ -16,6 +17,7 @@ describe('MainMenu', () => {
     });
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     window.localStorage.clear();
+    onNewGame.mockReset();
     await i18n.changeLanguage('en');
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -23,7 +25,7 @@ describe('MainMenu', () => {
     await act(async () => {
       root.render(
         <MainMenu
-          onNewGame={() => {}}
+          onNewGame={onNewGame}
           onContinue={() => {}}
           savedSlots={[null, null, null]}
           currentSlot={1}
@@ -65,5 +67,20 @@ describe('MainMenu', () => {
     expect(closeButton).not.toBeNull();
     act(() => closeButton!.click());
     expect(container.querySelector('[role="dialog"]')).toBeNull();
+  });
+
+  it('starts an empty slot with the selected campaign difficulty', () => {
+    clickButton('New Game');
+    const commander = container.querySelector<HTMLButtonElement>('.difficulty-option.commander');
+    const veteran = container.querySelector<HTMLButtonElement>('.difficulty-option.veteran');
+    expect(commander?.getAttribute('aria-checked')).toBe('true');
+    expect(veteran).not.toBeNull();
+
+    act(() => veteran!.click());
+    const launch = container.querySelector<HTMLButtonElement>('.slot-actions .menu-btn-primary');
+    expect(launch).not.toBeNull();
+    act(() => launch!.click());
+
+    expect(onNewGame).toHaveBeenCalledWith(1, 'veteran');
   });
 });

@@ -329,6 +329,9 @@ export type AIDifficulty = 'easy' | 'normal' | 'hard' | 'brutal';
 
 export interface AIContextOptions {
   objectiveTargets?: HexCoordinate[];
+  // When an objective names a specific roster unit, only its deployed tactical instance should route
+  // toward that objective; the rest of the force keeps screening and engaging nearby threats.
+  objectiveUnitIds?: Set<string>;
   holdTargets?: HexCoordinate[];
   reachTargets?: HexCoordinate[];
   defendBias?: boolean;
@@ -551,11 +554,12 @@ export function decideNextAIAction(
     // ranged standoff: maintain distance while advancing
     const ranged = maxRange(u) >= 6;
     const targets: HexCoordinate[] = [];
-    if (objectiveGoals.length > 0) {
+    const mayPursueObjective = !options.objectiveUnitIds || options.objectiveUnitIds.has(u.id);
+    if (mayPursueObjective && objectiveGoals.length > 0) {
       targets.push(...objectiveGoals);
-    } else if (holdGoals.length > 0) {
+    } else if (mayPursueObjective && holdGoals.length > 0) {
       targets.push(...holdGoals);
-    } else if (reachGoals.length > 0) {
+    } else if (mayPursueObjective && reachGoals.length > 0) {
       targets.push(...reachGoals);
     } else {
       let nearest: UnitInstance | null = null;
@@ -587,7 +591,7 @@ export function decideNextAIAction(
       const last = path[path.length - 1];
       const distReduction = isoDistance(u.coordinate, tgt) - isoDistance(last, tgt);
       const threatSum = path.reduce((acc, step) => acc + computeTileThreat(state, u.faction, step, u), 0);
-      const isObjectiveStep = objectiveGoals.some((o) => coordinateKey(o) === coordinateKey(tgt));
+      const isObjectiveStep = mayPursueObjective && objectiveGoals.some((o) => coordinateKey(o) === coordinateKey(tgt));
       const flankIncentive = flankTarget ? flankWeight * 0.6 : 0;
       let score =
         distReduction * 12 +

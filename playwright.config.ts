@@ -23,6 +23,7 @@ export default defineConfig({
     '**/tactical-overwatch-ui.spec.ts',
     '**/ai-behavior.spec.ts',
     '**/autosave-summary.spec.ts',
+    '**/campaign-difficulty.spec.ts',
     '**/strategic-army-recruit.spec.ts',
     '**/tactical-move-click.spec.ts',
     '**/strategic-map-hover.spec.ts',

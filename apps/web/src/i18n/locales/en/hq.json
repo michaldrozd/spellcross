@@ -3,6 +3,11 @@
     "menu": "MENU",
     "fieldHq": "FIELD HQ",
     "turnClock": "TURN {{turn}} • WAR CLOCK {{warClock}}",
+    "difficulty": {
+      "story": "STORY",
+      "commander": "COMMANDER",
+      "veteran": "VETERAN"
+    },
     "credits": "Credits",
     "research": "Research",
     "endTurn": "END TURN",

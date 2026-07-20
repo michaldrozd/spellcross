@@ -51,7 +51,7 @@
     "name": "Parížske okolie",
     "brief": "Kryte evakuáciu civilistov a dostaňte sa k evakuačnej svetlici skôr, než sa perimeter zrúti.",
     "objectives": {
-      "sector-paris-reach": "Presuňte ľubovoľnú jednotku k evakuačnej svetlici.",
+      "sector-paris-reach": "Dopravte kapitána Alexandra k evakuačnej svetlici.",
       "sector-paris-protect": "Nepríďte o kapitána Alexandra."
     }
   },
@@ -99,7 +99,7 @@
     "name": "Bruselské velenie",
     "brief": "Vyneste utajené informácie k evakuačnému bodu skôr, než veliteľstvo padne.",
     "objectives": {
-      "sector-brussels-reach": "Presuňte ľubovoľnú jednotku k evakuačnej svetlici.",
+      "sector-brussels-reach": "Dopravte kapitána Alexandra k evakuačnej svetlici.",
       "sector-brussels-protect": "Nepríďte o kapitána Alexandra."
     }
   },

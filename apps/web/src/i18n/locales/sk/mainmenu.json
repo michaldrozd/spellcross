@@ -32,6 +32,26 @@
     "newGame": "Nová hra",
     "back": "Späť"
   },
+  "difficulty": {
+    "systemCode": "Operačná doktrína / CMD-01",
+    "heading": "Obtiažnosť kampane",
+    "description": "Vyber, koľko taktického velenia bude invázia vyžadovať. Voľba sa uloží s touto kampaňou.",
+    "story": {
+      "code": "PRÍSTUPNÁ",
+      "name": "Príbeh",
+      "detail": "Viac času a zásob. Auto ťah zvládne bežné operácie."
+    },
+    "commander": {
+      "code": "ODPORÚČANÁ",
+      "name": "Veliteľ",
+      "detail": "Férová ekonomika akcií. Cieľ musí odolať nepriateľskému protiútoku."
+    },
+    "veteran": {
+      "code": "ŤAŽKÁ",
+      "name": "Veterán",
+      "detail": "Silnejší protivník, posily, menej zásob a kratšie vojnové hodiny."
+    }
+  },
   "settings": {
     "systemCode": "Ovládanie zvuku / SYS-04",
     "title": "Nastavenia",

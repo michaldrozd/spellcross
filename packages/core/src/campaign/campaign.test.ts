@@ -8,6 +8,8 @@ import {
   createCampaign,
   endStrategicTurn,
   evaluateBattleOutcome,
+  getEnemyActionBudget,
+  getEnemyDifficultyTier,
   recruitUnit,
   retreatFromBattle,
   serializeCampaignState,
@@ -15,13 +17,37 @@ import {
   hydrateCampaignState,
   isUnitUnlocked
 } from './campaign.js';
+import { TurnProcessor } from '../simulation/systems/turn-processor.js';
 
 describe('campaign core', () => {
   it('creates a starter campaign with available territories and formations', () => {
     const state = createCampaign(starterBundle);
+    expect(state.difficulty).toBe('commander');
     expect(state.territories.length).toBeGreaterThan(0);
     expect(state.territories[0].status).toBe('available');
     expect(state.formations[0]?.units.length).toBe(state.army.length);
+  });
+
+  it('applies campaign difficulty to starting time and resources', () => {
+    const story = createCampaign(starterBundle, undefined, 'story');
+    const commander = createCampaign(starterBundle, undefined, 'commander');
+    const veteran = createCampaign(starterBundle, undefined, 'veteran');
+
+    expect(story.globalTimer).toBeGreaterThan(commander.globalTimer);
+    expect(veteran.globalTimer).toBeLessThan(commander.globalTimer);
+    expect(story.resources.money).toBeGreaterThan(commander.resources.money);
+    expect(veteran.resources.money).toBeLessThan(commander.resources.money);
+  });
+
+  it('scales enemy decision quality and action economy with campaign difficulty', () => {
+    expect(getEnemyDifficultyTier('story', 2)).toBe('easy');
+    expect(getEnemyDifficultyTier('commander', 2)).toBe('normal');
+    expect(getEnemyDifficultyTier('veteran', 2)).toBe('hard');
+    expect(getEnemyDifficultyTier('veteran', 4)).toBe('brutal');
+
+    expect(getEnemyActionBudget('story', 10)).toBe(4);
+    expect(getEnemyActionBudget('commander', 10)).toBe(13);
+    expect(getEnemyActionBudget('veteran', 10)).toBe(18);
   });
 
   it('recruits units with tier modifiers and delays availability', () => {
@@ -189,7 +215,7 @@ describe('campaign core', () => {
   });
 
   it('serializes and hydrates campaign state for persistence', () => {
-    const state = createCampaign(starterBundle);
+    const state = createCampaign(starterBundle, undefined, 'veteran');
     state.resources.money = 321;
     state.turn = 3;
     state.research.inProgress = { topicId: 'armor-upfit', remaining: 15 };
@@ -199,12 +225,22 @@ describe('campaign core', () => {
     const restored = hydrateCampaignState(starterBundle, snapshot);
 
     expect(restored.resources.money).toBe(321);
+    expect(restored.difficulty).toBe('veteran');
     expect(restored.turn).toBe(3);
     expect(restored.research.inProgress?.topicId).toBe('armor-upfit');
     expect(restored.research.completed.has('optics-i')).toBe(true);
     expect(isUnitUnlocked(restored, starterBundle, 'rangers')).toBe(true);
     expect(restored.popups?.[0]?.key).toBe('testReport');
     expect(restored.popups?.[0]?.params?.note).toBe('Recovered report');
+  });
+
+  it('loads pre-difficulty saves as Commander campaigns', () => {
+    const snapshot = serializeCampaignState(createCampaign(starterBundle, undefined, 'story'));
+    delete snapshot.difficulty;
+
+    const restored = hydrateCampaignState(starterBundle, snapshot);
+
+    expect(restored.difficulty).toBe('commander');
   });
 
   it('hydrates pre-i18n saves whose log entries and popups are raw strings', () => {
@@ -250,6 +286,64 @@ describe('campaign core', () => {
     battle.state.round += 1;
     expect(evaluateBattleOutcome(battle)).toBe('victory');
     expect(battle.holdProgress['hold-square']).toBe(3);
+  });
+
+  it('requires Commander reach objectives to survive the enemy phase', () => {
+    const state = createCampaign(starterBundle, undefined, 'commander');
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');
+    const objective = battle.scenario.objectives.find((candidate) => candidate.kind === 'reach');
+    const captainId = battle.deployment.captain;
+    const captain = battle.state.sides.alliance.units.get(captainId);
+    if (!objective?.target || !captain) throw new Error('expected Captain reach objective');
+    captain.coordinate = { ...objective.target };
+
+    expect(evaluateBattleOutcome(battle)).toBe('ongoing');
+    expect(battle.reachClaimedRound[objective.id]).toBe(1);
+
+    const processor = new TurnProcessor(battle.state);
+    processor.endTurn();
+    expect(evaluateBattleOutcome(battle)).toBe('ongoing');
+    processor.endTurn();
+    expect(evaluateBattleOutcome(battle)).toBe('victory');
+  });
+
+  it('resets reach progress when the required unit is driven off the objective', () => {
+    const state = createCampaign(starterBundle, undefined, 'commander');
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');
+    const objective = battle.scenario.objectives.find((candidate) => candidate.kind === 'reach');
+    const captain = battle.state.sides.alliance.units.get(battle.deployment.captain);
+    if (!objective?.target || !captain) throw new Error('expected Captain reach objective');
+    const origin = { ...captain.coordinate };
+    captain.coordinate = { ...objective.target };
+    evaluateBattleOutcome(battle);
+    captain.coordinate = origin;
+
+    expect(evaluateBattleOutcome(battle)).toBe('ongoing');
+    expect(battle.reachClaimedRound[objective.id]).toBeUndefined();
+  });
+
+  it('keeps reach objectives immediate on Story difficulty', () => {
+    const state = createCampaign(starterBundle, undefined, 'story');
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');
+    const objective = battle.scenario.objectives.find((candidate) => candidate.kind === 'reach');
+    const captain = battle.state.sides.alliance.units.get(battle.deployment.captain);
+    if (!objective?.target || !captain) throw new Error('expected Captain reach objective');
+    captain.coordinate = { ...objective.target };
+
+    expect(evaluateBattleOutcome(battle)).toBe('victory');
+  });
+
+  it('adds the configured line reinforcements to Commander and Veteran operations', () => {
+    const storyState = createCampaign(starterBundle, undefined, 'story');
+    const commanderState = createCampaign(starterBundle, undefined, 'commander');
+    const veteranState = createCampaign(starterBundle, undefined, 'veteran');
+    const storyBattle = startBattleForTerritory(storyState, starterBundle, 'sector-paris');
+    const commanderBattle = startBattleForTerritory(commanderState, starterBundle, 'sector-paris');
+    const veteranBattle = startBattleForTerritory(veteranState, starterBundle, 'sector-paris');
+
+    const storyEnemyCount = storyBattle.state.sides.otherSide.units.size;
+    expect(commanderBattle.state.sides.otherSide.units.size).toBe(storyEnemyCount + 2);
+    expect(veteranBattle.state.sides.otherSide.units.size).toBe(storyEnemyCount + 3);
   });
 
   it('persists an in-progress battle through a full serialize/JSON/hydrate round-trip', () => {

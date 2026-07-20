@@ -51,7 +51,7 @@
     "name": "Paris Outskirts",
     "brief": "Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.",
     "objectives": {
-      "sector-paris-reach": "Move any unit to the extraction flare.",
+      "sector-paris-reach": "Escort Captain Alexander to the extraction flare.",
       "sector-paris-protect": "Do not lose Captain Alexander."
     }
   },
@@ -99,7 +99,7 @@
     "name": "Brussels Command",
     "brief": "Extract the classified intel to the evac point before the HQ falls.",
     "objectives": {
-      "sector-brussels-reach": "Move any unit to the extraction flare.",
+      "sector-brussels-reach": "Escort Captain Alexander to the extraction flare.",
       "sector-brussels-protect": "Do not lose Captain Alexander."
     }
   },

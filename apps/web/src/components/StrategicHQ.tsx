@@ -1,4 +1,4 @@
-import type { CampaignState } from '@spellcross/core';
+import type { CampaignDifficulty, CampaignState } from '@spellcross/core';
 import type { TFunction } from 'i18next';
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -41,6 +41,7 @@ interface ResearchTopic {
 }
 
 interface StrategicHQProps {
+  campaignDifficulty: CampaignDifficulty;
   turn: number;
   warClock: number;
   money: number;
@@ -583,7 +584,7 @@ const StrategicMapView: React.FC<{
 };
 
 export const StrategicHQ: React.FC<StrategicHQProps> = ({
-  turn, warClock, money, research, strategic,
+  campaignDifficulty, turn, warClock, money, research, strategic,
   army, reserves, territories, researchTopics, currentResearch, completedResearch,
   log, onStartBattle, onEndTurn, onRecruit, onRefill, onDismiss,
   onResearch, onConvertMoney, onConvertResearch, onBack, popups, onDismissPopups, availableUnits
@@ -724,7 +725,10 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
         <div className="hq-title">
           <button className="back-btn" onClick={onBack}>◀ {t('topbar.menu')}</button>
           <h1>{t('topbar.fieldHq')}</h1>
-          <span className="turn-info">{t('topbar.turnClock', { turn, warClock })}</span>
+          <span className="turn-info">
+            {t('topbar.turnClock', { turn, warClock })}
+            <b className={`campaign-difficulty ${campaignDifficulty}`}>{t(`topbar.difficulty.${campaignDifficulty}`)}</b>
+          </span>
         </div>
         <div className="hq-resources">
           <div className="resource">

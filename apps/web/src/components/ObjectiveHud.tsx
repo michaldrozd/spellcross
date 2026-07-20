@@ -18,7 +18,7 @@ function localizedObjectiveText(scenarioId: string, objectiveId: string, fallbac
 function statusLine(objective: TacticalObjective, battle: ActiveBattle, met: boolean, t: TFunction<'actions'>): string {
   switch (objective.kind) {
     case 'eliminate': {
-      const total = battle.scenario.otherSideForces.length;
+      const total = battle.state.sides.otherSide.units.size;
       const surviving = Array.from(battle.state.sides.otherSide.units.values()).filter(
         (u) => u.stance !== 'destroyed'
       ).length;
@@ -32,6 +32,8 @@ function statusLine(objective: TacticalObjective, battle: ActiveBattle, met: boo
     case 'reach':
       return met
         ? t('objective.reached')
+        : battle.reachClaimedRound?.[objective.id] != null
+          ? t('objective.securing')
         : objective.turnLimit
           ? t('objective.byTurn', { limit: objective.turnLimit })
           : t('objective.notReached');

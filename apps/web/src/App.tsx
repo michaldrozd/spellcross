@@ -13,6 +13,9 @@ import {
   endStrategicTurn,
   estimateHitDamage,
   evaluateBattleOutcome,
+  getCampaignDifficultyRules,
+  getEnemyActionBudget,
+  getEnemyDifficultyTier,
   isoDistance as axialDistance,
   isoNeighbors,
   isoWithinRange,
@@ -36,7 +39,7 @@ import {
   calculateStrengthModifier,
   updateAllFactionsVision
 } from '@spellcross/core';
-import type { BattleEvent, BattlefieldMap, CampaignState, HexCoordinate, TacticalBattleState, UnitInstance } from '@spellcross/core';
+import type { BattleEvent, BattlefieldMap, CampaignDifficulty, CampaignState, HexCoordinate, TacticalBattleState, UnitInstance } from '@spellcross/core';
 import { validatedStarterBundle } from '@spellcross/data';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
@@ -65,7 +68,7 @@ const CAMPAIGN_STORAGE_KEY = 'spellcross:campaign-state';
 const CAMPAIGN_SLOT_KEY = 'spellcross:campaign-slot';
 const CAMPAIGN_SUMMARY_KEY = 'spellcross:campaign-summary';
 const CAMPAIGN_SCHEMA_KEY = 'spellcross:campaign-schema';
-const CAMPAIGN_SCHEMA_VERSION = '2026-04-27-tactical-launch';
+const CAMPAIGN_SCHEMA_VERSION = '2026-07-20-campaign-difficulty';
 const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
 const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
 const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
@@ -122,6 +125,7 @@ const movementProfileFor = (unitType: string, isTruck: boolean, definitionId = '
         : (unitType === 'vehicle' || unitType === 'artillery') ? 'track'
           : 'foot';
 interface SlotSummary {
+  difficulty: CampaignDifficulty;
   turn: number;
   resources: CampaignState['resources'];
   territories: number;
@@ -162,7 +166,8 @@ function loadSummary(slot: number): SlotSummary | null {
   const saved = window.localStorage.getItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
   if (!saved) return null;
   try {
-    return JSON.parse(saved) as SlotSummary;
+    const parsed = JSON.parse(saved) as Partial<SlotSummary>;
+    return { ...parsed, difficulty: parsed.difficulty ?? 'commander' } as SlotSummary;
   } catch {
     return null;
   }
@@ -182,6 +187,7 @@ function useCampaign() {
   const updateSummary = useCallback(() => {
     const state = ref.current!;
     const next: SlotSummary = {
+      difficulty: state.difficulty,
       turn: state.turn,
       resources: { ...state.resources },
       territories: state.territories.length,
@@ -208,8 +214,8 @@ function useCampaign() {
     fn(ref.current!);
     persist();
   }, [persist]);
-  const reset = useCallback(() => {
-    ref.current = createCampaign(bundle);
+  const reset = useCallback((difficulty: CampaignDifficulty = 'commander') => {
+    ref.current = createCampaign(bundle, undefined, difficulty);
     persist();
   }, [persist]);
   const changeSlot = useCallback((next: number) => {
@@ -1582,8 +1588,12 @@ const BattleView: React.FC<{
     // AI skill tracks the SECTOR's difficulty, not the strategic turn — otherwise a player who never ends
     // strategic turns farms diff-5 sectors at 'normal', and early-ended turns inflict 'brutal' on diff-1.
     const sectorDifficulty = campaign.territories.find((t) => t.id === battle.territoryId)?.difficulty ?? 2;
-    const aiTier = sectorDifficulty >= 4 ? 'brutal' : sectorDifficulty >= 3 ? 'hard' : 'normal';
-    const maxEnemyAttacks = sectorDifficulty >= 4 ? 3 : 2;
+    const enemyTier = getEnemyDifficultyTier(campaign.difficulty, sectorDifficulty);
+    const activeEnemies = Array.from(battle.state.sides.otherSide.units.values())
+      .filter((unit) => unit.stance !== 'destroyed').length;
+    // The old global cap of two attacks let a large enemy army leave most of its AP unused. Scale the
+    // animation-safe attack budget with surviving force size so both sides get a comparable turn.
+    const maxEnemyAttacks = getEnemyActionBudget(campaign.difficulty, activeEnemies);
     // Units whose chosen action the engine rejected this turn. We skip only those when re-deciding so a
     // single bad action doesn't forfeit the rest of the AI's units (decideNextAIAction returns one
     // globally-best action, so without this the turn would end on the first rejection).
@@ -1621,10 +1631,9 @@ const BattleView: React.FC<{
           holdTargets,
           reachTargets,
           defendBias: true,
-          aggression: 0.6,
           avoidTiles: avoid,
           allowDemolition: true,
-          difficulty: aiTier,
+          difficulty: enemyTier,
           excludeUnitIds: failedUnitIds,
           visibleEnemyIds: foeVisibleIds
         });
@@ -1733,11 +1742,20 @@ const BattleView: React.FC<{
     // out-of-range attacks. With no goal the planner advances on the nearest enemy — seek-and-destroy.
     const reachTargets = battle.scenario.objectives.filter((o) => o.kind === 'reach').map((o) => o.target).filter(Boolean) as HexCoordinate[];
     const objectiveTargets = reachTargets;
+    const requiredObjectiveRosterIds = battle.scenario.objectives
+      .filter((objective) => objective.kind === 'reach')
+      .flatMap((objective) => objective.unitIds ?? []);
+    const objectiveUnitIds = requiredObjectiveRosterIds.length > 0
+      ? new Set(requiredObjectiveRosterIds
+          .map((rosterId) => battle.deployment[rosterId])
+          .filter((unitId): unitId is string => Boolean(unitId)))
+      : undefined;
     const failedUnitIds = new Set<string>();
     // Backstop against the planner walking a unit in circles: remember every tile each unit has stood on
     // this turn. If it's told to step back onto one, bench it for the rest of the turn instead of thrashing.
     const visitedTiles = new Map<string, Set<string>>();
     const tileKey = (c: HexCoordinate) => `${c.q},${c.r}`;
+    const autoDifficultyRules = getCampaignDifficultyRules(campaign.difficulty);
     let safety = 0;
     while (battle.state.activeFaction === 'alliance' && safety < 80) {
       safety += 1;
@@ -1752,10 +1770,11 @@ const BattleView: React.FC<{
       }
       const action = decideNextAIAction(battle.state, 'alliance', {
         objectiveTargets,
+        objectiveUnitIds,
         reachTargets,
         defendBias: false,
-        aggression: 0.85,
-        difficulty: 'hard',
+        aggression: autoDifficultyRules.playerAutoAggression,
+        difficulty: autoDifficultyRules.playerAutoDifficulty,
         allowDemolition: false,
         excludeUnitIds: failedUnitIds,
         visibleEnemyIds
@@ -2402,6 +2421,7 @@ function loadAllSummaries(): (SaveSlot | null)[] {
       // Stored summaries nest resources; MainMenu's SaveSlot wants them flat.
       return {
         slot,
+        difficulty: data.difficulty ?? 'commander',
         turn: data.turn,
         money: data.resources?.money ?? 0,
         research: data.resources?.research ?? 0,
@@ -2458,9 +2478,9 @@ export function App() {
       reportBattleLaunchError(err);
     }
   };
-  const handleNewGame = (newSlot: number) => {
+  const handleNewGame = (newSlot: number, difficulty: CampaignDifficulty) => {
     changeSlot(newSlot);
-    reset();
+    reset(difficulty);
     setMode('strategic');
   };
   const handleContinue = (continueSlot: number) => {
@@ -2471,9 +2491,9 @@ export function App() {
     if (typeof window === 'undefined' || !import.meta.env.DEV) return;
     const campaignControl = {
       mode: () => mode,
-      newCampaign: (nextSlot = 1) => {
+      newCampaign: (nextSlot = 1, difficulty: CampaignDifficulty = 'commander') => {
         changeSlot(nextSlot);
-        reset();
+        reset(difficulty);
         setMode('strategic');
         return true;
       },
@@ -2656,13 +2676,14 @@ export function App() {
               </div>
             </dl>
             <div className="gameover-actions">
-              <button className="primary-btn" onClick={() => { reset(); }}>{t('campaign:gameover.newCampaign')}</button>
+              <button className="primary-btn" onClick={() => { reset(campaign.difficulty); }}>{t('campaign:gameover.newCampaign')}</button>
               <button className="secondary-btn" onClick={() => setMode('menu')}>{t('campaign:gameover.mainMenu')}</button>
             </div>
           </div>
         </div>
       ) : null}
       <StrategicHQ
+        campaignDifficulty={campaign.difficulty}
         turn={campaign.turn}
         warClock={campaign.globalTimer}
         money={campaign.resources.money}

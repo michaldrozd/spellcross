@@ -1,3 +1,4 @@
+import type { CampaignDifficulty } from '@spellcross/core';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -6,6 +7,7 @@ import { AudioManager } from '../services/AudioManager.js';
 
 export interface SaveSlot {
   slot: number;
+  difficulty: CampaignDifficulty;
   turn: number;
   money: number;
   research: number;
@@ -16,7 +18,7 @@ export interface SaveSlot {
 }
 
 interface MainMenuProps {
-  onNewGame: (slot: number) => void;
+  onNewGame: (slot: number, difficulty: CampaignDifficulty) => void;
   onContinue: (slot: number) => void;
   savedSlots: (SaveSlot | null)[];
   currentSlot: number;
@@ -62,6 +64,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 }) => {
   const { t, i18n } = useTranslation('mainmenu');
   const [selectedSlot, setSelectedSlot] = useState(currentSlot);
+  const [selectedDifficulty, setSelectedDifficulty] = useState<CampaignDifficulty>('commander');
   const [activePanel, setActivePanel] = useState<'slots' | 'settings' | 'manual' | null>(null);
   const [audioPreferences, setAudioPreferences] = useState(loadAudioPreferences);
 
@@ -165,7 +168,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
       {activePanel === 'slots' && (
         <div className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="slot-modal-title">
-          <div className="slot-modal-content">
+          <div className="slot-modal-content slot-campaign-content">
             <h2 id="slot-modal-title">{t('slotModal.title')}</h2>
             <div className="slot-list">
               {[1, 2, 3].map((slotNum) => {
@@ -181,6 +184,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                       <div className="slot-info">
                         <span>{t('slotModal.turnLabel', { turn: save.turn })}</span>
                         <span>{t('slotModal.moneyLine', { money: save.money, territories: save.territories })}</span>
+                        <span className={`slot-difficulty ${save.difficulty}`}>{t(`difficulty.${save.difficulty}.name`)}</span>
                         <span className="slot-date">{new Date(save.updated).toLocaleDateString(i18n.language)}</span>
                       </div>
                     ) : (
@@ -190,6 +194,31 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 );
               })}
             </div>
+            {!savedSlots[selectedSlot - 1] && (
+              <div className="difficulty-select" role="radiogroup" aria-label={t('difficulty.heading')}>
+                <div className="difficulty-heading">
+                  <span>{t('difficulty.systemCode')}</span>
+                  <h3>{t('difficulty.heading')}</h3>
+                  <p>{t('difficulty.description')}</p>
+                </div>
+                <div className="difficulty-options">
+                  {(['story', 'commander', 'veteran'] as const).map((difficulty) => (
+                    <button
+                      key={difficulty}
+                      type="button"
+                      role="radio"
+                      aria-checked={selectedDifficulty === difficulty}
+                      className={`difficulty-option ${difficulty} ${selectedDifficulty === difficulty ? 'selected' : ''}`}
+                      onClick={() => setSelectedDifficulty(difficulty)}
+                    >
+                      <span>{t(`difficulty.${difficulty}.code`)}</span>
+                      <strong>{t(`difficulty.${difficulty}.name`)}</strong>
+                      <small>{t(`difficulty.${difficulty}.detail`)}</small>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="slot-actions">
               <button
                 className="menu-btn menu-btn-primary"
@@ -198,7 +227,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                   if (save) {
                     onContinue(selectedSlot);
                   } else {
-                    onNewGame(selectedSlot);
+                    onNewGame(selectedSlot, selectedDifficulty);
                   }
                 }}
               >

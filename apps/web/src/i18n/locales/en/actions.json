@@ -5,6 +5,7 @@
     "held": "Held {{held}}/{{limit}}",
     "byTurn": "By turn {{limit}}",
     "reached": "Reached",
+    "securing": "Hold through counterattack",
     "notReached": "Not reached",
     "protected": "Protected",
     "lost": "Lost"

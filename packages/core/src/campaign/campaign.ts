@@ -89,6 +89,10 @@ export interface ActiveBattle {
   // Last battle round in which each hold objective was credited, so progress
   // counts at most once per round regardless of how often outcome is evaluated.
   holdCountedRound: Record<string, number>;
+  // First round in which a reach objective became occupied. Commander and Veteran campaigns require
+  // the objective to survive the following enemy phase before it is secured.
+  reachClaimedRound: Record<string, number>;
+  difficulty: CampaignDifficulty;
   // True once the player has left deployment. Persisted so a reloaded in-progress battle resumes in
   // normal play (with saved unit positions/AP) instead of re-opening DEPLOYMENT and allowing free moves.
   deployed?: boolean;
@@ -97,8 +101,68 @@ export interface ActiveBattle {
   resolved?: 'victory' | 'defeat';
 }
 
+export type CampaignDifficulty = 'story' | 'commander' | 'veteran';
+
+export interface CampaignDifficultyRules {
+  globalTimer: number;
+  startingResourceMultiplier: number;
+  playerAutoDifficulty: 'easy' | 'normal' | 'hard' | 'brutal';
+  playerAutoAggression: number;
+  enemyDifficultyOffset: number;
+  enemyAttacksPerUnit: number;
+  secureReachObjectives: boolean;
+  reinforcementBase: number;
+}
+
+export const CAMPAIGN_DIFFICULTY_RULES: Record<CampaignDifficulty, CampaignDifficultyRules> = {
+  story: {
+    globalTimer: 30,
+    startingResourceMultiplier: 1.2,
+    playerAutoDifficulty: 'hard',
+    playerAutoAggression: 0.85,
+    enemyDifficultyOffset: -1,
+    enemyAttacksPerUnit: 0.35,
+    secureReachObjectives: false,
+    reinforcementBase: 0
+  },
+  commander: {
+    globalTimer: 25,
+    startingResourceMultiplier: 1,
+    playerAutoDifficulty: 'normal',
+    playerAutoAggression: 0.65,
+    enemyDifficultyOffset: 0,
+    enemyAttacksPerUnit: 1.25,
+    secureReachObjectives: true,
+    reinforcementBase: 2
+  },
+  veteran: {
+    globalTimer: 20,
+    startingResourceMultiplier: 0.85,
+    playerAutoDifficulty: 'normal',
+    playerAutoAggression: 0.55,
+    enemyDifficultyOffset: 1,
+    enemyAttacksPerUnit: 1.75,
+    secureReachObjectives: true,
+    reinforcementBase: 3
+  }
+};
+
+export const getCampaignDifficultyRules = (difficulty: CampaignDifficulty) => CAMPAIGN_DIFFICULTY_RULES[difficulty];
+
+const ENEMY_DIFFICULTY_TIERS = ['easy', 'normal', 'hard', 'brutal'] as const;
+
+export const getEnemyDifficultyTier = (campaignDifficulty: CampaignDifficulty, sectorDifficulty: number) => {
+  const baseIndex = sectorDifficulty >= 4 ? 3 : sectorDifficulty >= 3 ? 2 : 1;
+  const offset = getCampaignDifficultyRules(campaignDifficulty).enemyDifficultyOffset;
+  return ENEMY_DIFFICULTY_TIERS[Math.max(0, Math.min(ENEMY_DIFFICULTY_TIERS.length - 1, baseIndex + offset))];
+};
+
+export const getEnemyActionBudget = (campaignDifficulty: CampaignDifficulty, activeEnemyCount: number) =>
+  Math.max(2, Math.ceil(activeEnemyCount * getCampaignDifficultyRules(campaignDifficulty).enemyAttacksPerUnit));
+
 export interface CampaignState {
   campaignId: string;
+  difficulty: CampaignDifficulty;
   turn: number;
   globalTimer: number;
   resources: {
@@ -122,6 +186,8 @@ export interface CampaignState {
 
 export interface SerializedCampaignState {
   campaignId: string;
+  // Optional for saves created before campaign difficulty was introduced.
+  difficulty?: CampaignDifficulty;
   turn: number;
   globalTimer: number;
   resources: CampaignState['resources'];
@@ -200,8 +266,13 @@ const findUnitDef = (bundle: ContentBundle, id: string): UnitData => {
   return def;
 };
 
-export function createCampaign(bundle: ContentBundle, campaignId?: string): CampaignState {
+export function createCampaign(
+  bundle: ContentBundle,
+  campaignId?: string,
+  difficulty: CampaignDifficulty = 'commander'
+): CampaignState {
   const spec = findCampaignSpec(bundle, campaignId);
+  const difficultyRules = getCampaignDifficultyRules(difficulty);
 
   const research: ResearchState = {
     known: addResearchUnlocksToKnown(bundle, spec.startingResearch),
@@ -237,15 +308,21 @@ export function createCampaign(bundle: ContentBundle, campaignId?: string): Camp
 
   return {
     campaignId: spec.id,
+    difficulty,
     turn: 1,
-    globalTimer: 25, // Increased for larger campaign
-    resources: { ...spec.startingResources },
+    globalTimer: difficultyRules.globalTimer,
+    resources: Object.fromEntries(
+      Object.entries(spec.startingResources).map(([resource, amount]) => [
+        resource,
+        Math.round(amount * difficultyRules.startingResourceMultiplier)
+      ])
+    ) as CampaignState['resources'],
     army,
     reserves: [],
     formations: [defaultFormation],
     territories,
     research,
-    log: [{ key: 'campaignInitialized', params: { name: spec.name, campaignId: spec.id } }],
+    log: [{ key: 'campaignInitialized', params: { name: spec.name, campaignId: spec.id, difficulty } }],
     events: [],
     popups: []
   };
@@ -754,7 +831,39 @@ export function startBattleForTerritory(
     throw new CampaignError('noDeployableUnits', 'No deployable units available for this operation');
   }
 
-  const enemyUnits = scenario.otherSideForces.map((unit) => ({
+  const enemyForces = [...scenario.otherSideForces];
+  const difficultyRules = getCampaignDifficultyRules(state.difficulty);
+  const reinforcementCount = difficultyRules.reinforcementBase + (
+    state.difficulty === 'veteran' && (territory.difficulty ?? 1) >= 4 ? 1 : 0
+  );
+  if (reinforcementCount > 0 && enemyForces.length > 0) {
+    const occupied = new Set(
+      [...enemyForces.map((unit) => unit.coordinate), ...scenario.startZones.alliance]
+        .map((coordinate) => coordinateKey(coordinate))
+    );
+    const reinforcementTiles = scenario.startZones.otherSide.filter((coordinate) => (
+      !occupied.has(coordinateKey(coordinate))
+      && scenario.map.tiles[coordinate.r * scenario.map.width + coordinate.q]?.passable
+    ));
+    const reinforcementDefinitions = [...new Set(enemyForces.map((unit) => unit.definitionId))]
+      .map((definitionId) => findUnitDef(bundle, definitionId))
+      .sort((a, b) => {
+        const threat = (unit: UnitData) => unit.stats.maxHealth
+          + unit.stats.armor * 6
+          + Math.max(...Object.values(unit.stats.weaponPower)) * 2;
+        return threat(a) - threat(b);
+      });
+    for (let index = 0; index < Math.min(reinforcementCount, reinforcementTiles.length); index += 1) {
+      const definition = reinforcementDefinitions[index % reinforcementDefinitions.length];
+      enemyForces.push({
+        id: `${territoryId}-line-reinforcement-${index}`,
+        definitionId: definition.id,
+        coordinate: reinforcementTiles[index]
+      });
+    }
+  }
+
+  const enemyUnits = enemyForces.map((unit) => ({
     definition: findUnitDef(bundle, unit.definitionId),
     coordinate: unit.coordinate
   }));
@@ -824,11 +933,32 @@ export function startBattleForTerritory(
     deployment,
     startTiles,
     holdProgress: {},
-    holdCountedRound: {}
+    holdCountedRound: {},
+    reachClaimedRound: {},
+    difficulty: state.difficulty
   };
   state.activeBattle = activeBattle;
   return activeBattle;
 }
+
+const unitsOccupyingReachObjective = (objective: TacticalObjective, battle: ActiveBattle) => {
+  if (!objective.target) return [];
+  const key = coordinateKey(objective.target);
+  return Array.from(battle.state.sides.alliance.units.values()).filter(
+    (unit) => unit.stance !== 'destroyed' && !unit.embarkedOn && coordinateKey(unit.coordinate) === key
+  );
+};
+
+const isReachObjectiveOccupied = (objective: TacticalObjective, battle: ActiveBattle) => {
+  const occupants = unitsOccupyingReachObjective(objective, battle);
+  if (occupants.length === 0) return false;
+  if (!objective.unitIds?.length) return true;
+  const occupantIds = new Set(occupants.map((unit) => unit.id));
+  return objective.unitIds.every((rosterId) => {
+    const tacticalId = battle.deployment[rosterId];
+    return tacticalId ? occupantIds.has(tacticalId) : false;
+  });
+};
 
 export const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattle): boolean => {
   switch (objective.kind) {
@@ -839,12 +969,13 @@ export const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattl
       return remaining.length === 0;
     }
     case 'reach': {
-      if (!objective.target) return false;
-      const key = coordinateKey(objective.target);
-      // Embarked passengers keep a frozen coordinate at the embark tile — they can't occupy it.
-      return Array.from(battle.state.sides.alliance.units.values()).some(
-        (u) => u.stance !== 'destroyed' && !u.embarkedOn && coordinateKey(u.coordinate) === key
-      );
+      if (!isReachObjectiveOccupied(objective, battle)) return false;
+      const difficultyRules = getCampaignDifficultyRules(battle.difficulty ?? 'commander');
+      if (!difficultyRules.secureReachObjectives) return true;
+      const claimedRound = battle.reachClaimedRound?.[objective.id];
+      return claimedRound != null
+        && battle.state.activeFaction === 'alliance'
+        && battle.state.round > claimedRound;
     }
     case 'protect': {
       const ids = objective.unitIds ?? [];
@@ -888,8 +1019,21 @@ function tickHoldProgress(battle: ActiveBattle) {
   }
 }
 
+function tickReachProgress(battle: ActiveBattle) {
+  battle.reachClaimedRound ??= {};
+  for (const objective of battle.scenario.objectives) {
+    if (objective.kind !== 'reach') continue;
+    if (!isReachObjectiveOccupied(objective, battle)) {
+      delete battle.reachClaimedRound[objective.id];
+      continue;
+    }
+    battle.reachClaimedRound[objective.id] ??= battle.state.round;
+  }
+}
+
 export function evaluateBattleOutcome(battle: ActiveBattle): 'victory' | 'defeat' | 'ongoing' {
   tickHoldProgress(battle);
+  tickReachProgress(battle);
 
   const defeatByProtect = battle.scenario.objectives.some((o) => o.kind === 'protect' && !isObjectiveMet(o, battle));
   if (defeatByProtect) return 'defeat';
@@ -1098,6 +1242,7 @@ function decodeActiveBattle(raw: unknown): ActiveBattle {
 export function serializeCampaignState(state: CampaignState): SerializedCampaignState {
   return {
     campaignId: state.campaignId,
+    difficulty: state.difficulty,
     turn: state.turn,
     globalTimer: state.globalTimer,
     resources: { ...state.resources },
@@ -1135,6 +1280,7 @@ function normalizeLegacyPopup(
 export function hydrateCampaignState(bundle: ContentBundle, snapshot: SerializedCampaignState): CampaignState {
   const spec = findCampaignSpec(bundle, snapshot.campaignId);
   const campaignId = snapshot.campaignId ?? spec.id;
+  const difficulty = snapshot.difficulty ?? 'commander';
   const territoryBase = new Map(spec.territories.map((t) => [t.id, t]));
 
   const researchKnown = addResearchUnlocksToKnown(bundle, snapshot.research.completed);
@@ -1142,8 +1288,17 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     researchKnown.add(k);
   }
 
+  const activeBattle = snapshot.activeBattle ? decodeActiveBattle(snapshot.activeBattle) : undefined;
+  if (activeBattle) {
+    activeBattle.difficulty ??= difficulty;
+    activeBattle.reachClaimedRound ??= {};
+    activeBattle.holdProgress ??= {};
+    activeBattle.holdCountedRound ??= {};
+  }
+
   const state: CampaignState = {
     campaignId,
+    difficulty,
     turn: snapshot.turn,
     globalTimer: snapshot.globalTimer ?? 15,
     resources: { ...snapshot.resources },
@@ -1162,7 +1317,7 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
       completed: new Set(snapshot.research.completed),
       inProgress: snapshot.research.inProgress ? { ...snapshot.research.inProgress } : undefined
     },
-    activeBattle: snapshot.activeBattle ? decodeActiveBattle(snapshot.activeBattle) : undefined,
+    activeBattle,
     log: snapshot.log.map(normalizeLegacyLogEntry),
     events: snapshot.events ? [...snapshot.events] : [],
     popups: snapshot.popups ? structuredClone(snapshot.popups).map(normalizeLegacyPopup) : [],

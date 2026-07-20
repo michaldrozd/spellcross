@@ -5,6 +5,7 @@
     "held": "Udržané {{held}}/{{limit}}",
     "byTurn": "Do kola {{limit}}",
     "reached": "Splnené",
+    "securing": "Udrž cez protiútok",
     "notReached": "Nesplnené",
     "protected": "Ochránené",
     "lost": "Stratené"

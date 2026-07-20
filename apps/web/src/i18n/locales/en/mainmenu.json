@@ -32,6 +32,26 @@
     "newGame": "New Game",
     "back": "Back"
   },
+  "difficulty": {
+    "systemCode": "Operational doctrine / CMD-01",
+    "heading": "Campaign difficulty",
+    "description": "Choose how much tactical control the invasion demands. The setting is stored with this campaign.",
+    "story": {
+      "code": "ACCESSIBLE",
+      "name": "Story",
+      "detail": "More time and supplies. Auto Turn can carry routine operations."
+    },
+    "commander": {
+      "code": "RECOMMENDED",
+      "name": "Commander",
+      "detail": "Fair enemy action economy. Objectives must survive a counterattack."
+    },
+    "veteran": {
+      "code": "HARD",
+      "name": "Veteran",
+      "detail": "Sharper opposition, reinforcements, fewer supplies, and a tighter war clock."
+    }
+  },
   "settings": {
     "systemCode": "Audio control / SYS-04",
     "title": "Settings",

@@ -394,7 +394,13 @@ function buildObjectives(cfg: CityConfig, g: Generated, rng: () => number): { ob
   const objs: TacticalObjective[] = [];
   switch (cfg.gameplay) {
     case 'evac':
-      objs.push({ id: `${id}-reach`, kind: 'reach', description: 'Move any unit to the extraction flare.', target: anchor });
+      objs.push({
+        id: `${id}-reach`,
+        kind: 'reach',
+        description: 'Escort Captain Alexander to the extraction flare.',
+        target: anchor,
+        unitIds: ['captain']
+      });
       objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Do not lose Captain Alexander.', unitIds: ['captain'] });
       break;
     case 'hold':

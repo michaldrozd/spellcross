@@ -3,6 +3,11 @@
     "menu": "MENU",
     "fieldHq": "POĽNÉ VELITEĽSTVO",
     "turnClock": "KOLO {{turn}} • VOJNOVÉ HODINY {{warClock}}",
+    "difficulty": {
+      "story": "PRÍBEH",
+      "commander": "VELITEĽ",
+      "veteran": "VETERÁN"
+    },
     "credits": "Kredity",
     "research": "Výskum",
     "endTurn": "UKONČIŤ ŤAH",
