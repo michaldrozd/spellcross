@@ -13,6 +13,18 @@ export type TerrainType =
   | 'swamp'
   | 'structure';
 
+export type BattlefieldEnvironment =
+  | 'urban'
+  | 'industrial'
+  | 'river'
+  | 'forest'
+  | 'alpine'
+  | 'canal'
+  | 'coast'
+  | 'oldtown'
+  | 'ruins'
+  | 'rift';
+
 export interface HexCoordinate {
   q: number;
   r: number;
@@ -33,6 +45,7 @@ export interface MapTile {
 
 export interface BattlefieldMap {
   id: string;
+  environment?: BattlefieldEnvironment;
   width: number;
   height: number;
   tiles: MapTile[];
@@ -241,6 +254,18 @@ const mapTileSchema = z.object({
 
 const battlefieldMapSchema = z.object({
   id: z.string(),
+  environment: z.enum([
+    'urban',
+    'industrial',
+    'river',
+    'forest',
+    'alpine',
+    'canal',
+    'coast',
+    'oldtown',
+    'ruins',
+    'rift'
+  ]).optional(),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
   tiles: z.array(mapTileSchema),

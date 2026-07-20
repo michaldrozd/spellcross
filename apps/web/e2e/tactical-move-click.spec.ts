@@ -293,20 +293,14 @@ test('m113 movement keeps turn-boundary animation time for multi-step paths', as
   });
   expect(setup).toBeTruthy();
 
-  const started = await page.evaluate(({ vehicleId, target }) => {
-    return (window as any).__battleControl?.animateUnitTo?.(vehicleId, target.q, target.r);
-  }, setup!);
-  expect(started).toBeTruthy();
-
-  const state = await page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);
-  expect(state).toMatchObject({
-    unitId: setup!.vehicleId,
-    segmentTurnDuration: 90
-  });
-
-  const actualTurnCount = await page.evaluate(() => {
-    const moving = (window as any).__battleControl?.animationState?.();
-    if (!moving?.path) return 0;
+  // Start the animation and schedule the first timing probe in one browser task. At the larger tactical
+  // zoom, rendering can briefly occupy the page between separate evaluate calls; registering the probe
+  // here preserves its ordering ahead of the animation cleanup timer even when both callbacks run late.
+  const timing = await page.evaluate(async ({ vehicleId, target }) => {
+    const ctrl = (window as any).__battleControl;
+    const started = ctrl?.animateUnitTo?.(vehicleId, target.q, target.r);
+    const moving = ctrl?.animationState?.();
+    if (!started || !moving?.path) return { started: false, state: moving ?? null, actualTurnCount: 0, survivedFirstTurn: false };
     const orientationFor = (from: any, to: any) => {
       const dq = Math.sign(to.q - from.q);
       const dr = Math.sign(to.r - from.r);
@@ -320,26 +314,21 @@ test('m113 movement keeps turn-boundary animation time for multi-step paths', as
       if (dq < 0 && dr < 0) return 7;
       return 0;
     };
-    let turns = 0;
+    let actualTurnCount = 0;
     for (let index = 0; index + 2 < moving.path.length; index += 1) {
-      if (orientationFor(moving.path[index], moving.path[index + 1]) !== orientationFor(moving.path[index + 1], moving.path[index + 2])) turns += 1;
+      if (orientationFor(moving.path[index], moving.path[index + 1]) !== orientationFor(moving.path[index + 1], moving.path[index + 2])) actualTurnCount += 1;
     }
-    return turns;
-  });
-  expect(actualTurnCount).toBeGreaterThan(0);
-
-  // Wait and probe inside the page: an in-page timeout shares the event loop with the animation's
-  // clear timer, so under CPU load both lag together and the probe still fires first. Waiting via
-  // waitForTimeout + a separate evaluate raced the clear timer on loaded runners.
-  const survivedFirstTurn = await page.evaluate(async (targetAge) => {
-    const ctrl = (window as any).__battleControl;
-    const moving = ctrl?.animationState?.();
-    if (!moving) return false;
-    const wait = Math.max(0, moving.startTime + targetAge - Date.now());
+    const wait = Math.max(0, moving.startTime + moving.stepDuration + 20 - Date.now());
     await new Promise((resolve) => setTimeout(resolve, wait));
-    return ctrl?.animationState?.() != null;
-  }, state.stepDuration + 20);
-  expect(survivedFirstTurn).toBeTruthy();
+    return { started: true, state: moving, actualTurnCount, survivedFirstTurn: ctrl?.animationState?.() != null };
+  }, setup!);
+  expect(timing.started).toBeTruthy();
+  expect(timing.state).toMatchObject({
+    unitId: setup!.vehicleId,
+    segmentTurnDuration: 90
+  });
+  expect(timing.actualTurnCount).toBeGreaterThan(0);
+  expect(timing.survivedFirstTurn).toBeTruthy();
 
   await expect.poll(async () => {
     return page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);

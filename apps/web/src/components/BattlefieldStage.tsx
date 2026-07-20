@@ -1760,8 +1760,8 @@ export function BattlefieldStage({
   }, []);
 
   // Auto-center camera on the friendly deploy area at start (the only lit region under fog — centring on
-  // the map middle would just frame darkness). The wide initial zoom then shows that area plus a big
-  // swath of the surrounding battlefield, so even a large map reads as large rather than cramped.
+  // the map middle would just frame darkness). Keep enough of the surrounding approach in view to orient
+  // the player without shrinking units and terrain into a small island inside the HUD.
   const didAutoCenterRef = useRef(false);
   useEffect(() => {
     if (didAutoCenterRef.current) return;
@@ -1965,9 +1965,8 @@ export function BattlefieldStage({
     hostSize.h > 0 ? hostSize.h / contentHeight : 1
   );
   const fitScale = snapCameraScale(fitScaleRaw);
-  // Start wide enough to take in a large swath of the battlefield (was a tight 2.35 that cropped to the
-  // home corner and made big maps feel small); the player can still wheel-zoom in to ~4.5.
-  const initialFollowZoom = clampCameraScale(Math.max(1.6, snapCameraScale(fitScaleRaw * 1.5)));
+  const openingZoomFloor = hostSize.w >= 1200 ? 2.25 : hostSize.w >= 800 ? 2 : 1.75;
+  const initialFollowZoom = clampCameraScale(Math.max(openingZoomFloor, snapCameraScale(fitScaleRaw * 1.75)));
   const didSetInitialZoomRef = useRef(false);
   useEffect(() => {
     if (cameraMode === 'follow' && !didSetInitialZoomRef.current) {
@@ -2363,6 +2362,31 @@ export function BattlefieldStage({
   }, [onUnitHover]);
 
 
+  const battlefieldMood = useMemo(() => {
+    switch (map.environment) {
+      case 'industrial':
+        return { screen: 0x080908, glow: 0x2b2115, apron: 0x3a3224, apronAlt: 0x2d2d22, soil: 0x342a1c };
+      case 'river':
+      case 'canal':
+        return { screen: 0x040b0d, glow: 0x12343b, apron: 0x214147, apronAlt: 0x263c2e, soil: 0x213429 };
+      case 'forest':
+        return { screen: 0x040a06, glow: 0x14331a, apron: 0x274323, apronAlt: 0x1e381f, soil: 0x26341d };
+      case 'alpine':
+        return { screen: 0x090a06, glow: 0x31341c, apron: 0x454329, apronAlt: 0x344127, soil: 0x38321f };
+      case 'coast':
+        return { screen: 0x040a0c, glow: 0x123440, apron: 0x1f4149, apronAlt: 0x2b4431, soil: 0x24362c };
+      case 'oldtown':
+        return { screen: 0x090806, glow: 0x332919, apron: 0x41382b, apronAlt: 0x303329, soil: 0x3d3021 };
+      case 'ruins':
+        return { screen: 0x090706, glow: 0x382218, apron: 0x40352c, apronAlt: 0x352a24, soil: 0x42291d };
+      case 'rift':
+        return { screen: 0x100504, glow: 0x4a160d, apron: 0x47251c, apronAlt: 0x34211d, soil: 0x4c2116 };
+      case 'urban':
+      default:
+        return { screen: 0x050907, glow: 0x1b3020, apron: 0x35402d, apronAlt: 0x2b3529, soil: 0x303421 };
+    }
+  }, [map.environment]);
+
   const battlefieldBackdrop = useMemo(() => {
     const nw = worldCornerOfTile(0, 0, 'NW', topGeomFor);
     const ne = worldCornerOfTile(map.width - 1, 0, 'NE', topGeomFor);
@@ -2383,10 +2407,10 @@ export function BattlefieldStage({
         zIndex={5000}
         draw={(g) => {
           g.clear();
-          g.beginFill(0x050906, 0.22);
+          g.beginFill(battlefieldMood.apronAlt, 0.34);
           drawPoly(g as unknown as PixiGraphics, outer);
           g.endFill();
-          g.beginFill(0x0b150b, 0.1);
+          g.beginFill(battlefieldMood.apron, 0.18);
           drawPoly(g as unknown as PixiGraphics, middle);
           g.endFill();
           // Plateau thickness: give the map a solid side along its camera-facing (lower) edges so it
@@ -2399,10 +2423,10 @@ export function BattlefieldStage({
             const b = corners[(i + 1) % 4];
             if ((a.y + b.y) / 2 <= cy + 1) continue; // only lower (camera-facing) edges
             // soil band just under the rim, then a darker face fading into the void
-            g.beginFill(0x20301c, 0.9);
+            g.beginFill(battlefieldMood.soil, 0.94);
             g.drawPolygon([a.x, a.y, b.x, b.y, b.x, b.y + SLAB_D * 0.32, a.x, a.y + SLAB_D * 0.32]);
             g.endFill();
-            g.beginFill(0x0c140c, 0.92);
+            g.beginFill(darkenColor(battlefieldMood.soil, 0.62), 0.94);
             g.drawPolygon([a.x, a.y + SLAB_D * 0.32, b.x, b.y + SLAB_D * 0.32, b.x, b.y + SLAB_D, a.x, a.y + SLAB_D]);
             g.endFill();
           }
@@ -2416,14 +2440,17 @@ export function BattlefieldStage({
             const bottom = outer[1].y + (outer[2].y - outer[1].y) * v;
             const x = (left + right) / 2 + (tileNoise(i, map.width, salt + 2) - 0.5) * 70;
             const y = (top + bottom) / 2 + (tileNoise(i, map.height, salt + 3) - 0.5) * 48;
-            g.beginFill(tileNoise(i, map.width, salt + 4) > 0.5 ? 0x1a2b18 : 0x0b1b12, 0.045);
+            g.beginFill(
+              tileNoise(i, map.width, salt + 4) > 0.5 ? battlefieldMood.apron : battlefieldMood.apronAlt,
+              0.075
+            );
             g.drawEllipse(x, y, 38 + tileNoise(i, map.width, salt + 5) * 70, 12 + tileNoise(i, map.height, salt + 6) * 30);
             g.endFill();
           }
         }}
       />
     );
-  }, [map.height, map.width, topGeomFor]);
+  }, [battlefieldMood, map.height, map.width, topGeomFor]);
 
   // A skirt of dark out-of-bounds terrain diamonds ringing the playable map, fading into the backdrop.
   // Without it the battlefield is a lit cut-out floating in black and reads as a tiny arena; the skirt
@@ -2443,8 +2470,12 @@ export function BattlefieldStage({
         if (alpha <= 0.02) continue;
         const p = toScreen({ q, r });
         const n = tileNoise(q + 100, r + 100, 41);
-        const base = n > 0.72 ? 0x241d12 : n > 0.4 ? 0x18260f : 0x14210f;
-        diamonds.push({ x: p.x, y: p.y, color: darkenColor(base, t * 0.55), alpha });
+        const base = n > 0.72
+          ? mixColor(battlefieldMood.apron, battlefieldMood.soil, 0.38)
+          : n > 0.4
+            ? battlefieldMood.apron
+            : battlefieldMood.apronAlt;
+        diamonds.push({ x: p.x, y: p.y, color: darkenColor(base, t * 0.72), alpha });
       }
     }
     return (
@@ -2459,7 +2490,7 @@ export function BattlefieldStage({
         }}
       />
     );
-  }, [map.width, map.height]);
+  }, [battlefieldMood, map.width, map.height]);
 
 
   const tileGraphics = useMemo(() => {
@@ -3055,10 +3086,10 @@ export function BattlefieldStage({
       <Graphics
         draw={(g) => {
           g.clear();
-          g.beginFill(0x020506, 1);
+          g.beginFill(battlefieldMood.screen, 1);
           g.drawRect(0, 0, hostSize.w, hostSize.h);
           g.endFill();
-          g.beginFill(0x0d1b12, 0.28);
+          g.beginFill(battlefieldMood.glow, 0.34);
           g.drawPolygon([
             -hostSize.w * 0.08, hostSize.h * 0.22,
             hostSize.w * 0.42, -hostSize.h * 0.1,
@@ -3066,7 +3097,7 @@ export function BattlefieldStage({
             hostSize.w * 0.52, hostSize.h * 0.72
           ]);
           g.endFill();
-          g.beginFill(0x10150e, 0.22);
+          g.beginFill(battlefieldMood.apronAlt, 0.22);
           g.drawPolygon([
             hostSize.w * 0.12, hostSize.h * 0.82,
             hostSize.w * 0.78, hostSize.h * 0.48,
@@ -3076,7 +3107,7 @@ export function BattlefieldStage({
           g.endFill();
           for (let i = 0; i < 12; i += 1) {
             const y = hostSize.h * (0.12 + i * 0.075);
-            g.lineStyle(1, 0x1c3524, 0.055);
+            g.lineStyle(1, battlefieldMood.apron, 0.075);
             g.moveTo(-hostSize.w * 0.1, y);
             g.lineTo(hostSize.w * 1.08, y + hostSize.h * 0.45);
           }
@@ -3087,7 +3118,7 @@ export function BattlefieldStage({
         }}
       />
     );
-  }, [hostSize.h, hostSize.w]);
+  }, [battlefieldMood, hostSize.h, hostSize.w]);
 
   // Screen-space vignette: darkens the corners so the eye settles on the action and the scene reads
   // as one lit space rather than flat-lit tiles. Radial gradients aren't a Pixi Graphics primitive,

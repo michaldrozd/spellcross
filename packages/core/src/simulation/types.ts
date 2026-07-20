@@ -10,6 +10,18 @@ export type TerrainType =
   | 'swamp'
   | 'structure';
 
+export type BattlefieldEnvironment =
+  | 'urban'
+  | 'industrial'
+  | 'river'
+  | 'forest'
+  | 'alpine'
+  | 'canal'
+  | 'coast'
+  | 'oldtown'
+  | 'ruins'
+  | 'rift';
+
 export interface HexCoordinate {
   q: number;
   r: number;
@@ -109,6 +121,7 @@ export interface MapTile {
 
 export interface BattlefieldMap {
   id: string;
+  environment?: BattlefieldEnvironment;
   width: number;
   height: number;
   tiles: MapTile[];

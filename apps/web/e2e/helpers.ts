@@ -58,6 +58,7 @@ export async function retreatToHq(page: Page) {
   const retreat = page.getByRole('button', { name: /^Retreat$/i });
   if (await retreat.isVisible({ timeout: 1500 }).catch(() => false)) {
     await retreat.click();
+    await page.getByRole('button', { name: /^Confirm Retreat$/i }).click();
   }
   await expect(page.getByRole('heading', { name: /FIELD HQ/i })).toBeVisible({ timeout: 10_000 });
 }

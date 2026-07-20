@@ -5,6 +5,7 @@
 // construction (a unit test additionally asserts bounds, passability and zone-to-zone connectivity).
 
 import type {
+  BattlefieldEnvironment,
   BattlefieldMap,
   MapProp,
   MapTile,
@@ -16,13 +17,12 @@ import type {
 
 type Coord = { q: number; r: number };
 type GameplayType = 'evac' | 'hold' | 'bridgehead' | 'raid-night' | 'spire';
-type Theme = 'urban' | 'industrial' | 'river' | 'forest' | 'alpine' | 'canal' | 'coast' | 'oldtown' | 'ruins' | 'rift';
 
 interface CityConfig {
   territoryId: string;
   name: string;
   brief: string;
-  theme: Theme;
+  theme: BattlefieldEnvironment;
   gameplay: GameplayType;
   width: number;
   height: number;
@@ -68,7 +68,7 @@ const inB = (q: number, r: number, w: number, h: number) => q >= 0 && q < w && r
 
 // Paint a theme's signature terrain feature (a river, a coast, alpine ridges, a rift scar, …) onto the
 // grid. Returns nothing; mutates `kind` (a per-tile terrain-key grid) which is turned into tiles after.
-function paintFeature(theme: Theme, kind: string[][], w: number, h: number, rng: () => number) {
+function paintFeature(theme: BattlefieldEnvironment, kind: string[][], w: number, h: number, rng: () => number) {
   const set = (q: number, r: number, k: string) => { if (inB(q, r, w, h)) kind[r][q] = k; };
   if (theme === 'river' || theme === 'canal') {
     // a sinuous river/canal crossing top-to-bottom, with one or two bridges (road) over it
@@ -131,7 +131,7 @@ function makeNoise(rng: () => number, w: number, h: number, cells: number) {
 }
 
 // Map a noise value to a coherent biome per theme (regions, not noise). Returns a terrain key.
-function biomeFor(theme: Theme, n: number, n2: number): string {
+function biomeFor(theme: BattlefieldEnvironment, n: number, n2: number): string {
   switch (theme) {
     case 'forest': return n > 0.58 ? 'forest' : n2 > 0.82 ? 'hill' : 'plain';
     case 'alpine': return n2 > 0.7 ? 'hill' : n > 0.62 ? 'forest' : 'plain';
@@ -199,6 +199,40 @@ function generate(cfg: CityConfig): Generated {
   }
   for (let r = 1; r <= 3; r++) for (let q = w - 4; q < w; q++) {
     if (inB(q, r, w, h)) { tiles[r * w + q] = TERRAIN_TILE.plain(rng); enemyCells.push({ q, r }); }
+  }
+
+  // The deploy footprint itself stays clear, but its first visible approach should immediately identify
+  // the battlefield. Without this strip every scenario opened on the same empty grass corner and its
+  // city/forest/coast identity remained hidden behind fog until several turns into the mission.
+  const approachRng = makeRng(`${cfg.territoryId}:home-approach`);
+  const approachTerrain = (): keyof typeof TERRAIN_TILE => {
+    const roll = approachRng();
+    switch (theme) {
+      case 'urban':
+      case 'industrial':
+      case 'oldtown':
+      case 'canal':
+        return roll < 0.78 ? 'urban' : 'plain';
+      case 'ruins':
+        return roll < 0.28 ? 'rubble' : roll < 0.82 ? 'urban' : 'plain';
+      case 'forest':
+      case 'river':
+        return roll < 0.68 ? 'forest' : 'plain';
+      case 'alpine':
+        return roll < 0.66 ? 'hill' : 'plain';
+      case 'coast':
+        return roll < 0.5 ? 'swamp' : roll < 0.72 ? 'forest' : 'plain';
+      case 'rift':
+        return roll < 0.42 ? 'swamp' : roll < 0.72 ? 'rubble' : 'plain';
+      default:
+        return 'plain';
+    }
+  };
+  const approachRoadKeys = new Set(roadPath.map((coordinate) => `${coordinate.q},${coordinate.r}`));
+  for (let r = Math.max(1, h - 8); r < h - 1; r++) for (let q = 4; q < Math.min(w - 1, 9); q++) {
+    if (approachRoadKeys.has(`${q},${r}`)) continue;
+    const terrain = approachTerrain();
+    tiles[r * w + q] = TERRAIN_TILE[terrain](approachRng);
   }
 
   const props: MapProp[] = [];
@@ -349,7 +383,14 @@ function generate(cfg: CityConfig): Generated {
     }
   }
 
-  const map: BattlefieldMap = { id: `city-${cfg.territoryId}`, width: w, height: h, tiles, props };
+  const map: BattlefieldMap = {
+    id: `city-${cfg.territoryId}`,
+    environment: cfg.theme,
+    width: w,
+    height: h,
+    tiles,
+    props
+  };
   return { map, allianceZone, otherSideZone, passable, reachable };
 }
 

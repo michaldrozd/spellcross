@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { startBattle } from './helpers';
+import { retreatToHq, startBattle } from './helpers';
 
 test('tactical play via control hooks: move, attack, end turn, retreat', async ({ page }) => {
   test.setTimeout(45_000);
@@ -25,6 +25,5 @@ test('tactical play via control hooks: move, attack, end turn, retreat', async (
 
   // End turn (AI runs) then retreat
   await page.evaluate(() => (window as any).__battleControl?.endTurn());
-  await page.getByRole('button', { name: /^Retreat$/i }).click();
-  await expect(page.getByRole('heading', { name: /FIELD HQ/i })).toBeVisible();
+  await retreatToHq(page);
 });

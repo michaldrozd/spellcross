@@ -9,6 +9,7 @@ import {
   dismissUnit,
   endStrategicTurn,
   evaluateBattleOutcome,
+  getBattleRetreatForecast,
   getEnemyActionBudget,
   getEnemyDifficultyTier,
   recruitUnit,
@@ -111,14 +112,44 @@ describe('campaign core', () => {
   it('applies retreat losses for units off start tiles', () => {
     const state = createCampaign(starterBundle);
     const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');
-    const [firstUnit] = battle.state.sides.alliance.units.values();
-    if (!firstUnit) throw new Error('expected deployed unit');
+    const regularRoster = state.army.find((unit) => unit.id !== 'captain' && battle.deployment[unit.id]);
+    if (!regularRoster) throw new Error('expected deployed regular unit');
+    const firstUnit = battle.state.sides.alliance.units.get(battle.deployment[regularRoster.id]);
+    if (!firstUnit) throw new Error('expected deployed regular unit');
     // Move first unit well clear of the (SW) alliance deploy zone to simulate overextension.
     firstUnit.coordinate = { q: battle.state.map.width - 1, r: 0 };
-    retreatFromBattle(state);
+    retreatFromBattle(state, starterBundle);
     // Unit off the start tile should be lost
-    const stillThere = state.army.find((u) => u.id === Object.keys(battle.deployment)[0]);
+    const stillThere = state.army.find((u) => u.id === regularRoster.id);
     expect(stillThere).toBeUndefined();
+  });
+
+  it('recovers the campaign hero wounded when retreat cuts them off', () => {
+    const state = createCampaign(starterBundle);
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');
+    const captain = battle.state.sides.alliance.units.get(battle.deployment.captain);
+    if (!captain) throw new Error('expected deployed campaign hero');
+    captain.coordinate = { q: battle.state.map.width - 1, r: 0 };
+
+    expect(getBattleRetreatForecast(state, starterBundle)).toEqual({
+      lostUnitIds: [],
+      recoveredHeroIds: ['captain']
+    });
+
+    retreatFromBattle(state, starterBundle);
+    expect(state.army.find((unit) => unit.id === 'captain')?.currentHealth).toBe(1);
+  });
+
+  it('recovers the campaign hero wounded after a tactical defeat', () => {
+    const state = createCampaign(starterBundle);
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');
+    const captain = battle.state.sides.alliance.units.get(battle.deployment.captain);
+    if (!captain) throw new Error('expected deployed campaign hero');
+    captain.currentHealth = 0;
+    captain.stance = 'destroyed';
+
+    applyBattleOutcome(state, starterBundle, 'defeat');
+    expect(state.army.find((unit) => unit.id === 'captain')?.currentHealth).toBe(1);
   });
 
   it('lets Optics II soften fog for the alliance only', () => {
@@ -218,7 +249,7 @@ describe('campaign core', () => {
   it('allows only one operation per strategic turn', () => {
     const state = createCampaign(starterBundle);
     startBattleForTerritory(state, starterBundle, 'sector-paris');
-    retreatFromBattle(state);
+    retreatFromBattle(state, starterBundle);
 
     const nextTerritory = state.territories.find((territory) => territory.id === 'sector-lyon');
     if (!nextTerritory) throw new Error('expected Lyon territory');

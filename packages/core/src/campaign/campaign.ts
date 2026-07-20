@@ -1091,10 +1091,47 @@ export function evaluateBattleOutcome(battle: ActiveBattle): 'victory' | 'defeat
   return 'ongoing';
 }
 
-export function retreatFromBattle(state: CampaignState) {
+export type BattleRetreatForecast = {
+  lostUnitIds: string[];
+  recoveredHeroIds: string[];
+};
+
+export function getBattleRetreatForecast(
+  state: CampaignState,
+  bundle: ContentBundle
+): BattleRetreatForecast {
   const battle = state.activeBattle;
   if (!battle) throw new Error('No active battle');
   const startKeys = new Set(battle.startTiles.map((c) => coordinateKey(c)));
+  const deployedRosterIds = new Set(Object.keys(battle.deployment));
+  const forecast: BattleRetreatForecast = { lostUnitIds: [], recoveredHeroIds: [] };
+
+  for (const roster of state.army) {
+    if (!deployedRosterIds.has(roster.id)) continue;
+    const unit = battle.state.sides.alliance.units.get(battle.deployment[roster.id]);
+    if (!unit) continue;
+    const carrier = unit.embarkedOn ? battle.state.sides.alliance.units.get(unit.embarkedOn) : undefined;
+    const effectiveUnit = carrier ?? unit;
+    const onStartTile = startKeys.has(coordinateKey(effectiveUnit.coordinate));
+    const cutOff = unit.stance === 'destroyed' || effectiveUnit.stance === 'destroyed' || !onStartTile;
+    if (!cutOff) continue;
+
+    if (findUnitDef(bundle, roster.definitionId).type === 'hero') {
+      forecast.recoveredHeroIds.push(roster.id);
+    } else {
+      forecast.lostUnitIds.push(roster.id);
+    }
+  }
+
+  return forecast;
+}
+
+export function retreatFromBattle(state: CampaignState, bundle: ContentBundle) {
+  const battle = state.activeBattle;
+  if (!battle) throw new Error('No active battle');
+  const forecast = getBattleRetreatForecast(state, bundle);
+  const lostUnitIds = new Set(forecast.lostUnitIds);
+  const recoveredHeroIds = new Set(forecast.recoveredHeroIds);
   // Preserve never-deployed (benched) units — they didn't fight, so a retreat can't lose them.
   const deployedRosterIds = new Set(Object.keys(battle.deployment));
   const updatedArmy: ArmyUnit[] = [];
@@ -1108,15 +1145,10 @@ export function retreatFromBattle(state: CampaignState) {
       updatedArmy.push(roster);
       continue;
     }
-    // Embarked passengers keep their coordinate frozen at the embark tile — judge them by the
-    // carrier's position instead, so riding a transport back to the deploy zone saves them.
-    const carrier = unit.embarkedOn ? battle.state.sides.alliance.units.get(unit.embarkedOn) : undefined;
-    const effectiveUnit = carrier ?? unit;
-    const onStartTile = startKeys.has(coordinateKey(effectiveUnit.coordinate));
-    if (unit.stance === 'destroyed' || effectiveUnit.stance === 'destroyed' || !onStartTile) {
+    if (lostUnitIds.has(roster.id)) {
       continue; // lost during retreat
     }
-    roster.currentHealth = unit.currentHealth;
+    roster.currentHealth = recoveredHeroIds.has(roster.id) ? 1 : unit.currentHealth;
     roster.experience += unit.experience;
     updatedArmy.push(roster);
   }
@@ -1151,10 +1183,13 @@ export function applyBattleOutcome(
       survivors.push(roster);
       continue;
     }
-    if (unit.stance === 'destroyed' || unit.currentHealth <= 0) {
+    const hero = findUnitDef(bundle, roster.definitionId).type === 'hero';
+    if ((unit.stance === 'destroyed' || unit.currentHealth <= 0) && !hero) {
       continue;
     }
-    roster.currentHealth = unit.currentHealth;
+    roster.currentHealth = hero && (unit.stance === 'destroyed' || unit.currentHealth <= 0)
+      ? 1
+      : unit.currentHealth;
     roster.experience += unit.experience;
     survivors.push(roster);
   }

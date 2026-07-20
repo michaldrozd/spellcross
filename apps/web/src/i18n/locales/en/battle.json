@@ -56,6 +56,13 @@
     "routeWounded": "Route for {{unit}} crosses enemy fire. This unit is wounded and may take heavy losses. Move anyway?",
     "moveAnyway": "Move Anyway"
   },
+  "retreat": {
+    "ariaLabel": "Confirm tactical retreat",
+    "title": "⚠ Confirm Retreat",
+    "losses": "Units marked for loss: {{count}}. Deployed squads outside the deployment zone, or already destroyed, will not return.",
+    "heroRecovery": "A cut-off commander will be evacuated, but returns to HQ wounded at 1 HP.",
+    "confirm": "Confirm Retreat"
+  },
   "rangeOverlay": {
     "label": "Range Overlay"
   },

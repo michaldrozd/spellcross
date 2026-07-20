@@ -15,6 +15,9 @@ describe('data bundle', () => {
   it('exports a prevalidated bundle', () => {
     expect(validatedStarterBundle.units[0].id).toBeDefined();
     expect(validatedStarterBundle.campaigns[0].territories.length).toBeGreaterThan(0);
+    expect(validatedStarterBundle.scenarios
+      .filter((scenario) => scenario.id.startsWith('city-'))
+      .every((scenario) => Boolean(scenario.map.environment))).toBe(true);
   });
 
   it('keeps all cross-references resolvable', () => {

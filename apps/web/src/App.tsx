@@ -14,6 +14,7 @@ import {
   estimateHitDamage,
   evaluateBattleOutcome,
   getCampaignDifficultyRules,
+  getBattleRetreatForecast,
   getEnemyActionBudget,
   getEnemyDifficultyTier,
   isoDistance as axialDistance,
@@ -481,6 +482,7 @@ const BattleView: React.FC<{
   const [plannedDestination, setPlannedDestination] = useState<HexCoordinate | null>(null);
   const [invalidMoveFeedback, setInvalidMoveFeedback] = useState<{ coordinate: HexCoordinate; time: number; message: string } | null>(null);
   const [riskyMove, setRiskyMove] = useState<{ unitId: string; target: HexCoordinate; unitName: string; lethal: boolean } | null>(null);
+  const [retreatConfirmOpen, setRetreatConfirmOpen] = useState(false);
   const [combatNotices, setCombatNotices] = useState<Array<{ id: number; message: string }>>([]);
   const [phaseNotice, setPhaseNotice] = useState<{ id: number; title: string; detail: string; tone: 'enemy' | 'alliance' } | null>(null);
   const [pendingAttack, setPendingAttack] = useState<{ id: string; time: number } | null>(null);
@@ -503,6 +505,7 @@ const BattleView: React.FC<{
   const tileIndex = (coord: HexCoordinate) => coord.r * map.width + coord.q;
   const selectedUnit = selected ? battle.state.sides.alliance.units.get(selected) : undefined;
   const selectedDefinition = selectedUnit ? bundle.units.find((unit) => unit.id === selectedUnit.definitionId) : undefined;
+  const retreatForecast = getBattleRetreatForecast(campaign, bundle);
   // For a selected supply truck, the best adjacent friendly unit that needs ammo (computed fresh each
   // render so the Resupply button enables/disables correctly as ammo and positions change).
   const supplyTargetId = (() => {
@@ -1961,6 +1964,31 @@ const BattleView: React.FC<{
             </div>
           </div>
         ) : null}
+        {retreatConfirmOpen ? (
+          <div className="risky-move-backdrop" role="alertdialog" aria-label={t('battle:retreat.ariaLabel')}>
+            <div className="risky-move-dialog retreat-confirm-dialog">
+              <strong>{t('battle:retreat.title')}</strong>
+              <p>{t('battle:retreat.losses', { count: retreatForecast.lostUnitIds.length })}</p>
+              <p>{t('battle:retreat.heroRecovery')}</p>
+              <div className="risky-move-actions">
+                <button
+                  className="risky-move-confirm"
+                  onClick={() => {
+                    setRetreatConfirmOpen(false);
+                    retreatFromBattle(campaign, bundle);
+                    persist();
+                    onRetreat();
+                  }}
+                >
+                  {t('battle:retreat.confirm')}
+                </button>
+                <button className="risky-move-cancel" onClick={() => setRetreatConfirmOpen(false)}>
+                  {t('common:action.cancel')}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
         {showRanges && selectedUnit ? (
           <div className="battle-mode-badge">
             <span>{t('battle:rangeOverlay.label')}</span>
@@ -2033,9 +2061,7 @@ const BattleView: React.FC<{
                 // Retreating mid-CPU-turn unmounts the view under a still-running async battle loop
                 // (which keeps mutating state and playing sounds over the strategic screen).
                 if (autoTurnPhase || autoTurnBusyRef.current || enemyTurnBusyRef.current) return;
-                retreatFromBattle(campaign);
-                persist();
-                onRetreat();
+                setRetreatConfirmOpen(true);
               }}
             >
               {t('common:action.retreat')}

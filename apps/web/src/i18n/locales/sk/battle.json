@@ -56,6 +56,13 @@
     "routeWounded": "Trasa: {{unit}} — vedie cez nepriateľskú paľbu. Táto jednotka je zranená a môže utrpieť ťažké straty. Napriek tomu presunúť?",
     "moveAnyway": "Presunúť napriek tomu"
   },
+  "retreat": {
+    "ariaLabel": "Potvrdenie taktického ústupu",
+    "title": "⚠ Potvrdiť ústup",
+    "losses": "Počet jednotiek určených na stratu: {{count}}. Nasadené jednotky mimo zóny nasadenia alebo už zničené sa nevrátia.",
+    "heroRecovery": "Odrezaný veliteľ bude evakuovaný, no na veliteľstvo sa vráti zranený s 1 HP.",
+    "confirm": "Potvrdiť ústup"
+  },
   "rangeOverlay": {
     "label": "Prehľad dosahu"
   },

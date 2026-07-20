@@ -43,6 +43,7 @@ test('research, battle entry, retreat, and autosave', async ({ page }) => {
   const retreatButton = page.getByRole('button', { name: /^Retreat$/ });
   await retreatButton.waitFor({ state: 'visible' });
   await retreatButton.click();
+  await page.getByRole('button', { name: /^Confirm Retreat$/ }).click();
   await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
 
   // Advance strategic turn and verify persistence across reload
