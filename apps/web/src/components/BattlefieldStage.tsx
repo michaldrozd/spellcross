@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
-import { useTranslation } from 'react-i18next';
-
-import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance, MapProp, EdgeDir } from '@spellcross/core';
+import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
+import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance, MapProp, MapTile, EdgeDir } from '@spellcross/core';
 import { movementMultiplierForStance } from '@spellcross/core';
 import { canAffordAttack } from '@spellcross/core';
 import { axialDistance } from '@spellcross/core';
 import { calculateAttackRange } from '@spellcross/core';
-import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
+import type { DisplayObject, FederatedPointerEvent, Graphics as PixiGraphics } from 'pixi.js';
 import { BaseTexture, Matrix, Texture, Rectangle, Polygon, MIPMAP_MODES, SCALE_MODES, WRAP_MODES, settings } from 'pixi.js';
-import type { FederatedPointerEvent, Graphics as PixiGraphics } from 'pixi.js';
+import { TextStyle } from 'pixi.js';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import {
   DIRECTIONAL_UNIT_ANCHOR_Y,
@@ -33,7 +33,6 @@ import {
   vehicleSheetDirectionNameForScreenVector,
   type UnitPointerArea
 } from './unitVisuals.js';
-import { TextStyle } from 'pixi.js';
 const basename = (p: string) => {
   const parts = p.split('/');
   return parts[parts.length - 1] || p;
@@ -43,6 +42,7 @@ BaseTexture.defaultOptions.scaleMode = SCALE_MODES.LINEAR;
 settings.ROUND_PIXELS = true;
 
 const webglContextNames = ['webgl2', 'webgl', 'experimental-webgl'] as const;
+const EMPTY_TILE_SET = new Set<number>();
 
 const hasWebGLRenderer = () => {
   if (typeof document === 'undefined') return true;
@@ -56,7 +56,7 @@ const hasWebGLRenderer = () => {
 };
 
 const crispTexture = (texture: Texture) => {
-  const baseTexture = texture.baseTexture as any;
+  const baseTexture = texture.baseTexture;
   if (baseTexture) {
     baseTexture.scaleMode = SCALE_MODES.LINEAR;
     baseTexture.mipmap = MIPMAP_MODES.OFF;
@@ -250,6 +250,20 @@ export interface BattlefieldStageProps {
 
 type DeathMarker = { id: string; q: number; r: number; t: number; faction: FactionId; unitType?: string };
 
+// Dev/E2E camera hook installed on window while the stage is mounted.
+type BattleCameraWindow = Window & {
+  __battleCamera?: {
+    centerOnCoord: (q: number, r: number) => boolean;
+    centerOnWorld: (x: number, y: number) => boolean;
+    screenForCoord: (q: number, r: number) => { x: number; y: number };
+    setZoom: (next: number) => number;
+    metrics: () => { centerX: number; centerY: number; scale: number; stageWidth: number; stageHeight: number };
+  };
+};
+
+// Some maps carry pre-baked per-corner heights the core MapTile schema doesn't know about.
+type RendererTile = MapTile & { cornerHeights?: Record<CornerKey, number> };
+
 const axialToPixel = ({ q, r }: { q: number; r: number }) => {
   const x = (hexWidth * (Math.sqrt(3) * q + (Math.sqrt(3) / 2) * r)) / Math.sqrt(3);
   const y = hexHeight * (1.5 * r);
@@ -278,7 +292,7 @@ function makeCanvasTexture(draw: (ctx: CanvasRenderingContext2D, w: number, h: n
   const canvas = document.createElement('canvas');
   canvas.width = w; canvas.height = h;
   const ctx = canvas.getContext('2d')!;
-  (ctx as any).imageSmoothingEnabled = false;
+  ctx.imageSmoothingEnabled = false;
   draw(ctx, w, h);
   return crispTexture(Texture.from(canvas));
 }
@@ -287,27 +301,6 @@ function hexToRgb(hex: number) {
   return { r: (hex >> 16) & 0xff, g: (hex >> 8) & 0xff, b: hex & 0xff };
 }
 
-// Smooth, continuous 2D value noise in world space (deterministic, no Math.random). Used to blend
-// several ground textures across the map so terrain looks varied but flows continuously between
-// tiles. `seed` decorrelates independent noise fields.
-function smoothValueNoise(x: number, y: number, seed = 0) {
-  const hash = (a: number, b: number) => {
-    let n = (a | 0) * 374761393 + (b | 0) * 668265263 + seed * 1442695040;
-    n = (n ^ (n >> 13)) * 1274126177;
-    return ((n ^ (n >> 16)) >>> 0) / 4294967295;
-  };
-  const xi = Math.floor(x), yi = Math.floor(y);
-  const xf = x - xi, yf = y - yi;
-  const u = xf * xf * (3 - 2 * xf);
-  const v = yf * yf * (3 - 2 * yf);
-  const n00 = hash(xi, yi), n10 = hash(xi + 1, yi), n01 = hash(xi, yi + 1), n11 = hash(xi + 1, yi + 1);
-  return (n00 * (1 - u) + n10 * u) * (1 - v) + (n01 * (1 - u) + n11 * u) * v;
-}
-
-// Two octaves for a more organic, less blobby field.
-function fbmNoise(x: number, y: number, seed = 0) {
-  return smoothValueNoise(x, y, seed) * 0.65 + smoothValueNoise(x * 2.3, y * 2.3, seed + 7) * 0.35;
-}
 
 function mixColor(source: number, target: number, t: number) {
   const sr = (source >> 16) & 0xff;
@@ -335,11 +328,6 @@ const tileNoise = (q: number, r: number, salt: number) => {
   const value = Math.sin(q * 127.1 + r * 311.7 + salt * 74.7) * 43758.5453;
   return value - Math.floor(value);
 };
-const dist2 = (a: { x: number; y: number }, b: { x: number; y: number }) => {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return dx * dx + dy * dy;
-};
 const snapCameraScale = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return 1;
   return Math.max(0.5, Math.round(value * 4) / 4);
@@ -362,7 +350,6 @@ const clampCameraScale = (value: number) => Math.min(CAMERA_ZOOM_STEPS[CAMERA_ZO
 type CornerKey = 'NW' | 'NE' | 'SE' | 'SW';
 type EdgeKey = 'N' | 'E' | 'S' | 'W';
 
-const CORNER_KEYS: CornerKey[] = ['NW', 'NE', 'SE', 'SW'];
 const CORNER_OFFSETS: Record<CornerKey, { x: number; y: number }> = {
   NW: { x: 0, y: -(ISO_TILE_H / 2) },
   NE: { x: ISO_TILE_W / 2, y: 0 },
@@ -1190,7 +1177,7 @@ const loadExternalTerrainTexture = (name: string) => {
         // painterly instead of shimmering into a crisp pixel-art grid when zoomed out.
         loaded.baseTexture.scaleMode = SCALE_MODES.LINEAR;
         loaded.baseTexture.mipmap = MIPMAP_MODES.ON;
-        (loaded.baseTexture as any).wrapMode = WRAP_MODES.REPEAT; // tile painted ground textures seamlessly
+        loaded.baseTexture.wrapMode = WRAP_MODES.REPEAT; // tile painted ground textures seamlessly
         loaded.baseTexture.update();
         const revoke = () => URL.revokeObjectURL(objUrl);
         if (loaded.baseTexture.valid) revoke();
@@ -1437,8 +1424,8 @@ export function BattlefieldStage({
   const [webglAvailable] = useState(hasWebGLRenderer);
   const map = battleState.map;
   const viewerVision = battleState.vision[viewerFaction];
-  const visibleTiles = viewerVision?.visibleTiles ?? new Set<number>();
-  const exploredTiles = viewerVision?.exploredTiles ?? new Set<number>();
+  const visibleTiles = viewerVision?.visibleTiles ?? EMPTY_TILE_SET;
+  const exploredTiles = viewerVision?.exploredTiles ?? EMPTY_TILE_SET;
   const [now, setNow] = useState(() => Date.now());
   const prefersReducedMotion = useMemo(
     () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
@@ -1500,22 +1487,23 @@ export function BattlefieldStage({
       ? overlayMask.node
       : undefined;
 
-  const commitSize = (w: number, h: number) => {
-    setHostSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
-  };
-  const scheduleSize = (w: number, h: number) => {
+  const scheduleSize = useCallback((w: number, h: number) => {
     sizePendingRef.current = { w, h };
     if (sizeTimerRef.current) window.clearTimeout(sizeTimerRef.current);
     sizeTimerRef.current = window.setTimeout(() => {
-      const p = sizePendingRef.current; if (p) commitSize(Math.round(p.w), Math.round(p.h));
+      const pendingSize = sizePendingRef.current;
+      if (pendingSize) {
+        const nextSize = { w: Math.round(pendingSize.w), h: Math.round(pendingSize.h) };
+        setHostSize((previousSize) => previousSize.w === nextSize.w && previousSize.h === nextSize.h ? previousSize : nextSize);
+      }
     }, 120) as unknown as number;
-  };
+  }, []);
   // Apply prop size (as hint) but debounced, do not return early
   useEffect(() => {
     if (typeof width === 'number' && typeof height === 'number') {
       scheduleSize(width, height);
     }
-  }, [width, height]);
+  }, [width, height, scheduleSize]);
   // ResizeObserver
   useEffect(() => {
     if (!hostRef.current) return;
@@ -1532,7 +1520,7 @@ export function BattlefieldStage({
       ro.disconnect();
       if (sizeTimerRef.current) window.clearTimeout(sizeTimerRef.current);
     };
-  }, []);
+  }, [scheduleSize]);
 
 
   // Maintain a local buffer of recent death markers so they fade out even if the unit object disappears.
@@ -1549,8 +1537,8 @@ export function BattlefieldStage({
   useEffect(() => {
     const next = new Map(deathMarkers);
     let added = false;
-    for (const side of Object.values(battleState.sides) as any[]) {
-      for (const u of (side as any).units.values()) {
+    for (const side of Object.values(battleState.sides)) {
+      for (const u of side.units.values()) {
         if (u.stance === 'destroyed' && !recordedDeathsRef.current.has(u.id)) {
           recordedDeathsRef.current.add(u.id);
           next.set(u.id, { id: u.id, q: u.coordinate.q, r: u.coordinate.r, t: Date.now(), faction: u.faction, unitType: u.unitType });
@@ -1564,7 +1552,7 @@ export function BattlefieldStage({
     // `battleState.sides` is a stable Map reference (mutated in place), so it never re-triggers this
     // effect — keying off the timeline length (which grows on every combat event) makes the scan run
     // when units actually die, so corpse/wreck markers appear instead of the body just vanishing.
-  }, [battleState.timeline.length, deathMarkers]);
+  }, [battleState.sides, battleState.timeline.length, deathMarkers]);
 
   useEffect(() => {
     if (deathMarkers.size === 0) return;
@@ -1641,7 +1629,7 @@ export function BattlefieldStage({
 
     (async () => {
       try {
-        const out: Record<string, Texture> = {} as any;
+        const out: Record<string, Texture> = {};
         let anyLoaded = false;
         let explicitColorTextures = false;
         const missing = new Set<string>();
@@ -1707,10 +1695,10 @@ export function BattlefieldStage({
   useEffect(() => {
     let cancelled = false;
     const scan = async () => {
-      const props = map.props ?? [];
+      const mapProps = map.props ?? [];
       const paths = Array.from(new Set([
         '/props/tree1.png',
-        ...props.map((p) => p.texture).filter(Boolean).map((path) => assetUrl(path as string))
+        ...mapProps.map((p) => p.texture).filter(Boolean).map((path) => assetUrl(path as string))
       ]));
       if (paths.length === 0) {
         setMissingPropPaths(new Set());
@@ -1748,6 +1736,8 @@ export function BattlefieldStage({
 
   // Minimap-driven camera target (world pixel coordinates)
   const [followTargetPx, setFollowTargetPx] = useState<{ x: number; y: number } | null>(null);
+  const followRef = useRef<{ x: number; y: number } | null>(followTargetPx);
+  useEffect(() => { followRef.current = followTargetPx; }, [followTargetPx]);
   const targetCameraSnapshotRef = useRef<{ targetId: string; followTargetPx: { x: number; y: number } | null; zoom: number } | null>(null);
   const lastRestoreCameraSignalRef = useRef(restoreCameraSignal);
   const [minimapDragging, setMinimapDragging] = useState(false);
@@ -1769,29 +1759,29 @@ export function BattlefieldStage({
   const didAutoCenterRef = useRef(false);
   useEffect(() => {
     if (didAutoCenterRef.current) return;
-    let friendly: any | undefined;
-    for (const side of Object.values(battleState.sides) as any[]) {
-      for (const u of (side as any).units.values() as any[]) {
-        if ((u as any).faction === viewerFaction) { friendly = u; break; }
+    let friendly: UnitInstance | undefined;
+    for (const side of Object.values(battleState.sides)) {
+      for (const u of side.units.values()) {
+        if (u.faction === viewerFaction) { friendly = u; break; }
       }
       if (friendly) break;
     }
     if (friendly) {
-      const p = toScreen((friendly as any).coordinate);
+      const p = toScreen(friendly.coordinate);
       setFollowTargetPx({ x: p.x + (ISO_MODE ? isoBaseX : 0), y: p.y });
       didAutoCenterRef.current = true;
     }
-  }, [battleState.sides, viewerFaction]);
+  }, [battleState.sides, isoBaseX, viewerFaction]);
 
   useEffect(() => {
     const targetEffect = attackEffects[attackEffects.length - 1];
-    let fromCoord: any | undefined;
-    let toCoord: any | undefined;
+    let fromCoord: HexCoordinate | undefined;
+    let toCoord: HexCoordinate | undefined;
 
     if (targetEffect) {
       // remember the camera the cinematic zoom is about to interrupt so we can restore it afterwards
       if (!targetCameraSnapshotRef.current) {
-        targetCameraSnapshotRef.current = { targetId: '__cinematic__', followTargetPx, zoom: zoomRef.current };
+        targetCameraSnapshotRef.current = { targetId: '__cinematic__', followTargetPx: followRef.current, zoom: zoomRef.current };
       }
       fromCoord = { q: targetEffect.fromQ, r: targetEffect.fromR };
       toCoord = { q: targetEffect.toQ, r: targetEffect.toR };
@@ -1799,11 +1789,11 @@ export function BattlefieldStage({
       if (!targetCameraSnapshotRef.current) {
         targetCameraSnapshotRef.current = {
           targetId: focusTargetUnitId,
-          followTargetPx,
+          followTargetPx: followRef.current,
           zoom: zoomRef.current
         };
       }
-      for (const side of Object.values(battleState.sides) as any[]) {
+      for (const side of Object.values(battleState.sides)) {
         fromCoord ??= side.units.get(selectedUnitId)?.coordinate;
         toCoord ??= side.units.get(focusTargetUnitId)?.coordinate;
       }
@@ -1825,7 +1815,7 @@ export function BattlefieldStage({
     });
     const cinematicZoom = targetEffect ? 2.62 : 2.25;
     setZoom((current) => Math.max(current, cinematicZoom));
-  }, [attackEffects, battleState.sides, focusTargetUnitId, selectedUnitId, toScreen, tileSize]);
+  }, [attackEffects, battleState.sides, focusTargetUnitId, isoBaseX, selectedUnitId]);
 
   useEffect(() => {
     if (restoreCameraSignal === lastRestoreCameraSignalRef.current) return;
@@ -1859,7 +1849,7 @@ export function BattlefieldStage({
     panTo();
     const id = window.setInterval(panTo, 33);
     return () => window.clearInterval(id);
-  }, [movingUnit, attackEffects.length, toScreen, isoBaseX]);
+  }, [movingUnit, attackEffects.length, isoBaseX]);
 
   // Camera panning control
   const PAN_SPEED = 800; // pixels per second (keyboard)
@@ -1874,10 +1864,6 @@ export function BattlefieldStage({
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
 
   // Arrow-key keyboard panning (camera-centric: Right/Down move kameru doprava/dole)
-  // live follow-target ref so wheel handler doesn't rebind on every pan
-  const followRef = useRef<{ x: number; y: number } | null>(null);
-  useEffect(() => { followRef.current = followTargetPx; }, [followTargetPx]);
-
   useEffect(() => {
     const pressed = new Set<string>();
     const recompute = () => {
@@ -1947,10 +1933,10 @@ export function BattlefieldStage({
       const direction = delta > 0 ? 'out' : 'in';
       // If we don't yet have a follow center, adopt selected unit or map center
       if (!hasFollow) {
-        let selected: any | undefined;
+        let selected: UnitInstance | undefined;
         if (selectedUnitId) {
-          for (const side of Object.values(battleState.sides) as any[]) {
-            const u = (side as any).units.get(selectedUnitId);
+          for (const side of Object.values(battleState.sides)) {
+            const u = side.units.get(selectedUnitId);
             if (u) { selected = u; break; }
           }
         }
@@ -1966,7 +1952,7 @@ export function BattlefieldStage({
     };
     window.addEventListener('wheel', onWheel, { passive: false });
     return () => window.removeEventListener('wheel', onWheel);
-  }, [cameraMode, battleState.sides, selectedUnitId, map.width, map.height]);
+  }, [cameraMode, battleState.sides, isoBaseX, selectedUnitId, map.width, map.height]);
 
   const fitScaleRaw = Math.min(
     hostSize.w > 0 ? hostSize.w / contentWidth : 1,
@@ -2005,8 +1991,8 @@ export function BattlefieldStage({
     // Center on follow target (minimap override > selected unit > map center)
     const selected = (() => {
       if (!selectedUnitId) return undefined;
-      for (const side of Object.values(battleState.sides) as any[]) {
-        const u = (side as any).units.get(selectedUnitId);
+      for (const side of Object.values(battleState.sides)) {
+        const u = side.units.get(selectedUnitId);
         if (u) return u;
       }
       return undefined;
@@ -2052,9 +2038,9 @@ export function BattlefieldStage({
 
   // Precompute friendly units by coordinate for quick tile-click selection
   const friendlyByCoord = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const side of Object.values(battleState.sides) as any[]) {
-      for (const u of (side as any).units.values()) {
+    const m = new Map<string, UnitInstance>();
+    for (const side of Object.values(battleState.sides)) {
+      for (const u of side.units.values()) {
         if (u.faction === viewerFaction && u.stance !== 'destroyed') {
           m.set(`${u.coordinate.q},${u.coordinate.r}`, u);
         }
@@ -2064,9 +2050,9 @@ export function BattlefieldStage({
   }, [battleState.sides, viewerFaction]);
 
   const unitByCoord = useMemo(() => {
-    const m = new Map<string, any>();
-    for (const side of Object.values(battleState.sides) as any[]) {
-      for (const u of (side as any).units.values()) {
+    const m = new Map<string, UnitInstance>();
+    for (const side of Object.values(battleState.sides)) {
+      for (const u of side.units.values()) {
         if (u.stance === 'destroyed' || u.embarkedOn) continue;
         const tileIdx = u.coordinate.r * map.width + u.coordinate.q;
         if (u.faction !== viewerFaction && !visibleTiles.has(tileIdx)) continue;
@@ -2081,7 +2067,7 @@ export function BattlefieldStage({
     const w = map.width, h = map.height;
     const idxAt = (qq: number, rr: number) => rr * w + qq;
     const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < w && rr < h;
-    const tileAt = (qq: number, rr: number) => (inb(qq, rr) ? (map.tiles[idxAt(qq, rr)] as any) : undefined);
+    const tileAt = (qq: number, rr: number) => (inb(qq, rr) ? (map.tiles[idxAt(qq, rr)] as RendererTile) : undefined);
     const neighbors = [
       { dq: 0, dr: -1 }, // N
       { dq: +1, dr: 0 }, // E
@@ -2102,7 +2088,7 @@ export function BattlefieldStage({
     const rawCorners = (qq: number, rr: number) => {
       const t = tileAt(qq, rr);
       if (t?.cornerHeights) {
-        const h = t.cornerHeights as Record<CornerKey, number>;
+        const h = t.cornerHeights;
         return { hNW: h.NW, hNE: h.NE, hSE: h.SE, hSW: h.SW };
       }
       const e = t ? (t.elevation ?? 0) : 0;
@@ -2152,7 +2138,7 @@ export function BattlefieldStage({
         quad.map((p) => ({ x: center.x + (p.x - center.x) * k, y: center.y + (p.y - center.y) * k }));
       return { avgHeight, P, quad, center, inset };
     }
-    const tile = map.tiles[idx] as any;
+    const tile = map.tiles[idx];
     const elev = tile?.elevation ?? 0;
     const s = tileSize / 2;
     const hw = hexWidth / 2;
@@ -2184,7 +2170,7 @@ export function BattlefieldStage({
         y: pos.y - geom.avgHeight * ELEV_Y_OFFSET + geom.center.y
       };
     };
-    (window as any).__battleCamera = {
+    (window as BattleCameraWindow).__battleCamera = {
       centerOnCoord: (q: number, r: number) => {
         setFollowTargetPx(worldCenterForCoord(q, r));
         return true;
@@ -2215,9 +2201,9 @@ export function BattlefieldStage({
       })
     };
     return () => {
-      delete (window as any).__battleCamera;
+      delete (window as BattleCameraWindow).__battleCamera;
     };
-  }, [hostSize.h, hostSize.w, offsetX, offsetY, scale, stageDimensions.height, stageDimensions.width, toScreen, topGeomFor]);
+  }, [hostSize.h, hostSize.w, isoBaseX, offsetX, offsetY, scale, stageDimensions.height, stageDimensions.width, topGeomFor]);
 
   const tileAtWorldPoint = useCallback((point: { x: number; y: number }): HexCoordinate | null => {
     const roughCol = ((point.y / (ISO_TILE_H / 2)) + (point.x / (ISO_TILE_W / 2))) / 2;
@@ -2250,8 +2236,8 @@ export function BattlefieldStage({
     const unitsForInteraction: InteractionUnit[] = [];
     let selectedEmbarkedCarrierId: string | undefined;
     if (selectedUnitId) {
-      for (const side of Object.values(battleState.sides) as any[]) {
-        const selected = (side as any).units.get(selectedUnitId);
+      for (const side of Object.values(battleState.sides)) {
+        const selected = side.units.get(selectedUnitId);
         if (selected?.embarkedOn) {
           selectedEmbarkedCarrierId = selected.embarkedOn;
           break;
@@ -2259,8 +2245,8 @@ export function BattlefieldStage({
       }
     }
 
-    for (const side of Object.values(battleState.sides) as any[]) {
-      for (const unit of (side as any).units.values()) {
+    for (const side of Object.values(battleState.sides)) {
+      for (const unit of side.units.values()) {
         if (unit.stance === 'destroyed' || unit.embarkedOn) continue;
         const tileIndex = unit.coordinate.r * map.width + unit.coordinate.q;
         const isFriendly = unit.faction === viewerFaction;
@@ -2284,12 +2270,12 @@ export function BattlefieldStage({
     }
 
     return unitsForInteraction.sort((a, b) => b.z - a.z);
-  }, [battleState.sides, map.width, selectedUnitId, tileSize, topGeomFor, viewerFaction, visibleTiles]);
+  }, [battleState.sides, map.width, selectedUnitId, topGeomFor, viewerFaction, visibleTiles]);
 
   const handleBattlefieldTap = useCallback((event: FederatedPointerEvent) => {
     if (minimapDragging) return;
     event.stopPropagation();
-    const local = event.getLocalPosition?.(event.currentTarget as any) ?? event.global;
+    const local = event.getLocalPosition?.(event.currentTarget as DisplayObject) ?? event.global;
     const worldPoint = {
       x: (local.x - offsetX) / scale - (ISO_MODE ? isoBaseX : 0),
       y: (local.y - offsetY) / scale
@@ -2343,7 +2329,7 @@ export function BattlefieldStage({
   // the tap handler uses.
   const hoveredEnemyIdRef = useRef<string | null>(null);
   const handleBattlefieldHover = useCallback((event: FederatedPointerEvent) => {
-    const local = event.getLocalPosition?.(event.currentTarget as any) ?? event.global;
+    const local = event.getLocalPosition?.(event.currentTarget as DisplayObject) ?? event.global;
     const worldPoint = {
       x: (local.x - offsetX) / scale - (ISO_MODE ? isoBaseX : 0),
       y: (local.y - offsetY) / scale
@@ -2360,13 +2346,13 @@ export function BattlefieldStage({
     const hoveredId = enemyHit?.id ?? null;
     if (hoveredId === hoveredEnemyIdRef.current) return;
     hoveredEnemyIdRef.current = hoveredId;
-    (event.currentTarget as any).cursor = hoveredId ? 'crosshair' : 'pointer';
+    event.currentTarget.cursor = hoveredId ? 'crosshair' : 'pointer';
     onUnitHover?.(hoveredId);
   }, [interactionUnits, isoBaseX, offsetX, offsetY, onUnitHover, scale, viewerFaction]);
   const handleBattlefieldHoverEnd = useCallback((event: FederatedPointerEvent) => {
     if (hoveredEnemyIdRef.current === null) return;
     hoveredEnemyIdRef.current = null;
-    (event.currentTarget as any).cursor = 'pointer';
+    event.currentTarget.cursor = 'pointer';
     onUnitHover?.(null);
   }, [onUnitHover]);
 
@@ -2467,7 +2453,7 @@ export function BattlefieldStage({
         }}
       />
     );
-  }, [map.width, map.height, toScreen]);
+  }, [map.width, map.height]);
 
 
   const tileGraphics = useMemo(() => {
@@ -2480,7 +2466,7 @@ export function BattlefieldStage({
     };
     const idxAt = (qq: number, rr: number) => rr * map.width + qq;
     const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
-    return map.tiles.map((tile: any, index: number) => {
+    return map.tiles.map((tile, index) => {
       const q = index % map.width;
       const r = Math.floor(index / map.width);
       const pos = toScreen({ q, r });
@@ -2497,7 +2483,7 @@ export function BattlefieldStage({
       const isVisible = visibleTiles.has(index);
       const isExplored = exploredTiles.has(index);
       const fillTerrain = tile.terrain === 'road' ? 'plain' : tile.terrain === 'water' ? 'swamp' : tile.terrain;
-      let baseColor = (terrainPalette as any)[fillTerrain] ?? terrainPalette.plain;
+      let baseColor = terrainPalette[fillTerrain] ?? terrainPalette.plain;
       const colorNoise = tileNoise(q, r, 911) - 0.5;
       if (tile.terrain !== 'water') {
         // gentle per-tile variation: too much turns the ground into a low-poly patchwork of
@@ -2510,13 +2496,13 @@ export function BattlefieldStage({
       const waterColor = terrainPalette.water;
       const tex =
         (externalTerrainTextures?.[fillTerrain] ?? externalTerrainTextures?.plain) ??
-        ((terrainTextures as any)[fillTerrain] ?? (terrainTextures as any).plain);
+        (terrainTextures[fillTerrain] ?? terrainTextures.plain);
       const roadTex =
         externalTerrainTextures?.road ??
-        ((terrainTextures as any).road ?? tex);
+        (terrainTextures.road ?? tex);
       const waterTex =
         externalTerrainTextures?.water ??
-        ((terrainTextures as any).water ?? tex);
+        (terrainTextures.water ?? tex);
       const coloredTex = !!externalTerrainTextures && externalTexturesAreColored;
       // Memory tiles lean on the desaturated base color, so the texture sits back further when not visible.
       // Memory (explored, not visible) keeps the continuous texture nearly opaque too — just with a
@@ -2623,7 +2609,7 @@ export function BattlefieldStage({
                 const roadNeighbor = (edge: EdgeKey) => {
                   const vec = EDGE_VECTORS[edge];
                   if (!inb(q + vec.dq, r + vec.dr)) return false;
-                  const neighbor = map.tiles[idxAt(q + vec.dq, r + vec.dr)] as any;
+                  const neighbor = map.tiles[idxAt(q + vec.dq, r + vec.dr)];
                   return neighbor?.terrain === 'road' || neighbor?.terrain === 'urban' || neighbor?.terrain === 'structure';
                 };
                 const edgeMid = (edge: EdgeKey) => {
@@ -2885,7 +2871,7 @@ export function BattlefieldStage({
                 if (!inb(nq, nr)) return;
                 const neighborIdx = idxAt(nq, nr);
                 if (!exploredTiles.has(neighborIdx)) return;
-                const neighborTile = map.tiles[neighborIdx] as any;
+                const neighborTile = map.tiles[neighborIdx];
                 const neighborCorners = snappedCorners.getCorners(nq, nr);
                 const neighborHeights: Record<CornerKey, number> = {
                   NW: neighborCorners.hNW,
@@ -2911,7 +2897,7 @@ export function BattlefieldStage({
                   };
                   if (tile.terrain !== neighborTile.terrain) {
                     const landTerrain = tile.terrain === 'water' ? neighborTile.terrain : tile.terrain;
-                    const landColor = (terrainPalette as any)[landTerrain] ?? terrainPalette.plain;
+                    const landColor = terrainPalette[landTerrain] ?? terrainPalette.plain;
                     const bankBase = mixColor(landColor, terrainPalette.water, tile.terrain === 'water' ? 0.18 : 0.32);
                     const depthA = 0.13 + tileNoise(q, r, 630 + edgeIndex) * 0.08;
                     const depthB = 0.13 + tileNoise(q, r, 634 + edgeIndex) * 0.08;
@@ -2955,7 +2941,7 @@ export function BattlefieldStage({
                     x: p.x + (center.x - p.x) * amt,
                     y: p.y + (center.y - p.y) * amt
                   });
-                  const nColor = (terrainPalette as any)[neighborTile.terrain] ?? baseColor;
+                  const nColor = terrainPalette[neighborTile.terrain] ?? baseColor;
                   const blend = mixColor(baseColor, nColor, 0.62);
                   const bands = [
                     { d: 0.13 + tileNoise(q, r, 700 + edgeIndex) * 0.05, a: isVisible ? 0.5 : 0.32 },
@@ -2975,7 +2961,7 @@ export function BattlefieldStage({
                 if (delta > 0 && delta <= 1.05 && tile.terrain !== 'water') {
                   const tint = mixColor(
                     baseColor,
-                    (terrainPalette as any)[neighborTile.terrain] ?? baseColor,
+                    terrainPalette[neighborTile.terrain] ?? baseColor,
                     0.45
                   );
                   const alpha = (coloredTex ? (isVisible ? 0.16 : 0.12) : (isVisible ? 0.4 : 0.3)) * Math.min(1, delta);
@@ -3048,9 +3034,11 @@ export function BattlefieldStage({
     externalTexturesAreColored,
     exploredTiles,
     friendlyByCoord,
+    map.height,
     map.tiles,
     map.width,
     onSelectTile,
+    onSelectUnit,
     snappedCorners,
     terrainTextures,
     visibleTiles
@@ -3120,7 +3108,7 @@ export function BattlefieldStage({
 
   const tileOverlays = useMemo(() => {
     return map.tiles
-      .map((_: any, index: number) => {
+      .map((_, index) => {
         const q = index % map.width;
         const r = Math.floor(index / map.width);
         const pos = toScreen({ q, r });
@@ -3163,7 +3151,7 @@ export function BattlefieldStage({
           g.clear();
           for (let index = 0; index < map.tiles.length; index++) {
             if (!exploredTiles.has(index)) continue;
-            const tile = map.tiles[index] as any;
+            const tile = map.tiles[index];
             const q = index % map.width;
             const r = Math.floor(index / map.width);
             const visible = visibleTiles.has(index);
@@ -3295,7 +3283,7 @@ export function BattlefieldStage({
         }}
       />
     );
-  }, [exploredTiles, map.tiles, map.width, topGeomFor, toScreen, visibleTiles]);
+  }, [exploredTiles, map.tiles, map.width, topGeomFor, visibleTiles]);
   const coveredByProcBuilding = useMemo(() => {
     const set = new Set<number>();
     const W = map.width;
@@ -3330,7 +3318,7 @@ export function BattlefieldStage({
     if (!missingTerrainPng || missingTerrainPng.size === 0) return null;
     const labels: JSX.Element[] = [];
     for (let index = 0; index < map.tiles.length; index++) {
-      const tile: any = map.tiles[index];
+      const tile = map.tiles[index];
       const terrainName: string = tile.terrain ?? 'plain';
       if (terrainName === 'structure' && coveredByProcBuilding.has(index)) continue;
       if (!missingTerrainPng.has(`${terrainName}.png`)) continue;
@@ -3354,9 +3342,9 @@ export function BattlefieldStage({
       );
     }
     return labels;
-  }, [allowExternalTextures, missingTerrainPng, map.tiles, map.width, snappedCorners, toScreen, coveredByProcBuilding]);
+  }, [allowExternalTextures, coveredByProcBuilding, map.tiles, map.width, missingTerrainPng, snappedCorners]);
   // Local helper to keep UI overlays consistent with core movement rules
-  const uiCanEnter = (unitType: any, tile: { terrain: string; passable: boolean }) => {
+  const uiCanEnter = (unitType: UnitInstance['unitType'], tile: { terrain: string; passable: boolean }) => {
     if (!tile || !tile.passable) return false;
     switch (tile.terrain) {
       case 'forest':
@@ -3377,9 +3365,9 @@ export function BattlefieldStage({
     if (!selectedUnitId) return null;
 
     // find selected unit in state
-    let selected: any | undefined;
-    for (const side of Object.values(battleState.sides) as any[]) {
-      const u = (side as any).units.get(selectedUnitId);
+    let selected: UnitInstance | undefined;
+    for (const side of Object.values(battleState.sides)) {
+      const u = side.units.get(selectedUnitId);
       if (u) { selected = u; break; }
     }
     if (!selected) return null;
@@ -3393,8 +3381,8 @@ export function BattlefieldStage({
 
     // Build occupied set (exclude self, exclude destroyed)
     const occupied = new Set<string>();
-    for (const side of Object.values(battleState.sides) as any[]) {
-      for (const other of (side as any).units.values()) {
+    for (const side of Object.values(battleState.sides)) {
+      for (const other of side.units.values()) {
         if (other.id === selected.id) continue;
         if (other.stance === 'destroyed') continue;
         occupied.add(`${other.coordinate.q},${other.coordinate.r}`);
@@ -3421,7 +3409,7 @@ export function BattlefieldStage({
       ];
 
     const inBounds = (q: number, r: number) => q >= 0 && r >= 0 && q < map.width && r < map.height;
-    const tileAt = (q: number, r: number) => inBounds(q, r) ? (map as any).tiles[r * map.width + q] : undefined;
+    const tileAt = (q: number, r: number) => inBounds(q, r) ? map.tiles[r * map.width + q] : undefined;
 
     while (frontier.length > 0) {
       // pop node with smallest cost (simple selection; maps are moderate)
@@ -3457,13 +3445,13 @@ export function BattlefieldStage({
       if (!visibleTiles.has(idx)) return; // respect FoW for rendering
       const p = toScreen({ q, r });
       const geom = ISO_MODE ? topGeomFor(q, r) : null;
-      const elev = ((map.tiles[idx] as any).elevation ?? 0);
+      const elev = map.tiles[idx].elevation ?? 0;
       const avgHeight = ISO_MODE ? geom!.avgHeight : elev;
       const x = p.x;
       const y = p.y - avgHeight * ELEV_Y_OFFSET;
       const leftAP = Math.max(0, apBudget - cost);
       const canShoot = (() => {
-        try { return canAffordAttack({ ...(selected as any), actionPoints: Math.floor(leftAP) } as any); }
+        try { return canAffordAttack({ ...selected, actionPoints: Math.floor(leftAP) }); }
         catch { return leftAP >= 2; }
       })();
 
@@ -3541,8 +3529,8 @@ export function BattlefieldStage({
 
     // Do not draw highlight on the origin tile to avoid clutter
 
-    return elements.filter((el) => (el as any).key !== `mv-${start.q}-${start.r}`);
-  }, [battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, visibleTiles, externalTexturesAreColored, topGeomFor, plannedDestination, plannedPath]);
+    return elements.filter((el) => el.key !== `mv-${start.q}-${start.r}`);
+  }, [battleState.sides, selectedUnitId, viewerFaction, map.tiles, map.width, map.height, visibleTiles, externalTexturesAreColored, topGeomFor, plannedDestination, plannedPath]);
 
   const globalRangeOverlays = useMemo(() => {
     if (!rangeOverlayCoords || rangeOverlayCoords.size === 0) return null;
@@ -3572,7 +3560,7 @@ export function BattlefieldStage({
 
       const p = toScreen({ q, r });
       const geom = ISO_MODE ? topGeomFor(q, r) : null;
-      const elev = ((map.tiles[idx] as any).elevation ?? 0);
+      const elev = map.tiles[idx].elevation ?? 0;
       const avgHeight = ISO_MODE && geom ? geom.avgHeight : elev;
 
       elements.push(
@@ -3654,7 +3642,7 @@ export function BattlefieldStage({
     const inRange = new Set<string>();
     for (let r = 0; r < map.height; r++) {
       for (let q = 0; q < map.width; q++) {
-        const d = ISO_MODE ? Math.max(Math.abs(start.q - q), Math.abs(start.r - r)) : axialDistance(start as any, { q, r } as any);
+        const d = ISO_MODE ? Math.max(Math.abs(start.q - q), Math.abs(start.r - r)) : axialDistance(start, { q, r });
         if (d <= maxRange) inRange.add(`${q},${r}`);
       }
     }
@@ -3677,7 +3665,7 @@ export function BattlefieldStage({
       if (!visibleTiles.has(idx)) return;
       const p = toScreen({ q, r });
       const geom = ISO_MODE ? topGeomFor(q, r) : null;
-      const elev = ((map.tiles[idx] as any).elevation ?? 0);
+      const elev = map.tiles[idx].elevation ?? 0;
       const avgHeight = ISO_MODE ? geom!.avgHeight : elev;
       const x = p.x;
       const y = p.y - avgHeight * ELEV_Y_OFFSET;
@@ -3741,8 +3729,8 @@ export function BattlefieldStage({
     });
 
     // don't draw over origin to keep selection ring readable
-    return elements.filter((el) => (el as any).key !== `atk-${start.q}-${start.r}`);
-  }, [showAttackOverlay, battleState.map, battleState.sides, selectedUnitId, viewerFaction, map.width, map.height, visibleTiles, externalTexturesAreColored, topGeomFor]);
+    return elements.filter((el) => el.key !== `atk-${start.q}-${start.r}`);
+  }, [showAttackOverlay, battleState.map, battleState.sides, selectedUnitId, viewerFaction, map.tiles, map.width, map.height, visibleTiles, externalTexturesAreColored, topGeomFor]);
 
 
 
@@ -3899,7 +3887,7 @@ export function BattlefieldStage({
     }
 
     return elements;
-  }, [exploredTiles, map.width, plannedDestination, plannedPath, threatenedTiles, visibleTiles, toScreen, topGeomFor]);
+  }, [map.width, plannedDestination, plannedPath, threatenedTiles, visibleTiles, topGeomFor]);
 
   const invalidMoveHighlight = useMemo(() => {
     if (!invalidMoveFeedback) return null;
@@ -4022,7 +4010,7 @@ export function BattlefieldStage({
         </Container>
       </Container>
     );
-  }, [invalidMoveFeedback, map.height, map.width, now, topGeomFor, toScreen, scale, tileSize, t]);
+  }, [invalidMoveFeedback, map.height, map.width, now, topGeomFor, scale, t]);
 
   // Elevation walls drawn above overlays for correct occlusion
   const tileWalls = useMemo(() => {
@@ -4038,7 +4026,7 @@ export function BattlefieldStage({
     const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
 
     return map.tiles
-      .map((tile: any, index: number) => {
+      .map((tile, index) => {
         const q = index % map.width;
         const r = Math.floor(index / map.width);
         const pos = toScreen({ q, r });
@@ -4054,7 +4042,7 @@ export function BattlefieldStage({
           SE: corners.hSE,
           SW: corners.hSW
         };
-        const baseColor = (terrainPalette as any)[tile.terrain] ?? terrainPalette.plain;
+        const baseColor = terrainPalette[tile.terrain] ?? terrainPalette.plain;
 
         return (
           <Graphics
@@ -4068,7 +4056,7 @@ export function BattlefieldStage({
                 const nq = q + vec.dq;
                 const nr = r + vec.dr;
                 const neighborIdx = inb(nq, nr) ? idxAt(nq, nr) : -1;
-                const neighbor = neighborIdx >= 0 ? (map.tiles[neighborIdx] as any) : null;
+                const neighbor = neighborIdx >= 0 ? map.tiles[neighborIdx] : null;
                 const neighborCorners = neighbor ? snappedCorners.getCorners(nq, nr) : null;
                 const neighborHeights: Record<CornerKey, number> | null = neighborCorners
                   ? {
@@ -4110,7 +4098,7 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [ISO_MODE, exploredTiles, map.tiles, map.width, snappedCorners, visibleTiles]);
+  }, [exploredTiles, map.height, map.tiles, map.width, snappedCorners, visibleTiles]);
 
 
   const propTextureCache = useMemo(() => new Map<string, Texture>(), []);
@@ -4132,7 +4120,7 @@ export function BattlefieldStage({
       if (hitInFlight) return;
 
       const p = toScreen({ q: m.q, r: m.r });
-      const tile = map.tiles[idx] as any;
+      const tile = map.tiles[idx];
       const elev = tile?.elevation ?? 0;
       const geom = ISO_MODE ? topGeomFor(m.q, m.r) : null;
       const baseHeight = ISO_MODE && geom ? geom.avgHeight : elev;
@@ -4195,13 +4183,13 @@ export function BattlefieldStage({
       );
     });
     return els;
-  }, [deathMarkers, map.tiles, map.width, now, selectedUnitId, topGeomFor, toScreen, viewerFaction, visibleTiles, attackEffects]);
+  }, [deathMarkers, map.tiles, map.width, now, prefersReducedMotion, selectedUnitId, topGeomFor, viewerFaction, visibleTiles, attackEffects]);
 
   const targetLinkOverlay = useMemo(() => {
     if (!selectedUnitId || !targetUnitId) return null;
-    let selectedUnit: any | undefined;
-    let targetUnit: any | undefined;
-    for (const side of Object.values(battleState.sides) as any[]) {
+    let selectedUnit: UnitInstance | undefined;
+    let targetUnit: UnitInstance | undefined;
+    for (const side of Object.values(battleState.sides)) {
       const selectedCandidate = side.units.get(selectedUnitId);
       const targetCandidate = side.units.get(targetUnitId);
       if (selectedCandidate) selectedUnit = selectedCandidate;
@@ -4210,10 +4198,10 @@ export function BattlefieldStage({
     if (!selectedUnit || !targetUnit || targetUnit.stance === 'destroyed') return null;
     const targetIdx = targetUnit.coordinate.r * map.width + targetUnit.coordinate.q;
     if (!visibleTiles.has(targetIdx)) return null;
-    const pointFor = (unit: any) => {
+    const pointFor = (unit: UnitInstance) => {
       const p = toScreen(unit.coordinate);
       const geom = ISO_MODE ? topGeomFor(unit.coordinate.q, unit.coordinate.r) : null;
-      const elev = geom?.avgHeight ?? ((map.tiles[unit.coordinate.r * map.width + unit.coordinate.q] as any)?.elevation ?? 0);
+      const elev = geom?.avgHeight ?? (map.tiles[unit.coordinate.r * map.width + unit.coordinate.q]?.elevation ?? 0);
       return { x: p.x, y: p.y - elev * ELEV_Y_OFFSET };
     };
     const from = pointFor(selectedUnit);
@@ -4297,7 +4285,7 @@ export function BattlefieldStage({
       ) : null}
       </Container>
     );
-  }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetDamagePreview, targetLethal, targetUnitId, toScreen, topGeomFor, visibleTiles, tileSize, t]);
+  }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetDamagePreview, targetLethal, targetUnitId, topGeomFor, visibleTiles, t]);
 
   const objectiveOverlays = useMemo(() => {
     if (objectiveCoords.length === 0) return [];
@@ -4335,7 +4323,7 @@ export function BattlefieldStage({
         />
       );
     }).filter(Boolean) as JSX.Element[];
-  }, [objectiveCoords, map.width, exploredTiles, visibleTiles, now, toScreen, topGeomFor, prefersReducedMotion]);
+  }, [objectiveCoords, map.width, exploredTiles, visibleTiles, now, topGeomFor, prefersReducedMotion]);
 
   // Deployment start zone: a cool pulsing tint so "click a glowing tile" is literally true.
   const startZoneOverlays = useMemo(() => {
@@ -4364,14 +4352,14 @@ export function BattlefieldStage({
         />
       );
     });
-  }, [startZoneCoords, now, toScreen, topGeomFor, prefersReducedMotion]);
+  }, [startZoneCoords, now, topGeomFor, prefersReducedMotion]);
 
 
   const units = useMemo(() => {
     let selectedEmbarkedCarrierId: string | undefined;
     if (selectedUnitId) {
-      for (const side of Object.values(battleState.sides) as any[]) {
-        const selected = (side as any).units.get(selectedUnitId);
+      for (const side of Object.values(battleState.sides)) {
+        const selected = side.units.get(selectedUnitId);
         if (selected?.embarkedOn) {
           selectedEmbarkedCarrierId = selected.embarkedOn;
           break;
@@ -4379,8 +4367,8 @@ export function BattlefieldStage({
       }
     }
 
-    return (Object.values(battleState.sides) as any[]).flatMap((side) =>
-      Array.from((side as any).units.values()).flatMap((unit: any) => {
+    return Object.values(battleState.sides).flatMap((side) =>
+      Array.from(side.units.values()).flatMap((unit) => {
         let displayCoord = unit.coordinate;
         let animatedOrientation = unit.orientation ?? 0;
         let movementPhase = 0;
@@ -4390,7 +4378,7 @@ export function BattlefieldStage({
         let easedProgress = 0;
         let isFirstSeg = false;
         let isLastSeg = false;
-        const unitType = (unit as any).unitType as string;
+        const unitType: string = unit.unitType;
         const definitionId = unit.definitionId.toLowerCase();
         const isSupportVehicle = unitType === 'support' && definitionId.includes('truck');
         const isGroundVehicle = unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicle;
@@ -4465,8 +4453,8 @@ export function BattlefieldStage({
             const toIdx = toCoord.r * map.width + toCoord.q;
             const fromGeom = ISO_MODE ? topGeomFor(fromCoord.q, fromCoord.r) : null;
             const toGeom = ISO_MODE ? topGeomFor(toCoord.q, toCoord.r) : null;
-            const fromHeight = fromGeom ? fromGeom.avgHeight : ((map.tiles[fromIdx] as any)?.elevation ?? 0);
-            const toHeight = toGeom ? toGeom.avgHeight : ((map.tiles[toIdx] as any)?.elevation ?? 0);
+            const fromHeight = fromGeom ? fromGeom.avgHeight : (map.tiles[fromIdx]?.elevation ?? 0);
+            const toHeight = toGeom ? toGeom.avgHeight : (map.tiles[toIdx]?.elevation ?? 0);
             movingBaseHeight = isTurnPhase
               ? toHeight
               : fromHeight + (toHeight - fromHeight) * easedProgress;
@@ -4494,7 +4482,7 @@ export function BattlefieldStage({
 
         const p = toScreen(displayCoord);
         const idx = Math.floor(displayCoord.r) * map.width + Math.floor(displayCoord.q);
-        const elev = ((map.tiles[idx] as any)?.elevation ?? 0);
+        const elev = map.tiles[idx]?.elevation ?? 0;
         const geom = ISO_MODE ? topGeomFor(Math.floor(displayCoord.q), Math.floor(displayCoord.r)) : null;
         const baseHeight = movingBaseHeight ?? (ISO_MODE && geom ? geom.avgHeight : elev);
         const isGhoulPack = definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead');
@@ -4646,7 +4634,6 @@ export function BattlefieldStage({
               zIndex={0}
               draw={(g) => {
                 g.clear();
-                const groundVehicleUiDamping = isGroundVehicle ? (movingThisUnit ? 0.58 : 0.72) : 1;
                 const markerScale = unitType === 'vehicle' || unitType === 'artillery'
                   ? (movingThisUnit && isGroundVehicle ? 0.74 : 0.82)
                   : 1;
@@ -5241,7 +5228,7 @@ export function BattlefieldStage({
                   g.lineStyle(2, stance === 'routed' ? 0xff2d55 : 0xffc107, ringA);
                   g.drawCircle(0, 0, tileSize * 0.29);
                 }
-                const ent = (unit as any).entrench ?? 0;
+                const ent = unit.entrench ?? 0;
                 if (ent > 0) {
                   g.lineStyle(0);
                   g.beginFill(isFriendly ? 0x8bb6c8 : 0xb58a63, 0.74);
@@ -5249,10 +5236,10 @@ export function BattlefieldStage({
                   for (let i = 0; i < ent; i++) { g.drawRect(startX, -tileSize * 0.43, pipW, 2); startX += pipW + gap; }
                   g.endFill();
                 }
-                const maxHp = (unit as any).stats?.maxHealth ?? 100;
-                const hpRatio = Math.max(0, Math.min(1, (unit as any).currentHealth / maxHp));
-                const mrRatio = Math.max(0, Math.min(1, (unit as any).currentMorale / 100));
-                const apRatio = Math.max(0, Math.min(1, (unit as any).actionPoints / ((unit as any).maxActionPoints ?? 10)));
+                const maxHp = unit.stats.maxHealth ?? 100;
+                const hpRatio = Math.max(0, Math.min(1, unit.currentHealth / maxHp));
+                const mrRatio = Math.max(0, Math.min(1, unit.currentMorale / 100));
+                const apRatio = Math.max(0, Math.min(1, unit.actionPoints / (unit.maxActionPoints ?? 10)));
                 const recentlyActive = Boolean(outgoingShot || incomingHit || recentAttackSource || recentHitTarget);
                 const shouldDrawStatus = isFriendly // always mark our own units so they're locatable on busy terrain
                   || isSelected
@@ -5399,14 +5386,17 @@ export function BattlefieldStage({
     map.width,
     selectedUnitId,
     targetUnitId,
-    targetHitChance,
-    targetDamagePreview,
     attackEffects,
+    DEBUG_ALIGN,
     deployMode,
+    onSelectTile,
+    onSelectUnit,
+    onUnitHover,
+    prefersReducedMotion,
     viewerFaction,
     visibleTiles,
     topGeomFor,
-    toScreen,
+    unitTextureCache,
     movingUnit,
     now
   ]);
@@ -5421,7 +5411,6 @@ export function BattlefieldStage({
       if (elapsed < 0) return null;
       if (elapsed > EFFECT_DURATION) return null;
 
-      const progress = elapsed / EFFECT_DURATION;
       const fromPos = toScreen({ q: effect.fromQ, r: effect.fromR });
       const toPos = toScreen({ q: effect.toQ, r: effect.toR });
 
@@ -5430,16 +5419,16 @@ export function BattlefieldStage({
       const toIdx = effect.toR * map.width + effect.toQ;
       const fromGeom = ISO_MODE ? topGeomFor(effect.fromQ, effect.fromR) : null;
       const toGeom = ISO_MODE ? topGeomFor(effect.toQ, effect.toR) : null;
-      const fromElev = fromGeom ? fromGeom.avgHeight : ((map.tiles[fromIdx] as any)?.elevation ?? 0);
-      const toElev = toGeom ? toGeom.avgHeight : ((map.tiles[toIdx] as any)?.elevation ?? 0);
+      const fromElev = fromGeom ? fromGeom.avgHeight : (map.tiles[fromIdx]?.elevation ?? 0);
+      const toElev = toGeom ? toGeom.avgHeight : (map.tiles[toIdx]?.elevation ?? 0);
 
       const fromX = fromPos.x;
       const fromY = fromPos.y - fromElev * ELEV_Y_OFFSET;
       const toX = toPos.x;
       const toY = toPos.y - toElev * ELEV_Y_OFFSET;
-      let targetUnit: any | undefined;
-      for (const side of Object.values(battleState.sides) as any[]) {
-        targetUnit = Array.from(side.units.values() as Iterable<any>).find((unit: any) =>
+      let targetUnit: UnitInstance | undefined;
+      for (const side of Object.values(battleState.sides)) {
+        targetUnit = Array.from(side.units.values()).find((unit) =>
           unit.coordinate.q === effect.toQ && unit.coordinate.r === effect.toR
         );
         if (targetUnit) break;
@@ -5848,11 +5837,11 @@ export function BattlefieldStage({
         </Container>
       );
     }).filter(Boolean) as JSX.Element[];
-  }, [attackEffects, battleState.sides, now, map.width, map.tiles, topGeomFor, toScreen, scale, t]);
+  }, [attackEffects, battleState.sides, now, map.width, map.tiles, topGeomFor, scale, t]);
 
   const propsSprites = useMemo(() => {
-    const props = (map.props ?? []).filter((prop) => prop.kind !== 'proc-building');
-    if (props.length === 0) return [];
+    const sceneryProps = (map.props ?? []).filter((prop) => prop.kind !== 'proc-building');
+    if (sceneryProps.length === 0) return [];
     const idxAt = (q: number, r: number) => r * map.width + q;
     const defaultTexturePath = '/props/tree1.png';
     const getTexture = (path?: string) => {
@@ -5874,7 +5863,7 @@ export function BattlefieldStage({
       }
     }
 
-    return props
+    return sceneryProps
       .map((prop) => {
         const tileIdx = idxAt(prop.coordinate.q, prop.coordinate.r);
         if (!exploredTiles.has(tileIdx)) {
@@ -5959,16 +5948,16 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [map.props, map.width, exploredTiles, visibleTiles, battleState.sides, viewerFaction, propTextureCache, propAtlasTextures, topGeomFor, toScreen, missingPropPaths]);
+  }, [map.props, map.width, exploredTiles, visibleTiles, battleState.sides, viewerFaction, propTextureCache, propAtlasTextures, topGeomFor, missingPropPaths]);
 
   const procBuildings = useMemo(() => {
-    const props = (map.props ?? []).filter(
+    const buildingProps = (map.props ?? []).filter(
       (p): p is MapProp & { kind: 'proc-building' } => p.kind === 'proc-building'
     );
-    if (props.length === 0) return [];
+    if (buildingProps.length === 0) return [];
 
     const focusCoords: Array<{ q: number; r: number }> = [];
-    for (const side of Object.values(battleState.sides) as any[]) {
+    for (const side of Object.values(battleState.sides)) {
       if (selectedUnitId) {
         const selected = side.units.get(selectedUnitId);
         if (selected) focusCoords.push(selected.coordinate);
@@ -5993,7 +5982,7 @@ export function BattlefieldStage({
     // them is faded so the unit isn't completely hidden — the focus-fade above only fires for the
     // selected/target unit, so un-selected units behind a solid building were invisible.
     const visibleUnitCoords: Array<{ q: number; r: number; sx: number; sy: number }> = [];
-    for (const side of Object.values(battleState.sides) as any[]) {
+    for (const side of Object.values(battleState.sides)) {
       for (const u of side.units.values()) {
         if (u.stance === 'destroyed' || u.embarkedOn) continue;
         // Always reveal-through for the player's own units; for enemies only when actually visible.
@@ -6007,8 +5996,8 @@ export function BattlefieldStage({
       }
     }
 
-    return props
-      .map((b, i) => {
+    return buildingProps
+      .map((b) => {
         const footprint: number[] = [];
         if (Array.isArray(b.tiles) && b.tiles.length > 0) {
           for (const t of b.tiles) {
@@ -6149,7 +6138,6 @@ export function BattlefieldStage({
             dir: 'E-W'
           } as NonNullable<MapProp['roof']>);
         const roofDetails = b.roofDetails ?? {};
-        const roofOverhang = roofDetails.overhangPx ?? 4;
         const roofTrimColor = roofDetails.trimColor ?? trimColor;
         const ridgeCap = roofDetails.ridgeCap ?? true;
         const roofVents = roofDetails.ventCount ?? 0;
@@ -6471,7 +6459,7 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, targetUnitId, movingUnit, propTextureCache, viewerFaction]);
+  }, [map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, targetUnitId, movingUnit, viewerFaction]);
 
   // Keyboard pan animation loop: apply velocity from Arrow keys continuously (stable, no restarts)
   useEffect(() => {
@@ -6485,10 +6473,10 @@ export function BattlefieldStage({
         setFollowTargetPx((prev) => {
           // If no follow center yet, start from selected unit or map center
           const current = prev ?? (() => {
-            let selected: any | undefined;
+            let selected: UnitInstance | undefined;
             if (selectedUnitId) {
-              for (const side of Object.values(battleState.sides) as any[]) {
-                const u = (side as any).units.get(selectedUnitId);
+              for (const side of Object.values(battleState.sides)) {
+                const u = side.units.get(selectedUnitId);
                 if (u) { selected = u; break; }
               }
             }
@@ -6632,7 +6620,7 @@ export function BattlefieldStage({
       }
     }
     // units dots (respect fog-of-war: show enemies only if visible to viewer)
-    const allUnits = Object.values(battleState.sides).flatMap((side: any) => Array.from((side as any).units.values()) as any[]);
+    const allUnits = Object.values(battleState.sides).flatMap((side) => Array.from(side.units.values()));
     for (const u of allUnits) {
       const tileIdx = u.coordinate.r * map.width + u.coordinate.q;
       const isFriendly = u.faction === viewerFaction;
@@ -6659,9 +6647,9 @@ export function BattlefieldStage({
       ref={hostRef}
       style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}
       onPointerDown={(e) => {
-        if ((e as any).button !== 0 || minimapDragging) return;
+        if (e.button !== 0 || minimapDragging) return;
         setDraggingCam(true);
-        lastPointerRef.current = { x: (e as any).clientX, y: (e as any).clientY };
+        lastPointerRef.current = { x: e.clientX, y: e.clientY };
         if (!followTargetPx) {
           setFollowTargetPx({
             x: (-offsetX + hostSize.w / 2) / scale,
@@ -6673,7 +6661,7 @@ export function BattlefieldStage({
         if (!draggingCam) return;
         const last = lastPointerRef.current;
         if (!last) return;
-        const nx = (e as any).clientX, ny = (e as any).clientY;
+        const nx = e.clientX, ny = e.clientY;
         const dx = nx - last.x, dy = ny - last.y;
         lastPointerRef.current = { x: nx, y: ny };
         setFollowTargetPx((prev) => {
@@ -6865,19 +6853,19 @@ export function BattlefieldStage({
         {/* Minimap (screen-space) */}
         {minimapVisible && (
           <Container x={10} y={10} eventMode="static"
-            pointerdown={(e: any) => {
+            pointerdown={(e: FederatedPointerEvent) => {
               setMinimapDragging(true);
               const mmW = 160; const mmH = 120;
               const sx = mmW / stageDimensions.width; const sy = mmH / stageDimensions.height;
-              const local = e?.data?.getLocalPosition?.(e.currentTarget) ?? { x: e.offsetX, y: e.offsetY };
+              const local = e.data?.getLocalPosition?.(e.currentTarget as DisplayObject) ?? { x: e.offsetX, y: e.offsetY };
               const worldX = local.x / sx; const worldY = local.y / sy;
               setFollowTargetPx({ x: worldX, y: worldY });
             }}
-            pointermove={(e: any) => {
+            pointermove={(e: FederatedPointerEvent) => {
               if (!minimapDragging) return;
               const mmW = 160; const mmH = 120;
               const sx = mmW / stageDimensions.width; const sy = mmH / stageDimensions.height;
-              const local = e?.data?.getLocalPosition?.(e.currentTarget) ?? { x: e.offsetX, y: e.offsetY };
+              const local = e.data?.getLocalPosition?.(e.currentTarget as DisplayObject) ?? { x: e.offsetX, y: e.offsetY };
               const worldX = local.x / sx; const worldY = local.y / sy;
               setFollowTargetPx({ x: worldX, y: worldY });
             }}
@@ -6892,13 +6880,3 @@ export function BattlefieldStage({
     </div>
   );
 }
-  const isoPointsFor = (q: number, r: number, elev: number) => {
-    const pos = toScreen({ q, r });
-    const posY = pos.y - elev * ELEV_Y_OFFSET;
-    return [
-      { x: pos.x + 0, y: posY - ISO_TILE_H / 2 }, // N
-      { x: pos.x + ISO_TILE_W / 2, y: posY },     // E
-      { x: pos.x + 0, y: posY + ISO_TILE_H / 2 }, // S
-      { x: pos.x - ISO_TILE_W / 2, y: posY }      // W
-    ];
-  };

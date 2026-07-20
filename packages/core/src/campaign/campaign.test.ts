@@ -1,6 +1,6 @@
+import { starterBundle } from '@spellcross/data';
 import { describe, expect, it } from 'vitest';
 
-import { starterBundle } from '@spellcross/data';
 import {
   applyBattleOutcome,
   convertStrategicToMoney,

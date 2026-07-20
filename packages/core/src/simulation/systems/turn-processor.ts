@@ -13,9 +13,9 @@ import {
 } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import type { HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
-import { coordinateKey, getTile, isNeighbor } from '../utils/grid.js';
 import { isoDistance } from '../utils/grid-iso.js';
 import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
+import { coordinateKey, getTile, isNeighbor } from '../utils/grid.js';
 import { hasLineOfSight, updateAllFactionsVision, updateFactionVision } from '../visibility/vision.js';
 
 export interface TurnContext {

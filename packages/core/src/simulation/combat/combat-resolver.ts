@@ -1,6 +1,3 @@
-import { getTile, orientationDelta } from '../utils/grid.js';
-import { isoDistance } from '../utils/grid-iso.js';
-import { isoDirectionIndex } from '../utils/grid-iso.js';
 import { typeEffectiveness } from './damage-types.js';
 import type {
   BattlefieldMap,
@@ -9,6 +6,9 @@ import type {
   TacticalBattleState,
   UnitInstance
 } from '../types.js';
+import { isoDistance } from '../utils/grid-iso.js';
+import { isoDirectionIndex } from '../utils/grid-iso.js';
+import { getTile, orientationDelta } from '../utils/grid.js';
 
 export interface AttackInput {
   attacker: UnitInstance;

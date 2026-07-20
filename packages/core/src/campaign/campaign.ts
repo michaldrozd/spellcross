@@ -1,5 +1,3 @@
-import { nanoid } from 'nanoid';
-
 import type {
   CampaignSpec,
   ContentBundle,
@@ -8,9 +6,11 @@ import type {
   TerritorySpec,
   UnitData
 } from '@spellcross/data';
+import { nanoid } from 'nanoid';
+
+import { createBattleState } from '../simulation/game-state.js';
 import type { HexCoordinate, TacticalBattleState, UnitDefinition } from '../simulation/types.js';
 import { coordinateKey } from '../simulation/utils/grid.js';
-import { createBattleState } from '../simulation/game-state.js';
 import { updateAllFactionsVision } from '../simulation/visibility/vision.js';
 
 // Core game logic must stay presentation-agnostic (no hardcoded English sentences baked into engine

@@ -1,9 +1,10 @@
 import { describe, it, expect } from 'vitest';
+
 import { createBattleState } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
 import { calculateHitChance } from './combat-resolver.js';
-import { isoDirectionIndex } from '../utils/grid-iso.js';
 import { decideNextAIAction } from '../ai/baseline-ai.js';
+import { isoDirectionIndex } from '../utils/grid-iso.js';
 
 const plain = { terrain: 'plain', elevation: 0, cover: 0, movementCostModifier: 1, passable: true, providesVisionBoost: false } as const;
 
@@ -41,7 +42,7 @@ describe('flanking / rear attacks', () => {
 
 describe('weapon selection by effective damage (counters express)', () => {
   // a trooper carrying BOTH a small-arms MG (accurate, anti-infantry) and an AT gun (anti-armour)
-  const trooper = (q: number, foeType: 'vehicle' | 'infantry') => ({
+  const trooper = (q: number) => ({
     definition: { id: 'trooper', faction: 'alliance' as const, name: 'T', type: 'infantry' as const,
       stats: { maxHealth: 40, mobility: 4, vision: 6, armor: 0, morale: 60,
         weaponRanges: { mg: 4, at: 4 }, weaponPower: { mg: 16, at: 22 }, weaponAccuracy: { mg: 0.9, at: 0.7 } } },
@@ -56,7 +57,7 @@ describe('weapon selection by effective damage (counters express)', () => {
     const state = createBattleState({
       map: { id: 'm', width: 6, height: 1, tiles: Array.from({ length: 6 }, () => plain) },
       sides: [
-        { faction: 'alliance', units: [trooper(1, foeType)] },
+        { faction: 'alliance', units: [trooper(1)] },
         { faction: 'otherSide', units: [foe(3, foeType, armor, foeId)] }
       ]
     });

@@ -4,9 +4,10 @@ import type {
   TacticalBattleState,
   UnitInstance
 } from '../types.js';
-import { getTile, coordinateKey as hexKey } from '../utils/grid.js';
-import { isoDistance, isoNeighbors } from '../utils/grid-iso.js';
+import { movementMultiplierForStance } from './movement.js';
 import type { PathfindingOptions, PathResult } from './types.js';
+import { isoDistance, isoNeighbors } from '../utils/grid-iso.js';
+import { getTile, coordinateKey as hexKey } from '../utils/grid.js';
 
 interface NodeRecord {
   coordinate: HexCoordinate;
@@ -14,8 +15,6 @@ interface NodeRecord {
   estimatedTotalCost: number;
   parent?: NodeRecord;
 }
-
-import { movementMultiplierForStance } from './movement.js';
 
 function canUnitEnterTerrain(unitType: UnitInstance['unitType'] | undefined, tile: { terrain: string; passable: boolean }): boolean {
   if (!tile || !tile.passable) return false;

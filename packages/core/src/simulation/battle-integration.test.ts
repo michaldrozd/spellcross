@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
+
+import { decideNextAIAction } from './ai/baseline-ai.js';
 import { createBattleState } from './game-state.js';
 import type { CreateBattleStateOptions } from './game-state.js';
 import { TurnProcessor } from './systems/turn-processor.js';
-import { decideNextAIAction } from './ai/baseline-ai.js';
 import { updateAllFactionsVision } from './visibility/vision.js';
 
 const plain = { terrain: 'plain', elevation: 0, cover: 0, movementCostModifier: 1, passable: true, providesVisionBoost: false } as const;

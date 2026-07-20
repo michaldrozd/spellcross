@@ -1,6 +1,6 @@
 import type { BattlefieldMap, FactionId, TacticalBattleState, UnitInstance } from '../types.js';
-import { getTile, tileIndex } from '../utils/grid.js';
 import { isoDistance } from '../utils/grid-iso.js';
+import { getTile, tileIndex } from '../utils/grid.js';
 
 export function isUnitDetected(
   state: TacticalBattleState,

@@ -15,7 +15,6 @@ module.exports = {
       version: 'detect'
     },
     'import/resolver': {
-      typescript: true,
       node: true
     }
   },

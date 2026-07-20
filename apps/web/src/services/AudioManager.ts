@@ -14,6 +14,9 @@ interface PlayOpts {
   pan?: number;                               // stereo position [-1,1]
 }
 
+// Older Safari only exposes the prefixed constructor.
+type WebkitAudioWindow = Window & { webkitAudioContext?: typeof AudioContext };
+
 class AudioManagerClass {
   private sounds: Map<SoundType, HTMLAudioElement[]> = new Map();
   private masterVolume: number = 0.7;
@@ -46,7 +49,7 @@ class AudioManagerClass {
     if (typeof window !== 'undefined') {
       const initAudio = () => {
         if (!this.audioContext) {
-          this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+          this.audioContext = new (window.AudioContext || (window as WebkitAudioWindow).webkitAudioContext)();
         }
         window.removeEventListener('click', initAudio);
         window.removeEventListener('keydown', initAudio);
@@ -58,7 +61,7 @@ class AudioManagerClass {
 
   private getContext(): AudioContext {
     if (!this.audioContext) {
-      this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+      this.audioContext = new (window.AudioContext || (window as WebkitAudioWindow).webkitAudioContext)();
     }
     // Browsers suspend the context when the tab is backgrounded / on mobile sleep (and iOS may create
     // it already suspended); scheduled sounds then silently never fire. Re-arm it on every access.

@@ -19,6 +19,26 @@ export async function startBattle(page: Page, territoryId = 'sector-paris') {
   await launchBattle(page, territoryId);
 }
 
+export async function clickBattleTile(page: Page, q: number, r: number) {
+  await page.waitForFunction(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const tileCenter = (window as any).__battleCamera?.screenForCoord?.(q, r);
+    if (!canvas || !tileCenter) return false;
+    const rect = canvas.getBoundingClientRect();
+    return tileCenter.x >= 0 && tileCenter.y >= 0 && tileCenter.x <= rect.width && tileCenter.y <= rect.height;
+  }, { q, r });
+  const position = await page.evaluate(({ q, r }) => {
+    const canvas = document.querySelector('canvas');
+    const tileCenter = (window as any).__battleCamera?.screenForCoord?.(q, r);
+    if (!canvas || !tileCenter) return null;
+    const rect = canvas.getBoundingClientRect();
+    return { x: rect.left + tileCenter.x, y: rect.top + tileCenter.y };
+  }, { q, r });
+  expect(position).not.toBeNull();
+  await page.mouse.click(position!.x, position!.y);
+  await page.waitForTimeout(100);
+}
+
 export async function endStrategicTurns(page: Page, count = 1) {
   const ended = await page.evaluate((turns) => (window as any).__campaignControl.endTurn(turns), count);
   expect(ended).toBeTruthy();

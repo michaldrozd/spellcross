@@ -1,8 +1,8 @@
-import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
-import { coordinateKey, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
-import { isIsoNeighbor, isoDirectionIndex, isoDistance, isoNeighbors } from '../utils/grid-iso.js';
 import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange, estimateHitDamage, isMedicUnit, isSupplyUnit } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
+import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
+import { isIsoNeighbor, isoDirectionIndex, isoDistance, isoNeighbors } from '../utils/grid-iso.js';
+import { coordinateKey, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
 import { hasLineOfSight } from '../visibility/vision.js';
 
 export type AIImmediateAction =

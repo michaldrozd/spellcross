@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
+
 import { createBattleState } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
 import { estimateHitDamage } from './combat-resolver.js';
-import { unitArmorClass, weaponDamageRole } from './damage-types.js';
+import { weaponDamageRole } from './damage-types.js';
 
 const plain = { terrain: 'plain', elevation: 0, cover: 0, movementCostModifier: 1, passable: true, providesVisionBoost: false } as const;
 

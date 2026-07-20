@@ -1,22 +1,4 @@
 import './styles.css';
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
-import { Stage, Graphics, Sprite, Text } from '@pixi/react';
-import * as PIXI from 'pixi.js';
-import type { ChangeEvent } from 'react';
-import { useTranslation } from 'react-i18next';
-import i18n from './i18n/index.js';
-import { BattlefieldStage, AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
-import { MainMenu } from './components/MainMenu.js';
-import type { SaveSlot } from './components/MainMenu.js';
-import { StrategicHQ } from './components/StrategicHQ.js';
-import { AudioManager } from './services/AudioManager.js';
-import { ToastContainer, showToast } from './components/Toast.js';
-import { OverwatchButton } from './components/OverwatchButton.js';
-import { SupplyButton } from './components/SupplyButton.js';
-import { HealButton } from './components/HealButton.js';
-import { ObjectiveHud } from './components/ObjectiveHud.js';
-import { unitPortrait } from './components/unitVisuals.js';
 import {
   applyBattleOutcome,
   calculateAttackRange,
@@ -44,7 +26,6 @@ import {
   recruitUnit,
   dismissUnit,
   refillUnit,
-  rearmUnit,
   retreatFromBattle,
   serializeCampaignState,
   startBattleForTerritory,
@@ -57,6 +38,28 @@ import {
 } from '@spellcross/core';
 import type { BattleEvent, BattlefieldMap, CampaignState, HexCoordinate, TacticalBattleState, UnitInstance } from '@spellcross/core';
 import { validatedStarterBundle } from '@spellcross/data';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { useTranslation } from 'react-i18next';
+
+import type { AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
+import { HealButton } from './components/HealButton.js';
+import { MainMenu } from './components/MainMenu.js';
+import type { SaveSlot } from './components/MainMenu.js';
+import { ObjectiveHud } from './components/ObjectiveHud.js';
+import { OverwatchButton } from './components/OverwatchButton.js';
+import { StrategicHQ } from './components/StrategicHQ.js';
+import { SupplyButton } from './components/SupplyButton.js';
+import { ToastContainer, showToast } from './components/Toast.js';
+import { unitPortrait } from './components/unitVisuals.js';
+import i18n from './i18n/index.js';
+import { AudioManager } from './services/AudioManager.js';
+
+const BattlefieldStage = React.lazy(async () => {
+  const battlefieldModule = await import('./components/BattlefieldStage.js');
+  return { default: battlefieldModule.BattlefieldStage };
+});
+
 const bundle = validatedStarterBundle;
 const CAMPAIGN_STORAGE_KEY = 'spellcross:campaign-state';
 const CAMPAIGN_SLOT_KEY = 'spellcross:campaign-slot';
@@ -65,18 +68,6 @@ const CAMPAIGN_SCHEMA_KEY = 'spellcross:campaign-schema';
 const CAMPAIGN_SCHEMA_VERSION = '2026-04-27-tactical-launch';
 const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
 const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
-const terrainLabel = (terrain: string) => terrain.charAt(0).toUpperCase() + terrain.slice(1);
-const isoTileTexture = PIXI.Texture.from('/grass_tile_128x64.png');
-const terrainTextures: Record<string, PIXI.Texture> = {
-  plain: isoTileTexture,
-  road: isoTileTexture,
-  forest: isoTileTexture,
-  urban: isoTileTexture,
-  hill: isoTileTexture,
-  water: isoTileTexture,
-  swamp: isoTileTexture,
-  structure: isoTileTexture
-};
 const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
   const dq = to.q - from.q;
   const dr = to.r - from.r;
@@ -130,14 +121,6 @@ const movementProfileFor = (unitType: string, isTruck: boolean, definitionId = '
       : isFootCrew(definitionId) ? 'foot'
         : (unitType === 'vehicle' || unitType === 'artillery') ? 'track'
           : 'foot';
-const unitTextures: Record<string, PIXI.Texture> = {
-  infantry: PIXI.Texture.from('/units/infantry.png'),
-  vehicle: PIXI.Texture.from('/units/tank.png'),
-  artillery: PIXI.Texture.from('/units/artillery.png'),
-  support: PIXI.Texture.from('/units/infantry.png'),
-  hero: PIXI.Texture.from('/units/infantry.png'),
-  air: PIXI.Texture.from('/units/tank.png')
-};
 interface SlotSummary {
   turn: number;
   resources: CampaignState['resources'];
@@ -145,120 +128,6 @@ interface SlotSummary {
   updated: number;
   activeBattle: boolean;
 }
-const hexToPixel = (coord: HexCoordinate, size: number) => {
-  const x = size * (Math.sqrt(3) * coord.q + (Math.sqrt(3) / 2) * coord.r);
-  const y = size * (1.5 * coord.r);
-  return { x, y };
-};
-const terrainColor: Record<string, number> = {
-  plain: 0x2e4f36,
-  road: 0x6b4c2a,
-  forest: 0x245232,
-  urban: 0x334155,
-  hill: 0x3d4a3c,
-  water: 0x1f5e8f,
-  swamp: 0x2c4a3a,
-  structure: 0x3f3f46
-};
-const borderColor: Record<string, number> = {
-  alliance: 0x38bdf8,
-  otherSide: 0xf472b6
-};
-interface HexProps {
-  coord: HexCoordinate;
-  size: number;
-  terrain: string;
-  onClick?: () => void;
-  highlight?: boolean;
-  visibility?: 'visible' | 'explored' | 'fog';
-}
-const HexTile: React.FC<HexProps> = ({ coord, size, terrain, onClick, highlight, visibility = 'visible' }) => {
-  const { x, y } = hexToPixel(coord, size);
-  const tex = terrainTextures[terrain] ?? terrainTextures.plain;
-  const alpha = visibility === 'visible' ? 1 : visibility === 'explored' ? 0.6 : 0.2;
-  return (
-    <Sprite
-      x={x - size * 2.5}
-      y={y - size * 1.2}
-      width={size * 5}
-      height={size * 2.5}
-      texture={tex}
-      alpha={alpha}
-      tint={highlight ? 0xf8fafc : 0xffffff}
-      eventMode={onClick ? 'static' : 'none'}
-      pointerdown={onClick}
-      cursor={onClick ? 'pointer' : 'default'}
-    />
-  );
-};
-interface UnitMarkerProps {
-  unit: UnitInstance;
-  size: number;
-  selected: boolean;
-  onClick: () => void;
-}
-const UnitMarker: React.FC<UnitMarkerProps> = ({ unit, size, selected, onClick }) => {
-  const { x, y } = hexToPixel(unit.coordinate, size);
-  const color = borderColor[unit.faction];
-  const tex = unitTextures[unit.unitType] ?? unitTextures.infantry;
-  const draw = React.useCallback(
-    (g: PIXI.Graphics) => {
-      g.clear();
-      // hp bar
-      const hpPct = Math.max(0, (unit.currentHealth ?? unit.stats.maxHealth) / unit.stats.maxHealth);
-      const barW = size * 0.9;
-      const barH = 6;
-      g.beginFill(0x111827, 0.9);
-      g.drawRoundedRect(-barW / 2, -size * 0.7, barW, barH, 2);
-      g.endFill();
-      g.beginFill(0xfacc15, 0.9);
-      g.drawRoundedRect(-barW / 2, -size * 0.7, barW * hpPct, barH, 2);
-      g.endFill();
-      // facing wedge
-      const orientation = unit.orientation ?? 0;
-      const angle = (Math.PI / 3) * orientation - Math.PI / 6;
-      const arc = size * 0.65;
-      g.beginFill(0xffffff, 0.18);
-      g.moveTo(0, 0);
-      g.lineTo(Math.cos(angle) * arc, Math.sin(angle) * arc);
-      g.lineTo(Math.cos(angle + Math.PI / 6) * arc, Math.sin(angle + Math.PI / 6) * arc);
-      g.closePath();
-      g.endFill();
-      if (unit.statusEffects?.has('overwatch')) {
-        g.lineStyle(2, 0xfacc15, 1);
-        g.drawCircle(0, 0, size * 0.52);
-      }
-      if (selected) {
-        g.lineStyle(2, 0xfacc15, 1);
-        g.drawCircle(0, 0, size * 0.5);
-      }
-    },
-    [color, selected, size, unit.faction, unit.orientation]
-  );
-  return (
-    <>
-      <Sprite
-        x={x - size * 0.9}
-        y={y - size * 1.2}
-        width={size * 1.8}
-        height={size * 2.2}
-        texture={tex}
-        tint={unit.faction === 'alliance' ? 0xffffff : 0xffaaaa}
-        eventMode="static"
-        pointerdown={onClick}
-        cursor="pointer"
-      />
-      <Graphics
-        x={x}
-        y={y}
-        draw={draw}
-        eventMode="static"
-        pointerdown={onClick}
-        cursor="pointer"
-      />
-    </>
-  );
-};
 function ensureCampaignStorageSchema() {
   if (typeof window === 'undefined') return;
   const stored = window.localStorage.getItem(CAMPAIGN_SCHEMA_KEY);
@@ -310,7 +179,7 @@ function useCampaign() {
   if (!ref.current) ref.current = loadSavedCampaign(slot);
   const [, rerender] = useState(0);
   const [summary, setSummary] = useState<SlotSummary | null>(() => loadSummary(slot));
-  const updateSummary = () => {
+  const updateSummary = useCallback(() => {
     const state = ref.current!;
     const next: SlotSummary = {
       turn: state.turn,
@@ -323,8 +192,8 @@ function useCampaign() {
       window.localStorage.setItem(`${CAMPAIGN_SUMMARY_KEY}:${slotRef.current}`, JSON.stringify(next));
     }
     setSummary(next);
-  };
-  const persist = () => {
+  }, []);
+  const persist = useCallback(() => {
     if (typeof window !== 'undefined') {
       try {
         window.localStorage.setItem(`${CAMPAIGN_STORAGE_KEY}:${slotRef.current}`, JSON.stringify(serializeCampaignState(ref.current!)));
@@ -334,17 +203,16 @@ function useCampaign() {
     }
     updateSummary();
     rerender((n) => n + 1);
-  };
-  const mutate = (fn: (state: CampaignState) => void) => {
+  }, [updateSummary]);
+  const mutate = useCallback((fn: (state: CampaignState) => void) => {
     fn(ref.current!);
     persist();
-  };
-  const reset = () => {
+  }, [persist]);
+  const reset = useCallback(() => {
     ref.current = createCampaign(bundle);
-    updateSummary();
     persist();
-  };
-  const changeSlot = (next: number) => {
+  }, [persist]);
+  const changeSlot = useCallback((next: number) => {
     slotRef.current = next;
     setSlot(next);
     if (typeof window !== 'undefined') {
@@ -354,11 +222,8 @@ function useCampaign() {
     setSummary(loadSummary(next));
     rerender((n) => n + 1);
     return ref.current;
-  };
+  }, []);
   return { campaign: ref.current!, mutate, persist, reset, slot, changeSlot, summary };
-}
-function formatNumber(n: number) {
-  return Math.round(n);
 }
 // Localization lookups for static content-bundle data (unit/research/territory/scenario/objective
 // names+text). Content stays English/id-stable in packages/data; the display layer prefers the active
@@ -621,7 +486,6 @@ const BattleView: React.FC<{
   // runs when the player dismisses the card via Continue.
   const [battleOutcome, setBattleOutcome] = useState<BattleOutcomeData | null>(null);
   const outcomeShownRef = useRef(false);
-  const size = 26;
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
   useEffect(() => {
     const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
@@ -630,7 +494,6 @@ const BattleView: React.FC<{
   }, []);
   const processor = useMemo(() => new TurnProcessor(battle.state), [battle.state]);
   const visibleTiles = battle.state.vision.alliance.visibleTiles;
-  const exploredTiles = battle.state.vision.alliance.exploredTiles;
   const tileIndex = (coord: HexCoordinate) => coord.r * map.width + coord.q;
   const selectedUnit = selected ? battle.state.sides.alliance.units.get(selected) : undefined;
   const selectedDefinition = selectedUnit ? bundle.units.find((unit) => unit.id === selectedUnit.definitionId) : undefined;
@@ -798,7 +661,7 @@ const BattleView: React.FC<{
     }, totalDuration + 50); // small buffer
     return () => clearTimeout(timer);
   }, [movingUnit]);
-  const globalRangeTiles = useMemo(() => {
+  const globalRangeTiles = (() => {
     if (!showRanges || !selectedUnit) return new Set<string>();
     const acc = new Set<string>();
     for (const weapon of Object.keys(selectedUnit.stats.weaponRanges)) {
@@ -810,9 +673,20 @@ const BattleView: React.FC<{
       }
     }
     return acc;
-    // the engine moves units by mutating coordinate in place, so the object identity alone would go stale
-  }, [selectedUnit, showRanges, selectedUnit?.coordinate.q, selectedUnit?.coordinate.r, map]);
+  })();
+  const battleControlContextRef = useRef<{
+    battle: NonNullable<CampaignState['activeBattle']>;
+    map: BattlefieldMap;
+    persist: () => void;
+    resolveOutcome: () => void;
+    buildBattleOutcome: (status: 'victory' | 'defeat') => BattleOutcomeData;
+    actMove: (unitId: string, target: HexCoordinate, force?: boolean) => boolean;
+    t: typeof t;
+  } | null>(null);
   useEffect(() => {
+    const context = battleControlContextRef.current;
+    if (!context) return;
+    const { battle, map, persist, resolveOutcome, buildBattleOutcome, actMove, t } = context;
     // Resume a saved in-progress battle straight into play; only a fresh battle opens DEPLOYMENT.
     setDeployMode(!battle.deployed);
     // ensure vision populated immediately so tiles are interactive
@@ -840,7 +714,7 @@ const BattleView: React.FC<{
       }
       return occ;
     };
-    (window as any).__battleControl = {
+    const battleControl = {
       moveFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         const foe = Array.from(battle.state.sides.otherSide.units.values()).find((u) => u.stance !== 'destroyed');
@@ -991,7 +865,6 @@ const BattleView: React.FC<{
         }
         return true;
       },
-      pixelFor: (q: number, r: number) => hexToPixel({ q, r }, size),
       attackTile: (q: number, r: number) => {
         const attacker = Array.from(battle.state.sides.alliance.units.values())
           .filter((u) => u.stance !== 'destroyed')
@@ -1181,8 +1054,10 @@ const BattleView: React.FC<{
         return { status, totalEnemies: enemies.length, surviving: survivingEnemies.length };
       }
     };
+    const devWindow = window as typeof window & { __battleControl?: typeof battleControl };
+    devWindow.__battleControl = battleControl;
     return () => {
-      delete (window as any).__battleControl;
+      delete devWindow.__battleControl;
     };
   }, [battle.state, map.width, map.height]);
   const handleSelect = (unit: UnitInstance) => {
@@ -1410,7 +1285,7 @@ const BattleView: React.FC<{
     // Set up the glide FIRST so we know its timing, then sync the reaction-fire VFX to it — otherwise the
     // engine resolves reaction fire instantly against the destination and the muzzle/HIT appeared on the
     // target tile before the unit had visually arrived ("enemies shoot an empty destination").
-    const unitType = (unit as any).unitType;
+    const unitType = unit.unitType;
     const isTruck = unitType === 'support' && unit.definitionId.toLowerCase().includes('truck');
     const isVehicleMove = (unitType === 'vehicle' || unitType === 'artillery' || isTruck) && !isFootCrew(unit.definitionId);
     const moveProfile = movementProfileFor(unitType, isTruck, unit.definitionId);
@@ -1452,6 +1327,7 @@ const BattleView: React.FC<{
     resolveOutcome();
     return true;
   };
+  battleControlContextRef.current = { battle, map, persist, resolveOutcome, buildBattleOutcome, actMove, t };
   // Glide a unit's sprite along its path after the engine has already committed the move, and return the
   // animation length in ms so a scripted (auto/AI) loop can await it. Mirrors actMove's visual setup —
   // without it, auto-played and enemy moves snap the sprite straight to the destination (teleport).
@@ -1466,7 +1342,7 @@ const BattleView: React.FC<{
     }
     const fullPath = [startCoord, ...actualPath];
     if (fullPath.length < 2) return null;
-    const unitType = (unit as any).unitType;
+    const unitType = unit.unitType;
     const def = unit.definitionId.toLowerCase();
     const isTruck = unitType === 'support' && def.includes('truck');
     const isVehicleMove = (unitType === 'vehicle' || unitType === 'artillery' || isTruck) && !isFootCrew(def);
@@ -1973,35 +1849,45 @@ const BattleView: React.FC<{
   return (
     <div className="battle-screen">
       <div className="battle-map-layer">
-        <BattlefieldStage
-          battleState={battle.state}
-          onSelectUnit={(id) => {
-            const unit = battle.state.sides.alliance.units.get(id);
-            if (unit) handleSelect(unit);
-          }}
-          onSelectTile={(coord) => handleHexClick(coord)}
-          selectedUnitId={selected ?? undefined}
-          plannedPath={plannedPath ?? undefined}
-          plannedDestination={plannedDestination ?? undefined}
-          threatenedTiles={threatenedPathTiles}
-          invalidMoveFeedback={invalidMoveFeedback}
-          targetUnitId={previewEnemy?.id}
-          restoreCameraSignal={cameraRestoreSignal}
-          deployMode={deployMode}
-          targetHitChance={previewEnemy && targetWeaponPreview ? targetWeaponPreview.hit / 100 : undefined}
-          targetDamagePreview={previewDamage}
-          targetLethal={previewLethal}
-          onUnitHover={setHoveredEnemyId}
-          viewerFaction="alliance"
-          width={viewport.width}
-          height={viewport.height}
-          cameraMode="follow"
-          rangeOverlayCoords={showRanges ? globalRangeTiles : undefined}
-          objectiveCoords={battle.scenario.objectives.map((objective) => objective.target).filter((coord): coord is HexCoordinate => Boolean(coord))}
-          startZoneCoords={deployMode ? battle.startTiles : undefined}
-          attackEffects={attackEffects}
-          movingUnit={movingUnit}
-        />
+        <React.Suspense
+          fallback={(
+            <div className="battlefield-loader" role="status" aria-live="polite">
+              <div className="battlefield-loader-radar" aria-hidden="true" />
+              <strong>{t('battle:loading.title')}</strong>
+              <span>{t('battle:loading.detail')}</span>
+            </div>
+          )}
+        >
+          <BattlefieldStage
+            battleState={battle.state}
+            onSelectUnit={(id) => {
+              const unit = battle.state.sides.alliance.units.get(id);
+              if (unit) handleSelect(unit);
+            }}
+            onSelectTile={(coord) => handleHexClick(coord)}
+            selectedUnitId={selected ?? undefined}
+            plannedPath={plannedPath ?? undefined}
+            plannedDestination={plannedDestination ?? undefined}
+            threatenedTiles={threatenedPathTiles}
+            invalidMoveFeedback={invalidMoveFeedback}
+            targetUnitId={previewEnemy?.id}
+            restoreCameraSignal={cameraRestoreSignal}
+            deployMode={deployMode}
+            targetHitChance={previewEnemy && targetWeaponPreview ? targetWeaponPreview.hit / 100 : undefined}
+            targetDamagePreview={previewDamage}
+            targetLethal={previewLethal}
+            onUnitHover={setHoveredEnemyId}
+            viewerFaction="alliance"
+            width={viewport.width}
+            height={viewport.height}
+            cameraMode="follow"
+            rangeOverlayCoords={showRanges ? globalRangeTiles : undefined}
+            objectiveCoords={battle.scenario.objectives.map((objective) => objective.target).filter((coord): coord is HexCoordinate => Boolean(coord))}
+            startZoneCoords={deployMode ? battle.startTiles : undefined}
+            attackEffects={attackEffects}
+            movingUnit={movingUnit}
+          />
+        </React.Suspense>
       </div>
       <div className="battle-ui-layer">
         {autoTurnPhase ? (
@@ -2531,7 +2417,7 @@ function loadAllSummaries(): (SaveSlot | null)[] {
 }
 export function App() {
   const { t } = useTranslation(['common', 'campaign']);
-  const { campaign, mutate, persist, reset, slot, changeSlot, summary } = useCampaign();
+  const { campaign, mutate, persist, reset, slot, changeSlot } = useCampaign();
   const dismissPopups = () => mutate((s) => { s.popups = []; });
   const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
   const [savedSlots, setSavedSlots] = useState<(SaveSlot | null)[]>(() => loadAllSummaries());
@@ -2543,7 +2429,7 @@ export function App() {
     campaignOutcomeStingRef.current = campaign.outcome;
     AudioManager.play(campaign.outcome === 'victory' ? 'victory' : 'defeat');
   }, [campaign.outcome]);
-  const reportBattleLaunchError = (err: unknown) => {
+  const reportBattleLaunchError = useCallback((err: unknown) => {
     const reason = err instanceof CampaignError
       ? t(`campaign:errors.${err.key}`, err.params)
       : err instanceof Error ? err.message : t('campaign:errors.genericLaunchFailed');
@@ -2555,7 +2441,7 @@ export function App() {
       state.log.push({ key: 'launchBlocked', params: { reason } });
     });
     showToast(reason, 'warning');
-  };
+  }, [mutate, t]);
   // Reload saved slots when returning to menu
   useEffect(() => {
     if (mode === 'menu') {
@@ -2583,7 +2469,7 @@ export function App() {
   };
   useEffect(() => {
     if (typeof window === 'undefined' || !import.meta.env.DEV) return;
-    (window as any).__campaignControl = {
+    const campaignControl = {
       mode: () => mode,
       newCampaign: (nextSlot = 1) => {
         changeSlot(nextSlot);
@@ -2650,8 +2536,10 @@ export function App() {
         name: t.name
       }))
     };
+    const devWindow = window as typeof window & { __campaignControl?: typeof campaignControl };
+    devWindow.__campaignControl = campaignControl;
     return () => {
-      delete (window as any).__campaignControl;
+      delete devWindow.__campaignControl;
     };
   }, [campaign, mode, changeSlot, mutate, reset, reportBattleLaunchError]);
   // Show menu
@@ -2825,23 +2713,3 @@ export function App() {
   );
 }
 export default App;
-const UnitLabel: React.FC<{ unit: UnitInstance; size: number; name: string }> = ({ unit, size, name }) => {
-  const { x, y } = hexToPixel(unit.coordinate, size);
-  return (
-    <Text
-      x={x}
-      y={y + size * 0.6}
-      text={name}
-      anchor={0.5}
-      style={new PIXI.TextStyle({
-        fontSize: 12,
-        fill: 0xf8fafc,
-        fontFamily: 'Inter, sans-serif',
-        dropShadow: true,
-        dropShadowColor: '#000000',
-        dropShadowBlur: 2,
-        dropShadowDistance: 1
-      })}
-    />
-  );
-};

@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest';
 import { createCanvas, loadImage } from 'canvas';
 import path from 'node:path';
+import { describe, expect, it } from 'vitest';
 
 import {
   directionalSpriteGroundOffset,

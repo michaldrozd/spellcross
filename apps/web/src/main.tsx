@@ -1,8 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 
-import i18n from './i18n/index.js';
 import App from './App.js';
+import i18n from './i18n/index.js';
 
 type RuntimeFallbackState = {
   error?: Error;

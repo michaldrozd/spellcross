@@ -45,6 +45,10 @@
     "hint": "Klikni na jednotku a potom na svietiace políčko, aby si ju premiestnil. Stlač Spustiť bitku, keď si pripravený.",
     "unitsReady": "Pripravených jednotiek: {{count}}"
   },
+  "loading": {
+    "title": "Kalibruje sa bojisko",
+    "detail": "Pripája sa taktický displej a senzorová sieť…"
+  },
   "risky": {
     "ariaLabel": "Varovanie pred rizikovým presunom",
     "title": "⚠ Presun pod paľbou",

@@ -2,9 +2,10 @@
  * Visual Effects Component for Spellcross
  * Handles explosions, muzzle flashes, hit effects, and other visual feedback
  */
-import React, { useState, useEffect, useCallback } from 'react';
 import { Graphics, Container } from '@pixi/react';
 import type { HexCoordinate } from '@spellcross/core';
+import type { Graphics as PixiGraphics } from 'pixi.js';
+import React, { useState, useEffect, useCallback } from 'react';
 
 interface Effect {
   id: string;
@@ -57,7 +58,7 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({ tileSize }) => {
     return () => clearInterval(interval);
   }, []);
 
-  const drawExplosion = useCallback((g: any, effect: Effect) => {
+  const drawExplosion = useCallback((g: PixiGraphics, effect: Effect) => {
     const elapsed = Date.now() - effect.startTime;
     const progress = elapsed / effect.duration;
     const size = tileSize * (0.3 + progress * 0.7);
@@ -78,7 +79,7 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({ tileSize }) => {
     g.endFill();
   }, [tileSize]);
 
-  const drawMuzzleFlash = useCallback((g: any, effect: Effect) => {
+  const drawMuzzleFlash = useCallback((g: PixiGraphics, effect: Effect) => {
     const elapsed = Date.now() - effect.startTime;
     const progress = elapsed / effect.duration;
     const alpha = 1 - progress;
@@ -92,7 +93,7 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({ tileSize }) => {
     g.endFill();
   }, [tileSize]);
 
-  const drawHit = useCallback((g: any, effect: Effect) => {
+  const drawHit = useCallback((g: PixiGraphics, effect: Effect) => {
     const elapsed = Date.now() - effect.startTime;
     const progress = elapsed / effect.duration;
     const alpha = 1 - progress;
@@ -114,7 +115,7 @@ export const VisualEffects: React.FC<VisualEffectsProps> = ({ tileSize }) => {
     g.endFill();
   }, [tileSize]);
 
-  const drawSmoke = useCallback((g: any, effect: Effect) => {
+  const drawSmoke = useCallback((g: PixiGraphics, effect: Effect) => {
     const elapsed = Date.now() - effect.startTime;
     const progress = elapsed / effect.duration;
     const alpha = (1 - progress) * 0.4;

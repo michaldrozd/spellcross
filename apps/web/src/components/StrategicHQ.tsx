@@ -1,10 +1,11 @@
+import type { CampaignState } from '@spellcross/core';
+import type { TFunction } from 'i18next';
 import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
-import type { CampaignState } from '@spellcross/core';
+
 import { clearToasts } from './Toast.js';
-import { AudioManager } from '../services/AudioManager.js';
 import i18n from '../i18n/index.js';
+import { AudioManager } from '../services/AudioManager.js';
 
 interface Territory {
   id: string;

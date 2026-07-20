@@ -32,6 +32,7 @@ export default defineConfig({
   ],
   timeout: 20_000,
   expect: { timeout: 5_000 },
+  workers: 2,
   use: {
     headless: true,
     baseURL: 'http://localhost:4173',

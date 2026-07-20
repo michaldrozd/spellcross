@@ -4,8 +4,9 @@ import type {
   TacticalBattleState,
   UnitInstance
 } from '../types.js';
-import { axialDistance, coordinateKey, getNeighbors, getTile } from '../utils/grid.js';
+import { movementMultiplierForStance } from './movement.js';
 import type { PathfindingOptions, PathResult } from './types.js';
+import { axialDistance, coordinateKey, getNeighbors, getTile } from '../utils/grid.js';
 
 interface NodeRecord {
   coordinate: HexCoordinate;
@@ -14,7 +15,6 @@ interface NodeRecord {
   parent?: NodeRecord;
 }
 
-import { movementMultiplierForStance } from './movement.js';
 export { movementMultiplierForStance };
 
 export function canUnitEnterTerrain(unitType: UnitInstance['unitType'] | undefined, tile: { terrain: string; passable: boolean } | undefined): boolean {

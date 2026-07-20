@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { loadContentBundle, starterBundle, validatedStarterBundle } from './index.js';
 import { cityScenarioIdByTerritory } from './city-battlefields.js';
+import { loadContentBundle, starterBundle, validatedStarterBundle } from './index.js';
 
 describe('data bundle', () => {
   it('validates starter bundle structure', () => {

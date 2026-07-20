@@ -1,17 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { retreatToHq, startBattle } from './helpers';
-
-async function clickHex(page: import('@playwright/test').Page, q: number, r: number) {
-  const pos = await page.evaluate(({ q, r }) => {
-    const canvas = document.querySelector('canvas');
-    const helper = (window as any).__battleControl?.pixelFor?.(q, r);
-    if (!canvas || !helper) return null;
-    const rect = canvas.getBoundingClientRect();
-    return { x: rect.left + helper.x + 4, y: rect.top + helper.y + 4 };
-  }, { q, r });
-  expect(pos).not.toBeNull();
-  await page.mouse.click(pos!.x, pos!.y);
-}
+import { clickBattleTile, retreatToHq, startBattle } from './helpers';
 
 test('ui-driven hex clicks can break destructible cover and still resolve battle flow', async ({ page }) => {
   test.setTimeout(90_000);
@@ -19,8 +7,8 @@ test('ui-driven hex clicks can break destructible cover and still resolve battle
 
   // Select the M113 IFV (force-prioritized into deployment slot 0, so it spawns at the
   // alliance zone's first tile) and move it one step using real canvas clicks.
-  await clickHex(page, 0, 19);
-  await clickHex(page, 1, 19);
+  await clickBattleTile(page, 0, 19);
+  await clickBattleTile(page, 1, 19);
   await page.evaluate(() => (window as any).__battleControl?.moveTo?.(1, 19));
 
   // The only destructible structures on this procedurally generated map sit well north of the

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { createBattleState } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
-import { TurnProcessor } from '../systems/turn-processor.js';
 import { decideNextAIAction } from './baseline-ai.js';
+import { TurnProcessor } from '../systems/turn-processor.js';
 
 const plain = {
   terrain: 'plain', elevation: 0, cover: 0, movementCostModifier: 1, passable: true, providesVisionBoost: false
@@ -103,9 +103,7 @@ describe('Auto Turn (computer plays the player side)', () => {
   it('eventually engages and eliminates the enemy over repeated auto turns', () => {
     const state = createBattleState(spec);
     let anyDamage = false;
-    let turns = 0;
     for (let i = 0; i < 25; i += 1) {
-      turns += 1;
       autoPlayerTurn(state);
       const enemiesAlive = Array.from(state.sides.otherSide.units.values()).filter((u) => u.stance !== 'destroyed');
       if (Array.from(state.sides.otherSide.units.values()).some((u) => u.currentHealth < u.stats.maxHealth || u.stance === 'destroyed')) anyDamage = true;

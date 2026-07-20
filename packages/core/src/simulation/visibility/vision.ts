@@ -1,7 +1,7 @@
 import type { BattlefieldMap, FactionId, HexCoordinate, TacticalBattleState } from '../types.js';
-import { getTile, isWithinBounds, tileIndex } from '../utils/grid.js';
-import { isoLine, isoWithinRange } from '../utils/grid-iso.js';
 import { isUnitDetected } from './stealth.js';
+import { isoLine, isoWithinRange } from '../utils/grid-iso.js';
+import { getTile, isWithinBounds, tileIndex } from '../utils/grid.js';
 
 export interface VisionOptions {
   rangeModifier?: (params: { unitVision: number; tileProvidesBoost: boolean; elevation: number }) => number;

@@ -3031,6 +3031,90 @@ header.app-header {
   z-index: 0;
 }
 
+.battlefield-loader {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.55rem;
+  overflow: hidden;
+  color: #c5d2bf;
+  background:
+    radial-gradient(circle at 50% 48%, rgba(65, 116, 91, 0.17), transparent 32%),
+    repeating-linear-gradient(0deg, rgba(123, 165, 135, 0.035) 0 1px, transparent 1px 5px),
+    #030806;
+  font-family: "Courier New", monospace;
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+}
+
+.battlefield-loader strong {
+  margin-top: 0.7rem;
+  color: #dbe7d7;
+  font-size: clamp(0.82rem, 1.4vw, 1.05rem);
+  text-shadow: 0 0 14px rgba(119, 200, 151, 0.24);
+}
+
+.battlefield-loader span {
+  color: #718276;
+  font-size: 0.64rem;
+  letter-spacing: 0.12em;
+}
+
+.battlefield-loader-radar {
+  position: relative;
+  width: 92px;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid rgba(131, 194, 153, 0.48);
+  border-radius: 50%;
+  background:
+    linear-gradient(90deg, transparent 49.5%, rgba(127, 181, 145, 0.2) 50%, transparent 50.5%),
+    linear-gradient(transparent 49.5%, rgba(127, 181, 145, 0.2) 50%, transparent 50.5%),
+    repeating-radial-gradient(circle, transparent 0 15px, rgba(127, 181, 145, 0.16) 16px 17px),
+    rgba(8, 22, 15, 0.72);
+  box-shadow: inset 0 0 24px rgba(80, 168, 112, 0.13), 0 0 22px rgba(78, 151, 103, 0.08);
+}
+
+.battlefield-loader-radar::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: conic-gradient(from 0deg, transparent 0 76%, rgba(112, 213, 147, 0.5) 94%, rgba(173, 235, 190, 0.82) 100%);
+  animation: battlefield-radar-sweep 1.25s linear infinite;
+}
+
+.battlefield-loader-radar::after {
+  content: "";
+  position: absolute;
+  left: 66%;
+  top: 30%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #b4ecc1;
+  box-shadow: 0 0 8px 2px rgba(117, 224, 146, 0.75);
+  animation: battlefield-radar-contact 0.8s ease-in-out infinite alternate;
+}
+
+@keyframes battlefield-radar-sweep {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes battlefield-radar-contact {
+  to { opacity: 0.35; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .battlefield-loader-radar::before,
+  .battlefield-loader-radar::after {
+    animation: none;
+  }
+}
+
 .battle-ui-layer {
   position: absolute;
   top: 0;

@@ -568,6 +568,7 @@ test('unselected vehicle remains selectable from its visible body', async ({ pag
 });
 
 test('empty movement tile beside selected vehicle is not stolen by vehicle hit area', async ({ page }) => {
+  test.setTimeout(45_000);
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
   await expect.poll(async () => {

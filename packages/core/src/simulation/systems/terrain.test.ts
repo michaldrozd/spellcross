@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
+
 import { createBattleState } from '../game-state.js';
-import type { CreateBattleStateOptions } from '../game-state.js';
 import { TurnProcessor } from './turn-processor.js';
 
 const mkTile = (terrain: any, passable = true) => ({

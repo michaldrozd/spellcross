@@ -45,6 +45,10 @@
     "hint": "Click a unit, then a glowing tile to reposition it. Press Start Battle when ready.",
     "unitsReady": "{{count}} units ready"
   },
+  "loading": {
+    "title": "Calibrating battlefield",
+    "detail": "Linking tactical display and sensor grid…"
+  },
   "risky": {
     "ariaLabel": "Risky move warning",
     "title": "⚠ Move Under Fire",
