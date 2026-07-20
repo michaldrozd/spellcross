@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { CAMPAIGN_DIFFICULTY_RULES } from '@spellcross/core';
 
 test('new campaign difficulty is selected, displayed, and restored from its save', async ({ page }) => {
   await page.goto('/');
@@ -13,7 +14,10 @@ test('new campaign difficulty is selected, displayed, and restored from its save
   await expect(page.getByRole('heading', { name: /FIELD HQ/i })).toBeVisible();
   await expect(page.locator('.campaign-difficulty')).toHaveText('VETERAN');
   const persisted = await page.evaluate(() => JSON.parse(localStorage.getItem('spellcross:campaign-state:1') ?? '{}'));
-  expect(persisted).toMatchObject({ difficulty: 'veteran', globalTimer: 20 });
+  expect(persisted).toMatchObject({
+    difficulty: 'veteran',
+    globalTimer: CAMPAIGN_DIFFICULTY_RULES.veteran.globalTimer
+  });
 
   await page.reload();
   await page.getByRole('button', { name: /Continue/i }).click();
