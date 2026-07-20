@@ -657,7 +657,11 @@ export function rearmUnit(
   return unit;
 }
 
-export function dismissUnit(state: CampaignState, unitId: string) {
+export function dismissUnit(state: CampaignState, bundle: ContentBundle, unitId: string) {
+  const unit = state.army.find((u) => u.id === unitId);
+  // The hero anchors evac escort/protect objectives; without him those sectors silently degrade to
+  // a full-wipe-only win, so he can't be dismissed.
+  if (!unit || findUnitDef(bundle, unit.definitionId).type === 'hero') return;
   state.army = state.army.filter((u) => u.id !== unitId);
   state.formations = state.formations.map((f) => ({
     ...f,
@@ -787,6 +791,13 @@ const buildArmySide = (
   const apc = rosterUnits.find((u) => u.definitionId === 'm113');
   if (apc) {
     rosterUnits = [apc, ...rosterUnits.filter((u) => u.id !== apc.id)];
+  }
+  // Units a reach objective names (the captain on evac maps) must never be truncated out of a small
+  // start zone — an undeployed escort target would leave the objective unmeetable all battle.
+  const escortIds = new Set(scenario.objectives.filter((o) => o.kind === 'reach').flatMap((o) => o.unitIds ?? []));
+  if (escortIds.size > 0) {
+    const escorts = rosterUnits.filter((u) => escortIds.has(u.id));
+    rosterUnits = [...escorts, ...rosterUnits.filter((u) => !escortIds.has(u.id))];
   }
   const tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string }> = [];
 

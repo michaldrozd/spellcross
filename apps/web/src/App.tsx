@@ -2715,7 +2715,7 @@ export function App() {
             showToast(reason, 'error');
           }
         }}
-        onDismiss={(id) => mutate((s) => dismissUnit(s, id))}
+        onDismiss={(id) => mutate((s) => dismissUnit(s, bundle, id))}
         onResearch={(topic) => {
           try {
             mutate((s) => startResearch(s, bundle, topic));

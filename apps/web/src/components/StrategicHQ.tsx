@@ -891,7 +891,9 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                           </div>
                           <div className="unit-actions">
                             <button onClick={() => onRefill(u.id, 'rookie')}>{t('army.refill')}</button>
-                            <button onClick={() => onDismiss(u.id)}>{t('army.dismiss')}</button>
+                            {u.unitType !== 'hero' && (
+                              <button onClick={() => onDismiss(u.id)}>{t('army.dismiss')}</button>
+                            )}
                           </div>
                         </div>
                       );

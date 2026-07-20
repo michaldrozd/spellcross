@@ -6,6 +6,7 @@ import {
   convertStrategicToMoney,
   convertStrategicToResearch,
   createCampaign,
+  dismissUnit,
   endStrategicTurn,
   evaluateBattleOutcome,
   getEnemyActionBudget,
@@ -344,6 +345,28 @@ describe('campaign core', () => {
     const storyEnemyCount = storyBattle.state.sides.otherSide.units.size;
     expect(commanderBattle.state.sides.otherSide.units.size).toBe(storyEnemyCount + 2);
     expect(veteranBattle.state.sides.otherSide.units.size).toBe(storyEnemyCount + 3);
+  });
+
+  it('always deploys units required by reach objectives even when the start zone overflows', () => {
+    const state = createCampaign(starterBundle, undefined, 'commander');
+    // Flood the roster with transports: they sort to the front of deployment, so without the escort
+    // pin the captain would be truncated out of the small evac start zone.
+    for (let i = 0; i < 20; i += 1) {
+      state.army.push({ id: `apc-${i}`, definitionId: 'm113', tier: 'rookie', experience: 0 });
+    }
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris');
+    expect(battle.deployment.captain).toBeDefined();
+  });
+
+  it('refuses to dismiss the campaign hero but still dismisses regular units', () => {
+    const state = createCampaign(starterBundle);
+    dismissUnit(state, starterBundle, 'captain');
+    expect(state.army.some((u) => u.id === 'captain')).toBe(true);
+
+    const regular = state.army.find((u) => u.id !== 'captain');
+    if (!regular) throw new Error('expected a non-hero unit in the starting army');
+    dismissUnit(state, starterBundle, regular.id);
+    expect(state.army.some((u) => u.id === regular.id)).toBe(false);
   });
 
   it('persists an in-progress battle through a full serialize/JSON/hydrate round-trip', () => {
