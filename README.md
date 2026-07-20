@@ -14,7 +14,7 @@ A modern remake of the classic tactical strategy game Spellcross, built with Rea
 - **Save System**: Multiple save slots with auto-save
 
 ### Tactical Combat
-- **Isometric Hex Grid**: Classic tactical battlefield
+- **Isometric Battlefield**: Large tactical maps with terrain, elevation, cover, weather, props, and fog of war
 - **Turn-Based Combat**: Action points for movement and attacks
 - **Unit Variety**: Infantry, vehicles, support units, heroes
 - **Combat Mechanics**:
@@ -23,7 +23,8 @@ A modern remake of the classic tactical strategy game Spellcross, built with Rea
   - Morale and experience
   - Ammunition management
   - Transport (embark/disembark infantry)
-- **AI Opponent**: Configurable difficulty levels
+- **Opponent Turn**: Objective-aware movement, combat, supply, healing, and difficulty scaling
+- **Campaign Difficulty**: Story, Commander, and Veteran doctrines with different clocks, resources, reinforcements, and opponent pressure
 
 ### Unit Types
 | Type | Examples | Role |
@@ -78,7 +79,11 @@ pnpm install
 pnpm dev
 ```
 
-The game will be available at `http://localhost:5173`
+The game will be available at `http://localhost:5173`. To use the release-QA port directly:
+
+```bash
+pnpm --filter @spellcross/web dev --host 0.0.0.0 --port 4173
+```
 
 ### Build
 
@@ -123,17 +128,6 @@ pnpm e2e
 | Confirm attack | Click "ATTACK" button |
 | End turn | Click "End Turn" button |
 
-## Screenshots
-
-### Main Menu
-![Main Menu](.playwright-mcp/main_menu.png)
-
-### Strategic HQ
-![Strategic HQ](.playwright-mcp/strategic_hq.png)
-
-### Tactical Battle
-![Battle](.playwright-mcp/battle_view.png)
-
 ## Development
 
 ### Adding New Units
@@ -157,6 +151,6 @@ Territories are defined in the campaign data. Each territory includes:
 - Inspired by the original **Spellcross** (1997) by Cauldron
 - Built with modern web technologies
 
-## License
+## Distribution
 
-MIT License - See [LICENSE](LICENSE) for details
+This repository does not currently include a distribution license. Confirm the rights and provenance of the name, reference material, audio, and bundled visual assets before a public or commercial release, then add the appropriate license and notices.

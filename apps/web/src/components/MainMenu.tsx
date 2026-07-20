@@ -20,6 +20,7 @@ export interface SaveSlot {
 interface MainMenuProps {
   onNewGame: (slot: number, difficulty: CampaignDifficulty) => void;
   onContinue: (slot: number) => void;
+  onDeleteSave: (slot: number) => void;
   savedSlots: (SaveSlot | null)[];
   currentSlot: number;
 }
@@ -59,12 +60,14 @@ function loadAudioPreferences(): AudioPreferences {
 export const MainMenu: React.FC<MainMenuProps> = ({
   onNewGame,
   onContinue,
+  onDeleteSave,
   savedSlots,
   currentSlot,
 }) => {
   const { t, i18n } = useTranslation('mainmenu');
   const [selectedSlot, setSelectedSlot] = useState(currentSlot);
   const [selectedDifficulty, setSelectedDifficulty] = useState<CampaignDifficulty>('commander');
+  const [pendingDeleteSlot, setPendingDeleteSlot] = useState<number | null>(null);
   const [activePanel, setActivePanel] = useState<'slots' | 'settings' | 'manual' | null>(null);
   const [audioPreferences, setAudioPreferences] = useState(loadAudioPreferences);
 
@@ -115,7 +118,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
         <div className="menu-intel-panel">
           <span>{t('intel.campaignLink')}</span>
-          <strong>{hasAnySave ? t('intel.slotReady', { slot: currentSlot }) : t('intel.noActiveCampaign')}</strong>
+          <strong>{currentSave ? t('intel.slotReady', { slot: currentSlot }) : t('intel.noActiveCampaign')}</strong>
           <small>
             {currentSave
               ? t('intel.statusLine', {
@@ -128,7 +131,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         </div>
 
         <div className="menu-buttons">
-          {hasAnySave && (
+          {currentSave && (
             <button 
               className="menu-btn menu-btn-primary"
               onClick={() => onContinue(currentSlot)}
@@ -177,7 +180,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                   <button
                     key={slotNum}
                     className={`slot-item ${selectedSlot === slotNum ? 'selected' : ''}`}
-                    onClick={() => setSelectedSlot(slotNum)}
+                    onClick={() => {
+                      setSelectedSlot(slotNum);
+                      setPendingDeleteSlot(null);
+                    }}
                   >
                     <span className="slot-number">{t('slotModal.slotLabel', { slot: slotNum })}</span>
                     {save ? (
@@ -239,6 +245,31 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               >
                 {t('slotModal.back')}
               </button>
+              {savedSlots[selectedSlot - 1] && pendingDeleteSlot !== selectedSlot && (
+                <button
+                  className="menu-btn menu-btn-danger"
+                  onClick={() => setPendingDeleteSlot(selectedSlot)}
+                >
+                  {t('slotModal.delete')}
+                </button>
+              )}
+              {pendingDeleteSlot === selectedSlot && (
+                <div className="slot-delete-confirm" role="alert">
+                  <span>{t('slotModal.deleteWarning', { slot: selectedSlot })}</span>
+                  <button
+                    className="menu-btn menu-btn-danger"
+                    onClick={() => {
+                      onDeleteSave(selectedSlot);
+                      setPendingDeleteSlot(null);
+                    }}
+                  >
+                    {t('slotModal.confirmDelete')}
+                  </button>
+                  <button className="menu-btn menu-btn-secondary" onClick={() => setPendingDeleteSlot(null)}>
+                    {t('slotModal.cancel')}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

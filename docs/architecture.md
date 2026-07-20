@@ -1,63 +1,46 @@
-# Spellcross Remake – Architecture Blueprint
+# Spellcross Remake Architecture
 
-## Monorepo Layout
+## Runtime layout
 
-- `apps/web`: Player-facing web client (Vite + React + Pixi). Hosts tactical sandbox, future campaign UI, scenario editor.
-- `packages/core`: Headless simulation engine. Deterministic logic for tactical combat, timeline events, and opponent hooks.
-- `packages/data`: Content pipeline. Validates unit/terrain config with zod and exports data bundles for runtime.
-- `packages/services`: (Future) backend services. Placeholder Fastify server for save-sync, leaderboards, PvP relay.
-- `packages/config/*`: Shared tooling (eslint config today, more to come).
+- `apps/web` is the player-facing Vite application. React owns menus and HUD state; Pixi renders the tactical battlefield.
+- `packages/core` owns campaign state, tactical simulation, pathfinding, combat, vision, morale, objectives, opponent turns, and persistence encoding.
+- `packages/data` owns validated units, research, campaign territories, scenarios, maps, objectives, props, and canonical balance values.
+- `packages/services` is an optional Fastify service shell. The shipped game currently stores campaigns locally and does not require a backend.
+- `packages/config` contains shared workspace tooling.
 
-Tooling: pnpm workspaces + Turborepo orchestrate builds/tests. TypeScript `tsconfig.base.json` ensures consistent compiler settings.
+The production web build is static and emitted to `apps/web/dist`.
 
-## Core Engine Principles
+## Campaign flow
 
-1. **Deterministic Simulation** – All tactical decisions remain pure TypeScript functions. Side effects live in the host (web or services). This simplifies testing and supports eventual PvP replays.
-2. **Data-Driven Content** – Units, weapons, terrain are JSON schemas validated in `@spellcross/data`. Designers iterate without rebuilding code.
-3. **Hex Grid Tactical Layer** – `TacticalBattleState` represents canonical battlefield state. `TurnProcessor` manages initiative, action points, and logs battle events.
-4. **Traversal & Pathfinding** – A* over axial hexes (`planPathForUnit`) respects terrain cost, morale penalties, and live occupancy, ensuring UI previews match real AP expenditure.
-5. **Combat Resolution** – Direct-fire resolution (`resolveAttack`) handles range validation, armor/cover mitigation, morale damage, AP costs, and emits battle events consumed by the UI.
-6. **Adaptive Vision & Fog of War** – `updateFactionVision` computes per-faction sight cones with hex LoS and terrain occlusion, persisting explored tiles for UI rendering and opponent awareness.
-7. **Timeline & Telemetry** – Every mutating action emits structured events. UI replays them, analytics store them, cloud sync can diff states vs. event streams.
-8. **Extensible Systems** – Simulation structured around interchangeable systems (`turn-processor`, `combat-resolver`, `vision-system`, etc.) so we can add stealth, overwatch, morale without rewrites.
+The campaign state contains the army and reserves, formations, resources, research, territory progression, reports, campaign outcome, and an optional active tactical battle. A campaign permits one battlefield operation per strategic turn. Ending the strategic turn advances research, recruits, territory timers, scripted events, raids, upkeep, and the global war clock.
 
-## Web Client Slice
+Campaigns are stored in three browser `localStorage` slots. Tactical state uses a tagged JSON representation so `Map`, `Set`, and infinite-ammunition values survive reloads. Older saves without newer optional fields are hydrated with compatible defaults.
 
-- Vite provides dev server and build pipeline.
-- React renders shell UI (`TacticalSandboxPage`), while Pixi handles battlefield rendering (`BattlefieldStage`).
-- Hook `useBattleSimulation` bridges UI with simulation engine.
-- Styling kept minimal CSS for now; will migrate to design tokens / theming later.
+## Tactical simulation
 
-## Immediate Next Tasks
+`TacticalBattleState` is the canonical battle model. Core systems handle:
 
-1. **Simulation Roadmap**
-   - Extend combat with accuracy roll, suppression/stagger effects, overwatch, and armor penetration variance.
-   - Evolve fog of war with stealth units, sensor sweeps, and shared allied vision rules.
-   - Expand timeline event coverage (status effects, overwatch triggers, objective updates).
-2. **Content Pipeline**
-   - Port real unit/weapon data from original game into `packages/data`.
-   - Create terrain presets (forest, urban, swamp) with balancing knobs.
-   - Build data validation tests ensuring parity with original stats.
-3. **Web UX**
-   - Expand unit HUD to support multi-weapon selection and show predicted hit chance/damage.
-   - Provide command palette (move, attack, overwatch) tied to core actions.
-   - Enrich turn log entries with icons, filtering, and action grouping.
-4. **Rendering Enhancements**
-   - Replace placeholder hex with isometric tileset; add lighting layers.
-   - Support zoom/pan, camera focus on events, and destructible props visuals.
-5. **Tooling & QA**
-   - Configure lint/test pipelines in CI (GitHub Actions).
-   - Flesh out Vitest suites for simulation, plus Cypress smoke tests for UI.
-   - Add storybook (or Ladle) for UI components.
-6. **Narrative & Campaign**
-   - Draft strategic layer state machine (world map, research, logistics).
-   - Prototype mission briefing UI tied to data-driven scenario scripts.
-   - Define save-game schema compatible with upcoming backend.
+- movement and terrain-aware pathfinding;
+- line of sight, weather, stealth, and persistent explored fog;
+- action points, weapon ranges, target restrictions, hit chance, armor, cover, elevation, morale, XP, and destruction;
+- overwatch, transports, supply, healing, destructible terrain, and scenario objectives;
+- player Auto Turn and objective-aware opponent turns.
 
-## Longer-Term Milestones
+The renderer consumes that state and adds camera control, selection and hit areas, movement interpolation, directional sprites, terrain textures, props, shadows, particles, combat effects, audio cues, the minimap, and HUD feedback. The Pixi renderer is route-split so strategic play does not download it until a battle starts.
 
-- **Strategic Layer**: Implement Earth map progression, resource economy, research tree, logistics.
-- **Opponent Director**: Build strategic opponent logic that plans invasions and reacts to player success.
-- **Scenario Editor**: Web-based tool powered by `@spellcross/core` to create maps/missions.
-- **Multiplayer Foundations**: Deterministic lockstep using event streams, optional authoritative service in `@spellcross/services`.
-- **Live Operations**: PWA offline support, cloud saves, telemetry dashboards for balancing.
+## Content boundary
+
+Canonical gameplay content belongs in `packages/data`; UI translations belong in `apps/web/src/i18n/locales`. Rendering code must not duplicate unit or campaign balance values. New scenarios should define their map, forces, deployment zones, props, weather, and objectives in the data bundle and be covered by the all-territory launch regression.
+
+## Release checks
+
+Run these from the repository root before integration:
+
+```bash
+pnpm lint
+pnpm test
+pnpm build
+pnpm exec playwright test
+```
+
+Visual changes must also follow `docs/visual-qa-protocol.md`, including worst-frame checks for movement and ground contact.

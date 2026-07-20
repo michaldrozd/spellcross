@@ -1,5 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
+const externalBaseUrl = process.env.PLAYWRIGHT_BASE_URL;
+const baseURL = externalBaseUrl ?? 'http://localhost:4173';
+
 export default defineConfig({
   testDir: './apps/web/e2e',
   testMatch: '**/*.spec.ts',
@@ -8,12 +11,12 @@ export default defineConfig({
   workers: 2,
   use: {
     headless: true,
-    baseURL: 'http://localhost:4173',
+    baseURL,
     trace: 'retain-on-failure',
     video: 'off'
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
-  webServer: {
+  webServer: externalBaseUrl ? undefined : {
     command: 'pnpm --filter @spellcross/web dev --host --port 4173',
     url: 'http://localhost:4173',
     reuseExistingServer: true,

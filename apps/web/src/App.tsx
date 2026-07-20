@@ -68,7 +68,7 @@ const CAMPAIGN_STORAGE_KEY = 'spellcross:campaign-state';
 const CAMPAIGN_SLOT_KEY = 'spellcross:campaign-slot';
 const CAMPAIGN_SUMMARY_KEY = 'spellcross:campaign-summary';
 const CAMPAIGN_SCHEMA_KEY = 'spellcross:campaign-schema';
-const CAMPAIGN_SCHEMA_VERSION = '2026-07-20-campaign-difficulty';
+const CAMPAIGN_SCHEMA_VERSION = '2026-07-20-operation-cycle';
 const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
 const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
 const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
@@ -2435,6 +2435,11 @@ function loadAllSummaries(): (SaveSlot | null)[] {
     }
   });
 }
+
+function deleteSavedCampaign(slot: number) {
+  window.localStorage.removeItem(`${CAMPAIGN_STORAGE_KEY}:${slot}`);
+  window.localStorage.removeItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
+}
 export function App() {
   const { t } = useTranslation(['common', 'campaign']);
   const { campaign, mutate, persist, reset, slot, changeSlot } = useCampaign();
@@ -2486,6 +2491,11 @@ export function App() {
   const handleContinue = (continueSlot: number) => {
     const loaded = changeSlot(continueSlot);
     setMode(loaded.activeBattle ? 'battle' : 'strategic');
+  };
+  const handleDeleteSave = (deletedSlot: number) => {
+    deleteSavedCampaign(deletedSlot);
+    if (deletedSlot === slot) changeSlot(deletedSlot);
+    setSavedSlots(loadAllSummaries());
   };
   useEffect(() => {
     if (typeof window === 'undefined' || !import.meta.env.DEV) return;
@@ -2570,6 +2580,7 @@ export function App() {
         <MainMenu
           onNewGame={handleNewGame}
           onContinue={handleContinue}
+          onDeleteSave={handleDeleteSave}
           savedSlots={savedSlots}
           currentSlot={slot}
         />
@@ -2685,6 +2696,7 @@ export function App() {
       <StrategicHQ
         campaignDifficulty={campaign.difficulty}
         turn={campaign.turn}
+        operationAvailable={campaign.lastOperationTurn !== campaign.turn}
         warClock={campaign.globalTimer}
         money={campaign.resources.money}
         research={campaign.resources.research}

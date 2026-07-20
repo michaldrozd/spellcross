@@ -9,6 +9,7 @@ describe('MainMenu', () => {
   let container: HTMLDivElement;
   let root: Root;
   const onNewGame = vi.fn();
+  const onDeleteSave = vi.fn();
 
   beforeEach(async () => {
     Object.defineProperty(window, 'AudioContext', {
@@ -18,6 +19,7 @@ describe('MainMenu', () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     window.localStorage.clear();
     onNewGame.mockReset();
+    onDeleteSave.mockReset();
     await i18n.changeLanguage('en');
     container = document.createElement('div');
     document.body.appendChild(container);
@@ -27,6 +29,7 @@ describe('MainMenu', () => {
         <MainMenu
           onNewGame={onNewGame}
           onContinue={() => {}}
+          onDeleteSave={onDeleteSave}
           savedSlots={[null, null, null]}
           currentSlot={1}
         />
@@ -82,5 +85,35 @@ describe('MainMenu', () => {
     act(() => launch!.click());
 
     expect(onNewGame).toHaveBeenCalledWith(1, 'veteran');
+  });
+
+  it('requires confirmation before deleting an occupied slot', async () => {
+    await act(async () => {
+      root.render(
+        <MainMenu
+          onNewGame={onNewGame}
+          onContinue={() => {}}
+          onDeleteSave={onDeleteSave}
+          savedSlots={[{
+            slot: 1,
+            difficulty: 'commander',
+            turn: 4,
+            money: 120,
+            research: 30,
+            strategic: 10,
+            territories: 5,
+            updated: Date.now(),
+            activeBattle: false,
+          }, null, null]}
+          currentSlot={1}
+        />
+      );
+    });
+
+    clickButton('Load Game');
+    clickButton('Delete');
+    expect(onDeleteSave).not.toHaveBeenCalled();
+    clickButton('Confirm delete');
+    expect(onDeleteSave).toHaveBeenCalledWith(1);
   });
 });

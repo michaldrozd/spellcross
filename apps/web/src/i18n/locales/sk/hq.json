@@ -80,6 +80,8 @@
     "turnsBadge": "{{turns}} KÔL",
     "requires": "Vyžaduje:",
     "launchAttack": "SPUSTIŤ ÚTOK",
+    "operationCommitted": "OPERÁCIA UŽ PREBEHLA",
+    "operationCommittedHint": "Pred ďalšou operáciou ukonči strategické kolo.",
     "sectorSecured": "SEKTOR ZABEZPEČENÝ"
   },
   "army": {

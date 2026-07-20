@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { startBattle } from './helpers';
+import { endStrategicTurns, retreatToHq, startBattle } from './helpers';
 
 test('tactical pathing, obstacles, range, and fog visibility', async ({ page }) => {
   test.setTimeout(60_000);
@@ -47,6 +47,8 @@ test('tactical pathing, obstacles, range, and fog visibility', async ({ page }) 
   await expect.poll(async () => (await log.textContent()) ?? '').toMatch(/Hit:|Miss:/);
 
   // Scenario 2: fog/night visibility check
+  await retreatToHq(page);
+  await endStrategicTurns(page);
   const started = await page.evaluate(() => (window as any).__campaignControl.startBattle('sector-munich'));
   expect(started).toBeTruthy();
   await expect(page.locator('.battle-screen')).toBeVisible();

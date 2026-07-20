@@ -19,8 +19,8 @@
     "turnDetail": "Turn {{turn}}"
   },
   "footer": {
-    "copyright": "Spellcross Remake © 2025",
-    "version": "v0.1.0 Alpha"
+    "copyright": "Spellcross Remake © 2026",
+    "version": "v1.0.0"
   },
   "slotModal": {
     "title": "Select Slot",
@@ -30,7 +30,11 @@
     "empty": "- Empty -",
     "load": "Load",
     "newGame": "New Game",
-    "back": "Back"
+    "back": "Back",
+    "delete": "Delete",
+    "deleteWarning": "Delete Slot {{slot}} permanently?",
+    "confirmDelete": "Confirm delete",
+    "cancel": "Cancel"
   },
   "difficulty": {
     "systemCode": "Operational doctrine / CMD-01",
@@ -73,7 +77,7 @@
         "lines": {
           "0": "Choose an available sector before its turn clock expires.",
           "1": "Recruit, refill, and research between operations; new units may need a turn to arrive.",
-          "2": "The war clock advances when you end the strategic turn. Spend time deliberately."
+          "2": "Launch one operation per strategic turn, then end the turn to advance the war clock."
         }
       },
       "battle": {

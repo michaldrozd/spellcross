@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { launchBattle, retreatToHq, startFreshCampaign } from './helpers';
+import { endStrategicTurns, launchBattle, retreatToHq, startFreshCampaign } from './helpers';
 
 const waitLog = (page: import('@playwright/test').Page, text: string) =>
   expect.poll(async () => (await page.locator('.log').textContent()) ?? '').toContain(text);
@@ -28,6 +28,7 @@ test('weather, stealth visibility, and objective-aware AI', async ({ page }) => 
   // Retreat back to HQ for next scenario
   await retreatToHq(page);
 
+  await endStrategicTurns(page);
   await launchBattle(page, 'sector-strasbourg');
   await page.evaluate(() => (window as any).__battleControl?.moveTo(2, 2));
 

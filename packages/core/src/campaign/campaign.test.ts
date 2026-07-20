@@ -215,10 +215,51 @@ describe('campaign core', () => {
     expect(() => startBattleForTerritory(state, starterBundle, 'sector-strasbourg')).toThrow(/No deployable units/);
   });
 
+  it('allows only one operation per strategic turn', () => {
+    const state = createCampaign(starterBundle);
+    startBattleForTerritory(state, starterBundle, 'sector-paris');
+    retreatFromBattle(state);
+
+    const nextTerritory = state.territories.find((territory) => territory.id === 'sector-lyon');
+    if (!nextTerritory) throw new Error('expected Lyon territory');
+    nextTerritory.status = 'available';
+    expect(() => startBattleForTerritory(state, starterBundle, nextTerritory.id)).toThrow(/already been launched this turn/);
+
+    endStrategicTurn(state, starterBundle);
+    expect(() => startBattleForTerritory(state, starterBundle, nextTerritory.id)).not.toThrow();
+  });
+
+  it.each(['story', 'commander', 'veteran'] as const)(
+    'keeps the full %s campaign winnable while advancing the war clock',
+    (difficulty) => {
+      const state = createCampaign(starterBundle, undefined, difficulty);
+      const campaignSectorIds = new Set(starterBundle.campaigns[0]?.territories.map((territory) => territory.id));
+      let operations = 0;
+
+      while (!state.outcome) {
+        const territory = state.territories.find(
+          (candidate) => campaignSectorIds.has(candidate.id) && candidate.status === 'available'
+        );
+        if (!territory) throw new Error('expected an available campaign sector');
+
+        startBattleForTerritory(state, starterBundle, territory.id);
+        applyBattleOutcome(state, starterBundle, 'victory');
+        operations += 1;
+        if (!state.outcome) endStrategicTurn(state, starterBundle);
+      }
+
+      expect(state.outcome).toBe('victory');
+      expect(operations).toBe(campaignSectorIds.size);
+      expect(state.turn).toBe(operations);
+      expect(state.globalTimer).toBeGreaterThan(0);
+    }
+  );
+
   it('serializes and hydrates campaign state for persistence', () => {
     const state = createCampaign(starterBundle, undefined, 'veteran');
     state.resources.money = 321;
     state.turn = 3;
+    state.lastOperationTurn = 3;
     state.research.inProgress = { topicId: 'armor-upfit', remaining: 15 };
     state.popups = [{ turn: 3, key: 'testReport', params: { note: 'Recovered report' }, kind: 'reward' }];
 
@@ -228,6 +269,7 @@ describe('campaign core', () => {
     expect(restored.resources.money).toBe(321);
     expect(restored.difficulty).toBe('veteran');
     expect(restored.turn).toBe(3);
+    expect(restored.lastOperationTurn).toBe(3);
     expect(restored.research.inProgress?.topicId).toBe('armor-upfit');
     expect(restored.research.completed.has('optics-i')).toBe(true);
     expect(isUnitUnlocked(restored, starterBundle, 'rangers')).toBe(true);

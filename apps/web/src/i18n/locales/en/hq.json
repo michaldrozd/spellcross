@@ -80,6 +80,8 @@
     "turnsBadge": "{{turns}} TURNS",
     "requires": "Requires:",
     "launchAttack": "LAUNCH ATTACK",
+    "operationCommitted": "OPERATION COMMITTED",
+    "operationCommittedHint": "End the strategic turn before launching another operation.",
     "sectorSecured": "SECTOR SECURED"
   },
   "army": {

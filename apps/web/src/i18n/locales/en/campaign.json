@@ -74,6 +74,7 @@
     "notEnoughMoneyRefill": "Not enough money to refill",
     "notEnoughMoneyRearm": "Not enough money to rearm",
     "battleInProgress": "Battle already in progress",
+    "operationAlreadyLaunched": "An operation has already been launched this turn",
     "territoryNotFound": "Territory not found",
     "territoryNotAttackable": "Territory not attackable",
     "noDeployableUnits": "No deployable units available for this operation",

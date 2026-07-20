@@ -19,8 +19,8 @@
     "turnDetail": "Kolo {{turn}}"
   },
   "footer": {
-    "copyright": "Spellcross Remake © 2025",
-    "version": "v0.1.0 Alpha"
+    "copyright": "Spellcross Remake © 2026",
+    "version": "v1.0.0"
   },
   "slotModal": {
     "title": "Vyber slot",
@@ -30,7 +30,11 @@
     "empty": "- Prázdny -",
     "load": "Načítať",
     "newGame": "Nová hra",
-    "back": "Späť"
+    "back": "Späť",
+    "delete": "Zmazať",
+    "deleteWarning": "Natrvalo zmazať slot {{slot}}?",
+    "confirmDelete": "Potvrdiť zmazanie",
+    "cancel": "Zrušiť"
   },
   "difficulty": {
     "systemCode": "Operačná doktrína / CMD-01",
@@ -73,7 +77,7 @@
         "lines": {
           "0": "Vyber dostupný sektor skôr, než vyprší jeho časový limit.",
           "1": "Medzi operáciami verbuj, dopĺňaj stavy a skúmaj; nové jednotky môžu prísť až o kolo.",
-          "2": "Vojnové hodiny sa pohnú po ukončení strategického kola. Čas míňaj rozvážne."
+          "2": "V každom strategickom kole spusti jednu operáciu, potom kolo ukonči a posuň vojnové hodiny."
         }
       },
       "battle": {

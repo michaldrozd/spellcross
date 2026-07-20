@@ -35,6 +35,7 @@ test('varied tactical combat: vehicle/artillery, destructibles, fog/night', asyn
   await page.evaluate(() => (window as any).__battleControl?.endTurn());
   await retreatToHq(page);
 
+  await endStrategicTurns(page);
   await launchBattle(page, 'sector-munich');
 
   // Move and attack in low-vision conditions

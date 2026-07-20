@@ -164,6 +164,7 @@ export interface CampaignState {
   campaignId: string;
   difficulty: CampaignDifficulty;
   turn: number;
+  lastOperationTurn?: number;
   globalTimer: number;
   resources: {
     money: number;
@@ -189,6 +190,7 @@ export interface SerializedCampaignState {
   // Optional for saves created before campaign difficulty was introduced.
   difficulty?: CampaignDifficulty;
   turn: number;
+  lastOperationTurn?: number;
   globalTimer: number;
   resources: CampaignState['resources'];
   army: ArmyUnit[];
@@ -824,6 +826,9 @@ export function startBattleForTerritory(
   selectedUnitIds?: string[]
 ): ActiveBattle {
   if (state.activeBattle) throw new CampaignError('battleInProgress', 'Battle already in progress');
+  if (state.lastOperationTurn === state.turn) {
+    throw new CampaignError('operationAlreadyLaunched', 'An operation has already been launched this turn');
+  }
   const territory = state.territories.find((t) => t.id === territoryId);
   if (!territory) throw new CampaignError('territoryNotFound', 'Territory not found');
   if (territory.status !== 'available') throw new CampaignError('territoryNotAttackable', 'Territory not attackable');
@@ -948,6 +953,7 @@ export function startBattleForTerritory(
     reachClaimedRound: {},
     difficulty: state.difficulty
   };
+  state.lastOperationTurn = state.turn;
   state.activeBattle = activeBattle;
   return activeBattle;
 }
@@ -1255,6 +1261,7 @@ export function serializeCampaignState(state: CampaignState): SerializedCampaign
     campaignId: state.campaignId,
     difficulty: state.difficulty,
     turn: state.turn,
+    lastOperationTurn: state.lastOperationTurn,
     globalTimer: state.globalTimer,
     resources: { ...state.resources },
     army: structuredClone(state.army),
@@ -1311,6 +1318,7 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     campaignId,
     difficulty,
     turn: snapshot.turn,
+    lastOperationTurn: snapshot.lastOperationTurn,
     globalTimer: snapshot.globalTimer ?? 15,
     resources: { ...snapshot.resources },
     army: structuredClone(snapshot.army),

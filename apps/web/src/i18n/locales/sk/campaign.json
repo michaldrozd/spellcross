@@ -75,6 +75,7 @@
     "notEnoughMoneyRefill": "Nedostatok peňazí na doplnenie",
     "notEnoughMoneyRearm": "Nedostatok peňazí na výzbroj",
     "battleInProgress": "Bitka už prebieha",
+    "operationAlreadyLaunched": "V tomto kole už bola spustená operácia",
     "territoryNotFound": "Územie nenájdené",
     "territoryNotAttackable": "Územie nie je možné napadnúť",
     "noDeployableUnits": "Žiadne nasaditeľné jednotky pre túto operáciu",

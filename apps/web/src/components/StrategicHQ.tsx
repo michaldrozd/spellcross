@@ -43,6 +43,7 @@ interface ResearchTopic {
 interface StrategicHQProps {
   campaignDifficulty: CampaignDifficulty;
   turn: number;
+  operationAvailable: boolean;
   warClock: number;
   money: number;
   research: number;
@@ -217,7 +218,8 @@ const StrategicMapView: React.FC<{
   onSelectTerritory: (id: string | null) => void;
   onStartBattle: (id: string) => void;
   log: CampaignState['log'];
-}> = ({ territories, selectedTerritory, onSelectTerritory, onStartBattle, log }) => {
+  operationAvailable: boolean;
+}> = ({ territories, selectedTerritory, onSelectTerritory, onStartBattle, log, operationAvailable }) => {
   // Aliased to `translate` (not `t`) — this component uses `t` pervasively as a loop variable name for
   // Territory objects (`territories.map((t) => t.status)` etc.), which would shadow the i18n function.
   const { t: translate } = useTranslation(['hq', 'territories', 'campaign']);
@@ -544,8 +546,13 @@ const StrategicMapView: React.FC<{
             )}
 
             {selected.status === 'available' && (
-              <button className="attack-btn-large" onClick={() => onStartBattle(selected.id)}>
-                ⚔ {translate('hq:territory.launchAttack')}
+              <button
+                className="attack-btn-large"
+                disabled={!operationAvailable}
+                title={!operationAvailable ? translate('hq:territory.operationCommittedHint') : undefined}
+                onClick={() => onStartBattle(selected.id)}
+              >
+                ⚔ {translate(operationAvailable ? 'hq:territory.launchAttack' : 'hq:territory.operationCommitted')}
               </button>
             )}
 
@@ -584,7 +591,7 @@ const StrategicMapView: React.FC<{
 };
 
 export const StrategicHQ: React.FC<StrategicHQProps> = ({
-  campaignDifficulty, turn, warClock, money, research, strategic,
+  campaignDifficulty, turn, operationAvailable, warClock, money, research, strategic,
   army, reserves, territories, researchTopics, currentResearch, completedResearch,
   log, onStartBattle, onEndTurn, onRecruit, onRefill, onDismiss,
   onResearch, onConvertMoney, onConvertResearch, onBack, popups, onDismissPopups, availableUnits
@@ -818,6 +825,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
             onSelectTerritory={setSelectedTerritory}
             onStartBattle={onStartBattle}
             log={log}
+            operationAvailable={operationAvailable}
           />
         )}
 

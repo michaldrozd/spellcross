@@ -3,7 +3,7 @@
 This document tracks the current implementation against the design anchors in
 `MANUAL.cz.md`, `DESCRIPTION.sk.md`, and `project_spec.md`.
 
-Last reviewed: 2026-06-28.
+Last reviewed: 2026-07-20.
 
 ## Current State
 
@@ -20,6 +20,7 @@ Last reviewed: 2026-06-28.
 Implemented:
 
 - Europe campaign map with 17 main sectors and generated counteroffensive sectors.
+- One battlefield operation per strategic turn, so the war clock, recruitment, and research pacing cannot be bypassed.
 - Money, research, and strategic points.
 - Strategic point conversion to money and research.
 - Territory timers and global campaign pressure.
@@ -28,7 +29,7 @@ Implemented:
 - Research queue with one active project at a time.
 - Research unlocks and stat bonuses for existing and newly deployed units.
 - Formation bonuses applied when building a battle side.
-- Save slots and serialized campaign/battle state.
+- Three save slots with serialized campaign/battle state and confirmed save deletion.
 - Victory, defeat, retreat, rewards, unlocks, and terminal campaign outcome.
 
 Partially implemented or simplified:
