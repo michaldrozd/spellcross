@@ -1616,6 +1616,10 @@ export function BattlefieldStage({
     if (norm === 'external' || norm === 'on' || norm === 'true' || norm === 'color') return true;
     return true;
   });
+  const requiredTerrainNames = useMemo(() => {
+    const usedTerrain = new Set(map.tiles.map((tile) => tile.terrain));
+    return TERRAIN_SHEET_ORDER.filter((name) => usedTerrain.has(name));
+  }, [map.tiles]);
 
   useEffect(() => {
     if (!allowExternalTextures) {
@@ -1625,7 +1629,7 @@ export function BattlefieldStage({
       return;
     }
     let cancelled = false;
-    const names = ['plain','road','forest','urban','hill','water','swamp','structure'] as const;
+    const names = requiredTerrainNames;
 
     (async () => {
       try {
@@ -1669,11 +1673,13 @@ export function BattlefieldStage({
           { url: '/pics/textures.png', forcedMode: 'grayscale' },          // repo placeholder sheet (keep grayscale)
           { url: '/pics/textures_black.png', forcedMode: 'grayscale' }
         ];
-        for (const candidate of sheetCandidates) {
-          const mode = await trySheet(candidate.url, candidate.forcedMode);
-          if (!mode) continue;
-          sheetMode = mode;
-          if (mode === 'colored') break;
+        if (names.some((name) => !out[name])) {
+          for (const candidate of sheetCandidates) {
+            const mode = await trySheet(candidate.url, candidate.forcedMode);
+            if (!mode) continue;
+            sheetMode = mode;
+            if (mode === 'colored') break;
+          }
         }
 
         if (cancelled) return;
@@ -1690,7 +1696,7 @@ export function BattlefieldStage({
       } catch { /* ignore */ }
     })();
     return () => { cancelled = true; };
-  }, [allowExternalTextures, terrainTextures]);
+  }, [allowExternalTextures, requiredTerrainNames, terrainTextures]);
 
   useEffect(() => {
     let cancelled = false;
