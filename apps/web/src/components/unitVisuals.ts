@@ -268,6 +268,113 @@ export const DIRECTIONAL_UNIT_GROUND_BIAS: Record<string, number> = {
 
 export type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
 export type UnitPointerArea = { x: number; y: number; width: number; height: number };
+export type VisualCoordinate = { q: number; r: number };
+export type VisualMovement = {
+  path: VisualCoordinate[];
+  startTime: number;
+  stepDuration: number;
+  preAlignDuration?: number;
+  segmentTurnDuration?: number;
+};
+
+export type MovementFrame = {
+  displayCoord: VisualCoordinate;
+  fromCoord: VisualCoordinate;
+  toCoord: VisualCoordinate;
+  currentStep: number;
+  stepProgress: number;
+  movementPhase: number;
+  easedProgress: number;
+  isFirstSegment: boolean;
+  isLastSegment: boolean;
+  isTurnPhase: boolean;
+  isMoving: boolean;
+};
+
+const orientationForVisualStep = (from: VisualCoordinate, to: VisualCoordinate) => {
+  const dq = Math.sign(to.q - from.q);
+  const dr = Math.sign(to.r - from.r);
+  if (dq > 0 && dr === 0) return 0;
+  if (dq > 0 && dr < 0) return 1;
+  if (dq === 0 && dr < 0) return 2;
+  if (dq < 0 && dr === 0) return 3;
+  if (dq < 0 && dr > 0) return 4;
+  if (dq === 0 && dr > 0) return 5;
+  if (dq > 0 && dr > 0) return 6;
+  if (dq < 0 && dr < 0) return 7;
+  return 0;
+};
+
+export function resolveMovementFrame(moving: VisualMovement, now: number): MovementFrame | null {
+  if (moving.path.length < 2) return null;
+
+  const rawElapsed = now - moving.startTime;
+  const preAlignDuration = Math.max(0, moving.preAlignDuration ?? 0);
+  const elapsed = Math.max(0, rawElapsed - preAlignDuration);
+  const totalSteps = moving.path.length - 1;
+  const stepDuration = Math.max(1, moving.stepDuration);
+  const segmentTurnDuration = Math.max(0, moving.segmentTurnDuration ?? 0);
+  let remainingElapsed = elapsed;
+  let currentStep = 0;
+  let movementPhase = 0;
+  let stepProgress = rawElapsed < preAlignDuration ? 0 : 1;
+  let isTurnPhase = false;
+
+  for (let stepIndex = 0; stepIndex < totalSteps; stepIndex += 1) {
+    currentStep = stepIndex;
+    if (remainingElapsed <= stepDuration || stepIndex === totalSteps - 1) {
+      stepProgress = rawElapsed < preAlignDuration ? 0 : Math.min(Math.max(remainingElapsed / stepDuration, 0), 1);
+      movementPhase = stepIndex + stepProgress;
+      break;
+    }
+
+    remainingElapsed -= stepDuration;
+    const fromOrientation = orientationForVisualStep(moving.path[stepIndex], moving.path[stepIndex + 1]);
+    const toOrientation = stepIndex + 2 < moving.path.length
+      ? orientationForVisualStep(moving.path[stepIndex + 1], moving.path[stepIndex + 2])
+      : fromOrientation;
+    const turnDuration = fromOrientation !== toOrientation ? segmentTurnDuration : 0;
+    if (turnDuration > 0 && remainingElapsed <= turnDuration) {
+      stepProgress = 1;
+      movementPhase = stepIndex + 1;
+      isTurnPhase = true;
+      break;
+    }
+    remainingElapsed -= turnDuration;
+  }
+
+  const fromCoord = moving.path[currentStep];
+  const toCoord = moving.path[currentStep + 1];
+  const isFirstSegment = currentStep === 0;
+  const isLastSegment = currentStep === totalSteps - 1;
+  const easedProgress = (isFirstSegment && isLastSegment)
+    ? stepProgress * stepProgress * (3 - 2 * stepProgress)
+    : isFirstSegment
+      ? stepProgress * stepProgress
+      : isLastSegment
+        ? stepProgress * (2 - stepProgress)
+        : stepProgress;
+  const displayCoord = isTurnPhase
+    ? { ...toCoord }
+    : {
+        q: fromCoord.q + (toCoord.q - fromCoord.q) * easedProgress,
+        r: fromCoord.r + (toCoord.r - fromCoord.r) * easedProgress
+      };
+
+  return {
+    displayCoord,
+    fromCoord,
+    toCoord,
+    currentStep,
+    stepProgress,
+    movementPhase,
+    easedProgress,
+    isFirstSegment,
+    isLastSegment,
+    isTurnPhase,
+    isMoving: rawElapsed >= preAlignDuration && !isTurnPhase && !(isLastSegment && stepProgress >= 1)
+  };
+}
 
 export const directionNameForOrientation = (orientation: number) => {
   const normalized = ((Math.round(orientation) % 8) + 8) % 8;
@@ -365,6 +472,11 @@ export function directionalVehicleSprite(unitType: string, definitionId: string)
   if (definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
   if (definitionId.includes('artillery') || definitionId.includes('mlrs') || definitionId.includes('howitzer')) return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   return VEHICLE_DIRECTIONAL_SPRITES.tank;
+}
+
+export function leavesMechanicalWreck(unitType: string | undefined, definitionId: string) {
+  if (unitType !== 'vehicle' && unitType !== 'artillery') return false;
+  return !/(arachnoid|breorn|death-knight|dire|golem|hell-rider|salamander|wolf)/.test(definitionId);
 }
 
 export function unitPointerArea(tile: number, unitType: string, definitionId: string, selected = false): UnitPointerArea {

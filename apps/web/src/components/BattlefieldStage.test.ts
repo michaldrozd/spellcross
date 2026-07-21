@@ -6,7 +6,9 @@ import {
   directionalSpriteGroundOffset,
   directionNameForOrientation,
   directionNameForScreenVector,
+  leavesMechanicalWreck,
   rasterVehiclePose,
+  resolveMovementFrame,
   unitVisualHeight,
   vehicleSheetDirectionNameForOrientation,
   vehicleSheetDirectionNameForScreenVector
@@ -67,6 +69,59 @@ describe('unitVisualHeight', () => {
     for (const vector of movementVectors) {
       expect(rasterVehiclePose(vector).rotation).toBe(0);
     }
+  });
+});
+
+describe('resolveMovementFrame', () => {
+  it('keeps the unit still during vehicle pre-alignment', () => {
+    const frame = resolveMovementFrame({
+      path: [{ q: 2, r: 2 }, { q: 3, r: 2 }],
+      startTime: 1000,
+      stepDuration: 400,
+      preAlignDuration: 150
+    }, 1100);
+
+    expect(frame).toMatchObject({
+      displayCoord: { q: 2, r: 2 },
+      isMoving: false,
+      stepProgress: 0
+    });
+  });
+
+  it('uses continuous speed between eased start and stop segments', () => {
+    const movement = {
+      path: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 2, r: 0 }, { q: 3, r: 0 }],
+      startTime: 0,
+      stepDuration: 100
+    };
+
+    expect(resolveMovementFrame(movement, 50)?.displayCoord.q).toBeCloseTo(0.25);
+    expect(resolveMovementFrame(movement, 150)?.displayCoord.q).toBeCloseTo(1.5);
+    expect(resolveMovementFrame(movement, 250)?.displayCoord.q).toBeCloseTo(2.75);
+  });
+
+  it('holds a vehicle on the corner while its facing changes', () => {
+    const movement = {
+      path: [{ q: 0, r: 0 }, { q: 1, r: 0 }, { q: 1, r: 1 }],
+      startTime: 0,
+      stepDuration: 100,
+      segmentTurnDuration: 50
+    };
+    const turnFrame = resolveMovementFrame(movement, 125);
+    const movingFrame = resolveMovementFrame(movement, 175);
+
+    expect(turnFrame).toMatchObject({ displayCoord: { q: 1, r: 0 }, isMoving: false, isTurnPhase: true });
+    expect(movingFrame?.isMoving).toBe(true);
+    expect(movingFrame?.displayCoord.r).toBeCloseTo(0.4375);
+  });
+});
+
+describe('leavesMechanicalWreck', () => {
+  it('does not turn fantasy creatures into generic tank wrecks', () => {
+    expect(leavesMechanicalWreck('vehicle', 'salamander')).toBe(false);
+    expect(leavesMechanicalWreck('vehicle', 'hell-rider')).toBe(false);
+    expect(leavesMechanicalWreck('vehicle', 'leopard-2')).toBe(true);
+    expect(leavesMechanicalWreck('artillery', 'm109-howitzer')).toBe(true);
   });
 });
 

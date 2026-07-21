@@ -10,6 +10,7 @@ import { TextStyle } from 'pixi.js';
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { combatEffectTiming, type CombatEffectType } from './combatVisuals.js';
 import {
   DIRECTIONAL_UNIT_ANCHOR_Y,
   DIRECTIONAL_UNIT_ASSET_VERSION,
@@ -24,8 +25,10 @@ import {
   directionalSpriteGroundOffset,
   directionalVehicleSprite,
   directionNameForOrientation,
+  leavesMechanicalWreck,
   rasterUnitOverride,
   rasterVehiclePose,
+  resolveMovementFrame,
   unitContactFootprint,
   unitPointerArea,
   unitVisualHeight,
@@ -172,7 +175,7 @@ const getCroppedBuildingTexture = (rawPath: string, keepTop: number): Texture =>
 const tileSize = 56;
 const hexWidth = tileSize;
 const hexHeight = tileSize * 0.866; // sin(60deg)
-const DEATH_TTL_MS = 20_000;
+const CORPSE_TTL_MS = 20_000;
 const SHAKE_MAX_PX = 7; // peak camera shake amplitude at full trauma
 
 
@@ -198,7 +201,7 @@ export interface AttackEffect {
   toQ: number;
   toR: number;
   startTime: number;
-  type: 'gunshot' | 'explosion' | 'magic' | 'melee' | 'arrow' | 'fire' | 'sniper';
+  type: CombatEffectType;
   damage?: number;
   hit?: boolean;
   arc?: boolean; // indirect fire (mortar/howitzer/rocket) — the shell lobs in a high ballistic arc
@@ -256,7 +259,16 @@ export interface BattlefieldStageProps {
   movingUnit?: MovingUnit | null;
 }
 
-type DeathMarker = { id: string; q: number; r: number; t: number; faction: FactionId; unitType?: string };
+type DeathMarker = {
+  id: string;
+  q: number;
+  r: number;
+  t: number;
+  faction: FactionId;
+  unitType?: string;
+  definitionId: string;
+  orientation: number;
+};
 
 // Dev/E2E camera hook installed on window while the stage is mounted.
 type BattleCameraWindow = Window & {
@@ -1436,6 +1448,10 @@ export function BattlefieldStage({
   const visibleTiles = viewerVision?.visibleTiles ?? EMPTY_TILE_SET;
   const exploredTiles = viewerVision?.exploredTiles ?? EMPTY_TILE_SET;
   const [now, setNow] = useState(() => Date.now());
+  const activeMovementFrame = useMemo(
+    () => movingUnit ? resolveMovementFrame(movingUnit, now) : null,
+    [movingUnit, now]
+  );
   const prefersReducedMotion = useMemo(
     () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
     []
@@ -1444,7 +1460,9 @@ export function BattlefieldStage({
   // A smoking vehicle wreck keeps animating after the kill effect ends; without a faster tick the
   // 250ms idle cadence strobes its embers at ~4fps. Skip entirely when reduced motion is requested.
   const hasSmokingWreck = useMemo(
-    () => !prefersReducedMotion && Array.from(deathMarkers.values()).some((m) => m.unitType === 'vehicle' || m.unitType === 'artillery'),
+    () => !prefersReducedMotion && Array.from(deathMarkers.values()).some((marker) =>
+      leavesMechanicalWreck(marker.unitType, marker.definitionId)
+    ),
     [deathMarkers, prefersReducedMotion]
   );
   // Update more frequently during animations (and while a wreck smokes, at a lighter 16fps).
@@ -1550,7 +1568,16 @@ export function BattlefieldStage({
       for (const u of side.units.values()) {
         if (u.stance === 'destroyed' && !recordedDeathsRef.current.has(u.id)) {
           recordedDeathsRef.current.add(u.id);
-          next.set(u.id, { id: u.id, q: u.coordinate.q, r: u.coordinate.r, t: Date.now(), faction: u.faction, unitType: u.unitType });
+          next.set(u.id, {
+            id: u.id,
+            q: u.coordinate.q,
+            r: u.coordinate.r,
+            t: Date.now(),
+            faction: u.faction,
+            unitType: u.unitType,
+            definitionId: u.definitionId.toLowerCase(),
+            orientation: u.orientation ?? 0
+          });
           added = true;
         }
       }
@@ -1565,11 +1592,11 @@ export function BattlefieldStage({
 
   useEffect(() => {
     if (deathMarkers.size === 0) return;
-    const cutoff = now - DEATH_TTL_MS;
+    const cutoff = now - CORPSE_TTL_MS;
     let changed = false;
     const next = new Map(deathMarkers);
     for (const [id, marker] of next) {
-      if (marker.t < cutoff) {
+      if (marker.t < cutoff && !leavesMechanicalWreck(marker.unitType, marker.definitionId)) {
         next.delete(id);
         changed = true;
       }
@@ -1824,13 +1851,29 @@ export function BattlefieldStage({
 
     const from = toScreen(fromCoord);
     const to = toScreen(toCoord);
-    setFollowTargetPx({
-      x: ((from.x + to.x) / 2) + (ISO_MODE ? isoBaseX : 0),
-      y: ((from.y + to.y) / 2) + tileSize * 0.2
-    });
-    const cinematicZoom = targetEffect ? 2.62 : 2.25;
-    setZoom((current) => Math.max(current, cinematicZoom));
-  }, [attackEffects, battleState.sides, focusTargetUnitId, isoBaseX, selectedUnitId]);
+    const fromWorld = { x: from.x + (ISO_MODE ? isoBaseX : 0), y: from.y };
+    const toWorld = { x: to.x + (ISO_MODE ? isoBaseX : 0), y: to.y };
+    const currentCenter = followRef.current;
+    const currentScale = clampCameraScale(snapCameraScale(zoomRef.current));
+    const pointIsFramed = (point: { x: number; y: number }) => {
+      if (!currentCenter) return false;
+      const screenX = hostSize.w / 2 + (point.x - currentCenter.x) * currentScale;
+      const screenY = hostSize.h * 0.41 + (point.y - currentCenter.y) * currentScale;
+      return screenX >= hostSize.w * 0.12
+        && screenX <= hostSize.w * 0.78
+        && screenY >= hostSize.h * 0.16
+        && screenY <= hostSize.h * 0.76;
+    };
+    const attackAlreadyFramed = Boolean(targetEffect) && pointIsFramed(fromWorld) && pointIsFramed(toWorld);
+
+    if (!attackAlreadyFramed) {
+      setFollowTargetPx({
+        x: (fromWorld.x + toWorld.x) / 2,
+        y: ((fromWorld.y + toWorld.y) / 2) + tileSize * 0.2
+      });
+      setZoom((current) => Math.max(current, targetEffect ? 2.35 : 2.25));
+    }
+  }, [attackEffects, battleState.sides, focusTargetUnitId, hostSize.h, hostSize.w, isoBaseX, selectedUnitId]);
 
   useEffect(() => {
     if (restoreCameraSignal === lastRestoreCameraSignalRef.current) return;
@@ -2036,8 +2079,11 @@ export function BattlefieldStage({
     for (const e of attackEffects) {
       if (e.hit === false) continue;
       const elapsed = now - e.startTime;
-      if (elapsed < 0 || elapsed > 520) continue;
-      const env = 1 - elapsed / 520;
+      const timing = combatEffectTiming(e.type, e.arc);
+      const impactElapsed = elapsed - timing.impactAtMs;
+      const shakeDuration = Math.min(520, timing.impactMs);
+      if (impactElapsed < 0 || impactElapsed > shakeDuration) continue;
+      const env = 1 - impactElapsed / shakeDuration;
       const base = e.type === 'explosion' ? 0.62 : 0.26;
       const dmgScale = Math.min(1, (e.damage ?? 0) / 14);
       shakeTrauma = Math.max(shakeTrauma, base * (0.55 + 0.45 * dmgScale) * env);
@@ -4160,10 +4206,23 @@ export function BattlefieldStage({
       const isFriendly = m.faction === viewerFaction;
       const isVisible = visibleTiles.has(idx);
       if (!isFriendly && !isVisible) return;
-      // While the killing hit is still playing, the dying corpse sprite is still shown on this tile
-      // (dyingShown, ~2.5s). Hold the death cross back until then so it doesn't draw under the corpse.
-      const hitInFlight = attackEffects.some((e) => e.toQ === m.q && e.toR === m.r && e.hit !== false && now - e.startTime <= 2500);
-      if (hitInFlight) return;
+      const mechanicalWreck = leavesMechanicalWreck(m.unitType, m.definitionId);
+      const activeKillingEffect = attackEffects.find((effect) => {
+        const elapsed = now - effect.startTime;
+        return effect.toQ === m.q
+          && effect.toR === m.r
+          && effect.hit !== false
+          && elapsed >= 0
+          && elapsed <= combatEffectTiming(effect.type, effect.arc).totalMs;
+      });
+      const hitInFlight = Boolean(activeKillingEffect);
+      // Fire and smoke start at the killing impact. Organic corpses wait until the live death
+      // animation ends so the same body is never drawn twice.
+      if (hitInFlight && !mechanicalWreck) return;
+      if (activeKillingEffect) {
+        const timing = combatEffectTiming(activeKillingEffect.type, activeKillingEffect.arc);
+        if (now - activeKillingEffect.startTime < timing.impactAtMs) return;
+      }
 
       const p = toScreen({ q: m.q, r: m.r });
       const tile = map.tiles[idx];
@@ -4174,28 +4233,54 @@ export function BattlefieldStage({
       const y = Math.round(p.y - baseHeight * ELEV_Y_OFFSET);
       const z = Math.round(y) + (m.id === selectedUnitId ? 5000 : 0);
 
-      const elapsed = now - m.t;
-      if (elapsed >= DEATH_TTL_MS) return;
-      const fade = Math.max(0, 1 - elapsed / DEATH_TTL_MS);
+      const elapsed = activeKillingEffect
+        ? Math.max(0, now - activeKillingEffect.startTime - combatEffectTiming(activeKillingEffect.type, activeKillingEffect.arc).impactAtMs)
+        : now - m.t;
+      if (!mechanicalWreck && elapsed >= CORPSE_TTL_MS) return;
+      const fade = mechanicalWreck ? 1 : Math.max(0, 1 - elapsed / CORPSE_TTL_MS);
+      const corpseTexturePath = mechanicalWreck ? null : rasterUnitOverride(m.definitionId);
+      let corpseTexture: Texture | null = null;
+      if (corpseTexturePath) {
+        corpseTexture = unitTextureCache.get(corpseTexturePath) ?? null;
+        if (!corpseTexture) {
+          corpseTexture = crispTexture(Texture.from(corpseTexturePath));
+          unitTextureCache.set(corpseTexturePath, corpseTexture);
+        }
+      }
 
       els.push(
         <Container key={`dead-${m.id}`} x={x} y={y} alpha={fade} zIndex={z}>
           <Graphics
             draw={(g) => {
               g.clear();
-              const isVehicleWreck = m.unitType === 'vehicle' || m.unitType === 'artillery';
               g.beginFill(0x000000, 0.20 + 0.25 * fade);
-              g.drawCircle(0, 0, tileSize * (isVehicleWreck ? 0.32 : 0.26));
+              g.drawEllipse(0, tileSize * 0.045, tileSize * (mechanicalWreck ? 0.32 : 0.26), tileSize * (mechanicalWreck ? 0.11 : 0.08));
               g.endFill();
-              if (isVehicleWreck) {
-                // burnt-out hull, a few flickering embers, and slow smoke rising for a while after death
-                g.beginFill(0x1a1712, 0.8 * fade);
-                g.drawRoundedRect(-tileSize * 0.2, -tileSize * 0.12, tileSize * 0.4, tileSize * 0.2, 3);
-                g.endFill();
-                g.lineStyle(1.4, 0x0a0805, 0.6 * fade);
-                g.drawRoundedRect(-tileSize * 0.2, -tileSize * 0.12, tileSize * 0.4, tileSize * 0.2, 3);
-                g.lineStyle();
-                // a knocked-out hull keeps burning for most of the marker's life, not just 6s
+              if (mechanicalWreck) {
+                if (!hitInFlight) {
+                  const facing = orientationScreenVector(m.orientation);
+                  g.beginFill(0x2f2e29, 0.96 * fade);
+                  g.drawRoundedRect(-tileSize * 0.24, -tileSize * 0.115, tileSize * 0.48, tileSize * 0.21, 3);
+                  g.endFill();
+                  g.lineStyle(1.3, 0x827c70, 0.62 * fade);
+                  g.drawRoundedRect(-tileSize * 0.24, -tileSize * 0.115, tileSize * 0.48, tileSize * 0.21, 3);
+                  g.lineStyle(3, 0x090906, 0.86 * fade);
+                  g.moveTo(-tileSize * 0.22, tileSize * 0.078);
+                  g.lineTo(tileSize * 0.22, tileSize * 0.078);
+                  g.moveTo(-tileSize * 0.22, -tileSize * 0.084);
+                  g.lineTo(tileSize * 0.22, -tileSize * 0.084);
+                  g.beginFill(0x484239, 0.94 * fade);
+                  g.drawEllipse(0, -tileSize * 0.035, tileSize * 0.115, tileSize * 0.073);
+                  g.endFill();
+                  g.lineStyle(3.1, 0x0a0906, 0.9 * fade);
+                  g.moveTo(facing.x * tileSize * 0.04, -tileSize * 0.03 + facing.y * tileSize * 0.02);
+                  g.lineTo(facing.x * tileSize * 0.3, -tileSize * 0.03 + facing.y * tileSize * 0.14);
+                  g.lineStyle();
+                  g.beginFill(0x0b0b08, 0.72 * fade);
+                  g.drawEllipse(-tileSize * 0.11, -tileSize * 0.015, tileSize * 0.065, tileSize * 0.035);
+                  g.drawEllipse(tileSize * 0.13, tileSize * 0.025, tileSize * 0.05, tileSize * 0.03);
+                  g.endFill();
+                }
                 const emberLife = Math.max(0, 1 - elapsed / 14000);
                 if (emberLife > 0) {
                   for (const [ex, ey, ph] of [[-0.06, -0.02, 0], [0.05, 0.01, 1.7], [0.0, -0.06, 3.1]] as const) {
@@ -4205,34 +4290,68 @@ export function BattlefieldStage({
                     g.endFill();
                   }
                 }
-                // dense black smoke column in the first few seconds after the kill, thinning over time
-                const smokeBoost = Math.max(0, 1 - elapsed / 4500);
-                for (let s = 0; s < 3; s++) {
-                  const rise = prefersReducedMotion ? (0.3 + s * 0.33) % 1 : ((now / 1400) + s * 0.33) % 1;
-                  const sa = (1 - rise) * (0.22 + 0.3 * smokeBoost) * fade;
+                const flameLife = Math.max(0, 1 - elapsed / 7500);
+                if (flameLife > 0) {
+                  const flicker = prefersReducedMotion ? 0.7 : 0.72 + Math.sin(now / 95) * 0.18;
+                  g.beginFill(0x4b1909, flameLife * 0.78 * fade);
+                  g.drawEllipse(0, -tileSize * 0.055, tileSize * 0.075, tileSize * 0.12 * flicker);
+                  g.endFill();
+                  g.beginFill(0xff6b1c, flameLife * 0.9 * fade);
+                  g.drawEllipse(0, -tileSize * 0.07, tileSize * 0.04, tileSize * 0.075 * flicker);
+                  g.endFill();
+                  g.beginFill(0xffd35c, flameLife * 0.88 * fade);
+                  g.drawCircle(0, -tileSize * 0.045, tileSize * 0.018 * flicker);
+                  g.endFill();
+                }
+                const smokeBoost = Math.max(0, 1 - elapsed / 7000);
+                for (let s = 0; s < 6; s++) {
+                  const rise = prefersReducedMotion ? (0.14 + s / 6) % 1 : ((now / 1950) + s / 6) % 1;
+                  const sa = (1 - rise) * (0.4 + 0.4 * smokeBoost) * fade;
                   if (sa <= 0.01) continue;
-                  const sx = prefersReducedMotion ? 0 : Math.sin((now / 700) + s * 2.1) * tileSize * 0.06;
-                  g.beginFill(0x3a3631, sa);
-                  g.drawEllipse(sx, -tileSize * (0.1 + rise * 0.5), tileSize * (0.1 + rise * 0.14), tileSize * (0.07 + rise * 0.1));
+                  const sx = prefersReducedMotion ? 0 : Math.sin((now / 900) + s * 1.65) * tileSize * (0.05 + rise * 0.05);
+                  g.beginFill(rise < 0.38 ? 0x343530 : 0x777a73, sa);
+                  g.drawEllipse(sx, -tileSize * (0.1 + rise * 0.78), tileSize * (0.11 + rise * 0.21), tileSize * (0.08 + rise * 0.15));
                   g.endFill();
                 }
               } else {
-                g.lineStyle(2, 0x5f3328, 0.72 * fade);
-                g.moveTo(-tileSize * 0.16, tileSize * 0.02);
-                g.lineTo(tileSize * 0.16, tileSize * 0.02);
-                g.moveTo(-tileSize * 0.11, -tileSize * 0.07);
-                g.lineTo(tileSize * 0.09, tileSize * 0.1);
+                g.beginFill(0x512b24, 0.42 * fade);
+                g.drawEllipse(-tileSize * 0.02, tileSize * 0.045, tileSize * 0.22, tileSize * 0.065);
+                g.endFill();
+                if (!corpseTexture) {
+                  g.lineStyle(2, 0x8a5e49, 0.8 * fade);
+                  g.moveTo(-tileSize * 0.16, tileSize * 0.02);
+                  g.lineTo(tileSize * 0.16, tileSize * 0.02);
+                  g.moveTo(-tileSize * 0.11, -tileSize * 0.07);
+                  g.lineTo(tileSize * 0.09, tileSize * 0.1);
+                }
               }
             }}
           />
+          {corpseTexture && corpseTexturePath ? (
+            <Sprite
+              texture={corpseTexture}
+              anchor={{ x: 0.5, y: RASTER_UNIT_ANCHOR_Y[corpseTexturePath] ?? 0.9 }}
+              scale={{
+                x: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024),
+                y: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024) * 0.44
+              }}
+              y={tileSize * 0.045}
+              alpha={0.82}
+              tint={0x947b6b}
+            />
+          ) : null}
         </Container>
       );
     });
     return els;
-  }, [deathMarkers, map.tiles, map.width, now, prefersReducedMotion, selectedUnitId, topGeomFor, viewerFaction, visibleTiles, attackEffects]);
+  }, [attackEffects, deathMarkers, map.tiles, map.width, now, prefersReducedMotion, selectedUnitId, topGeomFor, unitTextureCache, viewerFaction, visibleTiles]);
 
   const targetLinkOverlay = useMemo(() => {
-    if (!selectedUnitId || !targetUnitId) return null;
+    const attackIsVisible = attackEffects.some((effect) => {
+      const elapsed = now - effect.startTime;
+      return elapsed >= 0 && elapsed <= combatEffectTiming(effect.type, effect.arc).totalMs;
+    });
+    if (!selectedUnitId || !targetUnitId || attackIsVisible) return null;
     let selectedUnit: UnitInstance | undefined;
     let targetUnit: UnitInstance | undefined;
     for (const side of Object.values(battleState.sides)) {
@@ -4331,7 +4450,7 @@ export function BattlefieldStage({
       ) : null}
       </Container>
     );
-  }, [battleState.sides, map.tiles, map.width, selectedUnitId, targetHitChance, targetDamagePreview, targetLethal, targetUnitId, topGeomFor, visibleTiles, t]);
+  }, [attackEffects, battleState.sides, map.tiles, map.width, now, selectedUnitId, targetHitChance, targetDamagePreview, targetLethal, targetUnitId, topGeomFor, visibleTiles, t]);
 
   const objectiveOverlays = useMemo(() => {
     if (objectiveCoords.length === 0) return [];
@@ -4471,114 +4590,69 @@ export function BattlefieldStage({
         let moveScreenVector = orientationScreenVector(animatedOrientation);
         let movingBaseHeight: number | undefined;
         let easedProgress = 0;
-        let isFirstSeg = false;
-        let isLastSeg = false;
         const unitType: string = unit.unitType;
         const definitionId = unit.definitionId.toLowerCase();
         const isSupportVehicle = unitType === 'support' && definitionId.includes('truck');
         const isGroundVehicle = unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicle;
 
-        if (movingUnit && movingUnit.unitId === unit.id && movingUnit.path.length >= 2) {
-          const rawElapsed = now - movingUnit.startTime;
-          const preAlignDuration = Math.max(0, movingUnit.preAlignDuration ?? 0);
-          const elapsed = Math.max(0, rawElapsed - preAlignDuration);
-          const totalSteps = movingUnit.path.length - 1;
-          const segmentTurnDuration = Math.max(0, movingUnit.segmentTurnDuration ?? 0);
-          let remainingElapsed = elapsed;
-          let currentStep = 0;
-          let currentStepFloat = 0;
-          let stepProgress = rawElapsed < preAlignDuration ? 0 : 1;
-          let isTurnPhase = false;
+        if (movingUnit && movingUnit.unitId === unit.id && activeMovementFrame) {
+          const movementPath = movingUnit.path;
+          const {
+            currentStep,
+            displayCoord: animatedCoord,
+            easedProgress: frameProgress,
+            fromCoord,
+            isMoving,
+            isTurnPhase,
+            movementPhase: framePhase,
+            stepProgress,
+            toCoord
+          } = activeMovementFrame;
 
-          for (let stepIndex = 0; stepIndex < totalSteps; stepIndex += 1) {
-            currentStep = stepIndex;
-            if (remainingElapsed <= movingUnit.stepDuration || stepIndex === totalSteps - 1) {
-              stepProgress = rawElapsed < preAlignDuration ? 0 : Math.min(Math.max(remainingElapsed / movingUnit.stepDuration, 0), 1);
-              currentStepFloat = stepIndex + stepProgress;
-              break;
-            }
+          easedProgress = frameProgress;
+          movingThisUnit = isMoving;
+          movementPhase = framePhase;
+          displayCoord = animatedCoord;
 
-            remainingElapsed -= movingUnit.stepDuration;
-            const fromOrientation = segmentOrientation(movingUnit.path[stepIndex], movingUnit.path[stepIndex + 1]);
-            const toOrientation = stepIndex + 2 < movingUnit.path.length
-              ? segmentOrientation(movingUnit.path[stepIndex + 1], movingUnit.path[stepIndex + 2])
-              : fromOrientation;
-            const turnDuration = fromOrientation !== toOrientation ? segmentTurnDuration : 0;
-            if (turnDuration > 0 && remainingElapsed <= turnDuration) {
-              currentStep = stepIndex;
-              currentStepFloat = stepIndex + 1;
-              stepProgress = 1;
-              isTurnPhase = true;
-              break;
-            }
+          const fromIdx = fromCoord.r * map.width + fromCoord.q;
+          const toIdx = toCoord.r * map.width + toCoord.q;
+          const fromGeom = ISO_MODE ? topGeomFor(fromCoord.q, fromCoord.r) : null;
+          const toGeom = ISO_MODE ? topGeomFor(toCoord.q, toCoord.r) : null;
+          const fromHeight = fromGeom ? fromGeom.avgHeight : (map.tiles[fromIdx]?.elevation ?? 0);
+          const toHeight = toGeom ? toGeom.avgHeight : (map.tiles[toIdx]?.elevation ?? 0);
+          movingBaseHeight = isTurnPhase
+            ? toHeight
+            : fromHeight + (toHeight - fromHeight) * easedProgress;
 
-            remainingElapsed -= turnDuration;
-            if (stepIndex === totalSteps - 1) {
-              currentStepFloat = totalSteps;
-              stepProgress = 1;
-            }
-          }
-
-          const fromCoord = movingUnit.path[currentStep];
-          const toCoord = movingUnit.path[currentStep + 1];
-
-          if (fromCoord && toCoord && currentStep < totalSteps) {
-            // Ease only the FIRST segment in (from rest) and the LAST segment out (to rest); keep
-            // interior segments LINEAR so a multi-tile path travels at constant speed instead of
-            // stuttering to a near-stop at every waypoint (the old per-segment smoothstep "skating").
-            isFirstSeg = currentStep === 0;
-            isLastSeg = currentStep === totalSteps - 1;
-            easedProgress = (isFirstSeg && isLastSeg)
-              ? stepProgress * stepProgress * (3 - 2 * stepProgress)
-              : isFirstSeg
-                ? stepProgress * stepProgress
-                : isLastSeg
-                  ? stepProgress * (2 - stepProgress)
-                  : stepProgress;
-            movingThisUnit = !isTurnPhase;
-            movementPhase = currentStepFloat;
-            displayCoord = isTurnPhase
-              ? { ...toCoord }
-              : {
-                  q: fromCoord.q + (toCoord.q - fromCoord.q) * easedProgress,
-                  r: fromCoord.r + (toCoord.r - fromCoord.r) * easedProgress
-                };
-
-            const fromIdx = fromCoord.r * map.width + fromCoord.q;
-            const toIdx = toCoord.r * map.width + toCoord.q;
-            const fromGeom = ISO_MODE ? topGeomFor(fromCoord.q, fromCoord.r) : null;
-            const toGeom = ISO_MODE ? topGeomFor(toCoord.q, toCoord.r) : null;
-            const fromHeight = fromGeom ? fromGeom.avgHeight : (map.tiles[fromIdx]?.elevation ?? 0);
-            const toHeight = toGeom ? toGeom.avgHeight : (map.tiles[toIdx]?.elevation ?? 0);
-            movingBaseHeight = isTurnPhase
-              ? toHeight
-              : fromHeight + (toHeight - fromHeight) * easedProgress;
-
-            const currentOrientation = segmentOrientation(fromCoord, toCoord);
-            const nextOrientation = currentStep + 2 < movingUnit.path.length
-              ? segmentOrientation(toCoord, movingUnit.path[currentStep + 2])
-              : currentOrientation;
-            animatedOrientation = isTurnPhase ? nextOrientation : currentOrientation;
-            moveScreenVector = screenVectorBetween(fromCoord, toCoord);
-            const turnBlendWindow = 0.64;
-            if (!isGroundVehicle && stepProgress > 1 - turnBlendWindow && currentStep + 2 < movingUnit.path.length) {
-              const nextVector = screenVectorBetween(toCoord, movingUnit.path[currentStep + 2]);
-              const t = (stepProgress - (1 - turnBlendWindow)) / turnBlendWindow;
-              const smoothT = t * t * (3 - 2 * t);
-              moveScreenVector = mixScreenVectors(moveScreenVector, nextVector, smoothT);
-            } else if (!isGroundVehicle && stepProgress < turnBlendWindow && currentStep > 0) {
-              const previousVector = screenVectorBetween(movingUnit.path[currentStep - 1], fromCoord);
-              const t = stepProgress / turnBlendWindow;
-              const smoothT = t * t * (3 - 2 * t);
-              moveScreenVector = mixScreenVectors(previousVector, moveScreenVector, smoothT);
-            }
+          const currentOrientation = segmentOrientation(fromCoord, toCoord);
+          const nextOrientation = currentStep + 2 < movementPath.length
+            ? segmentOrientation(toCoord, movementPath[currentStep + 2])
+            : currentOrientation;
+          animatedOrientation = isTurnPhase ? nextOrientation : currentOrientation;
+          moveScreenVector = screenVectorBetween(fromCoord, toCoord);
+          const turnBlendWindow = 0.64;
+          if (!isGroundVehicle && stepProgress > 1 - turnBlendWindow && currentStep + 2 < movementPath.length) {
+            const nextVector = screenVectorBetween(toCoord, movementPath[currentStep + 2]);
+            const t = (stepProgress - (1 - turnBlendWindow)) / turnBlendWindow;
+            const smoothT = t * t * (3 - 2 * t);
+            moveScreenVector = mixScreenVectors(moveScreenVector, nextVector, smoothT);
+          } else if (!isGroundVehicle && stepProgress < turnBlendWindow && currentStep > 0) {
+            const previousVector = screenVectorBetween(movementPath[currentStep - 1], fromCoord);
+            const t = stepProgress / turnBlendWindow;
+            const smoothT = t * t * (3 - 2 * t);
+            moveScreenVector = mixScreenVectors(previousVector, moveScreenVector, smoothT);
           }
         }
 
+        const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
+        const fastWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 4) : 0;
+        const strideLift = Math.abs(stepWave);
         const p = toScreen(displayCoord);
-        const idx = Math.floor(displayCoord.r) * map.width + Math.floor(displayCoord.q);
+        const displayQ = Math.min(map.width - 1, Math.max(0, Math.round(displayCoord.q)));
+        const displayR = Math.min(map.height - 1, Math.max(0, Math.round(displayCoord.r)));
+        const idx = displayR * map.width + displayQ;
         const elev = map.tiles[idx]?.elevation ?? 0;
-        const geom = ISO_MODE ? topGeomFor(Math.floor(displayCoord.q), Math.floor(displayCoord.r)) : null;
+        const geom = ISO_MODE ? topGeomFor(displayQ, displayR) : null;
         const baseHeight = movingBaseHeight ?? (ISO_MODE && geom ? geom.avgHeight : elev);
         const isGhoulPack = definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead');
         const x = Math.round(p.x);
@@ -4592,18 +4666,19 @@ export function BattlefieldStage({
         // +5000 that made it punch through everything down-screen. Reveal-through behind buildings is
         // still handled by the unitOccluded alpha fade below.
         const worldZ = Math.round(y) + (isSelected || isSelectedCarrier || isTarget || movingThisUnit ? 2 : 0);
-        const tileIndex = unit.coordinate.r * map.width + unit.coordinate.q;
+        const tileIndex = displayR * map.width + displayQ;
         const isVisible = visibleTiles.has(tileIndex);
         const isFriendly = unit.faction === viewerFaction;
         const isDestroyed = unit.stance === 'destroyed';
         const isEmbarked = Boolean(unit.embarkedOn);
         const incomingHit = attackEffects.find((effect) => {
           const elapsed = now - effect.startTime;
-          return effect.toQ === unit.coordinate.q
-            && effect.toR === unit.coordinate.r
+          const timing = combatEffectTiming(effect.type, effect.arc);
+          return effect.toQ === displayQ
+            && effect.toR === displayR
             && effect.hit !== false
-            && elapsed >= 240
-            && elapsed <= 920;
+            && elapsed >= timing.impactAtMs
+            && elapsed <= timing.impactAtMs + timing.impactMs;
         });
         const outgoingShot = attackEffects.find((effect) => {
           const elapsed = now - effect.startTime;
@@ -4617,27 +4692,30 @@ export function BattlefieldStage({
           return effect.fromQ === unit.coordinate.q
             && effect.fromR === unit.coordinate.r
             && elapsed >= 0
-            && elapsed <= 1300;
+            && elapsed <= combatEffectTiming(effect.type, effect.arc).totalMs;
         });
         const recentHitTarget = attackEffects.find((effect) => {
           const elapsed = now - effect.startTime;
-          return effect.toQ === unit.coordinate.q
-            && effect.toR === unit.coordinate.r
+          const timing = combatEffectTiming(effect.type, effect.arc);
+          return effect.toQ === displayQ
+            && effect.toR === displayR
             && effect.hit !== false
-            && elapsed > 920
-            && elapsed <= 2500;
+            && elapsed > timing.impactAtMs + timing.impactMs
+            && elapsed <= timing.totalMs;
         });
         const hitElapsed = incomingHit ? now - incomingHit.startTime : 0;
-        const hitPhase = incomingHit ? Math.min(Math.max((hitElapsed - 240) / 680, 0), 1) : 1;
+        const incomingTiming = incomingHit ? combatEffectTiming(incomingHit.type, incomingHit.arc) : null;
+        const hitReactionMs = incomingTiming ? Math.min(320, incomingTiming.impactMs) : 1;
+        const hitPhase = incomingTiming ? Math.min(Math.max((hitElapsed - incomingTiming.impactAtMs) / hitReactionMs, 0), 1) : 1;
         const hitPulse = incomingHit ? 1 - hitPhase : 0;
-        // Connection flash peaks at the ARRIVAL beat (when the round actually lands / the jolt begins),
-        // not at fire time — the old `1 - hitElapsed/90` popped white the instant the shot left the barrel.
-        const HIT_ARRIVAL = 240;
-        const impactFlash = incomingHit ? Math.max(0, 1 - Math.abs(hitElapsed - HIT_ARRIVAL) / 120) : 0;
+        const impactFlash = incomingTiming ? Math.max(0, 1 - Math.abs(hitElapsed - incomingTiming.impactAtMs) / 105) : 0;
         const groundVehicleHitJolt = movingThisUnit ? 0.9 : 1.8;
         const hitJolt = incomingHit ? Math.sin(hitPhase * Math.PI * 5) * hitPulse * (unitType === 'vehicle' || unitType === 'artillery' ? groundVehicleHitJolt : 3.2) : 0;
         const shotPulse = outgoingShot ? 1 - Math.min((now - outgoingShot.startTime) / 320, 1) : 0;
-        const residualPulse = recentHitTarget ? 1 - Math.min((now - recentHitTarget.startTime - 920) / 1580, 1) : 0;
+        const residualTiming = recentHitTarget ? combatEffectTiming(recentHitTarget.type, recentHitTarget.arc) : null;
+        const residualPulse = recentHitTarget && residualTiming
+          ? 1 - Math.min((now - recentHitTarget.startTime - residualTiming.impactAtMs - residualTiming.impactMs) / Math.max(1, residualTiming.totalMs - residualTiming.impactAtMs - residualTiming.impactMs), 1)
+          : 0;
         const effectVector = (effect: AttackEffect | undefined, towardTarget: boolean) => {
           if (!effect) return { x: 0, y: 0 };
           const from = toScreen({ q: effect.fromQ, r: effect.fromR });
@@ -4693,12 +4771,15 @@ export function BattlefieldStage({
         // the "HIT -N" always overlays the dying enemy instead of bare ground — otherwise a killing blow
         // culls the sprite the same frame the number appears ("I shot something but nothing is there").
         // Damage applies synchronously and reaction fire can be future-dated, so match the killing
-        // effect from its scheduled start — gating on the 240ms jolt window (incomingHit) blinked the
-        // corpse out before the death animation began.
+        // effect from its scheduled start rather than waiting for its shorter impact window.
         const killingEffect = isDestroyed
-          ? attackEffects.find((effect) => now - effect.startTime <= 2500
-              && effect.toQ === unit.coordinate.q
-              && effect.toR === unit.coordinate.r)
+          ? attackEffects.find((effect) => {
+              const elapsed = now - effect.startTime;
+              return elapsed >= 0
+                && elapsed <= combatEffectTiming(effect.type, effect.arc).totalMs
+                && effect.toQ === displayQ
+                && effect.toR === displayR;
+            })
           : undefined;
         const dyingShown = isDestroyed && !isEmbarked && Boolean(killingEffect);
         if ((isDestroyed && !movingThisUnit && !dyingShown) || isEmbarked) {
@@ -4859,7 +4940,7 @@ export function BattlefieldStage({
 	                  const footprint = unitContactFootprint(tileSize, unitType, definitionId);
                     const baseAlpha = isSelected || isTarget ? (isFriendly ? 0.18 : 0.26) : (isFriendly ? 0.20 : 0.26);
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
-                    const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * 1.22;
+                    const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * (1.22 - strideLift * 0.08);
                     const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
                     const shadowAlpha = isGroundVehicle ? (isApcContact ? 0 : (movingThisUnit ? 0.07 : 0.10)) : footprint.alpha;
                     const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.34 : 0.55) : footprint.rx;
@@ -4895,11 +4976,32 @@ export function BattlefieldStage({
                         g.moveTo(ox - contactVector.x * trackHalf, contactY + oy - contactVector.y * trackHalf * 0.2);
                         g.lineTo(ox + contactVector.x * trackHalf, contactY + oy + contactVector.y * trackHalf * 0.2);
                       }
+                      if (movingThisUnit) {
+                        const rearX = -contactVector.x * footprint.rx * 0.58;
+                        const rearY = footprint.y - contactVector.y * footprint.ry * 0.42;
+                        const dustPulse = 0.7 + 0.3 * Math.abs(fastWave);
+                        g.beginFill(0x332f24, 0.2 * dustPulse);
+                        g.drawEllipse(rearX, rearY, footprint.rx * 0.42, footprint.ry * 0.18);
+                        g.endFill();
+                        g.beginFill(0x6e6549, 0.13 * dustPulse);
+                        g.drawEllipse(
+                          rearX - contactVector.x * footprint.rx * 0.32 + perpX * footprint.ry * 0.32,
+                          rearY - contactVector.y * footprint.ry * 0.2 + perpY * footprint.ry * 0.32,
+                          footprint.rx * 0.18,
+                          footprint.ry * 0.1
+                        );
+                        g.endFill();
+                      }
                       g.lineStyle();
                     }
                     if (!isGroundVehicle) {
 		                    g.beginFill(0x000000, isVisible ? footprint.alpha * 0.45 : footprint.alpha * 0.22);
-		                    g.drawEllipse(1, footprint.y - tileSize * 0.006, footprint.rx * 0.56, footprint.ry * 0.46);
+                    g.drawEllipse(
+                      -moveScreenVector.x * strideLift * tileSize * 0.008,
+                      footprint.y - tileSize * 0.006,
+                      footprint.rx * (0.56 + strideLift * 0.04),
+                      footprint.ry * (0.46 - strideLift * 0.05)
+                    );
 		                    g.endFill();
                     }
                     if (isGroundVehicle && isVisible && movingThisUnit && !isApcContact) {
@@ -4973,8 +5075,6 @@ export function BattlefieldStage({
                     ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
                     : directionNameForOrientation(animatedOrientation);
               const usesDirectionalMotion = Boolean(directionalSprite && (isFootUnit || isVehicleUnit));
-              const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
-              const fastWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 4) : 0;
               const sheetState = movingThisUnit && usesDirectionalMotion ? 'walk' : 'idle';
               const textureSheetState = directionalSprite === 'apc_directional' ? 'idle' : sheetState;
               const animatesVehicleFrames = isVehicleUnit && directionalSprite !== 'apc_directional';
@@ -5087,30 +5187,36 @@ export function BattlefieldStage({
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
               // Vehicles carry weight: a road shake + suspension dip while moving (driven by fastWave,
               // which is only non-zero in motion — so idle vehicles sit still rather than statically skewed).
-              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? 0.4 : 0;
-              const vehicleRumbleY = isVehicleUnit ? Math.abs(fastWave) * 0.5 : 0;
+              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? 0.68 : 0;
+              const vehicleRumbleY = isVehicleUnit ? Math.abs(fastWave) * 0.72 : 0;
               // Suppressed/routed posture: a small downward duck, a foot-unit shudder, and (when routed)
               // a lean away from the threat — so a pinned squad reads at a glance without a label.
               const suppressed = unit.stance === 'suppressed';
               const routed = unit.stance === 'routed';
               const cowed = suppressed || routed;
               const cowerShudder = cowed && isFootUnit ? Math.sin(now / 90) * 1.1 : 0;
-              const spriteBobY = (isFootUnit ? -Math.abs(stepWave) * (directionalSprite ? 1.35 : 2.1) : unitType === 'air' ? stepWave * 1.4 : -vehicleRumbleY);
-              const spriteSwayX = (isFootUnit ? fastWave * 0.55 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX + cowerShudder;
+              const spriteBobY = (isFootUnit ? -strideLift * (directionalSprite ? 1.8 : 2.25) : unitType === 'air' ? stepWave * 1.4 : -vehicleRumbleY);
+              const spriteSwayX = (isFootUnit ? fastWave * 0.78 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX + cowerShudder;
               const spriteCombatY = hitOffsetY + shotOffsetY + (cowed && isFootUnit ? Math.sin(now / 60) * 0.6 : 0);
-              const spriteRotation = (vehiclePose ? vehiclePose.rotation + fastWave * 0.004 : 0) + (routed ? -Math.sign(moveScreenVector.x || 1) * 0.12 : 0);
+              const locomotionRotation = isFootUnit && movingThisUnit
+                ? -moveScreenVector.x * stepWave * 0.022
+                : isVehicleUnit && movingThisUnit ? fastWave * 0.008 : 0;
+              const spriteRotation = (vehiclePose ? vehiclePose.rotation : 0) + locomotionRotation + (routed ? -Math.sign(moveScreenVector.x || 1) * 0.12 : 0);
               // Volume-preserving impact squash: the struck unit compresses vertically / bulges wide at
               // the moment of contact and springs back as the hit pulse decays. Vehicles jello half as much.
               const hitSquash = incomingHit ? Math.sin(Math.min(1, hitElapsed / 180) * Math.PI) * hitPulse : 0;
               const squashAmt = (unitType === 'vehicle' || unitType === 'artillery') ? 0.5 : 1;
-              const squashX = (isFootUnit && !directionalSprite ? 1 + Math.abs(stepWave) * 0.018 : 1) * (cowed ? 1.04 : 1) * (1 + hitSquash * 0.16 * squashAmt);
-              const squashY = (isFootUnit && !directionalSprite ? 1 - Math.abs(stepWave) * 0.012 : 1) * (cowed ? 0.9 : 1) * (1 - hitSquash * 0.20 * squashAmt);
+              const squashX = (isFootUnit ? 1 + strideLift * 0.014 : 1) * (cowed ? 1.04 : 1) * (1 + hitSquash * 0.16 * squashAmt);
+              const squashY = (isFootUnit ? 1 - strideLift * 0.01 : 1) * (cowed ? 0.9 : 1) * (1 - hitSquash * 0.20 * squashAmt);
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
               // Death animation clock: one normalized 0→1 ramp over ~1.1s from the killing blow, driving a
               // per-archetype death — infantry topple & sink, undead/demons dissolve & drift up, vehicles
               // get the wreck/fireball (handled by the marker system). Reduced-motion keeps only the fade.
               const deathStart = (incomingHit ?? recentHitTarget)?.startTime;
-              const deathMs = dyingShown && deathStart ? now - deathStart - 240 : 0;
+              const deathImpactAt = (incomingHit ?? recentHitTarget)
+                ? combatEffectTiming((incomingHit ?? recentHitTarget)!.type, (incomingHit ?? recentHitTarget)!.arc).impactAtMs
+                : 0;
+              const deathMs = dyingShown && deathStart ? now - deathStart - deathImpactAt : 0;
               const dProg = clamp01(deathMs / 1100);
               const dEase = prefersReducedMotion ? 0 : easeOutCubic(dProg);
               const isUndeadDemon = isGhoulPack
@@ -5477,6 +5583,8 @@ export function BattlefieldStage({
     );
   }, [
     battleState.sides,
+    activeMovementFrame,
+    map.height,
     map.tiles,
     map.width,
     selectedUnitId,
@@ -5499,12 +5607,12 @@ export function BattlefieldStage({
   // Attack effects rendering (muzzle flash, projectile trail, hit marker)
   const attackEffectSprites = useMemo(() => {
     if (!attackEffects || attackEffects.length === 0) return [];
-    const EFFECT_DURATION = 2600;
 
     return attackEffects.map((effect) => {
       const elapsed = now - effect.startTime;
+      const timing = combatEffectTiming(effect.type, effect.arc);
       if (elapsed < 0) return null;
-      if (elapsed > EFFECT_DURATION) return null;
+      if (elapsed > timing.totalMs) return null;
 
       const fromPos = toScreen({ q: effect.fromQ, r: effect.fromR });
       const toPos = toScreen({ q: effect.toQ, r: effect.toR });
@@ -5521,6 +5629,11 @@ export function BattlefieldStage({
       const fromY = fromPos.y - fromElev * ELEV_Y_OFFSET;
       const toX = toPos.x;
       const toY = toPos.y - toElev * ELEV_Y_OFFSET;
+      const shotDx = toX - fromX;
+      const shotDy = toY - fromY;
+      const shotLength = Math.max(1, Math.hypot(shotDx, shotDy));
+      const shotUx = shotDx / shotLength;
+      const shotUy = shotDy / shotLength;
       let targetUnit: UnitInstance | undefined;
       for (const side of Object.values(battleState.sides)) {
         targetUnit = Array.from(side.units.values()).find((unit) =>
@@ -5536,16 +5649,16 @@ export function BattlefieldStage({
           ? 'undead'
           : 'organic';
 
-      const travel = Math.min(elapsed / 520, 1);
+      const travel = Math.min(elapsed / timing.projectileMs, 1);
       const projX = fromX + (toX - fromX) * travel;
       const projY = fromY + (toY - fromY) * travel;
 
       // Infantry small-arms read as a short automatic burst rather than one round:
       // several staggered tracers + a flickering muzzle flash. A sniper/rail shot is ONE round.
       const isBurst = effect.type === 'gunshot' || effect.type === 'sniper';
-      const BURST_ROUNDS = effect.type === 'sniper' ? 1 : 5;
-      const BURST_GAP = 55; // ms between rounds
-      const BURST_FLIGHT = 150; // ms each round is in flight
+      const BURST_ROUNDS = timing.burstRounds;
+      const BURST_GAP = timing.burstGapMs;
+      const BURST_FLIGHT = timing.burstFlightMs;
       let gunFlicker = 0;
       for (let k = 0; k < BURST_ROUNDS; k++) {
         const a = elapsed - k * BURST_GAP;
@@ -5592,8 +5705,8 @@ export function BattlefieldStage({
 
           {effect.type !== 'melee' && effect.type !== 'arrow' && elapsed < 320 && (
             <Graphics
-              x={fromX}
-              y={fromY - tileSize * 0.15}
+              x={fromX + shotUx * tileSize * 0.2}
+              y={fromY - tileSize * 0.15 + shotUy * tileSize * 0.08}
               draw={(g) => {
                 g.clear();
                 // Firearms flicker the muzzle flash per burst round; others: single fading flash. Bows
@@ -5636,7 +5749,7 @@ export function BattlefieldStage({
             />
           )}
 
-          {(isBurst ? elapsed < 560 : travel < 1) && (
+          {(isBurst ? elapsed < timing.projectileMs : travel < 1) && (
             <Graphics
               draw={(g) => {
                 g.clear();
@@ -5687,19 +5800,32 @@ export function BattlefieldStage({
                   g.beginFill(0xffcf5d, 0.95); g.drawCircle(tx, ty, 2.2); g.endFill();
                   g.beginFill(0xfff3c8, 0.95); g.drawCircle(tx, ty, 1); g.endFill();
                 } else {
-                g.lineStyle(effect.type === 'explosion' ? 5 : 3, 0x15110a, 0.9);
+                g.lineStyle(effect.type === 'explosion' ? 7.5 : 3.5, 0x15110a, 0.82);
                 g.moveTo(sx, sy); g.lineTo(tx, ty);
                 if (effect.type === 'explosion') {
-                  g.lineStyle(2.6, 0xffcf5d, 0.98);
+                  g.lineStyle(6.5, 0xff9f32, 0.3);
                   g.moveTo(sx, sy); g.lineTo(tx, ty);
-                  g.beginFill(0xfff0a8, 0.95);
-                  g.drawCircle(tx, ty, 4.5);
+                  g.lineStyle(2.8, 0xffe29a, 1);
+                  g.moveTo(sx, sy); g.lineTo(tx, ty);
+                  g.beginFill(0xffa62f, 0.42);
+                  g.drawCircle(tx, ty, 7);
+                  g.endFill();
+                  g.beginFill(0xffefb0, 1);
+                  g.drawCircle(tx, ty, 4.2);
+                  g.endFill();
+                  g.beginFill(0xffffff, 1);
+                  g.drawCircle(tx, ty, 1.8);
                   g.endFill();
                 } else if (effect.type === 'magic') {
-                  g.lineStyle(2.4, 0xc779ff, 0.96);
+                  g.lineStyle(6, 0x9c55d8, 0.3);
                   g.moveTo(sx, sy); g.lineTo(tx, ty);
-                  g.beginFill(0xaa44ff, 0.9);
-                  g.drawCircle(tx, ty, 4.5);
+                  g.lineStyle(2.6, 0xd8a0ff, 0.98);
+                  g.moveTo(sx, sy); g.lineTo(tx, ty);
+                  g.beginFill(0xaa44ff, 0.42);
+                  g.drawCircle(tx, ty, 7);
+                  g.endFill();
+                  g.beginFill(0xe9c7ff, 0.98);
+                  g.drawCircle(tx, ty, 3.6);
                   g.endFill();
                 } else if (effect.type === 'arrow') {
                   // A single arrow: a short brown shaft with a dark head and a hint of fletching — no tracer glow.
@@ -5745,11 +5871,11 @@ export function BattlefieldStage({
             />
           )}
 
-          {travel >= 1 && elapsed < 1050 && effect.type !== 'melee' && !isBurst && (
+          {travel >= 1 && elapsed < timing.projectileMs + 120 && effect.type !== 'melee' && !isBurst && (
             <Graphics
               draw={(g) => {
                 g.clear();
-                const fade = 1 - Math.max(0, elapsed - 520) / 530;
+                const fade = 1 - Math.max(0, elapsed - timing.projectileMs) / 120;
                 const dx = toX - fromX;
                 const dy = toY - fromY;
                 const sx = fromX + dx * 0.18;
@@ -5767,13 +5893,13 @@ export function BattlefieldStage({
             />
           )}
 
-          {elapsed > 180 && elapsed < 1900 && (
+          {elapsed >= timing.impactAtMs && elapsed < timing.impactAtMs + timing.impactMs && (
             <Graphics
               x={toX}
               y={toY - tileSize * 0.2}
               draw={(g) => {
                 g.clear();
-                const hitProgress = Math.min((elapsed - 180) / 1600, 1);
+                const hitProgress = Math.min((elapsed - timing.impactAtMs) / timing.impactMs, 1);
                 const hitSize = effect.type === 'melee'
                   ? tileSize * (0.22 + hitProgress * 0.16)
                   : tileSize * (0.32 + hitProgress * 0.26);
@@ -5812,66 +5938,70 @@ export function BattlefieldStage({
                   return;
                 }
 
-                if (effect.type === 'explosion' || effect.type === 'melee') {
+                if (effect.type === 'explosion') {
                   const primary = targetMaterial === 'armor' ? 0xffbd58 : targetMaterial === 'undead' ? 0xbec1ad : 0xb07a52;
                   const secondary = targetMaterial === 'armor' ? 0xfff0b0 : targetMaterial === 'undead' ? 0xd8d6c2 : 0xd09a67;
                   const dust = targetMaterial === 'armor' ? 0x4b4b42 : targetMaterial === 'undead' ? 0x6f7164 : 0x5b4b36;
-                  g.beginFill(dust, hitAlpha * 0.4);
-                  g.drawEllipse(1, tileSize * 0.08, hitSize * 1.04, hitSize * 0.4);
+                  const flash = Math.max(0, 1 - hitProgress / 0.2);
+                  const fireLife = Math.max(0, 1 - hitProgress / 0.62);
+                  const shockRadius = tileSize * (0.2 + hitProgress * 0.78);
+                  g.beginFill(dust, hitAlpha * 0.46);
+                  g.drawEllipse(1, tileSize * 0.1, shockRadius * 0.9, shockRadius * 0.27);
                   g.endFill();
-                  if (effect.type === 'explosion') {
-                    // ground shockwave: a hot inner ring and a faster dusty outer ring race outward
-                    const ringP = hitProgress;
-                    g.lineStyle(3 * (1 - ringP) + 0.6, 0xfff0c0, hitAlpha * (1 - ringP));
-                    g.drawEllipse(0, tileSize * 0.08, hitSize * (0.6 + ringP * 1.8), hitSize * (0.24 + ringP * 0.7));
-                    g.lineStyle(2 * (1 - ringP) + 0.5, 0x6b5a3a, hitAlpha * (1 - ringP) * 0.8);
-                    g.drawEllipse(0, tileSize * 0.08, hitSize * (0.45 + ringP * 2.2), hitSize * (0.18 + ringP * 0.86));
+                  if (hitProgress < 0.72) {
+                    g.lineStyle(2.8 * (1 - hitProgress) + 0.5, 0xffd783, hitAlpha * 0.82);
+                    g.drawEllipse(0, tileSize * 0.09, shockRadius, shockRadius * 0.34);
+                    g.lineStyle(1.6 * (1 - hitProgress) + 0.4, 0x6b5a3a, hitAlpha * 0.7);
+                    g.drawEllipse(0, tileSize * 0.09, shockRadius * 1.22, shockRadius * 0.42);
                   }
-                  g.lineStyle(3.6, primary, hitAlpha * 0.94);
-                  g.drawCircle(0, 0, hitSize);
-                  g.lineStyle(1.9, secondary, hitAlpha * 0.9);
-                  for (let i = 0; i < 8; i++) {
-                    const angle = (Math.PI * 2 * i) / 8;
-                    const inner = hitSize * 0.35;
-                    const outer = hitSize * (1.05 + hitProgress * 0.55);
-                    g.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
-                    g.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
-                  }
-                  const debrisCount = effect.type === 'explosion' ? 7 : 5;
-                  const debrisTint = targetMaterial === 'armor' ? 0x6f6a60 : targetMaterial === 'undead' ? 0x6f7164 : 0x5b4b36;
-                  for (let i = 0; i < debrisCount; i++) {
-                    const angle = -0.9 + i * (1.8 / (debrisCount - 1));
-                    if (effect.type === 'explosion') {
-                      // ballistic clods: thrown out and up, then dragged back down under gravity
-                      const tt = hitProgress;
-                      const px = Math.cos(angle) * hitSize * 1.6 * tt;
-                      const py = Math.sin(angle) * hitSize * 1.6 * tt - hitSize * 1.4 * tt + hitSize * 2.6 * tt * tt;
-                      g.beginFill(debrisTint, hitAlpha * 0.8);
-                      g.drawCircle(px, py, Math.max(1.2, 2.8 * hitAlpha));
-                      g.endFill();
-                    } else {
-                      const px = Math.cos(angle) * hitSize * (0.45 + hitProgress * 0.35);
-                      const py = Math.sin(angle) * hitSize * (0.26 + hitProgress * 0.25);
-                      g.beginFill(secondary, hitAlpha * 0.75);
-                      g.drawCircle(px, py, Math.max(1.4, 3.2 * hitAlpha));
+                  for (let i = 0; i < 9; i++) {
+                    const angle = (Math.PI * 2 * i) / 9 + 0.35;
+                    const spread = tileSize * hitProgress * (0.13 + (i % 3) * 0.035);
+                    const lift = Math.sin(hitProgress * Math.PI) * tileSize * (0.12 + (i % 2) * 0.04);
+                    const puffX = Math.cos(angle) * spread;
+                    const puffY = Math.sin(angle) * spread * 0.62 - lift;
+                    const puffSize = tileSize * (0.075 + (i % 3) * 0.014) * (0.85 + fireLife * 0.5);
+                    g.beginFill(0x241a12, hitAlpha * 0.58);
+                    g.drawCircle(puffX, puffY, puffSize * 1.22);
+                    g.endFill();
+                    g.beginFill(i % 2 === 0 ? 0xff7b22 : primary, fireLife * 0.78);
+                    g.drawCircle(puffX, puffY, puffSize);
+                    g.endFill();
+                    if (fireLife > 0.3) {
+                      g.beginFill(secondary, fireLife * 0.72);
+                      g.drawCircle(puffX, puffY, puffSize * 0.45);
                       g.endFill();
                     }
                   }
+                  const debrisTint = targetMaterial === 'armor' ? 0x6f6a60 : targetMaterial === 'undead' ? 0x6f7164 : 0x5b4b36;
+                  for (let i = 0; i < 7; i++) {
+                    const angle = -1.05 + i * 0.35;
+                    const debrisX = Math.cos(angle) * hitSize * 1.7 * hitProgress;
+                    const debrisY = Math.sin(angle) * hitSize * 1.5 * hitProgress - hitSize * 1.25 * hitProgress + hitSize * 2.4 * hitProgress * hitProgress;
+                    g.beginFill(debrisTint, hitAlpha * 0.86);
+                    g.drawCircle(debrisX, debrisY, Math.max(1.1, 2.6 * hitAlpha));
+                    g.endFill();
+                  }
+                  g.beginFill(0xfff7d5, flash * 0.96);
+                  g.drawCircle(-ux * tileSize * 0.08, -uy * tileSize * 0.06, tileSize * (0.08 + flash * 0.1));
+                  g.endFill();
+                } else if (effect.type === 'melee') {
+                  const primary = targetMaterial === 'undead' ? 0xd8d6c2 : 0xd09a67;
                   const edgeX = -ux * tileSize * 0.12;
                   const edgeY = -uy * tileSize * 0.1;
-                  g.lineStyle(3.8, 0x1a0b04, hitAlpha * 0.94);
-                  g.moveTo(edgeX - hitSize * 0.34, edgeY);
-                  g.lineTo(edgeX + hitSize * 0.34, edgeY);
-                  g.moveTo(edgeX, edgeY - hitSize * 0.27);
-                  g.lineTo(edgeX, edgeY + hitSize * 0.27);
-                  g.lineStyle(1.9, 0xfff4c8, hitAlpha);
-                  g.moveTo(edgeX - hitSize * 0.27, edgeY);
-                  g.lineTo(edgeX + hitSize * 0.27, edgeY);
-                  g.moveTo(edgeX, edgeY - hitSize * 0.21);
-                  g.lineTo(edgeX, edgeY + hitSize * 0.21);
-                  g.beginFill(secondary, hitAlpha * 0.66);
-                  g.drawCircle(0, 0, hitSize * 0.32);
+                  g.beginFill(targetMaterial === 'undead' ? 0x6f7164 : 0x5b4b36, hitAlpha * 0.36);
+                  g.drawEllipse(0, tileSize * 0.08, hitSize * 0.92, hitSize * 0.3);
                   g.endFill();
+                  g.lineStyle(4, 0x1a0b04, hitAlpha * 0.9);
+                  g.arc(edgeX, edgeY, hitSize * (0.72 + hitProgress * 0.35), -1.1, 0.75);
+                  g.lineStyle(2, primary, hitAlpha);
+                  g.arc(edgeX, edgeY, hitSize * (0.64 + hitProgress * 0.3), -1.1, 0.75);
+                  for (let i = 0; i < 5; i++) {
+                    const angle = -0.8 + i * 0.4;
+                    g.beginFill(primary, hitAlpha * 0.72);
+                    g.drawCircle(Math.cos(angle) * hitSize * 0.65, Math.sin(angle) * hitSize * 0.4, Math.max(1.2, 2.8 * hitAlpha));
+                    g.endFill();
+                  }
                 } else {
                   const dust = targetMaterial === 'armor' ? 0x3c3d36 : 0x514436;
                   const spark = targetMaterial === 'armor' ? 0xffe9a8 : 0xd6a26a;
@@ -5879,34 +6009,50 @@ export function BattlefieldStage({
                   g.beginFill(dust, hitAlpha * 0.38);
                   g.drawEllipse(0, tileSize * 0.09, hitSize * 0.86, hitSize * 0.3);
                   g.endFill();
-                  g.lineStyle(3.2, 0x1a0f07, hitAlpha * 0.9);
-                  g.drawCircle(0, 0, hitSize * 0.56);
-                  // radiating spark streaks for a punchy impact
-                  g.lineStyle(1.5, sparkBright, hitAlpha);
-                  for (let i = 0; i < 6; i++) {
-                    const a = (Math.PI * 2 * i) / 6 + 0.4;
-                    const inner = hitSize * 0.2;
-                    const outer = hitSize * (0.55 + hitProgress * 0.8);
-                    g.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
-                    g.lineTo(Math.cos(a) * outer, Math.sin(a) * outer);
+                  const incomingAngle = Math.atan2(uy, ux);
+                  for (let i = 0; i < 7; i++) {
+                    const spread = -1.05 + i * 0.35;
+                    const angle = incomingAngle + spread;
+                    const inner = hitSize * (0.08 + (i % 2) * 0.04);
+                    const outer = hitSize * (0.52 + (i % 3) * 0.16 + hitProgress * 0.65);
+                    const innerX = Math.cos(angle) * inner;
+                    const innerY = Math.sin(angle) * inner;
+                    const outerX = Math.cos(angle) * outer;
+                    const outerY = Math.sin(angle) * outer + hitSize * 0.18 * hitProgress;
+                    g.lineStyle(3.3, 0x1a0f07, hitAlpha * 0.84);
+                    g.moveTo(innerX, innerY);
+                    g.lineTo(outerX, outerY);
+                    g.lineStyle(i % 2 === 0 ? 1.8 : 1.2, sparkBright, hitAlpha * (i % 2 === 0 ? 0.96 : 0.72));
+                    g.moveTo(innerX, innerY);
+                    g.lineTo(outerX, outerY);
+                    g.beginFill(spark, hitAlpha * 0.72);
+                    g.drawCircle(outerX, outerY, Math.max(1, 2.2 * hitAlpha));
+                    g.endFill();
                   }
-                  // bright hot core
+                  g.lineStyle(2.4, 0x23140b, hitAlpha * 0.9);
+                  g.moveTo(-ux * hitSize * 0.32, -uy * hitSize * 0.32);
+                  g.lineTo(ux * hitSize * 0.28, uy * hitSize * 0.28);
+                  g.lineStyle(1.2, sparkBright, hitAlpha);
+                  g.moveTo(-ux * hitSize * 0.22, -uy * hitSize * 0.22);
+                  g.lineTo(ux * hitSize * 0.2, uy * hitSize * 0.2);
                   g.beginFill(spark, hitAlpha * 0.5);
-                  g.drawCircle(0, 0, hitSize * 0.3);
+                  g.drawCircle(0, 0, hitSize * 0.22);
                   g.endFill();
                   g.beginFill(0xfff6d0, hitAlpha * 0.92);
-                  g.drawCircle(0, 0, hitSize * 0.16);
+                  g.drawCircle(0, 0, hitSize * 0.11);
                   g.endFill();
                 }
               }}
             />
           )}
-          {elapsed > 220 && elapsed < 2300 && (() => {
+          {elapsed >= timing.impactAtMs + 35 && elapsed < timing.totalMs && (() => {
             // Damage number with a punchy pop (overshoot scale), an ease-out leap upward, and a size/
             // colour ramp by magnitude — so a big hit reads as a big number, not a uniform tick.
             const dmg = effect.damage ?? 0;
-            const pop = easeOutBack((elapsed - 220) / 170);
-            const rise = tileSize * 0.5 + 20 * easeOutCubic((elapsed - 220) / 900);
+            const textElapsed = elapsed - timing.impactAtMs - 35;
+            const textLife = Math.max(1, timing.totalMs - timing.impactAtMs - 35);
+            const pop = easeOutBack(textElapsed / 170);
+            const rise = tileSize * 0.5 + 20 * easeOutCubic(textElapsed / 760);
             const fontSize = effect.hit ? Math.round(16 + Math.min(16, dmg * 0.7)) : 15;
             const big = dmg >= 18;
             const fill = !effect.hit ? '#d8d1bc' : big ? '#ff8a3c' : dmg >= 9 ? '#ffc24a' : '#f3d58a';
@@ -5924,7 +6070,7 @@ export function BattlefieldStage({
                   anchor={{ x: 0.5, y: 0.5 }}
                   resolution={2}
                   style={damageTextStyle(Boolean(effect.hit), big, fontSize, fill)}
-                  alpha={Math.max(0, 0.95 - (elapsed - 220) / 2300)}
+                  alpha={Math.max(0, 0.95 - textElapsed / textLife)}
                 />
               </Container>
             );
@@ -5949,11 +6095,13 @@ export function BattlefieldStage({
     // Units standing on or just up-screen of a tree get hidden by its canopy; collect on-field units so
     // a covering tree can fade like buildings do (the player could otherwise only see a unit by selecting it).
     const visibleUnitCoords: Array<{ q: number; r: number }> = [];
-    for (const side of Object.values(battleState.sides) as Array<{ units: Map<string, { coordinate: { q: number; r: number }; stance: string; embarkedOn?: string; faction: string }> }>) {
+    for (const side of Object.values(battleState.sides) as Array<{ units: Map<string, { id: string; coordinate: { q: number; r: number }; stance: string; embarkedOn?: string; faction: string }> }>) {
       for (const u of side.units.values()) {
         if (u.stance === 'destroyed' || u.embarkedOn) continue;
         if (u.faction === viewerFaction || visibleTiles.has(idxAt(u.coordinate.q, u.coordinate.r))) {
-          visibleUnitCoords.push(u.coordinate);
+          visibleUnitCoords.push(movingUnit?.unitId === u.id && activeMovementFrame
+            ? activeMovementFrame.displayCoord
+            : u.coordinate);
         }
       }
     }
@@ -6043,7 +6191,7 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [map.props, map.width, exploredTiles, visibleTiles, battleState.sides, viewerFaction, propTextureCache, propAtlasTextures, topGeomFor, missingPropPaths]);
+  }, [activeMovementFrame, map.props, map.width, exploredTiles, visibleTiles, battleState.sides, viewerFaction, propTextureCache, propAtlasTextures, topGeomFor, missingPropPaths, movingUnit?.unitId]);
 
   const procBuildings = useMemo(() => {
     const buildingProps = (map.props ?? []).filter(
@@ -6059,15 +6207,13 @@ export function BattlefieldStage({
       }
       if (movingUnit?.unitId) {
         const moving = side.units.get(movingUnit.unitId);
-        if (moving) focusCoords.push(moving.coordinate);
+        if (moving) focusCoords.push(activeMovementFrame?.displayCoord ?? moving.coordinate);
       }
       if (targetUnitId) {
         const target = side.units.get(targetUnitId);
         if (target) focusCoords.push(target.coordinate);
       }
     }
-    if (movingUnit?.path) focusCoords.push(...movingUnit.path);
-
     const W = map.width;
     const H = map.height;
     const idxAt = (q: number, r: number) => r * W + q;
@@ -6082,11 +6228,16 @@ export function BattlefieldStage({
         if (u.stance === 'destroyed' || u.embarkedOn) continue;
         // Always reveal-through for the player's own units; for enemies only when actually visible.
         if (u.faction === viewerFaction || visibleTiles.has(idxAt(u.coordinate.q, u.coordinate.r))) {
+          const displayCoordinate = movingUnit?.unitId === u.id && activeMovementFrame
+            ? activeMovementFrame.displayCoord
+            : u.coordinate;
+          const displayQ = Math.min(W - 1, Math.max(0, Math.round(displayCoordinate.q)));
+          const displayR = Math.min(H - 1, Math.max(0, Math.round(displayCoordinate.r)));
           // Front-edge screen centre of the unit's tile, same convention buildings anchor on, so the
           // occlusion test below can compare unit position against a building's real sprite rectangle.
-          const sw = worldCornerOfTile(u.coordinate.q, u.coordinate.r, 'SW', topGeomFor);
-          const se = worldCornerOfTile(u.coordinate.q, u.coordinate.r, 'SE', topGeomFor);
-          visibleUnitCoords.push({ q: u.coordinate.q, r: u.coordinate.r, sx: (sw.x + se.x) / 2, sy: (sw.y + se.y) / 2 });
+          const sw = worldCornerOfTile(displayQ, displayR, 'SW', topGeomFor);
+          const se = worldCornerOfTile(displayQ, displayR, 'SE', topGeomFor);
+          visibleUnitCoords.push({ q: displayQ, r: displayR, sx: (sw.x + se.x) / 2, sy: (sw.y + se.y) / 2 });
         }
       }
     }
@@ -6554,7 +6705,7 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, targetUnitId, movingUnit, viewerFaction]);
+  }, [activeMovementFrame, map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, targetUnitId, movingUnit, viewerFaction]);
 
   // Keyboard pan animation loop: apply velocity from Arrow keys continuously (stable, no restarts)
   useEffect(() => {

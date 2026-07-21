@@ -49,6 +49,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import type { ArrivalEffect, AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
+import { combatEffectTiming } from './components/combatVisuals.js';
 import { HealButton } from './components/HealButton.js';
 import { MainMenu } from './components/MainMenu.js';
 import type { SaveSlot } from './components/MainMenu.js';
@@ -72,6 +73,8 @@ const CAMPAIGN_SLOT_KEY = 'spellcross:campaign-slot';
 const CAMPAIGN_SUMMARY_KEY = 'spellcross:campaign-summary';
 const CAMPAIGN_SCHEMA_KEY = 'spellcross:campaign-schema';
 const CAMPAIGN_SCHEMA_VERSION = '2026-07-20-operation-cycle';
+const FOOT_STEP_DURATION_MS = 240;
+const VEHICLE_STEP_DURATION_MS = 420;
 const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
 const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
 const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
@@ -655,7 +658,9 @@ const BattleView: React.FC<{
     if (attackEffects.length === 0) return;
     const timer = setInterval(() => {
       const now = Date.now();
-      setAttackEffects(prev => prev.filter(e => now - e.startTime < 2600));
+      setAttackEffects(prev => prev.filter((effect) =>
+        now - effect.startTime < combatEffectTiming(effect.type, effect.arc).totalMs
+      ));
     }, 100);
     return () => clearInterval(timer);
   }, [attackEffects.length]);
@@ -1212,10 +1217,10 @@ const BattleView: React.FC<{
       if (shots === 0) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('reaction'), Math.max(0, delay - 120)));
       const killed = target.stance === 'destroyed';
       const sfx = firingSound(shooter, target, ev.weapon);
-      addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay, reactAt);
+      const timing = addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay, reactAt);
       aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
         AudioManager.play(sfx);
-        if (ev.hit !== false) window.setTimeout(() => AudioManager.play(killed ? 'death' : 'hit', { intensity: Math.min(1, (ev.damage ?? 0) / 25), material: impactMaterialFor(target), pan: impactPanFor(target, battle.state.map) }), 240);
+        if (ev.hit !== false) window.setTimeout(() => AudioManager.play(killed ? 'death' : 'hit', { intensity: Math.min(1, (ev.damage ?? 0) / 25), material: impactMaterialFor(target), pan: impactPanFor(target, battle.state.map) }), timing.impactAtMs);
       }, delay));
       shots += 1;
     }
@@ -1276,6 +1281,7 @@ const BattleView: React.FC<{
     const to = atCoord ?? defender.coordinate;
     const effectType = effectTypeForAttack(attacker, defender, weaponId);
     const arc = isIndirectFire(attacker, weaponId, effectType);
+    const timing = combatEffectTiming(effectType, arc);
     const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
     const noticeTitle = outcome.hit ? t('battle:notice.hitTitle') : t('battle:notice.missTitle');
     const noticeDetail = outcome.hit
@@ -1294,6 +1300,7 @@ const BattleView: React.FC<{
       damage: outcome.damage,
       hit: outcome.hit
     }]);
+    return timing;
   };
   const rejectMove = (coord: HexCoordinate, message = t('battle:reject.moveBlocked')) => {
     AudioManager.play('error');
@@ -1355,7 +1362,7 @@ const BattleView: React.FC<{
       if (step.q === finalCoord.q && step.r === finalCoord.r) break;
     }
     const fullPath = [startCoord, ...actualPath];
-    const stepDuration = isVehicleMove ? 420 : 180;
+    const stepDuration = isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS;
     const isM113Move = unit.definitionId.toLowerCase().includes('m113');
     const preAlignDuration = isVehicleMove ? (isM113Move ? 0 : 150) : 0;
     let moving: MovingUnit | null = null;
@@ -1411,7 +1418,7 @@ const BattleView: React.FC<{
       unitId,
       path: fullPath,
       startTime: Date.now(),
-      stepDuration: isVehicleMove ? 420 : 180,
+      stepDuration: isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS,
       preAlignDuration: isVehicleMove ? (isM113Move ? 0 : 150) : 0,
       segmentTurnDuration: isM113Move ? 90 : 0
     };
@@ -1476,11 +1483,11 @@ const BattleView: React.FC<{
           const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
           // Play attack sound only on success
           AudioManager.play(firingSound(attacker, defender, anyWeapon));
-          addAttackEffect(attacker, defender, anyWeapon, attackOutcome);
+          const timing = addAttackEffect(attacker, defender, anyWeapon, attackOutcome);
           // Impact sound only when the shot actually connects (matches the primary attack branch);
           // keying off raw currentHealth played 'hit' even on a clean miss.
           if (attackOutcome.hit) {
-            playImpact(defender, attackOutcome.damage, hpBefore);
+            playImpact(defender, attackOutcome.damage, hpBefore, timing.impactAtMs);
           }
           persist();
           resolveOutcome();
@@ -1504,10 +1511,10 @@ const BattleView: React.FC<{
       const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
       // Play attack sound and effects only on success
       AudioManager.play(firingSound(attacker, defender, weapon.weapon));
-      addAttackEffect(attacker, defender, weapon.weapon, attackOutcome);
+      const timing = addAttackEffect(attacker, defender, weapon.weapon, attackOutcome);
       // Impact sound only when the shot actually connects (was playing "hit" even on a miss).
       if (attackOutcome.hit) {
-        playImpact(defender, attackOutcome.damage, hpBefore);
+        playImpact(defender, attackOutcome.damage, hpBefore, timing.impactAtMs);
       }
     }
     persist();
@@ -1722,12 +1729,12 @@ const BattleView: React.FC<{
           if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
           if (attacker && defender) {
             const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
-            addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
+            const timing = addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
             const enemySfx = firingSound(attacker, defender, action.weaponId);
             const enemyKilled = defender.stance === 'destroyed';
             const enemyHit = outcome.hit;
             AudioManager.play(enemySfx);
-            if (enemyKilled || enemyHit) playImpact(defender, outcome.damage, defHpBefore, 240);
+            if (enemyKilled || enemyHit) playImpact(defender, outcome.damage, defHpBefore, timing.impactAtMs);
             attacksMade += 1;
             if (!phaseUpdated) {
               phaseUpdated = true;
@@ -1863,12 +1870,12 @@ const BattleView: React.FC<{
         if (attacker && defender) {
           setSelected(action.attackerId);
           const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
-          addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
+          const timing = addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
           const sfx = firingSound(attacker, defender, action.weaponId);
           const killed = defender.stance === 'destroyed';
           const hit = outcome.hit;
           AudioManager.play(sfx);
-          if (killed || hit) playImpact(defender, outcome.damage, defHpBefore, 240);
+          if (killed || hit) playImpact(defender, outcome.damage, defHpBefore, timing.impactAtMs);
           await sleep(killed ? 140 : hit ? 70 : 0); // let the kill/hit land before moving on
           await sleep(700);
         }
