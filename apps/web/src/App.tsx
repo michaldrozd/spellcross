@@ -706,6 +706,8 @@ const BattleView: React.FC<{
     selectedUnit?.stats.weaponRanges,
     map
   ]);
+  const globalRangeTilesRef = useRef(globalRangeTiles);
+  globalRangeTilesRef.current = globalRangeTiles;
   const battleControlContextRef = useRef<{
     battle: NonNullable<CampaignState['activeBattle']>;
     map: BattlefieldMap;
@@ -958,6 +960,7 @@ const BattleView: React.FC<{
       planningState: () => ({
         plannedDestination: plannedDestinationRef.current
       }),
+      rangeOverlayTiles: () => Array.from(globalRangeTilesRef.current).sort(),
       ammoFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!first) return null;
