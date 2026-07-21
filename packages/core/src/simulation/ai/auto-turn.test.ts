@@ -4,6 +4,7 @@ import { createBattleState } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
 import { decideNextAIAction } from './baseline-ai.js';
 import { TurnProcessor } from '../systems/turn-processor.js';
+import { updateAllFactionsVision } from '../visibility/vision.js';
 
 const plain = {
   terrain: 'plain', elevation: 0, cover: 0, movementCostModifier: 1, passable: true, providesVisionBoost: false
@@ -16,6 +17,18 @@ const rifleman = (id: string, faction: 'alliance' | 'otherSide', q: number, r: n
     id, faction, name: id, type: 'infantry' as const,
     stats: { maxHealth: 40, mobility: 8, vision: 6, armor: 0, morale: 60, ammoCapacity: 12,
       weaponRanges: { rifle: 4 }, weaponPower: { rifle: 14 }, weaponAccuracy: { rifle: 0.85 } }
+  },
+  coordinate: { q, r }
+});
+
+const armoredRanger = (id: string, faction: 'alliance' | 'otherSide', q: number, r: number) => ({
+  definition: {
+    id, faction, name: id, type: 'vehicle' as const,
+    stats: {
+      maxHealth: 100, mobility: 8, vision: 6, armor: 8, morale: 70,
+      weaponRanges: { cannon: 7, coax: 3 }, weaponPower: { cannon: 28, coax: 8 },
+      weaponAccuracy: { cannon: 0.64, coax: 0.52 }
+    }
   },
   coordinate: { q, r }
 });
@@ -63,6 +76,37 @@ const minDistToEnemies = (state: ReturnType<typeof createBattleState>) => {
   }
   return min;
 };
+
+function runComputerSide(
+  state: ReturnType<typeof createBattleState>,
+  processor: TurnProcessor,
+  faction: 'alliance' | 'otherSide'
+) {
+  const enemyFaction = faction === 'alliance' ? 'otherSide' : 'alliance';
+  const failed = new Set<string>();
+  let decisions = 0;
+  while (state.activeFaction === faction && decisions < 80) {
+    decisions += 1;
+    const visibleTiles = state.vision[faction].visibleTiles;
+    const visibleEnemyIds = new Set(
+      Array.from(state.sides[enemyFaction].units.values())
+        .filter((unit) => visibleTiles.has(unit.coordinate.r * state.map.width + unit.coordinate.q))
+        .map((unit) => unit.id)
+    );
+    const action = decideNextAIAction(state, faction, {
+      aggression: 0.85,
+      difficulty: 'hard',
+      visibleEnemyIds,
+      excludeUnitIds: failed
+    });
+    if (action.type === 'endTurn') return;
+    if (action.type === 'move') {
+      if (!processor.moveUnit(action).success) failed.add(action.unitId);
+    } else if (action.type === 'attack') {
+      if (!processor.attackUnit(action).success) failed.add(action.attackerId);
+    }
+  }
+}
 
 describe('Auto Turn (computer plays the player side)', () => {
   const spec: CreateBattleStateOptions = {
@@ -139,5 +183,31 @@ describe('Auto Turn (computer plays the player side)', () => {
     const foeId = Array.from(state.sides.otherSide.units.values())[0].id;
     const action = decideNextAIAction(state, 'alliance', { aggression: 0.85, difficulty: 'hard', visibleEnemyIds: new Set([foeId]) });
     expect(action).toMatchObject({ type: 'attack', weaponId: 'coax' });
+  });
+
+  it('resolves a long-range armored mirror instead of stalling at the sight edge', () => {
+    const state = createBattleState({
+      map: makeMap(22, 3),
+      sides: [
+        { faction: 'alliance', units: [armoredRanger('ally-tank', 'alliance', 1, 1)] },
+        { faction: 'otherSide', units: [armoredRanger('foe-tank', 'otherSide', 20, 1)] }
+      ]
+    });
+    const processor = new TurnProcessor(state, { random: () => 0 });
+    updateAllFactionsVision(state);
+
+    for (let round = 0; round < 10; round += 1) {
+      runComputerSide(state, processor, 'alliance');
+      processor.endTurn();
+      if (Array.from(state.sides.otherSide.units.values()).every((unit) => unit.stance === 'destroyed')) break;
+      runComputerSide(state, processor, 'otherSide');
+      processor.endTurn();
+      if (Array.from(state.sides.alliance.units.values()).every((unit) => unit.stance === 'destroyed')) break;
+    }
+
+    const survivors = Object.values(state.sides).flatMap((side) => (
+      Array.from(side.units.values()).filter((unit) => unit.stance !== 'destroyed')
+    ));
+    expect(survivors).toHaveLength(1);
   });
 });
