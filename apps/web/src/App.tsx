@@ -16,6 +16,7 @@ import {
   getCampaignDifficultyRules,
   getBattleRetreatForecast,
   getEnemyActionBudget,
+  getEnemyDecisionBudget,
   getEnemyDifficultyTier,
   isoDistance as axialDistance,
   isoNeighbors,
@@ -1629,7 +1630,7 @@ const BattleView: React.FC<{
     const aiProcessor = new TurnProcessor(battle.state);
     aiProcessor.endTurn(); // player ends, AI starts
     showPhaseNotice(t('battle:notice.enemyTurnTitle'), t('battle:notice.enemyTurnDetail'), 'enemy');
-    let safety = 0;
+    let decisionsMade = 0;
     let attacksMade = 0;
     let phaseUpdated = false;
     // AI skill tracks the SECTOR's difficulty, not the strategic turn — otherwise a player who never ends
@@ -1641,13 +1642,14 @@ const BattleView: React.FC<{
     // The old global cap of two attacks let a large enemy army leave most of its AP unused. Scale the
     // animation-safe attack budget with surviving force size so both sides get a comparable turn.
     const maxEnemyAttacks = getEnemyActionBudget(campaign.difficulty, activeEnemies);
+    const maxEnemyDecisions = getEnemyDecisionBudget(campaign.difficulty, activeEnemies);
     // Units whose chosen action the engine rejected this turn. We skip only those when re-deciding so a
     // single bad action doesn't forfeit the rest of the AI's units (decideNextAIAction returns one
     // globally-best action, so without this the turn would end on the first rejection).
     const failedUnitIds = new Set<string>();
     try {
-      while (battle.state.activeFaction === 'otherSide' && safety < 50) {
-        safety += 1;
+      while (battle.state.activeFaction === 'otherSide' && decisionsMade < maxEnemyDecisions) {
+        decisionsMade += 1;
         // If the player's already been wiped out (or the enemy is), stop the enemy turn here so the
         // outcome card shows immediately rather than after the rest of the queued enemy actions.
         if (evaluateBattleOutcome(battle) !== 'ongoing') break;
@@ -1752,7 +1754,7 @@ const BattleView: React.FC<{
         }
       }
     } finally {
-      // Backstop: never leave control stuck on the enemy turn — the safety cap tripped, or the
+      // Backstop: never leave control stuck on the enemy turn — the decision cap tripped, or the
       // engine threw mid-loop. Runs in finally so a throw can't skip it while the busy flag clears.
       if (battle.state.activeFaction === 'otherSide') {
         aiProcessor.endTurn();

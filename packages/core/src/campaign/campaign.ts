@@ -163,6 +163,13 @@ export const getEnemyDifficultyTier = (campaignDifficulty: CampaignDifficulty, s
 export const getEnemyActionBudget = (campaignDifficulty: CampaignDifficulty, activeEnemyCount: number) =>
   Math.max(2, Math.ceil(activeEnemyCount * getCampaignDifficultyRules(campaignDifficulty).enemyAttacksPerUnit));
 
+export const getEnemyDecisionBudget = (campaignDifficulty: CampaignDifficulty, activeEnemyCount: number) => {
+  const positioningDecisions = activeEnemyCount;
+  const attackDecisions = getEnemyActionBudget(campaignDifficulty, activeEnemyCount);
+  const recoveryMargin = Math.max(10, Math.ceil(activeEnemyCount / 2));
+  return Math.max(50, positioningDecisions + attackDecisions + recoveryMargin);
+};
+
 export interface CampaignState {
   campaignId: string;
   difficulty: CampaignDifficulty;

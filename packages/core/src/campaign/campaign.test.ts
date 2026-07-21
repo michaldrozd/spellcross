@@ -11,6 +11,7 @@ import {
   evaluateBattleOutcome,
   getBattleRetreatForecast,
   getEnemyActionBudget,
+  getEnemyDecisionBudget,
   getEnemyDifficultyTier,
   recruitUnit,
   retreatFromBattle,
@@ -51,6 +52,16 @@ describe('campaign core', () => {
     expect(getEnemyActionBudget('story', 10)).toBe(4);
     expect(getEnemyActionBudget('commander', 10)).toBe(13);
     expect(getEnemyActionBudget('veteran', 10)).toBe(18);
+  });
+
+  it('leaves enough enemy decisions to spend a large Veteran attack budget', () => {
+    const activeEnemies = 20;
+    const attackBudget = getEnemyActionBudget('veteran', activeEnemies);
+    const decisionBudget = getEnemyDecisionBudget('veteran', activeEnemies);
+
+    expect(attackBudget).toBe(35);
+    expect(decisionBudget).toBeGreaterThanOrEqual(activeEnemies + attackBudget + 10);
+    expect(getEnemyDecisionBudget('story', 2)).toBe(50);
   });
 
   it('recruits units with tier modifiers and delays availability', () => {
