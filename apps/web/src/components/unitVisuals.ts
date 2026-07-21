@@ -45,6 +45,7 @@ export const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'
 export const UNIT_SHEET_FRAME_SIZE = 128;
 
 export const DIRECTIONAL_UNIT_ASSET_VERSION: Record<string, string> = {
+  light_infantry: 'light-infantry-generated-20260721-4',
   m113_apc: 'm113-generated-20260503-1'
 };
 
@@ -235,7 +236,7 @@ export function unitPortrait(unitType: string, definitionId: string, isFriendly:
 export const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
   artillery_directional: 0.93,
   heavy_infantry: 0.92,
-  light_infantry: 0.74,
+  light_infantry: 0.95,
   m113_apc: 1,
   rangers: 0.77,
   apc_directional: 1,
@@ -428,7 +429,7 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
     if (definitionId.includes('dire') || definitionId.includes('wolf')) return tile * 0.52;
     if (definitionId.includes('salamander')) return tile * 0.5;
     if (definitionId.includes('demon-engine')) return tile * 0.55;
-    if (directionalSprite === 'm113_apc') return tile * 0.43;
+    if (directionalSprite === 'm113_apc') return tile * 0.47;
     if (directionalSprite === 'apc_directional') return tile * 0.398;
     if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.58;
     if (definitionId.includes('truck') || definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return tile * 0.455;
@@ -441,6 +442,7 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
   if (definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead')) return tile * 0.46;
   if (definitionId.includes('golem') || definitionId.includes('ogre') || definitionId.includes('brute')) return tile * 0.74;
   if (directionalSprite === 'heavy_infantry') return tile * 0.45;
+  if (directionalSprite === 'light_infantry') return tile * 0.68;
   if (directionalSprite === 'rangers') return tile * 0.56;
   if (definitionId.includes('exo')) return tile * 0.6; // power-armor troopers are bulkier
   if (definitionId.includes('sniper') || definitionId.includes('scout')) return tile * 0.31;

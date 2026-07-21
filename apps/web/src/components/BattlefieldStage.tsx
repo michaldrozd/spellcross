@@ -33,6 +33,7 @@ import {
   directionalSpriteGroundOffset,
   directionalVehicleSprite,
   directionNameForOrientation,
+  directionNameForScreenVector,
   leavesMechanicalWreck,
   rasterUnitOverride,
   rasterVehiclePose,
@@ -522,6 +523,9 @@ const unitSheetTexture = (
   cache.set(key, texture);
   return texture;
 };
+
+const lightInfantryIdlePath = (direction: string) =>
+  `/assets/generated/light_infantry_idle_${UNIT_SHEET_DIRECTIONS.includes(direction) ? direction : 'se'}.png`;
 
 const averageCornerHeight = (c: { hNW: number; hNE: number; hSE: number; hSW: number }) =>
   (c.hNW + c.hNE + c.hSE + c.hSW) / 4;
@@ -1949,8 +1953,11 @@ export function BattlefieldStage({
       setFollowTargetPx({ x: sp.x + (ISO_MODE ? isoBaseX : 0), y: sp.y });
     };
     panTo();
-    const id = window.setInterval(panTo, 33);
-    return () => window.clearInterval(id);
+    let frameId = window.requestAnimationFrame(function followMovement() {
+      panTo();
+      frameId = window.requestAnimationFrame(followMovement);
+    });
+    return () => window.cancelAnimationFrame(frameId);
   }, [movingUnit, attackEffects.length, isoBaseX]);
 
   // Camera panning control
@@ -4276,6 +4283,15 @@ export function BattlefieldStage({
   const unitTextureCache = useMemo(() => new Map<string, Texture>(), []);
   const propAtlasTextures = useMemo(getPropAtlasTextures, []);
 
+  useEffect(() => {
+    for (const direction of UNIT_SHEET_DIRECTIONS) {
+      const path = lightInfantryIdlePath(direction);
+      if (!unitTextureCache.has(path)) {
+        unitTextureCache.set(path, crispTexture(Texture.from(path)));
+      }
+    }
+  }, [unitTextureCache]);
+
 
   const deathMarkerSprites = useMemo(() => {
     if (deathMarkers.size === 0) return null;
@@ -4463,7 +4479,7 @@ export function BattlefieldStage({
     const from = pointFor(selectedUnit);
     const to = pointFor(targetUnit);
     const explicitTarget = targetHitChance !== undefined;
-    const aimColor = targetLethal ? 0xff5747 : 0xffe27a;
+    const aimColor = targetLethal ? 0xff5747 : 0x91bac2;
     const readout = explicitTarget
       ? `${Math.round((targetHitChance ?? 0) * 100)}%${targetDamagePreview !== undefined ? `  -${targetDamagePreview}` : ''}${targetLethal ? `  ${t('combat.kill')}` : ''}`
       : '';
@@ -4746,8 +4762,12 @@ export function BattlefieldStage({
           }
         }
 
-        const stepWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 2) : 0;
-        const fastWave = movingThisUnit ? Math.sin(movementPhase * Math.PI * 4) : 0;
+        const stridePhase = movingThisUnit && movingUnit?.unitId === unit.id
+          ? Math.max(0, now - movingUnit.startTime - (movingUnit.preAlignDuration ?? 0)) / 280
+          : movementPhase;
+        const locomotionPhase = isGroundVehicle ? movementPhase : stridePhase;
+        const stepWave = movingThisUnit ? Math.sin(locomotionPhase * Math.PI * 2) : 0;
+        const fastWave = movingThisUnit ? Math.sin(locomotionPhase * Math.PI * 4) : 0;
         const strideLift = Math.abs(stepWave);
         const p = toScreen(displayCoord);
         const displayQ = Math.min(map.width - 1, Math.max(0, Math.round(displayCoord.q)));
@@ -4763,15 +4783,18 @@ export function BattlefieldStage({
         const isSelected = unit.id === selectedUnitId;
         const isSelectedCarrier = unit.id === selectedEmbarkedCarrierId;
         const isTarget = unit.id === targetUnitId;
-        // Sort by real screen-Y so units/buildings interleave by true depth; a tiny tie-break keeps a
-        // selected/moving/targeted unit above same-tile clutter (death marker, prop) without the old
-        // +5000 that made it punch through everything down-screen. Reveal-through behind buildings is
-        // still handled by the unitOccluded alpha fade below.
-        const worldZ = Math.round(y) + (isSelected || isSelectedCarrier || isTarget || movingThisUnit ? 2 : 0);
+        const movementTransitionActive = movingUnit?.unitId === unit.id && activeMovementFrame !== null;
         const tileIndex = displayR * map.width + displayQ;
         const isVisible = visibleTiles.has(tileIndex);
         const isFriendly = unit.faction === viewerFaction;
         const readableInFog = isFriendly && !isVisible;
+        // Sort by real screen-Y so units/buildings interleave by true depth; a tiny tie-break keeps a
+        // selected/targeted unit above same-tile clutter. A moving friendly that crosses remembered
+        // terrain temporarily gets a reveal layer; otherwise stacked canopies can hide the squad while
+        // its selection ring keeps moving on bare ground.
+        const revealMovingFriendly = movementTransitionActive && readableInFog;
+        const worldZ = Math.round(y)
+          + (revealMovingFriendly ? 5000 : isSelected || isSelectedCarrier || isTarget || movingThisUnit ? 2 : 0);
         const isDestroyed = unit.stance === 'destroyed';
         const isEmbarked = Boolean(unit.embarkedOn);
         const incomingHit = attackEffects.find((effect) => {
@@ -5179,27 +5202,46 @@ export function BattlefieldStage({
                 : DIRECTIONAL_UNIT_SPRITES[defId] ?? vehicleDirectionalSprite;
               const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
               const isVehicleUnit = isGroundVehicle;
+              const footMovementDirection = directionNameForScreenVector(moveScreenVector);
+              const readableFootMovementDirection = footMovementDirection === 'n'
+                ? 'nw'
+                : footMovementDirection === 's'
+                  ? 'se'
+                  : footMovementDirection;
               const spriteDirection = isVehicleUnit && directionalSprite === 'm113_apc'
                 ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite)
                 : isVehicleUnit && movingThisUnit
                   ? vehicleSheetDirectionNameForScreenVector(moveScreenVector, directionalSprite ?? '')
                   : isVehicleUnit
                     ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
+                    : movementTransitionActive
+                      ? readableFootMovementDirection
                     : directionNameForOrientation(animatedOrientation);
               const usesDirectionalMotion = Boolean(directionalSprite && (isFootUnit || isVehicleUnit));
-              const sheetState = (movingThisUnit || turningThisUnit) && usesDirectionalMotion ? 'walk' : 'idle';
+              const sheetState = (movementTransitionActive || turningThisUnit) && usesDirectionalMotion ? 'walk' : 'idle';
               const textureSheetState = directionalSprite === 'apc_directional' ? 'idle' : sheetState;
               const animatesVehicleFrames = isVehicleUnit && directionalSprite !== 'apc_directional';
               const sheetFrame = textureSheetState === 'walk' && (!isVehicleUnit || animatesVehicleFrames)
-                ? Math.floor((((movementPhase % 1) + 1) % 1) * 4)
+                ? Math.floor((((locomotionPhase % 1) + 1) % 1) * 4)
                 : 0;
               let texture: Texture | null = null;
+              let settlingTexture: Texture | null = null;
 
               if (directionalSprite) {
                 desiredH = unitVisualHeight(tileSize, unitType, defId, directionalSprite);
                 anchorY = DIRECTIONAL_UNIT_ANCHOR_Y[directionalSprite] ?? 0.9;
                 canMirrorForFacing = false;
-                texture = unitSheetTexture(unitTextureCache, directionalSprite, textureSheetState, spriteDirection, sheetFrame);
+                const standaloneIdlePath = directionalSprite === 'light_infantry'
+                  ? lightInfantryIdlePath(spriteDirection)
+                  : null;
+                texture = standaloneIdlePath && textureSheetState === 'idle'
+                  ? (unitTextureCache.get(standaloneIdlePath) ?? crispTexture(Texture.from(standaloneIdlePath)))
+                  : unitSheetTexture(unitTextureCache, directionalSprite, textureSheetState, spriteDirection, sheetFrame);
+                if (movementTransitionActive && (standaloneIdlePath !== null || (!movingThisUnit && !turningThisUnit))) {
+                  settlingTexture = standaloneIdlePath
+                    ? (unitTextureCache.get(standaloneIdlePath) ?? crispTexture(Texture.from(standaloneIdlePath)))
+                    : unitSheetTexture(unitTextureCache, directionalSprite, 'idle', spriteDirection, 0);
+                }
               } else if (unitType === 'vehicle') {
                 desiredH = unitVisualHeight(tileSize, unitType, defId);
                 anchorY = 0.95;
@@ -5307,19 +5349,19 @@ export function BattlefieldStage({
               const routed = unit.stance === 'routed';
               const cowed = suppressed || routed;
               const cowerShudder = cowed && isFootUnit ? Math.sin(now / 90) * 1.1 : 0;
-              const spriteBobY = (isFootUnit ? -strideLift * (directionalSprite ? 3.2 : 3.6) : unitType === 'air' ? stepWave * 1.4 : -vehicleRumbleY);
-              const spriteSwayX = (isFootUnit ? stepWave * 1.65 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX + cowerShudder;
+              const spriteBobY = (isFootUnit ? -strideLift * (directionalSprite ? 5 : 3.6) : unitType === 'air' ? stepWave * 1.4 : -vehicleRumbleY);
+              const spriteSwayX = (isFootUnit ? stepWave * 2.3 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX + cowerShudder;
               const spriteCombatY = hitOffsetY + shotOffsetY + (cowed && isFootUnit ? Math.sin(now / 60) * 0.6 : 0);
               const locomotionRotation = isFootUnit && movingThisUnit
-                ? -moveScreenVector.x * stepWave * 0.052
+                ? -moveScreenVector.x * stepWave * 0.075
                 : isVehicleUnit && movingThisUnit ? fastWave * 0.011 : vehicleTurnLean;
               const spriteRotation = (vehiclePose ? vehiclePose.rotation : 0) + locomotionRotation + (routed ? -Math.sign(moveScreenVector.x || 1) * 0.12 : 0);
               // Volume-preserving impact squash: the struck unit compresses vertically / bulges wide at
               // the moment of contact and springs back as the hit pulse decays. Vehicles jello half as much.
               const hitSquash = incomingHit ? Math.sin(Math.min(1, hitElapsed / 180) * Math.PI) * hitPulse : 0;
               const squashAmt = (unitType === 'vehicle' || unitType === 'artillery') ? 0.5 : 1;
-              const squashX = (isFootUnit ? 1 + stepWave * 0.035 : 1) * (cowed ? 1.04 : 1) * (1 + hitSquash * 0.16 * squashAmt);
-              const squashY = (isFootUnit ? 1 - stepWave * 0.026 : 1) * (cowed ? 0.9 : 1) * (1 - hitSquash * 0.20 * squashAmt);
+              const squashX = (isFootUnit ? 1 + stepWave * 0.052 : 1) * (cowed ? 1.04 : 1) * (1 + hitSquash * 0.16 * squashAmt);
+              const squashY = (isFootUnit ? 1 - stepWave * 0.044 : 1) * (cowed ? 0.9 : 1) * (1 - hitSquash * 0.20 * squashAmt);
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
               // Death animation clock: one normalized 0→1 ramp over 2.1s from the killing blow, driving a
               // per-archetype death — infantry topple & sink, undead/demons dissolve & drift up, vehicles
@@ -5366,12 +5408,12 @@ export function BattlefieldStage({
               unitSpriteTopY = spriteBaseY + groundOffsetY - anchorY * desiredH;
               unitVisibleTopY = unitSpriteTopY + spriteContentTopFrac(texture) * desiredH;
               const silhouetteAlpha = readableInFog
-                ? (isGroundVehicle ? 0.5 : 0.44)
+                ? (isGroundVehicle ? 0.5 : 0.62)
                 : isVisible && isFootUnit
                   ? 0.32
                   : 0;
-              const silhouetteTint = readableInFog ? 0xa8cfc2 : 0x050605;
-              const silhouetteScale = readableInFog ? 1.055 : 1.025;
+              const silhouetteTint = 0x050605;
+              const silhouetteScale = readableInFog ? 1.07 : 1.025;
               return (
                 <>
                   {silhouetteAlpha > 0 ? (
@@ -5387,7 +5429,7 @@ export function BattlefieldStage({
                       zIndex={0.8}
                     />
                   ) : null}
-                  {isFootUnit && (isVisible || readableInFog) ? (
+                  {isFootUnit && isVisible ? (
                     <Sprite
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
@@ -5400,49 +5442,32 @@ export function BattlefieldStage({
                       zIndex={0.9}
                     />
                   ) : null}
-                  {isFriendly && isFootUnit ? (
-                    <Graphics
-                      x={spriteSwayX}
-                      y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
-                      zIndex={0.96}
-                      draw={(g) => {
-                        g.clear();
-                        const stride = movingThisUnit ? stepWave * tileSize * 0.018 : 0;
-                        for (const [index, offset] of [-0.13, 0, 0.13].entries()) {
-                          const figureX = offset * tileSize;
-                          const phase = index % 2 === 0 ? stride : -stride;
-                          g.lineStyle(2.4, 0x07100e, readableInFog ? 0.68 : 0.42);
-                          g.moveTo(figureX, -tileSize * 0.13);
-                          g.lineTo(figureX, -tileSize * 0.015);
-                          g.moveTo(figureX, -tileSize * 0.02);
-                          g.lineTo(figureX - tileSize * 0.035 + phase, tileSize * 0.055);
-                          g.moveTo(figureX, -tileSize * 0.02);
-                          g.lineTo(figureX + tileSize * 0.035 - phase, tileSize * 0.055);
-                          g.beginFill(0x9fc7b7, readableInFog ? 0.72 : 0.46);
-                          g.drawCircle(figureX, -tileSize * 0.19, tileSize * 0.032);
-                          g.drawRoundedRect(
-                            figureX - tileSize * 0.032,
-                            -tileSize * 0.155,
-                            tileSize * 0.064,
-                            tileSize * 0.13,
-                            2
-                          );
-                          g.endFill();
-                        }
-                      }}
-                    />
-                  ) : null}
                   <Sprite
                     texture={texture}
                     anchor={{ x: 0.5, y: anchorY }}
                     scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
-                    alpha={(isVisible ? 1 : readableInFog ? 0.98 : 0.72) * deathAlphaMul}
+                    alpha={(isFriendly ? 1 : isVisible ? 1 : 0.72) * deathAlphaMul}
                     tint={deathTint !== null ? deathTint : suppressed ? 0xb9b2a4 : routed ? 0xc7a39c : spriteTint}
                     x={spriteSwayX}
                     y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
                     rotation={spriteRotation + deathRotation}
                     zIndex={1}
                   />
+                  {settlingTexture ? (
+                    <Sprite
+                      texture={settlingTexture}
+                      anchor={{ x: 0.5, y: anchorY }}
+                      scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
+                      alpha={(directionalSprite === 'light_infantry' && movingThisUnit
+                        ? (readableInFog ? 1 : 0.28)
+                        : 1) * deathAlphaMul}
+                      tint={spriteTint}
+                      x={spriteSwayX}
+                      y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
+                      rotation={spriteRotation + deathRotation}
+                      zIndex={readableInFog ? 1.12 : 0.98}
+                    />
+                  ) : null}
                   {outgoingShot ? (
                     <Sprite
                       texture={texture}
@@ -6385,7 +6410,19 @@ export function BattlefieldStage({
           const tDiff = prop.coordinate.q - prop.coordinate.r;
           return sum >= tSum - 4 && sum <= tSum && diff >= tDiff - 1 && diff <= tDiff + 1;
         });
-        const occludeAlpha = treeOccluded ? 0.34 : 1;
+        const movingUnitBehindCanopy = prop.kind === 'tree' && movementOcclusionCoordinate !== null && (() => {
+          const unitPosition = toScreen(movementOcclusionCoordinate);
+          const unitGeom = topGeomFor(
+            Math.round(movementOcclusionCoordinate.q),
+            Math.round(movementOcclusionCoordinate.r)
+          );
+          const unitX = unitPosition.x;
+          const unitY = unitPosition.y - unitGeom.avgHeight * ELEV_Y_OFFSET;
+          return Math.abs(unitX - worldX) <= tileSize * 0.62
+            && unitY <= worldY + tileSize * 0.12
+            && unitY >= worldY - tileSize * 1.45;
+        })();
+        const occludeAlpha = movingUnitBehindCanopy ? 0.1 : treeOccluded ? 0.34 : 1;
 
         return (
           <Container key={prop.id} x={worldX} y={worldY} zIndex={zIndex} sortableChildren>
