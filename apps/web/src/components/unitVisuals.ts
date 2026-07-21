@@ -288,6 +288,7 @@ export type MovementFrame = {
   isFirstSegment: boolean;
   isLastSegment: boolean;
   isTurnPhase: boolean;
+  turnProgress: number;
   isMoving: boolean;
 };
 
@@ -319,6 +320,7 @@ export function resolveMovementFrame(moving: VisualMovement, now: number): Movem
   let movementPhase = 0;
   let stepProgress = rawElapsed < preAlignDuration ? 0 : 1;
   let isTurnPhase = false;
+  let turnProgress = 0;
 
   for (let stepIndex = 0; stepIndex < totalSteps; stepIndex += 1) {
     currentStep = stepIndex;
@@ -338,6 +340,7 @@ export function resolveMovementFrame(moving: VisualMovement, now: number): Movem
       stepProgress = 1;
       movementPhase = stepIndex + 1;
       isTurnPhase = true;
+      turnProgress = Math.min(Math.max(remainingElapsed / turnDuration, 0), 1);
       break;
     }
     remainingElapsed -= turnDuration;
@@ -372,6 +375,7 @@ export function resolveMovementFrame(moving: VisualMovement, now: number): Movem
     isFirstSegment,
     isLastSegment,
     isTurnPhase,
+    turnProgress,
     isMoving: rawElapsed >= preAlignDuration && !isTurnPhase && !(isLastSegment && stepProgress >= 1)
   };
 }

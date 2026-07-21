@@ -115,7 +115,12 @@ describe('resolveMovementFrame', () => {
     const turnFrame = resolveMovementFrame(movement, 125);
     const movingFrame = resolveMovementFrame(movement, 175);
 
-    expect(turnFrame).toMatchObject({ displayCoord: { q: 1, r: 0 }, isMoving: false, isTurnPhase: true });
+    expect(turnFrame).toMatchObject({
+      displayCoord: { q: 1, r: 0 },
+      isMoving: false,
+      isTurnPhase: true,
+      turnProgress: 0.5
+    });
     expect(movingFrame?.isMoving).toBe(true);
     expect(movingFrame?.displayCoord.r).toBeCloseTo(0.4375);
   });

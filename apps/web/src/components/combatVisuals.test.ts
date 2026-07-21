@@ -38,4 +38,11 @@ describe('combatEffectTiming', () => {
     expect(indirect.impactAtMs).toBe(indirect.projectileMs);
     expect(indirect.totalMs).toBeGreaterThan(direct.totalMs);
   });
+
+  it('keeps a destroyed unit visible through a readable death reaction', () => {
+    for (const type of ['gunshot', 'sniper', 'explosion', 'magic', 'melee', 'arrow', 'fire'] as const) {
+      const timing = combatEffectTiming(type);
+      expect(timing.totalMs - timing.impactAtMs).toBeGreaterThanOrEqual(2200);
+    }
+  });
 });

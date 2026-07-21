@@ -24,20 +24,20 @@ export const CORPSE_TTL_MS = 20_000;
 export const WRECK_SMOKE_ANIMATION_MS = 24_000;
 
 const DIRECT_FIRE_TIMING: Record<CombatEffectType, CombatEffectTiming> = {
-  gunshot: { projectileMs: 370, impactAtMs: 145, impactMs: 460, totalMs: 1750, burstRounds: 5, burstGapMs: 55, burstFlightMs: 150 },
-  sniper: { projectileMs: 180, impactAtMs: 170, impactMs: 500, totalMs: 1800, burstRounds: 1, burstGapMs: 0, burstFlightMs: 180 },
-  explosion: { projectileMs: 430, impactAtMs: 430, impactMs: 780, totalMs: 2050, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 },
-  magic: { projectileMs: 460, impactAtMs: 460, impactMs: 720, totalMs: 2000, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 },
-  melee: { projectileMs: 150, impactAtMs: 150, impactMs: 480, totalMs: 1550, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 },
-  arrow: { projectileMs: 520, impactAtMs: 520, impactMs: 480, totalMs: 1850, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 },
-  fire: { projectileMs: 390, impactAtMs: 250, impactMs: 780, totalMs: 1900, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 }
+  gunshot: { projectileMs: 370, impactAtMs: 145, impactMs: 460, totalMs: 2550, burstRounds: 5, burstGapMs: 55, burstFlightMs: 150 },
+  sniper: { projectileMs: 180, impactAtMs: 170, impactMs: 500, totalMs: 2600, burstRounds: 1, burstGapMs: 0, burstFlightMs: 180 },
+  explosion: { projectileMs: 430, impactAtMs: 430, impactMs: 920, totalMs: 2900, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 },
+  magic: { projectileMs: 460, impactAtMs: 460, impactMs: 780, totalMs: 2900, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 },
+  melee: { projectileMs: 150, impactAtMs: 150, impactMs: 540, totalMs: 2550, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 },
+  arrow: { projectileMs: 520, impactAtMs: 520, impactMs: 520, totalMs: 2950, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 },
+  fire: { projectileMs: 390, impactAtMs: 250, impactMs: 900, totalMs: 2700, burstRounds: 0, burstGapMs: 0, burstFlightMs: 0 }
 };
 
 const INDIRECT_EXPLOSION_TIMING: CombatEffectTiming = {
   projectileMs: 680,
   impactAtMs: 680,
-  impactMs: 900,
-  totalMs: 2250,
+  impactMs: 1040,
+  totalMs: 3250,
   burstRounds: 0,
   burstGapMs: 0,
   burstFlightMs: 0
