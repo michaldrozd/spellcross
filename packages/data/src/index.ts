@@ -178,12 +178,16 @@ export type TacticalEventMessageKey =
   | 'bridgeReserves'
   | 'convoyIntercept'
   | 'nightAmbush'
-  | 'portalSurge';
+  | 'portalSurge'
+  | 'signalEaterAwakes'
+  | 'glassChoirMarches'
+  | 'ashCrownDescends';
 
 export interface TacticalScenarioEvent {
   id: string;
   triggerRound: number;
   triggerEnemyRemaining?: number;
+  triggerAfterEventId?: string;
   messageKey: TacticalEventMessageKey;
   faction: FactionId;
   reinforcements: ScenarioUnit[];
@@ -359,8 +363,12 @@ const tacticalScenarioEventSchema = z.object({
     'bridgeReserves',
     'convoyIntercept',
     'nightAmbush',
-    'portalSurge'
+    'portalSurge',
+    'signalEaterAwakes',
+    'glassChoirMarches',
+    'ashCrownDescends'
   ]),
+  triggerAfterEventId: z.string().optional(),
   faction: z.enum(['alliance', 'otherSide']),
   reinforcements: z.array(scenarioUnitSchema).min(1)
 });
@@ -967,7 +975,7 @@ export const starterUnits: UnitData[] = [
       weaponAccuracy: { magma: 0.64, bolt: 0.6 }
     }
   },
-  // === NEW UNITS FROM ORIGINAL SPELLCROSS ===
+  // Mobile and static threats that broaden the Darkness roster.
   {
     id: 'wolf-rider',
     name: 'Wolf Rider',
@@ -1042,7 +1050,7 @@ export const starterUnits: UnitData[] = [
     }
   },
 
-  // --- Roster expansion: extra Alliance units mapped to original Spellcross archetypes ---
+  // Additional Alliance specialists for late-campaign combined-arms formations.
   {
     id: 'commando-team', name: 'Commandos', faction: 'alliance', type: 'infantry', role: 'recon', cost: 140,
     stats: {

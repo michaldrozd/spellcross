@@ -128,11 +128,11 @@
     }
   },
   "city-sector-berlin": {
-    "name": "Berlínske ruiny",
-    "brief": "Prebojujte sa cez hmlu spustošeným hlavným mestom a zlomte rituálnych strážcov.",
+    "name": "Protokol Mŕtvy éter",
+    "brief": "Vystopujte v ruinách prízračnú núdzovú sieť a umlčte bytosť, ktorá hovorí cez každú opustenú vysielačku.",
     "objectives": {
-      "sector-berlin-eliminate": "Zničte rituálnych strážcov.",
-      "sector-berlin-hold": "Udržte okolie veže 3 kolá."
+      "sector-berlin-eliminate": "Umlčte stráž relé, ktorá živí Požierača signálu.",
+      "sector-berlin-hold": "Udržte vysielač mŕtvej frekvencie 3 kolá."
     }
   },
   "city-sector-warsaw": {
@@ -144,11 +144,11 @@
     }
   },
   "city-sector-krakow": {
-    "name": "Krakovská citadela",
-    "brief": "Zaútočte na citadelu premenenú na portálový uzol a udržte jej okolie, aby ste ju zapečatili.",
+    "name": "Sklenený chór",
+    "brief": "Vstúpte do zrkadlovej citadely, zlomte jej rezonančnú ochranu a udržte nádvorie, keď tichý chór odpovie.",
     "objectives": {
-      "sector-krakow-eliminate": "Zničte rituálnych strážcov.",
-      "sector-krakow-hold": "Udržte okolie veže 3 kolá."
+      "sector-krakow-eliminate": "Rozbite rezonančných strážcov Skleneného chóru.",
+      "sector-krakow-hold": "Udržte tiché nádvorie 3 kolá."
     }
   },
   "city-sector-kyiv": {
@@ -176,11 +176,11 @@
     }
   },
   "city-sector-rift": {
-    "name": "Východná trhlina",
-    "brief": "Prekročte spálenú trhlinu, zničte strážcov a udržte okolie portálu.",
+    "name": "Operácia Popolavá koruna",
+    "brief": "Prekročte horiacu jazvu, ukotvite pečať a prežite samozvaného vládcu, ktorý povstane z poslednej trhliny.",
     "objectives": {
-      "sector-rift-eliminate": "Zničte rituálnych strážcov.",
-      "sector-rift-hold": "Udržte okolie veže 3 kolá."
+      "sector-rift-eliminate": "Zničte strážcov Popolavej koruny.",
+      "sector-rift-hold": "Udržte pečať v horiacej jazve 3 kolá."
     }
   }
 }

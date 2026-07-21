@@ -405,6 +405,41 @@ const ROSTER_BY_DIFFICULTY: Record<number, string[]> = {
   5: ['demon-engine', 'hell-rider', 'lich-lord', 'void-drake', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde', 'specter', 'breorn-titan', 'black-angel', 'death-knight', 'stone-golem']
 };
 
+interface SignatureEventDefinition {
+  messageKey: TacticalScenarioEvent['messageKey'];
+  reinforcements: Array<{ id: string; definitionId: string }>;
+}
+
+const SIGNATURE_EVENTS: Partial<Record<string, SignatureEventDefinition>> = {
+  'sector-berlin': {
+    messageKey: 'signalEaterAwakes',
+    reinforcements: [
+      { id: 'signal-eater', definitionId: 'specter' },
+      { id: 'hush-knight', definitionId: 'death-knight' },
+      { id: 'static-witch', definitionId: 'warlock' },
+      { id: 'echo-rider', definitionId: 'hell-rider' }
+    ]
+  },
+  'sector-krakow': {
+    messageKey: 'glassChoirMarches',
+    reinforcements: [
+      { id: 'glass-regent', definitionId: 'stone-golem' },
+      { id: 'choir-cantor', definitionId: 'warlock' },
+      { id: 'cinder-voice', definitionId: 'salamander' },
+      { id: 'mirror-guard', definitionId: 'death-knight' }
+    ]
+  },
+  'sector-rift': {
+    messageKey: 'ashCrownDescends',
+    reinforcements: [
+      { id: 'ash-crown', definitionId: 'breorn-titan' },
+      { id: 'crown-wing', definitionId: 'black-angel' },
+      { id: 'rift-harrower', definitionId: 'void-drake' },
+      { id: 'ember-seer', definitionId: 'lich-lord' }
+    ]
+  }
+};
+
 function pickSpread(pool: Coord[], n: number, rng: () => number): Coord[] {
   // deterministic spread: shuffle a copy and take n, preferring tiles that aren't adjacent
   const copy = pool.slice();
@@ -506,8 +541,19 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
       objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Secure the relay for 3 rounds.', target: hold, turnLimit: 3 });
       break;
     case 'spire':
-      objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Destroy the ritual guardians.' });
-      objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Hold the spire grounds for 3 rounds.', target: hold, turnLimit: 3 });
+      if (id === 'sector-berlin') {
+        objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Silence the relay guard feeding the Signal-Eater.' });
+        objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Hold the dead-frequency transmitter for 3 rounds.', target: hold, turnLimit: 3 });
+      } else if (id === 'sector-krakow') {
+        objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Shatter the resonant guardians of the Glass Choir.' });
+        objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Hold the silent courtyard for 3 rounds.', target: hold, turnLimit: 3 });
+      } else if (id === 'sector-rift') {
+        objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Bring down the wardens of the Ash Crown.' });
+        objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Anchor the seal inside the burning scar for 3 rounds.', target: hold, turnLimit: 3 });
+      } else {
+        objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Destroy the ritual guardians.' });
+        objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Hold the spire grounds for 3 rounds.', target: hold, turnLimit: 3 });
+      }
       break;
   }
   return { objectives: objs, allianceForces, weather: cfg.weather };
@@ -531,9 +577,11 @@ function buildEvents(
     !occupied.has(`${c.q},${c.r}`)
     && all.findIndex((candidate) => candidate.q === c.q && candidate.r === c.r) === index
   ));
-  const spots = pickSpread(edgePool.length ? edgePool : g.reachable, 4, rng);
+  const signature = SIGNATURE_EVENTS[cfg.territoryId];
+  const spots = pickSpread(edgePool.length ? edgePool : g.reachable, 4 + (signature?.reinforcements.length ?? 0), rng);
+  const reserveSpots = spots.slice(0, 4);
   const reserveOffset = Math.ceil(roster.length / 2);
-  const reinforcements: ScenarioUnit[] = spots.map((coordinate, index) => ({
+  const reinforcements: ScenarioUnit[] = reserveSpots.map((coordinate, index) => ({
     id: `${cfg.territoryId}-reserve-${index}`,
     definitionId: roster[(reserveOffset + index) % roster.length],
     coordinate
@@ -556,13 +604,29 @@ function buildEvents(
     'raid-night': 2,
     spire: 3
   };
-  return [{
+  const reserveEvent: TacticalScenarioEvent = {
     id: `${cfg.territoryId}-reserve-wave`,
     triggerRound: roundByGameplay[cfg.gameplay],
     triggerEnemyRemaining: Math.max(1, Math.floor(otherSideForces.length / 3)),
     messageKey: messageByGameplay[cfg.gameplay],
     faction: 'otherSide',
     reinforcements
+  };
+  if (!signature) return [reserveEvent];
+
+  const signatureReinforcements = signature.reinforcements.map((reinforcement, index) => ({
+    id: `${cfg.territoryId}-${reinforcement.id}`,
+    definitionId: reinforcement.definitionId,
+    coordinate: spots[4 + index]
+  }));
+  return [reserveEvent, {
+    id: `${cfg.territoryId}-signature-wave`,
+    triggerRound: roundByGameplay[cfg.gameplay] + 2,
+    triggerEnemyRemaining: 0,
+    triggerAfterEventId: reserveEvent.id,
+    messageKey: signature.messageKey,
+    faction: 'otherSide',
+    reinforcements: signatureReinforcements
   }];
 }
 
@@ -617,13 +681,13 @@ const CITY_CONFIGS: CityConfig[] = [
   { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Escort a supply convoy through the fog-bound canals to the forward quay.', theme: 'canal', gameplay: 'convoy', width: 32, height: 21, weather: 'fog', difficulty: 2 },
   { territoryId: 'sector-copenhagen', name: 'Copenhagen Strait', brief: 'Hold the coastal strongpoint and deny the Baltic flanking approach.', theme: 'coast', gameplay: 'hold', width: 32, height: 21, weather: 'clear', difficulty: 2 },
   { territoryId: 'sector-prague', name: 'Prague Old Town', brief: 'Raid the old-town warren by night and disrupt the dark ritual.', theme: 'oldtown', gameplay: 'raid-night', width: 34, height: 22, weather: 'night', difficulty: 3 },
-  { territoryId: 'sector-berlin', name: 'Berlin Ruins', brief: 'Storm the ruined capital through the fog and break the ritual guardians.', theme: 'ruins', gameplay: 'spire', width: 36, height: 24, weather: 'fog', difficulty: 4 },
+  { territoryId: 'sector-berlin', name: 'Dead Air Protocol', brief: 'Trace a phantom distress network through the ruins and silence the presence speaking through every abandoned radio.', theme: 'ruins', gameplay: 'spire', width: 36, height: 24, weather: 'fog', difficulty: 4 },
   { territoryId: 'sector-warsaw', name: 'Warsaw Front', brief: 'Break the eastern line through the rubble and seize the far strongpoint.', theme: 'ruins', gameplay: 'bridgehead', width: 36, height: 24, weather: 'clear', difficulty: 4 },
-  { territoryId: 'sector-krakow', name: 'Krakow Citadel', brief: 'Assault the citadel turned portal-nexus and hold its grounds to seal it.', theme: 'oldtown', gameplay: 'spire', width: 36, height: 24, weather: 'fog', difficulty: 4 },
+  { territoryId: 'sector-krakow', name: 'The Glass Choir', brief: 'Enter the mirrored citadel, break its resonant ward, and hold the courtyard when the silent choir answers.', theme: 'oldtown', gameplay: 'spire', width: 36, height: 24, weather: 'fog', difficulty: 4 },
   { territoryId: 'sector-kyiv', name: 'Kyiv Siege', brief: 'Night raid through the ruined metropolis to silence the coven and hold the relay.', theme: 'ruins', gameplay: 'raid-night', width: 40, height: 26, weather: 'night', difficulty: 5 },
   { territoryId: 'sector-carpathian', name: 'Carpathian Pass', brief: 'Hold the high pass strongpoint and clear the patrol-ridden ridges.', theme: 'alpine', gameplay: 'hold', width: 36, height: 24, weather: 'clear', difficulty: 4 },
   { territoryId: 'sector-blacksea', name: 'Black Sea Coast', brief: 'Push along the foggy coast, rout the shore-spawn and seize the far cape.', theme: 'coast', gameplay: 'bridgehead', width: 36, height: 24, weather: 'fog', difficulty: 4 },
-  { territoryId: 'sector-rift', name: 'The Eastern Rift', brief: 'Cross the scorched rift, destroy the guardians and hold the portal grounds.', theme: 'rift', gameplay: 'spire', width: 40, height: 26, weather: 'fog', difficulty: 5 }
+  { territoryId: 'sector-rift', name: 'Operation Ash Crown', brief: 'Cross the burning scar, anchor the seal, and survive the self-crowned warden that rises from its final breach.', theme: 'rift', gameplay: 'spire', width: 40, height: 26, weather: 'fog', difficulty: 5 }
 ];
 
 export const cityScenarios: TacticalScenario[] = CITY_CONFIGS.map(buildScenario);

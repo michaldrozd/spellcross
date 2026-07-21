@@ -791,9 +791,7 @@ body {
   color: #c7a893;
   font-size: 0.6rem;
   line-height: 1.15;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .battle-phase-notice.alliance span {

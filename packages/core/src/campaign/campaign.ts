@@ -1007,6 +1007,7 @@ export function processTacticalEvents(
 
   battle.triggeredEventIds ??= [];
   const triggered = new Set(battle.triggeredEventIds);
+  const triggeredBeforeProcessing = new Set(triggered);
   const enemyRemaining = livingUnitCount(battle, 'otherSide');
   const sectorDifficulty = state.territories.find((territory) => territory.id === battle.territoryId)?.difficulty ?? 1;
   const waveSize = reinforcementCountForBattle(battle, sectorDifficulty);
@@ -1014,6 +1015,7 @@ export function processTacticalEvents(
 
   for (const event of battle.scenario.events ?? []) {
     if (triggered.has(event.id)) continue;
+    if (event.triggerAfterEventId && !triggeredBeforeProcessing.has(event.triggerAfterEventId)) continue;
     const dueByRound = battle.state.round >= event.triggerRound;
     const dueByAttrition = event.triggerEnemyRemaining != null && enemyRemaining <= event.triggerEnemyRemaining;
     if (!dueByRound && !dueByAttrition) continue;

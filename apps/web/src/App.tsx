@@ -1254,7 +1254,9 @@ const BattleView: React.FC<{
       event.faction === 'otherSide' ? 'enemy' : 'alliance',
       4200
     );
-    AudioManager.play(event.messageKey === 'portalSurge' || event.messageKey === 'nightAmbush' ? 'magic' : 'objective');
+    const arcaneArrival = ['portalSurge', 'nightAmbush', 'signalEaterAwakes', 'glassChoirMarches', 'ashCrownDescends']
+      .includes(event.messageKey);
+    AudioManager.play(arcaneArrival ? 'magic' : 'objective');
   };
   const findBattleUnit = (unitId: string) => {
     for (const side of Object.values(battle.state.sides)) {

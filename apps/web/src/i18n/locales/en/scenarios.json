@@ -128,11 +128,11 @@
     }
   },
   "city-sector-berlin": {
-    "name": "Berlin Ruins",
-    "brief": "Storm the ruined capital through the fog and break the ritual guardians.",
+    "name": "Dead Air Protocol",
+    "brief": "Trace a phantom distress network through the ruins and silence the presence speaking through every abandoned radio.",
     "objectives": {
-      "sector-berlin-eliminate": "Destroy the ritual guardians.",
-      "sector-berlin-hold": "Hold the spire grounds for 3 rounds."
+      "sector-berlin-eliminate": "Silence the relay guard feeding the Signal-Eater.",
+      "sector-berlin-hold": "Hold the dead-frequency transmitter for 3 rounds."
     }
   },
   "city-sector-warsaw": {
@@ -144,11 +144,11 @@
     }
   },
   "city-sector-krakow": {
-    "name": "Krakow Citadel",
-    "brief": "Assault the citadel turned portal-nexus and hold its grounds to seal it.",
+    "name": "The Glass Choir",
+    "brief": "Enter the mirrored citadel, break its resonant ward, and hold the courtyard when the silent choir answers.",
     "objectives": {
-      "sector-krakow-eliminate": "Destroy the ritual guardians.",
-      "sector-krakow-hold": "Hold the spire grounds for 3 rounds."
+      "sector-krakow-eliminate": "Shatter the resonant guardians of the Glass Choir.",
+      "sector-krakow-hold": "Hold the silent courtyard for 3 rounds."
     }
   },
   "city-sector-kyiv": {
@@ -176,11 +176,11 @@
     }
   },
   "city-sector-rift": {
-    "name": "The Eastern Rift",
-    "brief": "Cross the scorched rift, destroy the guardians and hold the portal grounds.",
+    "name": "Operation Ash Crown",
+    "brief": "Cross the burning scar, anchor the seal, and survive the self-crowned warden that rises from its final breach.",
     "objectives": {
-      "sector-rift-eliminate": "Destroy the ritual guardians.",
-      "sector-rift-hold": "Hold the spire grounds for 3 rounds."
+      "sector-rift-eliminate": "Bring down the wardens of the Ash Crown.",
+      "sector-rift-hold": "Anchor the seal inside the burning scar for 3 rounds."
     }
   }
 }

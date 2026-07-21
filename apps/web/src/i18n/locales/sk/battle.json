@@ -60,6 +60,18 @@
     "portalSurge": {
       "title": "Výboj portálu",
       "detail": "Trhlina vypustila ďalšiu nepriateľskú vlnu: {{count}} kontaktov."
+    },
+    "signalEaterAwakes": {
+      "title": "Požierač signálu odpovedá",
+      "detail": "Všetky mŕtve vysielačky prehovorili naraz a bytosť za signálom vstúpila do ruín: {{count}} kontaktov."
+    },
+    "glassChoirMarches": {
+      "title": "Sklenený chór spieva",
+      "detail": "Zrkadlá citadely pukli v jedinom tóne a vystúpila z nich rezonančná stráž: {{count}} kontaktov."
+    },
+    "ashCrownDescends": {
+      "title": "Popolavá koruna zostupuje",
+      "detail": "Horiaca jazva sa otvorila samozvanému vládcovi a jeho poslednej družine: {{count}} kontaktov."
     }
   },
   "autoTurn": {

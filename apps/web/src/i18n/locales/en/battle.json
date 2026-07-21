@@ -60,6 +60,18 @@
     "portalSurge": {
       "title": "Portal Surge",
       "detail": "The rift has discharged another enemy wave: {{count}} contacts."
+    },
+    "signalEaterAwakes": {
+      "title": "The Signal-Eater Answers",
+      "detail": "Every dead radio speaks at once as the thing behind the signal enters the ruins: {{count}} contacts."
+    },
+    "glassChoirMarches": {
+      "title": "The Glass Choir Sings",
+      "detail": "The citadel mirrors fracture in unison and their resonant guard steps through: {{count}} contacts."
+    },
+    "ashCrownDescends": {
+      "title": "The Ash Crown Descends",
+      "detail": "The burning scar opens for its self-crowned warden and final retinue: {{count}} contacts."
     }
   },
   "autoTurn": {

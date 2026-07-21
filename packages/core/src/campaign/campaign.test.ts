@@ -467,6 +467,24 @@ describe('campaign core', () => {
     expect(processTacticalEvents(lateVeteranState, starterBundle)[0]?.units).toHaveLength(4);
   });
 
+  it('stages a signature wave after its prerequisite event processing pass', () => {
+    const state = createCampaign(starterBundle, undefined, 'veteran');
+    const rift = state.territories.find((territory) => territory.id === 'sector-rift');
+    if (!rift) throw new Error('expected Rift territory');
+    rift.status = 'available';
+    const battle = startBattleForTerritory(state, starterBundle, rift.id);
+    battle.state.round = 10;
+
+    const firstPhase = processTacticalEvents(state, starterBundle);
+    expect(firstPhase).toHaveLength(1);
+    expect(firstPhase[0]?.messageKey).toBe('portalSurge');
+
+    const secondPhase = processTacticalEvents(state, starterBundle);
+    expect(secondPhase).toHaveLength(1);
+    expect(secondPhase[0]?.messageKey).toBe('ashCrownDescends');
+    expect(processTacticalEvents(state, starterBundle)).toEqual([]);
+  });
+
   it.each([
     ['sector-brussels', 'sector-brussels-pilot', 'rangers'],
     ['sector-amsterdam', 'sector-amsterdam-convoy', 'supply-truck']

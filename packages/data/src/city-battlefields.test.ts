@@ -39,13 +39,15 @@ describe('Per-city battlefields', () => {
         expect(sc.otherSideForces.length).toBeGreaterThan(0);
       });
 
-      it('defines a valid reserve event without overlapping its own arrivals', () => {
-        expect(sc.events).toHaveLength(1);
+      it('defines valid reserve events without overlapping any arrivals', () => {
+        expect(sc.events?.length).toBeGreaterThanOrEqual(1);
         const occupied = new Set([
           ...sc.otherSideForces.map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`),
           ...(sc.allianceForces ?? []).map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`)
         ]);
+        const precedingEvents = new Set<string>();
         for (const event of sc.events ?? []) {
+          if (event.triggerAfterEventId) expect(precedingEvents.has(event.triggerAfterEventId)).toBe(true);
           const arrivals = new Set<string>();
           for (const reinforcement of event.reinforcements) {
             const key = `${reinforcement.coordinate.q},${reinforcement.coordinate.r}`;
@@ -53,7 +55,9 @@ describe('Per-city battlefields', () => {
             expect(occupied.has(key), `${reinforcement.id} overlaps an initial unit at ${key}`).toBe(false);
             expect(arrivals.has(key), `${reinforcement.id} overlaps another arrival at ${key}`).toBe(false);
             arrivals.add(key);
+            occupied.add(key);
           }
+          precedingEvents.add(event.id);
         }
       });
 
@@ -117,5 +121,18 @@ describe('Per-city battlefields', () => {
     expect(convoy?.definitionId).toBe('supply-truck');
     expect(convoy?.isKey).toBe(true);
     expect(scenario?.objectives.filter((objective) => objective.unitIds?.includes('sector-amsterdam-convoy')).map((objective) => objective.kind).sort()).toEqual(['protect', 'reach']);
+  });
+
+  it.each([
+    ['sector-berlin', 'signalEaterAwakes', 'specter'],
+    ['sector-krakow', 'glassChoirMarches', 'stone-golem'],
+    ['sector-rift', 'ashCrownDescends', 'breorn-titan']
+  ] as const)('gives %s a chained signature encounter', (territoryId, messageKey, leadDefinitionId) => {
+    const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
+    expect(scenario?.events).toHaveLength(2);
+    const [reserve, signature] = scenario?.events ?? [];
+    expect(signature?.triggerAfterEventId).toBe(reserve?.id);
+    expect(signature?.messageKey).toBe(messageKey);
+    expect(signature?.reinforcements[0]?.definitionId).toBe(leadDefinitionId);
   });
 });
