@@ -3,6 +3,11 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  activeKillingEffectForTarget,
+  deathMarkerExpired,
+  deathMarkerVisible
+} from './combatVisuals.js';
+import {
   directionalSpriteGroundOffset,
   directionNameForOrientation,
   directionNameForScreenVector,
@@ -117,11 +122,65 @@ describe('resolveMovementFrame', () => {
 });
 
 describe('leavesMechanicalWreck', () => {
-  it('does not turn fantasy creatures into generic tank wrecks', () => {
-    expect(leavesMechanicalWreck('vehicle', 'salamander')).toBe(false);
-    expect(leavesMechanicalWreck('vehicle', 'hell-rider')).toBe(false);
+  it('only leaves hulls for explicitly mechanical definitions', () => {
+    for (const definitionId of [
+      'arachnoid',
+      'arrow-tower',
+      'breorn-titan',
+      'death-knight',
+      'dire-wolves',
+      'hell-rider',
+      'ogre-brute',
+      'salamander',
+      'stone-golem',
+      'wolf-rider',
+      'future-fantasy-vehicle'
+    ]) {
+      expect(leavesMechanicalWreck('vehicle', definitionId)).toBe(false);
+    }
+
+    expect(leavesMechanicalWreck('vehicle', 'demon-engine')).toBe(true);
     expect(leavesMechanicalWreck('vehicle', 'leopard-2')).toBe(true);
-    expect(leavesMechanicalWreck('artillery', 'm109-howitzer')).toBe(true);
+    expect(leavesMechanicalWreck('artillery', 'spg-m109')).toBe(true);
+    expect(leavesMechanicalWreck('support', 'supply-truck')).toBe(true);
+  });
+});
+
+describe('death marker lifecycle', () => {
+  const scheduledReaction = {
+    id: 'reaction-1',
+    targetId: 'moving-squad',
+    startTime: 2000,
+    type: 'explosion' as const,
+    hit: true,
+    killed: true
+  };
+
+  it('keeps a future-dated reaction kill bound to its moving target', () => {
+    const matched = activeKillingEffectForTarget([scheduledReaction], 'moving-squad', 1000);
+
+    expect(matched).toBe(scheduledReaction);
+    expect(activeKillingEffectForTarget([scheduledReaction], 'other-unit', 1000)).toBeUndefined();
+    expect(deathMarkerVisible(matched, true, 1000)).toBe(false);
+    expect(deathMarkerVisible(matched, true, 2000 + 430)).toBe(true);
+    expect(deathMarkerVisible(matched, false, 2000 + 430)).toBe(false);
+  });
+
+  it('ignores a later non-killing hit on the wreck tile', () => {
+    const laterHit = {
+      ...scheduledReaction,
+      id: 'later-hit',
+      startTime: 3000,
+      killed: false
+    };
+
+    expect(activeKillingEffectForTarget([laterHit], 'moving-squad', 3200)).toBeUndefined();
+    expect(activeKillingEffectForTarget([laterHit, scheduledReaction], 'moving-squad', 3200)).toBe(scheduledReaction);
+  });
+
+  it('keeps mechanical wrecks after the organic corpse TTL', () => {
+    expect(deathMarkerExpired(1000, 22_000, false)).toBe(true);
+    expect(deathMarkerExpired(1000, 22_000, true)).toBe(false);
   });
 });
 

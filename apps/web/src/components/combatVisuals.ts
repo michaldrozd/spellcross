@@ -10,6 +10,19 @@ export type CombatEffectTiming = {
   burstFlightMs: number;
 };
 
+export type TargetedCombatEffect = {
+  id: string;
+  targetId: string;
+  startTime: number;
+  type: CombatEffectType;
+  arc?: boolean;
+  hit?: boolean;
+  killed: boolean;
+};
+
+export const CORPSE_TTL_MS = 20_000;
+export const WRECK_SMOKE_ANIMATION_MS = 24_000;
+
 const DIRECT_FIRE_TIMING: Record<CombatEffectType, CombatEffectTiming> = {
   gunshot: { projectileMs: 370, impactAtMs: 145, impactMs: 460, totalMs: 1750, burstRounds: 5, burstGapMs: 55, burstFlightMs: 150 },
   sniper: { projectileMs: 180, impactAtMs: 170, impactMs: 500, totalMs: 1800, burstRounds: 1, burstGapMs: 0, burstFlightMs: 180 },
@@ -32,4 +45,31 @@ const INDIRECT_EXPLOSION_TIMING: CombatEffectTiming = {
 
 export function combatEffectTiming(type: CombatEffectType, indirect = false): CombatEffectTiming {
   return indirect && type === 'explosion' ? INDIRECT_EXPLOSION_TIMING : DIRECT_FIRE_TIMING[type];
+}
+
+export function activeKillingEffectForTarget<T extends TargetedCombatEffect>(
+  attackEffects: readonly T[],
+  targetId: string,
+  now: number
+): T | undefined {
+  return attackEffects.find((effect) =>
+    effect.targetId === targetId
+    && effect.killed
+    && now - effect.startTime <= combatEffectTiming(effect.type, effect.arc).totalMs
+  );
+}
+
+export function deathMarkerVisible(
+  effect: TargetedCombatEffect | undefined,
+  mechanicalWreck: boolean,
+  now: number
+) {
+  if (!effect) return true;
+  const timing = combatEffectTiming(effect.type, effect.arc);
+  if (now - effect.startTime < timing.impactAtMs) return false;
+  return mechanicalWreck;
+}
+
+export function deathMarkerExpired(createdAt: number, now: number, mechanicalWreck: boolean) {
+  return !mechanicalWreck && now - createdAt >= CORPSE_TTL_MS;
 }

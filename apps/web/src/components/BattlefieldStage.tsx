@@ -10,7 +10,15 @@ import { TextStyle } from 'pixi.js';
 import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { combatEffectTiming, type CombatEffectType } from './combatVisuals.js';
+import {
+  CORPSE_TTL_MS,
+  WRECK_SMOKE_ANIMATION_MS,
+  activeKillingEffectForTarget,
+  combatEffectTiming,
+  deathMarkerExpired,
+  deathMarkerVisible,
+  type CombatEffectType
+} from './combatVisuals.js';
 import {
   DIRECTIONAL_UNIT_ANCHOR_Y,
   DIRECTIONAL_UNIT_ASSET_VERSION,
@@ -175,7 +183,6 @@ const getCroppedBuildingTexture = (rawPath: string, keepTop: number): Texture =>
 const tileSize = 56;
 const hexWidth = tileSize;
 const hexHeight = tileSize * 0.866; // sin(60deg)
-const CORPSE_TTL_MS = 20_000;
 const SHAKE_MAX_PX = 7; // peak camera shake amplitude at full trauma
 
 
@@ -196,6 +203,7 @@ const terrainPalette: Record<string, number> = {
 
 export interface AttackEffect {
   id: string;
+  targetId: string;
   fromQ: number;
   fromR: number;
   toQ: number;
@@ -204,6 +212,7 @@ export interface AttackEffect {
   type: CombatEffectType;
   damage?: number;
   hit?: boolean;
+  killed: boolean;
   arc?: boolean; // indirect fire (mortar/howitzer/rocket) — the shell lobs in a high ballistic arc
 }
 
@@ -261,6 +270,7 @@ export interface BattlefieldStageProps {
 
 type DeathMarker = {
   id: string;
+  killingEffectId?: string;
   q: number;
   r: number;
   t: number;
@@ -1452,25 +1462,40 @@ export function BattlefieldStage({
     () => movingUnit ? resolveMovementFrame(movingUnit, now) : null,
     [movingUnit, now]
   );
+  const movementOcclusionQ = activeMovementFrame
+    ? Math.round(activeMovementFrame.displayCoord.q * 2) / 2
+    : null;
+  const movementOcclusionR = activeMovementFrame
+    ? Math.round(activeMovementFrame.displayCoord.r * 2) / 2
+    : null;
+  const movementOcclusionCoordinate = useMemo(
+    () => movementOcclusionQ === null || movementOcclusionR === null
+      ? null
+      : { q: movementOcclusionQ, r: movementOcclusionR },
+    [movementOcclusionQ, movementOcclusionR]
+  );
   const prefersReducedMotion = useMemo(
     () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true,
     []
   );
   const [deathMarkers, setDeathMarkers] = useState<Map<string, DeathMarker>>(new Map());
-  // A smoking vehicle wreck keeps animating after the kill effect ends; without a faster tick the
-  // 250ms idle cadence strobes its embers at ~4fps. Skip entirely when reduced motion is requested.
-  const hasSmokingWreck = useMemo(
-    () => !prefersReducedMotion && Array.from(deathMarkers.values()).some((marker) =>
-      leavesMechanicalWreck(marker.unitType, marker.definitionId)
-    ),
-    [deathMarkers, prefersReducedMotion]
+  // Wreck smoke uses the faster idle cadence only while its opening plume is both active and visible.
+  // The hull and a thin settled haze remain after the animation quiesces.
+  const hasActiveWreckSmoke = useMemo(
+    () => !prefersReducedMotion && Array.from(deathMarkers.values()).some((marker) => {
+      if (!leavesMechanicalWreck(marker.unitType, marker.definitionId)) return false;
+      if (marker.faction !== viewerFaction && !visibleTiles.has(marker.r * map.width + marker.q)) return false;
+      const age = now - marker.t;
+      return age >= 0 && age < WRECK_SMOKE_ANIMATION_MS;
+    }),
+    [deathMarkers, map.width, now, prefersReducedMotion, viewerFaction, visibleTiles]
   );
   // Update more frequently during animations (and while a wreck smokes, at a lighter 16fps).
   useEffect(() => {
-    const interval = (movingUnit || attackEffects.length > 0 || arrivalEffects.length > 0) ? 16 : hasSmokingWreck ? 60 : 250;
+    const interval = (movingUnit || attackEffects.length > 0 || arrivalEffects.length > 0) ? 16 : hasActiveWreckSmoke ? 60 : 250;
     const id = window.setInterval(() => setNow(Date.now()), interval);
     return () => window.clearInterval(id);
-  }, [movingUnit, attackEffects.length, arrivalEffects.length, hasSmokingWreck]);
+  }, [movingUnit, attackEffects.length, arrivalEffects.length, hasActiveWreckSmoke]);
 
   const stageDimensions = useMemo(() => {
     if (ISO_MODE) {
@@ -1563,47 +1588,63 @@ export function BattlefieldStage({
   }, [map.id]);
   useEffect(() => {
     const next = new Map(deathMarkers);
-    let added = false;
+    let changed = false;
+    const recordedAt = Date.now();
     for (const side of Object.values(battleState.sides)) {
       for (const u of side.units.values()) {
-        if (u.stance === 'destroyed' && !recordedDeathsRef.current.has(u.id)) {
+        if (u.stance !== 'destroyed') continue;
+        const killingEffect = activeKillingEffectForTarget(attackEffects, u.id, recordedAt);
+        const effectImpactAt = killingEffect
+          ? killingEffect.startTime + combatEffectTiming(killingEffect.type, killingEffect.arc).impactAtMs
+          : recordedAt;
+        const existing = next.get(u.id);
+        if (!existing && !recordedDeathsRef.current.has(u.id)) {
           recordedDeathsRef.current.add(u.id);
           next.set(u.id, {
             id: u.id,
+            killingEffectId: killingEffect?.id,
             q: u.coordinate.q,
             r: u.coordinate.r,
-            t: Date.now(),
+            t: effectImpactAt,
             faction: u.faction,
             unitType: u.unitType,
             definitionId: u.definitionId.toLowerCase(),
             orientation: u.orientation ?? 0
           });
-          added = true;
+          changed = true;
+        } else if (existing && !existing.killingEffectId && killingEffect) {
+          next.set(u.id, {
+            ...existing,
+            killingEffectId: killingEffect.id,
+            t: effectImpactAt
+          });
+          changed = true;
         }
-      }
-    }
-    if (added) {
-      setDeathMarkers(next);
-    }
-    // `battleState.sides` is a stable Map reference (mutated in place), so it never re-triggers this
-    // effect — keying off the timeline length (which grows on every combat event) makes the scan run
-    // when units actually die, so corpse/wreck markers appear instead of the body just vanishing.
-  }, [battleState.sides, battleState.timeline.length, deathMarkers]);
-
-  useEffect(() => {
-    if (deathMarkers.size === 0) return;
-    const cutoff = now - CORPSE_TTL_MS;
-    let changed = false;
-    const next = new Map(deathMarkers);
-    for (const [id, marker] of next) {
-      if (marker.t < cutoff && !leavesMechanicalWreck(marker.unitType, marker.definitionId)) {
-        next.delete(id);
-        changed = true;
       }
     }
     if (changed) {
       setDeathMarkers(next);
     }
+    // `battleState.sides` is a stable Map reference (mutated in place), so it never re-triggers this
+    // effect — keying off the timeline length (which grows on every combat event) makes the scan run
+    // when units actually die, so corpse/wreck markers appear instead of the body just vanishing.
+  }, [attackEffects, battleState.sides, battleState.timeline.length, deathMarkers]);
+
+  useEffect(() => {
+    if (deathMarkers.size === 0) return;
+    const expiredIds = Array.from(deathMarkers.entries())
+      .filter(([, marker]) => deathMarkerExpired(
+        marker.t,
+        now,
+        leavesMechanicalWreck(marker.unitType, marker.definitionId)
+      ))
+      .map(([id]) => id);
+    if (expiredIds.length === 0) return;
+    setDeathMarkers((markers) => {
+      const next = new Map(markers);
+      expiredIds.forEach((id) => next.delete(id));
+      return next;
+    });
   }, [now, deathMarkers]);
 
 
@@ -4207,22 +4248,19 @@ export function BattlefieldStage({
       const isVisible = visibleTiles.has(idx);
       if (!isFriendly && !isVisible) return;
       const mechanicalWreck = leavesMechanicalWreck(m.unitType, m.definitionId);
-      const activeKillingEffect = attackEffects.find((effect) => {
-        const elapsed = now - effect.startTime;
-        return effect.toQ === m.q
-          && effect.toR === m.r
-          && effect.hit !== false
-          && elapsed >= 0
-          && elapsed <= combatEffectTiming(effect.type, effect.arc).totalMs;
-      });
+      const boundKillingEffect = m.killingEffectId
+        ? attackEffects.find((effect) => effect.id === m.killingEffectId)
+        : undefined;
+      const activeKillingEffect = boundKillingEffect
+        && now - boundKillingEffect.startTime <= combatEffectTiming(boundKillingEffect.type, boundKillingEffect.arc).totalMs
+        ? boundKillingEffect
+        : m.killingEffectId
+          ? undefined
+          : activeKillingEffectForTarget(attackEffects, m.id, now);
       const hitInFlight = Boolean(activeKillingEffect);
-      // Fire and smoke start at the killing impact. Organic corpses wait until the live death
-      // animation ends so the same body is never drawn twice.
-      if (hitInFlight && !mechanicalWreck) return;
-      if (activeKillingEffect) {
-        const timing = combatEffectTiming(activeKillingEffect.type, activeKillingEffect.arc);
-        if (now - activeKillingEffect.startTime < timing.impactAtMs) return;
-      }
+      // Mechanical wrecks appear at impact. Organic corpses wait until the live death animation ends,
+      // and future-dated reaction shots keep both marker types hidden while the victim is still moving.
+      if (!deathMarkerVisible(activeKillingEffect, mechanicalWreck, now)) return;
 
       const p = toScreen({ q: m.q, r: m.r });
       const tile = map.tiles[idx];
@@ -4303,16 +4341,26 @@ export function BattlefieldStage({
                   g.drawCircle(0, -tileSize * 0.045, tileSize * 0.018 * flicker);
                   g.endFill();
                 }
+                const smokeLife = Math.max(0, 1 - elapsed / WRECK_SMOKE_ANIMATION_MS);
                 const smokeBoost = Math.max(0, 1 - elapsed / 7000);
-                for (let s = 0; s < 6; s++) {
-                  const rise = prefersReducedMotion ? (0.14 + s / 6) % 1 : ((now / 1950) + s / 6) % 1;
-                  const sa = (1 - rise) * (0.4 + 0.4 * smokeBoost) * fade;
-                  if (sa <= 0.01) continue;
-                  const sx = prefersReducedMotion ? 0 : Math.sin((now / 900) + s * 1.65) * tileSize * (0.05 + rise * 0.05);
-                  g.beginFill(rise < 0.38 ? 0x343530 : 0x777a73, sa);
-                  g.drawEllipse(sx, -tileSize * (0.1 + rise * 0.78), tileSize * (0.11 + rise * 0.21), tileSize * (0.08 + rise * 0.15));
-                  g.endFill();
+                if (smokeLife > 0) {
+                  for (let s = 0; s < 6; s++) {
+                    const rise = prefersReducedMotion ? (0.14 + s / 6) % 1 : ((now / 1950) + s / 6) % 1;
+                    const sa = (1 - rise) * (0.18 + 0.62 * smokeBoost) * smokeLife * fade;
+                    if (sa <= 0.01) continue;
+                    const sx = prefersReducedMotion ? 0 : Math.sin((now / 900) + s * 1.65) * tileSize * (0.05 + rise * 0.05);
+                    g.beginFill(rise < 0.38 ? 0x343530 : 0x777a73, sa);
+                    g.drawEllipse(sx, -tileSize * (0.1 + rise * 0.78), tileSize * (0.11 + rise * 0.21), tileSize * (0.08 + rise * 0.15));
+                    g.endFill();
+                  }
                 }
+                const settledHaze = Math.min(1, Math.max(0, elapsed) / 9000);
+                g.beginFill(0x545650, 0.075 * settledHaze * fade);
+                g.drawEllipse(-tileSize * 0.025, -tileSize * 0.24, tileSize * 0.16, tileSize * 0.12);
+                g.endFill();
+                g.beginFill(0x74766e, 0.045 * settledHaze * fade);
+                g.drawEllipse(tileSize * 0.035, -tileSize * 0.39, tileSize * 0.2, tileSize * 0.14);
+                g.endFill();
               } else {
                 g.beginFill(0x512b24, 0.42 * fade);
                 g.drawEllipse(-tileSize * 0.02, tileSize * 0.045, tileSize * 0.22, tileSize * 0.065);
@@ -4773,13 +4821,7 @@ export function BattlefieldStage({
         // Damage applies synchronously and reaction fire can be future-dated, so match the killing
         // effect from its scheduled start rather than waiting for its shorter impact window.
         const killingEffect = isDestroyed
-          ? attackEffects.find((effect) => {
-              const elapsed = now - effect.startTime;
-              return elapsed >= 0
-                && elapsed <= combatEffectTiming(effect.type, effect.arc).totalMs
-                && effect.toQ === displayQ
-                && effect.toR === displayR;
-            })
+          ? activeKillingEffectForTarget(attackEffects, unit.id, now)
           : undefined;
         const dyingShown = isDestroyed && !isEmbarked && Boolean(killingEffect);
         if ((isDestroyed && !movingThisUnit && !dyingShown) || isEmbarked) {
@@ -6099,8 +6141,8 @@ export function BattlefieldStage({
       for (const u of side.units.values()) {
         if (u.stance === 'destroyed' || u.embarkedOn) continue;
         if (u.faction === viewerFaction || visibleTiles.has(idxAt(u.coordinate.q, u.coordinate.r))) {
-          visibleUnitCoords.push(movingUnit?.unitId === u.id && activeMovementFrame
-            ? activeMovementFrame.displayCoord
+          visibleUnitCoords.push(movingUnit?.unitId === u.id && movementOcclusionCoordinate
+            ? movementOcclusionCoordinate
             : u.coordinate);
         }
       }
@@ -6191,7 +6233,7 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [activeMovementFrame, map.props, map.width, exploredTiles, visibleTiles, battleState.sides, viewerFaction, propTextureCache, propAtlasTextures, topGeomFor, missingPropPaths, movingUnit?.unitId]);
+  }, [movementOcclusionCoordinate, map.props, map.width, exploredTiles, visibleTiles, battleState.sides, viewerFaction, propTextureCache, propAtlasTextures, topGeomFor, missingPropPaths, movingUnit?.unitId]);
 
   const procBuildings = useMemo(() => {
     const buildingProps = (map.props ?? []).filter(
@@ -6207,7 +6249,7 @@ export function BattlefieldStage({
       }
       if (movingUnit?.unitId) {
         const moving = side.units.get(movingUnit.unitId);
-        if (moving) focusCoords.push(activeMovementFrame?.displayCoord ?? moving.coordinate);
+        if (moving) focusCoords.push(movementOcclusionCoordinate ?? moving.coordinate);
       }
       if (targetUnitId) {
         const target = side.units.get(targetUnitId);
@@ -6228,8 +6270,8 @@ export function BattlefieldStage({
         if (u.stance === 'destroyed' || u.embarkedOn) continue;
         // Always reveal-through for the player's own units; for enemies only when actually visible.
         if (u.faction === viewerFaction || visibleTiles.has(idxAt(u.coordinate.q, u.coordinate.r))) {
-          const displayCoordinate = movingUnit?.unitId === u.id && activeMovementFrame
-            ? activeMovementFrame.displayCoord
+          const displayCoordinate = movingUnit?.unitId === u.id && movementOcclusionCoordinate
+            ? movementOcclusionCoordinate
             : u.coordinate;
           const displayQ = Math.min(W - 1, Math.max(0, Math.round(displayCoordinate.q)));
           const displayR = Math.min(H - 1, Math.max(0, Math.round(displayCoordinate.r)));
@@ -6705,7 +6747,7 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [activeMovementFrame, map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, targetUnitId, movingUnit, viewerFaction]);
+  }, [movementOcclusionCoordinate, map.props, map.width, map.height, battleState.sides, exploredTiles, visibleTiles, topGeomFor, selectedUnitId, targetUnitId, movingUnit?.unitId, viewerFaction]);
 
   // Keyboard pan animation loop: apply velocity from Arrow keys continuously (stable, no restarts)
   useEffect(() => {

@@ -474,9 +474,27 @@ export function directionalVehicleSprite(unitType: string, definitionId: string)
   return VEHICLE_DIRECTIONAL_SPRITES.tank;
 }
 
-export function leavesMechanicalWreck(unitType: string | undefined, definitionId: string) {
-  if (unitType !== 'vehicle' && unitType !== 'artillery') return false;
-  return !/(arachnoid|breorn|death-knight|dire|golem|hell-rider|salamander|wolf)/.test(definitionId);
+const MECHANICAL_WRECK_DEFINITION_IDS = new Set([
+  'avenger-aa',
+  'bradley-ifv',
+  'demon-engine',
+  'gepard-aa',
+  'humvee-scout',
+  'leopard-2',
+  'light-tank',
+  'm109-howitzer',
+  'm113',
+  'mlrs-battery',
+  'paladin-acs',
+  'railgun-tank',
+  'siege-walker',
+  'sky-lance',
+  'spg-m109',
+  'supply-truck'
+]);
+
+export function leavesMechanicalWreck(_unitType: string | undefined, definitionId: string) {
+  return MECHANICAL_WRECK_DEFINITION_IDS.has(definitionId.toLowerCase());
 }
 
 export function unitPointerArea(tile: number, unitType: string, definitionId: string, selected = false): UnitPointerArea {

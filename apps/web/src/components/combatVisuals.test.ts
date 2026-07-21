@@ -19,6 +19,17 @@ describe('combatEffectTiming', () => {
     expect(lastRoundArrival).toBeLessThanOrEqual(timing.projectileMs);
   });
 
+  it('aligns firearm and flame impacts with their first visible arrival', () => {
+    const gunshot = combatEffectTiming('gunshot');
+    const sniper = combatEffectTiming('sniper');
+    const fire = combatEffectTiming('fire');
+
+    expect(gunshot.impactAtMs).toBe(gunshot.burstFlightMs - 5);
+    expect(sniper.impactAtMs).toBe(sniper.projectileMs - 10);
+    expect(fire.impactAtMs).toBeLessThan(fire.projectileMs);
+    expect(fire.impactAtMs).toBeGreaterThan(fire.projectileMs / 2);
+  });
+
   it('gives indirect shells a longer readable arc', () => {
     const direct = combatEffectTiming('explosion');
     const indirect = combatEffectTiming('explosion', true);

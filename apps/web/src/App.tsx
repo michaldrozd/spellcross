@@ -319,7 +319,7 @@ function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState)
   }
 }
 function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: string, defenderId: string) {
-  if (!events) return { hit: false, damage: 0 };
+  if (!events) return { hit: false, damage: 0, killed: false };
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (
@@ -327,10 +327,10 @@ function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: s
       && event.attackerId === attackerId
       && event.defenderId === defenderId
     ) {
-      return { hit: event.hit, damage: event.damage };
+      return { hit: event.hit, damage: event.damage, killed: event.defenderRemainingHealth === 0 };
     }
   }
-  return { hit: false, damage: 0 };
+  return { hit: false, damage: 0, killed: false };
 }
 // Monotonic id for combat notices — Date.now() collided when several notices were created in the
 // same millisecond (e.g. rapid attacks), producing duplicate React keys.
@@ -1215,9 +1215,13 @@ const BattleView: React.FC<{
       const reactAt = ev.defenderAt ?? target.coordinate;
       const delay = (moving ? arrivalDelayForPath(moving, reactAt) : 150) + shots * 40;
       if (shots === 0) aiSfxTimeoutsRef.current.push(window.setTimeout(() => AudioManager.play('reaction'), Math.max(0, delay - 120)));
-      const killed = target.stance === 'destroyed';
+      const killed = ev.defenderRemainingHealth === 0;
       const sfx = firingSound(shooter, target, ev.weapon);
-      const timing = addAttackEffect(shooter, target, ev.weapon, { hit: ev.hit !== false, damage: ev.damage ?? 0 }, delay, reactAt);
+      const timing = addAttackEffect(shooter, target, ev.weapon, {
+        hit: ev.hit !== false,
+        damage: ev.damage ?? 0,
+        killed
+      }, delay, reactAt);
       aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
         AudioManager.play(sfx);
         if (ev.hit !== false) window.setTimeout(() => AudioManager.play(killed ? 'death' : 'hit', { intensity: Math.min(1, (ev.damage ?? 0) / 25), material: impactMaterialFor(target), pan: impactPanFor(target, battle.state.map) }), timing.impactAtMs);
@@ -1274,7 +1278,7 @@ const BattleView: React.FC<{
     attacker: UnitInstance,
     defender: UnitInstance,
     weaponId: string,
-    outcome: { hit: boolean; damage: number },
+    outcome: { hit: boolean; damage: number; killed: boolean },
     delay = 0,
     atCoord?: { q: number; r: number }
   ) => {
@@ -1290,6 +1294,7 @@ const BattleView: React.FC<{
     window.setTimeout(() => showPhaseNotice(noticeTitle, noticeDetail, noticeTone), delay);
     setAttackEffects(prev => [...prev, {
       id: `${attacker.id}-${defender.id}-${nextEffectId()}`,
+      targetId: defender.id,
       fromQ: attacker.coordinate.q,
       fromR: attacker.coordinate.r,
       toQ: to.q,
@@ -1298,7 +1303,8 @@ const BattleView: React.FC<{
       type: effectType,
       arc,
       damage: outcome.damage,
-      hit: outcome.hit
+      hit: outcome.hit,
+      killed: outcome.killed
     }]);
     return timing;
   };
