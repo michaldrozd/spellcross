@@ -3176,6 +3176,18 @@ header.app-header {
   z-index: 0;
 }
 
+.battlefield-stage-host canvas {
+  filter: saturate(0.74) contrast(1.09) brightness(0.97) sepia(0.08);
+}
+
+.battlefield-palette-night canvas {
+  filter: saturate(0.78) contrast(1.03) brightness(1.12) sepia(0.04);
+}
+
+.battlefield-palette-fog canvas {
+  filter: saturate(0.72) contrast(1.07) brightness(1.01) sepia(0.06);
+}
+
 .battlefield-loader {
   position: absolute;
   inset: 0;

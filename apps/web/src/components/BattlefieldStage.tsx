@@ -83,7 +83,7 @@ const crispTexture = (texture: Texture) => {
 // renders a far bigger footprint than a narrow one at the same scale. Measured from each asset's
 // opaque base width at the keepTop crop line and normalized to the median (≈0.74), clamped [0.74,1.4].
 const PAINTED_BUILDINGS: Array<{ tex: string; keepTop: number; scaleAdj?: number }> = [
-  { tex: 'assets/generated/concrete_bunker.png', keepTop: 0.84, scaleAdj: 1.12 },
+  { tex: 'assets/generated/building_16.png', keepTop: 0.86, scaleAdj: 1.14 },
   { tex: 'assets/generated/hangar_building.png', keepTop: 0.84, scaleAdj: 1.40 },
   { tex: 'assets/generated/watchtower.png', keepTop: 0.86, scaleAdj: 0.75 },
   { tex: 'assets/generated/ruins_building.png', keepTop: 0.80, scaleAdj: 0.82 }, // tall sprite — extra trim so it doesn't tower
@@ -5279,7 +5279,13 @@ export function BattlefieldStage({
                 : dyingSpook ? mixColor(0x6b5a52, definitionId.includes('skeleton') || isGhoulPack ? 0x6f7d6a : 0x9a3326, dEase)
                 : dyingFoot ? mixColor(0x6b5a52, 0x4a3a34, dEase)
                 : 0x6b5a52;
-              const spriteTint = directionalSprite === 'apc_directional' || directionalSprite === 'm113_apc' ? 0xd7d9b8 : 0xffffff;
+              const spriteTint = directionalSprite === 'apc_directional' || directionalSprite === 'm113_apc'
+                ? 0xd7d9b8
+                : isFriendly
+                  ? 0xe9e6d7
+                  : isUndeadDemon
+                    ? 0xdacbb6
+                    : 0xe3d8c7;
               const spriteBaseY = directionalSprite ? 0 : tileSize * (isVehicleUnit ? 0.082 : 0.05);
               unitSpriteTopY = spriteBaseY + groundOffsetY - anchorY * desiredH;
               unitVisibleTopY = unitSpriteTopY + spriteContentTopFrac(texture) * desiredH;
@@ -6170,16 +6176,16 @@ export function BattlefieldStage({
         // which painted hi-res props at 2x on their first frame.
         const bitmapScale = texture && isHiResPropTexture(texturePath) ? scale * 0.5 : scale;
         const bitmapScaleX = bitmapScale * (prop.flipX ? -1 : 1);
-        // Fade a tree to a ghost when a unit stands on it or up to ~2 rows up-screen behind its canopy
+        // Fade a tree to a ghost when a unit stands on it or up to ~4 rows up-screen behind its canopy
         // (same iso column), within its horizontal span — so units are never fully hidden.
         const treeOccluded = prop.kind === 'tree' && visibleUnitCoords.some((coord) => {
           const sum = coord.q + coord.r;
           const diff = coord.q - coord.r;
           const tSum = prop.coordinate.q + prop.coordinate.r;
           const tDiff = prop.coordinate.q - prop.coordinate.r;
-          return sum >= tSum - 2 && sum <= tSum && diff >= tDiff - 1 && diff <= tDiff + 1;
+          return sum >= tSum - 4 && sum <= tSum && diff >= tDiff - 1 && diff <= tDiff + 1;
         });
-        const occludeAlpha = treeOccluded ? 0.5 : 1;
+        const occludeAlpha = treeOccluded ? 0.34 : 1;
 
         return (
           <Container key={prop.id} x={worldX} y={worldY} zIndex={zIndex} sortableChildren>
@@ -6395,7 +6401,7 @@ export function BattlefieldStage({
                 texture={texture}
                 anchor={{ x: 0.5, y: 0.97 }}
                 scale={spriteScale}
-                tint={isVisible ? 0xffffff : 0xc4c8bc}
+                tint={isVisible ? 0xf2ead8 : 0xbfc1b4}
                 alpha={isVisible ? 1 : 0.72}
               />
             </Container>
@@ -6934,6 +6940,7 @@ export function BattlefieldStage({
   return (
     <div
       ref={hostRef}
+      className={`battlefield-stage-host battlefield-palette-${battleState.weather ?? 'clear'}`}
       style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden' }}
       onPointerDown={(e) => {
         if (e.button !== 0 || minimapDragging) return;
