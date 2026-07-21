@@ -87,6 +87,29 @@ describe('MainMenu', () => {
     expect(onNewGame).toHaveBeenCalledWith(1, 'veteran');
   });
 
+  it('uses arrow keys and a single tab stop for campaign difficulty', () => {
+    clickButton('New Game');
+    const story = container.querySelector<HTMLButtonElement>('.difficulty-option.story')!;
+    const commander = container.querySelector<HTMLButtonElement>('.difficulty-option.commander')!;
+    const veteran = container.querySelector<HTMLButtonElement>('.difficulty-option.veteran')!;
+
+    expect([story, commander, veteran].filter(option => option.tabIndex === 0)).toEqual([commander]);
+    commander.focus();
+
+    act(() => commander.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+    expect(veteran.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(veteran);
+    expect([story, commander, veteran].filter(option => option.tabIndex === 0)).toEqual([veteran]);
+
+    act(() => veteran.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+    expect(story.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(story);
+
+    act(() => story.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+    expect(veteran.getAttribute('aria-checked')).toBe('true');
+    expect(document.activeElement).toBe(veteran);
+  });
+
   it('requires confirmation before deleting an occupied slot', async () => {
     await act(async () => {
       root.render(

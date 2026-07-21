@@ -33,6 +33,7 @@ interface AudioPreferences {
 }
 
 const AUDIO_PREFERENCES_KEY = 'spellcross:audio';
+const CAMPAIGN_DIFFICULTIES = ['story', 'commander', 'veteran'] as const;
 const DEFAULT_AUDIO_PREFERENCES: AudioPreferences = {
   enabled: true,
   master: 0.7,
@@ -90,6 +91,39 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const updateAudioPreferences = (next: AudioPreferences) => {
     setAudioPreferences(next);
     window.localStorage.setItem(AUDIO_PREFERENCES_KEY, JSON.stringify(next));
+  };
+
+  const handleDifficultyKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    difficulty: CampaignDifficulty,
+  ) => {
+    const currentIndex = CAMPAIGN_DIFFICULTIES.indexOf(difficulty);
+    let nextIndex: number;
+
+    switch (event.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        nextIndex = (currentIndex + 1) % CAMPAIGN_DIFFICULTIES.length;
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        nextIndex = (currentIndex - 1 + CAMPAIGN_DIFFICULTIES.length) % CAMPAIGN_DIFFICULTIES.length;
+        break;
+      case 'Home':
+        nextIndex = 0;
+        break;
+      case 'End':
+        nextIndex = CAMPAIGN_DIFFICULTIES.length - 1;
+        break;
+      default:
+        return;
+    }
+
+    event.preventDefault();
+    setSelectedDifficulty(CAMPAIGN_DIFFICULTIES[nextIndex]);
+    event.currentTarget.parentElement
+      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[nextIndex]
+      ?.focus();
   };
 
   const hasAnySave = savedSlots.some(s => s !== null);
@@ -208,14 +242,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                   <p>{t('difficulty.description')}</p>
                 </div>
                 <div className="difficulty-options">
-                  {(['story', 'commander', 'veteran'] as const).map((difficulty) => (
+                  {CAMPAIGN_DIFFICULTIES.map((difficulty) => (
                     <button
                       key={difficulty}
                       type="button"
                       role="radio"
                       aria-checked={selectedDifficulty === difficulty}
+                      tabIndex={selectedDifficulty === difficulty ? 0 : -1}
                       className={`difficulty-option ${difficulty} ${selectedDifficulty === difficulty ? 'selected' : ''}`}
                       onClick={() => setSelectedDifficulty(difficulty)}
+                      onKeyDown={(event) => handleDifficultyKeyDown(event, difficulty)}
                     >
                       <span>{t(`difficulty.${difficulty}.code`)}</span>
                       <strong>{t(`difficulty.${difficulty}.name`)}</strong>
