@@ -2710,15 +2710,15 @@ export function BattlefieldStage({
               if (!isExplored) {
                 // Constant fog colour (not per-tile baseColor) so a region of unknown reads as one
                 // dark expanse instead of a patchwork of subtly different dark diamonds.
-                const hiddenColor = 0x081014;
-                g.beginFill(hiddenColor, 0.9);
+                const hiddenColor = 0x101a18;
+                g.beginFill(hiddenColor, 0.84);
                 g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
                 g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
                 g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
                 g.lineTo(cornerPoints.SW.x, cornerPoints.SW.y);
                 g.closePath();
                 g.endFill();
-                g.beginTextureFill({ texture: tex, matrix: texMatrix, alpha: 0.12, color: 0x617078 });
+                g.beginTextureFill({ texture: tex, matrix: texMatrix, alpha: 0.17, color: 0x718179 });
                 g.moveTo(cornerPoints.NW.x, cornerPoints.NW.y);
                 g.lineTo(cornerPoints.NE.x, cornerPoints.NE.y);
                 g.lineTo(cornerPoints.SE.x, cornerPoints.SE.y);
@@ -3179,7 +3179,7 @@ export function BattlefieldStage({
                 // Soft gradient skirt that fades the explored ground into the dark unknown over
                 // several miznuce bands — no hard fringe band or edge line — so the fog frontier
                 // reads as a soft shadow, not a low-poly diamond cut.
-                const dk = 0x081014;
+                const dk = 0x101a18;
                 const n = 0.04 + tileNoise(q, r, 960 + edgeIndex) * 0.06;
                 const bands = [
                   { d0: 0, d1: 0.10 + n, a: isVisible ? 0.36 : 0.26 },
@@ -4286,7 +4286,7 @@ export function BattlefieldStage({
       const isVisible = visibleTiles.has(idx);
       const isExplored = exploredTiles.has(idx);
       if (!isFriendly && !isVisible && !isExplored) return;
-      const visibilityAlpha = isFriendly || isVisible ? 1 : 0.62;
+      const visibilityAlpha = isFriendly || isVisible ? 1 : 0.82;
       const mechanicalWreck = leavesMechanicalWreck(m.unitType, m.definitionId);
       const boundKillingEffect = m.killingEffectId
         ? attackEffects.find((effect) => effect.id === m.killingEffectId)
@@ -4402,8 +4402,11 @@ export function BattlefieldStage({
                 g.drawEllipse(tileSize * 0.035, -tileSize * 0.39, tileSize * 0.2, tileSize * 0.14);
                 g.endFill();
               } else {
-                g.beginFill(0x512b24, 0.42 * fade);
-                g.drawEllipse(-tileSize * 0.02, tileSize * 0.045, tileSize * 0.22, tileSize * 0.065);
+                g.beginFill(0x170b09, 0.62 * fade);
+                g.drawEllipse(-tileSize * 0.02, tileSize * 0.05, tileSize * 0.28, tileSize * 0.09);
+                g.endFill();
+                g.beginFill(0x6b2d22, 0.62 * fade);
+                g.drawEllipse(-tileSize * 0.02, tileSize * 0.045, tileSize * 0.23, tileSize * 0.065);
                 g.endFill();
                 if (!corpseTexture) {
                   g.lineStyle(2, 0x8a5e49, 0.8 * fade);
@@ -4420,12 +4423,12 @@ export function BattlefieldStage({
               texture={corpseTexture}
               anchor={{ x: 0.5, y: RASTER_UNIT_ANCHOR_Y[corpseTexturePath] ?? 0.9 }}
               scale={{
-                x: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024),
-                y: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024) * 0.44
+                x: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024) * 1.06,
+                y: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024) * 0.62
               }}
-              y={tileSize * 0.045}
-              alpha={0.82}
-              tint={0x947b6b}
+              y={tileSize * 0.055}
+              alpha={0.94}
+              tint={0xb48d79}
             />
           ) : null}
         </Container>
@@ -4768,7 +4771,7 @@ export function BattlefieldStage({
         const tileIndex = displayR * map.width + displayQ;
         const isVisible = visibleTiles.has(tileIndex);
         const isFriendly = unit.faction === viewerFaction;
-        const readableInFog = isFriendly && (movingThisUnit || turningThisUnit) && !isVisible;
+        const readableInFog = isFriendly && !isVisible;
         const isDestroyed = unit.stance === 'destroyed';
         const isEmbarked = Boolean(unit.embarkedOn);
         const incomingHit = attackEffects.find((effect) => {
@@ -5184,7 +5187,7 @@ export function BattlefieldStage({
                     ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
                     : directionNameForOrientation(animatedOrientation);
               const usesDirectionalMotion = Boolean(directionalSprite && (isFootUnit || isVehicleUnit));
-              const sheetState = movingThisUnit && usesDirectionalMotion ? 'walk' : 'idle';
+              const sheetState = (movingThisUnit || turningThisUnit) && usesDirectionalMotion ? 'walk' : 'idle';
               const textureSheetState = directionalSprite === 'apc_directional' ? 'idle' : sheetState;
               const animatesVehicleFrames = isVehicleUnit && directionalSprite !== 'apc_directional';
               const sheetFrame = textureSheetState === 'walk' && (!isVehicleUnit || animatesVehicleFrames)
@@ -5362,22 +5365,24 @@ export function BattlefieldStage({
               const spriteBaseY = directionalSprite ? 0 : tileSize * (isVehicleUnit ? 0.082 : 0.05);
               unitSpriteTopY = spriteBaseY + groundOffsetY - anchorY * desiredH;
               unitVisibleTopY = unitSpriteTopY + spriteContentTopFrac(texture) * desiredH;
-              const silhouetteAlpha = isVisible
-                ? (isFootUnit ? 0.32 : 0)
-                : readableInFog
-                  ? (isGroundVehicle ? 0.46 : 0.4)
+              const silhouetteAlpha = readableInFog
+                ? (isGroundVehicle ? 0.5 : 0.44)
+                : isVisible && isFootUnit
+                  ? 0.32
                   : 0;
+              const silhouetteTint = readableInFog ? 0xa8cfc2 : 0x050605;
+              const silhouetteScale = readableInFog ? 1.055 : 1.025;
               return (
                 <>
                   {silhouetteAlpha > 0 ? (
                     <Sprite
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
-                      scale={{ x: scaleX * 1.025, y: baseScale * squashY * 1.02 }}
+                      scale={{ x: scaleX * silhouetteScale, y: baseScale * squashY * (readableInFog ? 1.05 : 1.02) }}
                       alpha={silhouetteAlpha}
-                      tint={0x050605}
-                      x={spriteSwayX + (facingLeft ? -0.7 : 0.7)}
-                      y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + 1.1}
+                      tint={silhouetteTint}
+                      x={spriteSwayX + (facingLeft ? -0.9 : 0.9)}
+                      y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + (readableInFog ? 1.4 : 1.1)}
                       rotation={spriteRotation}
                       zIndex={0.8}
                     />
@@ -5395,11 +5400,43 @@ export function BattlefieldStage({
                       zIndex={0.9}
                     />
                   ) : null}
+                  {isFriendly && isFootUnit ? (
+                    <Graphics
+                      x={spriteSwayX}
+                      y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
+                      zIndex={0.96}
+                      draw={(g) => {
+                        g.clear();
+                        const stride = movingThisUnit ? stepWave * tileSize * 0.018 : 0;
+                        for (const [index, offset] of [-0.13, 0, 0.13].entries()) {
+                          const figureX = offset * tileSize;
+                          const phase = index % 2 === 0 ? stride : -stride;
+                          g.lineStyle(2.4, 0x07100e, readableInFog ? 0.68 : 0.42);
+                          g.moveTo(figureX, -tileSize * 0.13);
+                          g.lineTo(figureX, -tileSize * 0.015);
+                          g.moveTo(figureX, -tileSize * 0.02);
+                          g.lineTo(figureX - tileSize * 0.035 + phase, tileSize * 0.055);
+                          g.moveTo(figureX, -tileSize * 0.02);
+                          g.lineTo(figureX + tileSize * 0.035 - phase, tileSize * 0.055);
+                          g.beginFill(0x9fc7b7, readableInFog ? 0.72 : 0.46);
+                          g.drawCircle(figureX, -tileSize * 0.19, tileSize * 0.032);
+                          g.drawRoundedRect(
+                            figureX - tileSize * 0.032,
+                            -tileSize * 0.155,
+                            tileSize * 0.064,
+                            tileSize * 0.13,
+                            2
+                          );
+                          g.endFill();
+                        }
+                      }}
+                    />
+                  ) : null}
                   <Sprite
                     texture={texture}
                     anchor={{ x: 0.5, y: anchorY }}
                     scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
-                    alpha={(isVisible ? 1 : readableInFog ? 0.92 : 0.72) * deathAlphaMul}
+                    alpha={(isVisible ? 1 : readableInFog ? 0.98 : 0.72) * deathAlphaMul}
                     tint={deathTint !== null ? deathTint : suppressed ? 0xb9b2a4 : routed ? 0xc7a39c : spriteTint}
                     x={spriteSwayX}
                     y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
