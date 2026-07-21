@@ -682,7 +682,7 @@ const BattleView: React.FC<{
     }, totalDuration + 50); // small buffer
     return () => clearTimeout(timer);
   }, [movingUnit]);
-  const globalRangeTiles = (() => {
+  const globalRangeTiles = useMemo(() => {
     if (!showRanges || !selectedUnit) return new Set<string>();
     const acc = new Set<string>();
     for (const weapon of Object.keys(selectedUnit.stats.weaponRanges)) {
@@ -694,7 +694,17 @@ const BattleView: React.FC<{
       }
     }
     return acc;
-  })();
+    // Unit instances are mutated in place by the turn processor, so identity alone cannot invalidate
+    // this memo after movement or a range upgrade. Keep the mutable fields explicit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    showRanges,
+    selectedUnit,
+    selectedUnit?.coordinate.q,
+    selectedUnit?.coordinate.r,
+    selectedUnit?.stats.weaponRanges,
+    map
+  ]);
   const battleControlContextRef = useRef<{
     battle: NonNullable<CampaignState['activeBattle']>;
     map: BattlefieldMap;
