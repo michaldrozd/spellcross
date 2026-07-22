@@ -14,6 +14,7 @@ import {
   DIRECTIONAL_UNIT_SPRITES,
   battlefieldDirectionalSprite,
   canMovingUnitFadeCanopy,
+  quantizeMovementOcclusionCoordinate,
   directionalSpriteGroundOffset,
   directionNameForOrientation,
   directionNameForScreenVector,
@@ -158,6 +159,19 @@ describe('canopy occlusion visibility', () => {
   it('fades for friendly movers and enemies on visible tiles', () => {
     expect(canMovingUnitFadeCanopy('alliance', 'alliance', coordinate, mapWidth, new Set())).toBe(true);
     expect(canMovingUnitFadeCanopy('otherSide', 'alliance', coordinate, mapWidth, new Set([23]))).toBe(true);
+  });
+});
+
+describe('movement occlusion sampling', () => {
+  it('limits scenery invalidations to two steps per traversed tile', () => {
+    const samples = Array.from({ length: 61 }, (_, frame) => (
+      quantizeMovementOcclusionCoordinate({ q: frame / 60, r: frame / 60 })
+    ));
+    const distinctSamples = new Set(samples.map(({ q, r }) => `${q}:${r}`));
+
+    expect(distinctSamples.size - 1).toBeLessThanOrEqual(2);
+    expect(samples[0]).toEqual({ q: 0, r: 0 });
+    expect(samples.at(-1)).toEqual({ q: 1, r: 1 });
   });
 });
 

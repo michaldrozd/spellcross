@@ -31,6 +31,7 @@ import {
   UNIT_SHEET_DIRECTIONS,
   UNIT_SHEET_FRAME_SIZE,
   battlefieldDirectionalSprite,
+  canMovingUnitFadeCanopy,
   directionalSpriteGroundOffset,
   featheredOcclusionAlpha,
   isSupportVehicleDefinition,
@@ -40,6 +41,7 @@ import {
   rasterUnitOverride,
   rasterVehiclePose,
   rangeOverlayStyle,
+  quantizeMovementOcclusionCoordinate,
   resolveMovementFrame,
   unitContactFootprint,
   unitPointerArea,
@@ -1473,8 +1475,11 @@ export function BattlefieldStage({
     () => movingUnit ? resolveMovementFrame(movingUnit, now) : null,
     [movingUnit, now]
   );
-  const movementOcclusionQ = activeMovementFrame?.displayCoord.q ?? null;
-  const movementOcclusionR = activeMovementFrame?.displayCoord.r ?? null;
+  const sampledOcclusionCoordinate = activeMovementFrame
+    ? quantizeMovementOcclusionCoordinate(activeMovementFrame.displayCoord)
+    : null;
+  const movementOcclusionQ = sampledOcclusionCoordinate?.q ?? null;
+  const movementOcclusionR = sampledOcclusionCoordinate?.r ?? null;
   const movementOcclusionCoordinate = useMemo(
     () => movementOcclusionQ === null || movementOcclusionR === null
       ? null
@@ -6230,11 +6235,11 @@ export function BattlefieldStage({
                 const sy = fromY + dy * 0.18 - tileSize * 0.15;
                 const ex = fromX + dx * 0.88;
                 const ey = fromY + dy * 0.88 - tileSize * 0.15;
-                const glow = effect.type === 'magic' ? 0xb676ff : effect.type === 'explosion' ? 0xffbf58 : 0xffe6a0;
-                g.lineStyle(effect.type === 'gunshot' ? 5.2 : 6.2, 0x120d08, 0.56 * fade);
+                const glow = 0xb676ff;
+                g.lineStyle(6.2, 0x120d08, 0.56 * fade);
                 g.moveTo(sx, sy);
                 g.lineTo(ex, ey);
-                g.lineStyle(effect.type === 'gunshot' ? 2.2 : 3, glow, 0.68 * fade);
+                g.lineStyle(3, glow, 0.68 * fade);
                 g.moveTo(sx, sy);
                 g.lineTo(ex, ey);
               }}
@@ -6516,6 +6521,7 @@ export function BattlefieldStage({
         if (u.stance === 'destroyed' || u.embarkedOn) continue;
         if (u.faction === viewerFaction || visibleTiles.has(idxAt(u.coordinate.q, u.coordinate.r))) {
           visibleUnitCoords.push(movingUnit?.unitId === u.id && movementOcclusionCoordinate
+            && canMovingUnitFadeCanopy(u.faction, viewerFaction, movementOcclusionCoordinate, map.width, visibleTiles)
             ? movementOcclusionCoordinate
             : u.coordinate);
         }
@@ -6640,6 +6646,7 @@ export function BattlefieldStage({
         // Always reveal-through for the player's own units; for enemies only when actually visible.
         if (u.faction === viewerFaction || visibleTiles.has(idxAt(u.coordinate.q, u.coordinate.r))) {
           const displayCoordinate = movingUnit?.unitId === u.id && movementOcclusionCoordinate
+            && canMovingUnitFadeCanopy(u.faction, viewerFaction, movementOcclusionCoordinate, map.width, visibleTiles)
             ? movementOcclusionCoordinate
             : u.coordinate;
           const displayQ = Math.min(W - 1, Math.max(0, Math.round(displayCoordinate.q)));

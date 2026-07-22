@@ -591,6 +591,16 @@ export function canMovingUnitFadeCanopy(
   return visibleTiles.has(r * mapWidth + q);
 }
 
+export function quantizeMovementOcclusionCoordinate(
+  coordinate: { q: number; r: number },
+  stepsPerTile = 2
+) {
+  return {
+    q: Math.round(coordinate.q * stepsPerTile) / stepsPerTile,
+    r: Math.round(coordinate.r * stepsPerTile) / stepsPerTile
+  };
+}
+
 export function unitContactFootprint(tile: number, unitType: string, definitionId: string): UnitVisualFootprint {
   if (isSupportVehicleDefinition(unitType, definitionId)) return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.035 };
   if (unitType === 'vehicle') return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.035 };
