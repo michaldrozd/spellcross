@@ -225,6 +225,52 @@ describe('data bundle', () => {
     expect(() => loadContentBundle(unknownPrerequisite)).toThrow(/Unknown prerequisite event missing-event/);
   });
 
+  it('keeps hostile reinforcement waves reachable when objective triggers are optional', () => {
+    const optionalOnly = structuredClone(starterBundle);
+    optionalOnly.scenarios[0].objectives.push({
+      id: 'optional-terminal',
+      kind: 'interact',
+      description: 'Use the optional terminal.',
+      target: { q: 1, r: 1 },
+      optional: true,
+      actionKey: 'disruptWard',
+      actionPoints: 2
+    });
+    optionalOnly.scenarios[0].events = [{
+      id: 'hidden-hostiles',
+      triggerObjectiveId: 'optional-terminal',
+      messageKey: 'portalSurge',
+      faction: 'otherSide',
+      reinforcements: [{ id: 'hidden-orc', definitionId: 'orc-warband', coordinate: { q: 2, r: 2 } }]
+    }];
+    expect(() => loadContentBundle(optionalOnly)).toThrow(
+      /cannot depend only on optional objective optional-terminal/
+    );
+
+    const timedFallback = structuredClone(optionalOnly);
+    timedFallback.scenarios[0].events![0].triggerRound = 2;
+    expect(() => loadContentBundle(timedFallback)).not.toThrow();
+
+    const requiredTrigger = structuredClone(starterBundle);
+    requiredTrigger.scenarios[0].events = [{
+      id: 'required-hostiles',
+      triggerObjectiveId: requiredTrigger.scenarios[0].objectives[0].id,
+      messageKey: 'portalSurge',
+      faction: 'otherSide',
+      reinforcements: [{ id: 'required-orc', definitionId: 'orc-warband', coordinate: { q: 2, r: 2 } }]
+    }];
+    expect(() => loadContentBundle(requiredTrigger)).not.toThrow();
+  });
+
+  it('rejects mission targets outside their battlefield', () => {
+    const outsideMap = structuredClone(starterBundle);
+    outsideMap.scenarios[0].objectives[0].target = {
+      q: outsideMap.scenarios[0].map.width,
+      r: outsideMap.scenarios[0].map.height - 1
+    };
+    expect(() => loadContentBundle(outsideMap)).toThrow(/is outside the battlefield/);
+  });
+
   it('ships bridge demolitions as paid interactions and an optional Rift reserve action', () => {
     const bridgeheads = validatedStarterBundle.scenarios.filter((scenario) => (
       scenario.id === 'bridgehead'

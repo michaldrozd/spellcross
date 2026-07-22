@@ -78,8 +78,8 @@
       "detail": "Horiaca jazva sa otvorila samozvanému vládcovi a jeho poslednej družine: {{count}} kontaktov."
     },
     "wardBeaconSecured": {
-      "title": "Koridor ochranou je otvorený",
-      "detail": "Prelomená ochrana odkryla bezpečný prístup. Na bojisko vstupujú prieskumníci Aliancie: {{count}} jednotka."
+      "title": "Koridor cez ochranu je otvorený",
+      "detail": "Prelomená ochrana odkryla bezpečný prístup. Na bojisko vstupujú prieskumníci Aliancie. Sila posíl: {{count}}."
     }
   },
   "autoTurn": {

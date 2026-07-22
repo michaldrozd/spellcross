@@ -1160,6 +1160,15 @@ const BattleView: React.FC<{
         actionPoints: objective.actionPoints,
         completed: isObjectiveMet(objective, battle)
       })),
+      replaceObjectives: (objectives: typeof battle.scenario.objectives) => {
+        battle.scenario.objectives = structuredClone(objectives);
+        battle.completedObjectiveIds = [];
+        battle.reachClaimedRound = {};
+        battle.holdProgress = {};
+        battle.holdCountedRound = {};
+        persist();
+        return true;
+      },
       deploymentRosterIds: () => Object.keys(battle.deployment),
       ammoFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
@@ -2165,16 +2174,8 @@ const BattleView: React.FC<{
     // coordinates: passing hold tiles parks the squad defensively (verified: hold sectors then time out
     // instead of winning by elimination), and enemy coordinates trip the planner's "contest" lane into
     // out-of-range attacks. With no goal the planner advances on the nearest enemy — seek-and-destroy.
-    const reachTargets = battle.scenario.objectives
-      .filter((objective) => (
-        objective.kind === 'reach'
-        || (objective.kind === 'interact' && !objective.optional && !isObjectiveMet(objective, battle))
-      ))
-      .map((objective) => objective.target)
-      .filter(Boolean) as HexCoordinate[];
-    const objectiveTargets = reachTargets;
     const requiredObjectiveRosterIds = battle.scenario.objectives
-      .filter((objective) => objective.kind === 'reach' || objective.kind === 'interact')
+      .filter((objective) => !objective.optional && (objective.kind === 'reach' || objective.kind === 'interact'))
       .flatMap((objective) => objective.unitIds ?? []);
     const objectiveUnitIds = requiredObjectiveRosterIds.length > 0
       ? new Set(requiredObjectiveRosterIds
@@ -2210,8 +2211,16 @@ const BattleView: React.FC<{
         if (e.stance === 'destroyed' || e.embarkedOn) continue;
         if (seenTiles.has(e.coordinate.r * battle.state.map.width + e.coordinate.q)) visibleEnemyIds.add(e.id);
       }
+      const reachTargets = battle.scenario.objectives
+        .filter((objective) => (
+          !objective.optional
+          && (objective.kind === 'reach' || objective.kind === 'interact')
+          && !isObjectiveMet(objective, battle)
+        ))
+        .map((objective) => objective.target)
+        .filter(Boolean) as HexCoordinate[];
       const action = decideNextAIAction(battle.state, 'alliance', {
-        objectiveTargets,
+        objectiveTargets: reachTargets,
         objectiveUnitIds,
         reachTargets,
         defendBias: false,

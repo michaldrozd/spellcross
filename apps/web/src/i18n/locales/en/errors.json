@@ -72,6 +72,7 @@
   "objectiveActionNotFound": "Mission objective not found",
   "objectiveActionInvalid": "Mission action is unavailable",
   "objectiveActionCompleted": "Mission action already completed",
+  "objectiveActionDeployment": "Start the battle before using mission actions",
   "objectiveActionWrongTurn": "Wait for the Alliance turn",
   "objectiveActionWrongFaction": "Only Alliance units can perform this action",
   "objectiveActionUnitUnavailable": "This unit cannot perform mission actions",

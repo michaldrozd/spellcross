@@ -1400,6 +1400,7 @@ export type ObjectiveActionErrorKey =
   | 'objectiveActionNotFound'
   | 'objectiveActionInvalid'
   | 'objectiveActionCompleted'
+  | 'objectiveActionDeployment'
   | 'objectiveActionWrongTurn'
   | 'objectiveActionWrongFaction'
   | 'objectiveActionUnitUnavailable'
@@ -1436,6 +1437,7 @@ export function checkObjectiveAction(
   if ((battle.completedObjectiveIds ?? []).includes(objective.id)) {
     return rejectObjectiveAction('objectiveActionCompleted');
   }
+  if (!battle.deployed) return rejectObjectiveAction('objectiveActionDeployment');
   if (!unitId) return rejectObjectiveAction('objectiveActionSelectUnit');
   if (battle.state.activeFaction !== 'alliance') return rejectObjectiveAction('objectiveActionWrongTurn');
 

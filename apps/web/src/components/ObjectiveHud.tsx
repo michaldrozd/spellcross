@@ -63,6 +63,7 @@ export const ObjectiveHud: React.FC<Props> = ({ battle, selectedUnitId, onObject
           const actionCheck = objective.kind === 'interact'
             ? checkObjectiveAction(battle, selectedUnitId, objective.id)
             : null;
+          const actionReasonId = `objective-action-reason-${objective.id}`;
           return (
             <li key={objective.id} className={met ? 'met' : failed ? 'failed' : ''}>
               <span className="obj-dot">{met ? '✓' : failed ? '✕' : '○'}</span>
@@ -72,14 +73,22 @@ export const ObjectiveHud: React.FC<Props> = ({ battle, selectedUnitId, onObject
               </span>
               <span className="obj-status">{statusLine(objective, battle, met, t)}</span>
               {objective.kind === 'interact' && actionCheck && !met ? (
-                <button
-                  className="objective-action"
-                  disabled={!actionCheck.success}
-                  title={actionCheck.errorKey ? errorText(actionCheck.errorKey) : t(`objective.actionTooltip.${objective.actionKey}`)}
-                  onClick={() => onObjectiveAction(objective.id)}
-                >
-                  {t(`objective.action.${objective.actionKey}`)}
-                </button>
+                <span className="objective-action-slot">
+                  <button
+                    className="objective-action"
+                    disabled={!actionCheck.success}
+                    aria-describedby={!actionCheck.success ? actionReasonId : undefined}
+                    title={actionCheck.errorKey ? errorText(actionCheck.errorKey) : t(`objective.actionTooltip.${objective.actionKey}`)}
+                    onClick={() => onObjectiveAction(objective.id)}
+                  >
+                    {t(`objective.action.${objective.actionKey}`)}
+                  </button>
+                  {!actionCheck.success && actionCheck.errorKey ? (
+                    <small id={actionReasonId} className="objective-action-reason">
+                      {errorText(actionCheck.errorKey)}
+                    </small>
+                  ) : null}
+                </span>
               ) : null}
             </li>
           );

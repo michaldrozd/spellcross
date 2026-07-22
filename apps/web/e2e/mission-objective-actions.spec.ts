@@ -51,6 +51,10 @@ test('optional Rift ward action opens the reserve corridor without breaking the 
   await startBattle(page, 'sector-rift');
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
 
+  const actionReason = page.locator('.objective-action-reason').first();
+  await expect(actionReason).toBeVisible();
+  await expect(actionReason).toContainText(/Move onto or beside the objective/i);
+
   const setup = await page.evaluate(() => {
     const control = (window as any).__battleControl;
     const objective = control.objectives().find((candidate: any) => candidate.actionKey === 'disruptWard');
@@ -124,4 +128,93 @@ test('Auto Turn resolves a bridge action contested by an enemy without oscillati
   expect(finalAutoState.enemies.find((enemy: any) => enemy.definitionId === 'orc-warband')?.stance).toBe('ready');
   await expect(page.locator('.battle-outcome-overlay')).toContainText(/Sector Secured/i);
   await expect(page.getByText(/computer is playing your turn/i)).not.toBeVisible();
+});
+
+test('Auto Turn ignores an absent optional specialist and advances on the required timed objective', async ({ page }) => {
+  test.setTimeout(60_000);
+  await startBattle(page, 'sector-paris');
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+
+  const setup = await page.evaluate(() => {
+    const control = (window as any).__battleControl;
+    const originalReach = control.objectives().find((objective: any) => objective.kind === 'reach');
+    const loaded = control.loadDefinitions(['heavy-infantry', 'dread-fortress']);
+    const ally = loaded.loaded?.find((unit: any) => unit.faction === 'alliance');
+    const enemy = loaded.loaded?.find((unit: any) => unit.faction === 'otherSide');
+    if (!loaded.success || !originalReach?.target || !ally || !enemy) {
+      return { error: 'scenario setup failed', loaded, objectives: control.objectives() };
+    }
+
+    const axialDistance = (a: any, b: any) => (
+      Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs((a.q - b.q) + (a.r - b.r))
+    ) / 2;
+    const towardGoal = {
+      q: originalReach.target.q - ally.q,
+      r: originalReach.target.r - ally.r
+    };
+    const battlefieldTiles = Array.from({ length: 20 }, (_, r) => (
+      Array.from({ length: 30 }, (_unused, q) => ({ q, r }))
+    )).flat();
+    const enemyCandidates = battlefieldTiles
+      .map((tile) => ({
+        tile,
+        path: control.pathForUnit(ally.id, tile.q, tile.r),
+        projection: (tile.q - ally.q) * towardGoal.q + (tile.r - ally.r) * towardGoal.r
+      }))
+      .filter((candidate) => candidate.path.success && candidate.path.cost >= 4);
+    const enemyTile = enemyCandidates
+      .sort((a, b) => a.projection - b.projection || b.path.cost - a.path.cost)[0]?.tile;
+    if (!enemyTile) return { error: 'no enemy tile', ally, target: originalReach.target };
+
+    control.snapUnit(enemy.id, enemyTile.q, enemyTile.r);
+    control.replaceObjectives([
+      {
+        id: 'required-evac',
+        kind: 'reach',
+        description: 'Reach the emergency extraction point.',
+        target: originalReach.target,
+        turnLimit: 2
+      },
+      {
+        id: 'optional-specialist-console',
+        kind: 'interact',
+        description: 'Optional specialist console.',
+        target: enemyTile,
+        unitIds: ['never-deployed-specialist'],
+        optional: true,
+        actionKey: 'disruptWard',
+        actionPoints: 2
+      }
+    ]);
+    control.forceAllianceTurn();
+    return {
+      allyId: ally.id,
+      target: originalReach.target,
+      before: axialDistance(ally, originalReach.target),
+      enemyTile
+    };
+  });
+  expect(setup).not.toBeNull();
+  expect(setup).not.toHaveProperty('error');
+  if (!setup || 'error' in setup) throw new Error(JSON.stringify(setup));
+
+  await page.getByRole('button', { name: /^Auto Turn$/i }).click();
+  await expect(page.locator('.auto-turn-banner')).not.toBeVisible({ timeout: 20_000 });
+
+  const after = await page.evaluate(({ allyId, target }) => {
+    const unit = (window as any).__battleControl.allyPositions().find((candidate: any) => candidate.id === allyId);
+    if (!unit) return null;
+    return {
+      q: unit.q,
+      r: unit.r,
+      distance: (
+        Math.abs(unit.q - target.q)
+        + Math.abs(unit.r - target.r)
+        + Math.abs((unit.q - target.q) + (unit.r - target.r))
+      ) / 2
+    };
+  }, setup!);
+  expect(after).not.toBeNull();
+  expect(after!.distance, JSON.stringify({ setup, after })).toBeLessThan(setup!.before);
+  expect({ q: after!.q, r: after!.r }).not.toEqual(setup!.enemyTile);
 });

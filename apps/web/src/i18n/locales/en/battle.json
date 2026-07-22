@@ -79,7 +79,7 @@
     },
     "wardBeaconSecured": {
       "title": "Ward Corridor Open",
-      "detail": "The broken ward reveals a safe approach. Alliance rangers enter the battlefield: {{count}} unit."
+      "detail": "The broken ward reveals a safe approach. Alliance rangers enter the battlefield. Reinforcement strength: {{count}}."
     }
   },
   "autoTurn": {

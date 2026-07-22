@@ -27,8 +27,9 @@ const openTerritory = (
 
 describe('mission objective actions', () => {
   it('uses stable rejection reasons and spends the exact authored AP once', () => {
-    const state = openTerritory('sector-strasbourg');
-    const battle = startBattleForTerritory(state, starterBundle, 'sector-strasbourg');
+    const bundle = structuredClone(starterBundle);
+    const state = openTerritory('sector-strasbourg', 'commander', bundle);
+    const battle = startBattleForTerritory(state, bundle, 'sector-strasbourg');
     const objective = battle.scenario.objectives.find((candidate) => candidate.kind === 'interact');
     const ally = Array.from(battle.state.sides.alliance.units.values())[0];
     const enemy = Array.from(battle.state.sides.otherSide.units.values())[0];
@@ -42,6 +43,12 @@ describe('mission objective actions', () => {
       success: false,
       errorKey: 'objectiveActionInvalid'
     });
+    expect(checkObjectiveAction(battle, enemy.id, objective.id)).toMatchObject({
+      success: false,
+      errorKey: 'objectiveActionDeployment'
+    });
+    battle.deployed = true;
+
     expect(checkObjectiveAction(battle, undefined, objective.id)).toMatchObject({
       success: false,
       errorKey: 'objectiveActionSelectUnit'
@@ -91,6 +98,8 @@ describe('mission objective actions', () => {
     });
 
     ally.actionPoints = 5;
+    ally.statusEffects.add('suppressed');
+    expect(checkObjectiveAction(battle, ally.id, objective.id)).toEqual({ success: true, actionPoints: 2 });
     expect(performObjectiveAction(battle, ally.id, objective.id)).toEqual({ success: true, actionPoints: 2 });
     expect(ally.actionPoints).toBe(3);
     expect(battle.completedObjectiveIds).toEqual([objective.id]);
@@ -118,6 +127,7 @@ describe('mission objective actions', () => {
     const deadEntry = Object.entries(battle.deployment).find(([rosterId]) => rosterId !== 'captain');
     const deadUnit = deadEntry ? battle.state.sides.alliance.units.get(deadEntry[1]) : undefined;
     if (!captainId || !deadEntry || !deadUnit) throw new Error('expected deployed campaign units');
+    battle.deployed = true;
     deadUnit.stance = 'destroyed';
     deadUnit.currentHealth = 0;
 
@@ -150,6 +160,13 @@ describe('mission objective actions', () => {
       success: false,
       errorKey: 'objectiveActionUnitUnavailable'
     });
+    const activeUnit = Array.from(battle.state.sides.alliance.units.values())
+      .find((unit) => unit.id !== deadUnit.id && unit.stance !== 'destroyed');
+    if (!activeUnit) throw new Error('expected surviving campaign unit');
+    expect(checkObjectiveAction(battle, activeUnit.id, 'absent-specialist')).toMatchObject({
+      success: false,
+      errorKey: 'objectiveActionUnitRestricted'
+    });
     expect(evaluateBattleOutcome(battle)).toBe('victory');
   });
 
@@ -158,6 +175,7 @@ describe('mission objective actions', () => {
     (difficulty) => {
       const state = openTerritory('sector-rift', difficulty);
       const battle = startBattleForTerritory(state, starterBundle, 'sector-rift');
+      battle.deployed = true;
       const objective = battle.scenario.objectives.find((candidate) => candidate.id === 'sector-rift-disrupt-ward');
       const reward = battle.scenario.events?.find((event) => event.triggerObjectiveId === objective?.id);
       const [actor, blocker] = Array.from(battle.state.sides.alliance.units.values());
@@ -184,6 +202,7 @@ describe('mission objective actions', () => {
     const bundle = structuredClone(starterBundle);
     const state = openTerritory('sector-rift', 'commander', bundle);
     const battle = startBattleForTerritory(state, bundle, 'sector-rift');
+    battle.deployed = true;
     const objective = battle.scenario.objectives.find((candidate) => candidate.id === 'sector-rift-disrupt-ward');
     const reward = battle.scenario.events?.find((event) => event.triggerObjectiveId === objective?.id);
     const actor = Array.from(battle.state.sides.alliance.units.values())[0];
@@ -208,6 +227,7 @@ describe('mission objective actions', () => {
   it('round-trips completed actions and fired events without duplicating either', () => {
     const state = openTerritory('sector-rift');
     const battle = startBattleForTerritory(state, starterBundle, 'sector-rift');
+    battle.deployed = true;
     const objective = battle.scenario.objectives.find((candidate) => candidate.id === 'sector-rift-disrupt-ward');
     const actor = Array.from(battle.state.sides.alliance.units.values())[0];
     if (!objective?.target || !actor) throw new Error('expected Rift ward action');

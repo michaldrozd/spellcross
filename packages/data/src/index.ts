@@ -476,6 +476,32 @@ const scenarioSchema = z.object({
         path: ['events', index, 'triggerAfterEventId']
       });
     }
+    const triggerObjective = scenario.objectives.find((objective) => objective.id === event.triggerObjectiveId);
+    const onlyWaitsForObjective = event.triggerObjectiveId
+      && event.triggerRound == null
+      && event.triggerEnemyRemaining == null;
+    if (event.faction === 'otherSide' && onlyWaitsForObjective && triggerObjective?.optional) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Hostile event ${event.id} cannot depend only on optional objective ${triggerObjective.id}`,
+        path: ['events', index, 'triggerObjectiveId']
+      });
+    }
+  });
+  scenario.objectives.forEach((objective, index) => {
+    if (!objective.target) return;
+    if (
+      objective.target.q < 0
+      || objective.target.r < 0
+      || objective.target.q >= scenario.map.width
+      || objective.target.r >= scenario.map.height
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Objective target ${objective.target.q},${objective.target.r} is outside the battlefield`,
+        path: ['objectives', index, 'target']
+      });
+    }
   });
 });
 

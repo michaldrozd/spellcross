@@ -72,6 +72,7 @@
   "objectiveActionNotFound": "Cieľ misie sa nenašiel",
   "objectiveActionInvalid": "Akcia misie nie je dostupná",
   "objectiveActionCompleted": "Akcia misie už bola splnená",
+  "objectiveActionDeployment": "Pred akciou misie spusti bitku",
   "objectiveActionWrongTurn": "Počkaj na ťah Aliancie",
   "objectiveActionWrongFaction": "Túto akciu môžu vykonať iba jednotky Aliancie",
   "objectiveActionUnitUnavailable": "Táto jednotka nemôže vykonať akciu misie",
