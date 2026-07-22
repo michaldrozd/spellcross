@@ -26,8 +26,10 @@ const OPPOSITE_DIRECTION_NAMES: Record<string, string> = {
 const VEHICLE_SHEET_DIRECTION_OVERRIDES: Record<string, Record<string, string>> = {
   m113_apc: {
     ne: 'sw',
+    e: 'w',
     se: 'nw',
     sw: 'ne',
+    w: 'e',
     nw: 'se'
   },
   tank_directional: OPPOSITE_DIRECTION_NAMES,
@@ -407,6 +409,12 @@ export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y:
   const direction = directionNameForScreenVector(vector);
   const mapped = VEHICLE_SHEET_DIRECTION_OVERRIDES[spriteName]?.[direction] ?? direction;
   return cleanVehicleSheetDirection(spriteName, mapped);
+};
+
+export const vehicleTurnCrossfade = (progress: number) => {
+  const clamped = Math.min(1, Math.max(0, progress));
+  const incomingAlpha = clamped * clamped * (3 - 2 * clamped);
+  return { outgoingAlpha: 1 - incomingAlpha, incomingAlpha };
 };
 
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {

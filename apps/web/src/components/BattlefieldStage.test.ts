@@ -16,7 +16,8 @@ import {
   resolveMovementFrame,
   unitVisualHeight,
   vehicleSheetDirectionNameForOrientation,
-  vehicleSheetDirectionNameForScreenVector
+  vehicleSheetDirectionNameForScreenVector,
+  vehicleTurnCrossfade
 } from './unitVisuals.js';
 
 const APC_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
@@ -292,8 +293,8 @@ describe('vehicleSheetDirectionNameForOrientation', () => {
   });
 
   it('keeps legacy reversed vehicle sheets corrected', () => {
-    expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 0 }, 'm113_apc')).toBe('e');
-    expect(vehicleSheetDirectionNameForScreenVector({ x: -1, y: 0 }, 'm113_apc')).toBe('w');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 0 }, 'm113_apc')).toBe('w');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: -1, y: 0 }, 'm113_apc')).toBe('e');
     expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 1 }, 'm113_apc')).toBe('nw');
     expect(vehicleSheetDirectionNameForScreenVector({ x: -1, y: -1 }, 'm113_apc')).toBe('se');
     expect(vehicleSheetDirectionNameForScreenVector({ x: 0, y: -1 }, 'm113_apc')).toBe('n');
@@ -304,12 +305,25 @@ describe('vehicleSheetDirectionNameForOrientation', () => {
 
   it('maps M113 diagonal sheet cells to their visual facing', () => {
     expect(vehicleSheetDirectionNameForOrientation(0, 'm113_apc')).toBe('nw');
-    expect(vehicleSheetDirectionNameForOrientation(1, 'm113_apc')).toBe('e');
+    expect(vehicleSheetDirectionNameForOrientation(1, 'm113_apc')).toBe('w');
     expect(vehicleSheetDirectionNameForOrientation(2, 'm113_apc')).toBe('sw');
     expect(vehicleSheetDirectionNameForOrientation(3, 'm113_apc')).toBe('se');
-    expect(vehicleSheetDirectionNameForOrientation(4, 'm113_apc')).toBe('w');
+    expect(vehicleSheetDirectionNameForOrientation(4, 'm113_apc')).toBe('e');
     expect(vehicleSheetDirectionNameForOrientation(5, 'm113_apc')).toBe('ne');
     expect(vehicleSheetDirectionNameForOrientation(6, 'm113_apc')).toBe('s');
     expect(vehicleSheetDirectionNameForOrientation(7, 'm113_apc')).toBe('n');
+  });
+});
+
+describe('vehicleTurnCrossfade', () => {
+  it('preserves opacity while easing between directional poses', () => {
+    expect(vehicleTurnCrossfade(-1)).toEqual({ outgoingAlpha: 1, incomingAlpha: 0 });
+    expect(vehicleTurnCrossfade(0.5)).toEqual({ outgoingAlpha: 0.5, incomingAlpha: 0.5 });
+    expect(vehicleTurnCrossfade(2)).toEqual({ outgoingAlpha: 0, incomingAlpha: 1 });
+
+    for (const progress of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
+      const blend = vehicleTurnCrossfade(progress);
+      expect(blend.outgoingAlpha + blend.incomingAlpha).toBeCloseTo(1);
+    }
   });
 });

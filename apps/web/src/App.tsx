@@ -1044,6 +1044,15 @@ const BattleView: React.FC<{
         setInvalidMoveFeedback(null);
         return true;
       },
+      clearSelection: () => {
+        setSelected(null);
+        setPlannedPath(null);
+        setPlannedDestination(null);
+        setPendingAttack(null);
+        setTargetedEnemy(null);
+        setInvalidMoveFeedback(null);
+        return true;
+      },
       targetEnemy: (unitId: string) => {
         const target = battle.state.sides.otherSide.units.get(unitId);
         if (!target || target.stance === 'destroyed') return false;
@@ -2067,75 +2076,9 @@ const BattleView: React.FC<{
             <p className="muted">{localizedScenarioBrief(battle.scenario.id, battle.scenario.brief)}</p>
             {!deployMode ? <ObjectiveHud battle={battle} /> : null}
           </div>
-          <div className="battle-controls">
-            <button className={showRanges ? 'active' : undefined} onClick={() => setShowRanges((v) => !v)}>{showRanges ? t('battle:action.hideRanges') : t('battle:action.showRanges')}</button>
-            <OverwatchButton unit={deployMode ? undefined : selectedUnit} onOverwatch={() => {
-              if (!selectedUnit || deployMode) return;
-              const proc = new TurnProcessor(battle.state);
-              const res = proc.setOverwatch(selectedUnit.id);
-              if (!res.success) {
-                AudioManager.play('error');
-                showToast(res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:cannotSetOverwatch'), 'error');
-                return;
-              }
-              persist();
-            }} />
-            <SupplyButton
-              unit={deployMode ? undefined : selectedUnit}
-              hasTarget={!!supplyTargetId}
-              onSupply={() => { if (selectedUnit) actSupply(selectedUnit.id); }}
-            />
-            <HealButton
-              unit={deployMode ? undefined : selectedUnit}
-              hasTarget={!!healTargetId}
-              onHeal={() => { if (selectedUnit) actHeal(selectedUnit.id); }}
-            />
-            <button
-              className={deployMode ? 'primary-btn' : 'end-turn-btn'}
-              disabled={!!autoTurnPhase}
-              onClick={() => {
-                if (autoTurnPhase) return; // Auto Turn owns the turn handoff — no manual End Turn
-                if (deployMode) {
-                  setDeployMode(false);
-                  battle.deployed = true;
-                  updateAllFactionsVision(battle.state);
-                  persist();
-                  return;
-                }
-                runAiTurn();
-              }}
-            >
-              {deployMode ? t('common:action.startBattle') : t('common:action.endTurn')}
-            </button>
-            <button
-              className={`auto-turn-btn${autoTurnPhase ? ' running' : ''}`}
-              title={autoTurnPhase
-                ? t('battle:autoTurn.stopTooltip')
-                : t('battle:autoTurn.startTooltip')}
-              disabled={autoTurnPhase === 'enemy'}
-              onClick={() => {
-                if (autoTurnPhase) { autoTurnAbortRef.current = true; }
-                else { runAutoPlayerTurn(); }
-              }}
-            >
-              {autoTurnPhase ? t('common:action.stopAuto') : deployMode ? t('common:action.autoDeployAndPlay') : t('common:action.autoTurn')}
-            </button>
-            <button
-              className="secondary-btn"
-              disabled={!!autoTurnPhase}
-              onClick={() => {
-                // Retreating mid-CPU-turn unmounts the view under a still-running async battle loop
-                // (which keeps mutating state and playing sounds over the strategic screen).
-                if (autoTurnPhase || autoTurnBusyRef.current || enemyTurnBusyRef.current) return;
-                setRetreatConfirmOpen(true);
-              }}
-            >
-              {t('common:action.retreat')}
-            </button>
-          </div>
         </div>
         <div className="battle-bottom-bar">
-          <div className="unit-card">
+          <div className={`unit-card selected-unit-card${selected ? '' : ' empty'}`}>
             <h3>{t('battle:panel.selectedUnit')}</h3>
             {selected ? (
               (() => {
@@ -2447,6 +2390,72 @@ const BattleView: React.FC<{
                 </>
               )}
             </div>
+          </div>
+          <div className="battle-controls">
+            <button className={showRanges ? 'active' : undefined} onClick={() => setShowRanges((v) => !v)}>{showRanges ? t('battle:action.hideRanges') : t('battle:action.showRanges')}</button>
+            <OverwatchButton unit={deployMode ? undefined : selectedUnit} onOverwatch={() => {
+              if (!selectedUnit || deployMode) return;
+              const proc = new TurnProcessor(battle.state);
+              const res = proc.setOverwatch(selectedUnit.id);
+              if (!res.success) {
+                AudioManager.play('error');
+                showToast(res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:cannotSetOverwatch'), 'error');
+                return;
+              }
+              persist();
+            }} />
+            <SupplyButton
+              unit={deployMode ? undefined : selectedUnit}
+              hasTarget={!!supplyTargetId}
+              onSupply={() => { if (selectedUnit) actSupply(selectedUnit.id); }}
+            />
+            <HealButton
+              unit={deployMode ? undefined : selectedUnit}
+              hasTarget={!!healTargetId}
+              onHeal={() => { if (selectedUnit) actHeal(selectedUnit.id); }}
+            />
+            <button
+              className={deployMode ? 'primary-btn' : 'end-turn-btn'}
+              disabled={!!autoTurnPhase}
+              onClick={() => {
+                if (autoTurnPhase) return; // Auto Turn owns the turn handoff — no manual End Turn
+                if (deployMode) {
+                  setDeployMode(false);
+                  battle.deployed = true;
+                  updateAllFactionsVision(battle.state);
+                  persist();
+                  return;
+                }
+                runAiTurn();
+              }}
+            >
+              {deployMode ? t('common:action.startBattle') : t('common:action.endTurn')}
+            </button>
+            <button
+              className={`auto-turn-btn${autoTurnPhase ? ' running' : ''}`}
+              title={autoTurnPhase
+                ? t('battle:autoTurn.stopTooltip')
+                : t('battle:autoTurn.startTooltip')}
+              disabled={autoTurnPhase === 'enemy'}
+              onClick={() => {
+                if (autoTurnPhase) { autoTurnAbortRef.current = true; }
+                else { runAutoPlayerTurn(); }
+              }}
+            >
+              {autoTurnPhase ? t('common:action.stopAuto') : deployMode ? t('common:action.autoDeployAndPlay') : t('common:action.autoTurn')}
+            </button>
+            <button
+              className="secondary-btn"
+              disabled={!!autoTurnPhase}
+              onClick={() => {
+                // Retreating mid-CPU-turn unmounts the view under a still-running async battle loop
+                // (which keeps mutating state and playing sounds over the strategic screen).
+                if (autoTurnPhase || autoTurnBusyRef.current || enemyTurnBusyRef.current) return;
+                setRetreatConfirmOpen(true);
+              }}
+            >
+              {t('common:action.retreat')}
+            </button>
           </div>
           <div className="command-rack" aria-hidden="true">
             <span />

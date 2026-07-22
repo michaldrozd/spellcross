@@ -43,6 +43,7 @@ import {
   unitVisualHeight,
   vehicleSheetDirectionNameForOrientation,
   vehicleSheetDirectionNameForScreenVector,
+  vehicleTurnCrossfade,
   type UnitPointerArea
 } from './unitVisuals.js';
 const basename = (p: string) => {
@@ -4695,6 +4696,9 @@ export function BattlefieldStage({
         let movementPhase = 0;
         let movingThisUnit = false;
         let turningThisUnit = false;
+        let vehicleTurnFromOrientation: number | null = null;
+        let vehicleTurnToOrientation: number | null = null;
+        let vehicleTurnProgress = 0;
         let vehicleTurnLean = 0;
         let moveScreenVector = orientationScreenVector(animatedOrientation);
         let movingBaseHeight: number | undefined;
@@ -4745,6 +4749,9 @@ export function BattlefieldStage({
             const nextVector = screenVectorBetween(toCoord, movementPath[currentStep + 2]);
             const smoothTurn = turnProgress * turnProgress * (3 - 2 * turnProgress);
             const cross = moveScreenVector.x * nextVector.y - moveScreenVector.y * nextVector.x;
+            vehicleTurnFromOrientation = currentOrientation;
+            vehicleTurnToOrientation = nextOrientation;
+            vehicleTurnProgress = turnProgress;
             moveScreenVector = mixScreenVectors(moveScreenVector, nextVector, smoothTurn);
             vehicleTurnLean = Math.sign(cross) * Math.sin(turnProgress * Math.PI) * 0.055;
           }
@@ -5208,15 +5215,26 @@ export function BattlefieldStage({
                 : footMovementDirection === 's'
                   ? 'se'
                   : footMovementDirection;
-              const spriteDirection = isVehicleUnit && directionalSprite === 'm113_apc'
-                ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite)
-                : isVehicleUnit && movingThisUnit
-                  ? vehicleSheetDirectionNameForScreenVector(moveScreenVector, directionalSprite ?? '')
-                  : isVehicleUnit
-                    ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
-                    : movementTransitionActive
-                      ? readableFootMovementDirection
-                    : directionNameForOrientation(animatedOrientation);
+              const turnDirections = isVehicleUnit
+                && turningThisUnit
+                && directionalSprite
+                && vehicleTurnFromOrientation !== null
+                && vehicleTurnToOrientation !== null
+                ? {
+                    from: vehicleSheetDirectionNameForOrientation(vehicleTurnFromOrientation, directionalSprite),
+                    to: vehicleSheetDirectionNameForOrientation(vehicleTurnToOrientation, directionalSprite)
+                  }
+                : null;
+              const spriteDirection = turnDirections?.from
+                ?? (isVehicleUnit && directionalSprite === 'm113_apc'
+                  ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite)
+                  : isVehicleUnit && movingThisUnit
+                    ? vehicleSheetDirectionNameForScreenVector(moveScreenVector, directionalSprite ?? '')
+                    : isVehicleUnit
+                      ? vehicleSheetDirectionNameForOrientation(animatedOrientation, directionalSprite ?? '')
+                      : movementTransitionActive
+                        ? readableFootMovementDirection
+                        : directionNameForOrientation(animatedOrientation));
               const usesDirectionalMotion = Boolean(directionalSprite && (isFootUnit || isVehicleUnit));
               const sheetState = (movementTransitionActive || turningThisUnit) && usesDirectionalMotion ? 'walk' : 'idle';
               const textureSheetState = directionalSprite === 'apc_directional' ? 'idle' : sheetState;
@@ -5226,6 +5244,7 @@ export function BattlefieldStage({
                 : 0;
               let texture: Texture | null = null;
               let settlingTexture: Texture | null = null;
+              let incomingTurnTexture: Texture | null = null;
 
               if (directionalSprite) {
                 desiredH = unitVisualHeight(tileSize, unitType, defId, directionalSprite);
@@ -5237,6 +5256,15 @@ export function BattlefieldStage({
                 texture = standaloneIdlePath && textureSheetState === 'idle'
                   ? (unitTextureCache.get(standaloneIdlePath) ?? crispTexture(Texture.from(standaloneIdlePath)))
                   : unitSheetTexture(unitTextureCache, directionalSprite, textureSheetState, spriteDirection, sheetFrame);
+                if (turnDirections && turnDirections.to !== turnDirections.from) {
+                  incomingTurnTexture = unitSheetTexture(
+                    unitTextureCache,
+                    directionalSprite,
+                    textureSheetState,
+                    turnDirections.to,
+                    sheetFrame
+                  );
+                }
                 if (movementTransitionActive && (standaloneIdlePath !== null || (!movingThisUnit && !turningThisUnit))) {
                   settlingTexture = standaloneIdlePath
                     ? (unitTextureCache.get(standaloneIdlePath) ?? crispTexture(Texture.from(standaloneIdlePath)))
@@ -5337,6 +5365,12 @@ export function BattlefieldStage({
               const groundOffsetY = directionalSprite
                 ? directionalSpriteGroundOffset(directionalSprite, textureSheetState, spriteDirection, baseScale) + (DIRECTIONAL_UNIT_GROUND_BIAS[directionalSprite] ?? 0)
                 : 0;
+              const incomingTurnGroundOffsetY = directionalSprite && turnDirections
+                ? directionalSpriteGroundOffset(directionalSprite, textureSheetState, turnDirections.to, baseScale) + (DIRECTIONAL_UNIT_GROUND_BIAS[directionalSprite] ?? 0)
+                : groundOffsetY;
+              const turnCrossfade = incomingTurnTexture
+                ? vehicleTurnCrossfade(vehicleTurnProgress)
+                : { outgoingAlpha: 1, incomingAlpha: 0 };
               const vehiclePose = isVehicleUnit && canMirrorForFacing ? rasterVehiclePose(moveScreenVector) : null;
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
               // Vehicles carry weight: a road shake + suspension dip while moving (driven by fastWave,
@@ -5414,6 +5448,8 @@ export function BattlefieldStage({
                   : 0;
               const silhouetteTint = 0x050605;
               const silhouetteScale = readableInFog ? 1.07 : 1.025;
+              const unitSpriteAlpha = (isFriendly ? 1 : isVisible ? 1 : 0.72) * deathAlphaMul;
+              const unitSpriteTint = deathTint !== null ? deathTint : suppressed ? 0xb9b2a4 : routed ? 0xc7a39c : spriteTint;
               return (
                 <>
                   {silhouetteAlpha > 0 ? (
@@ -5421,12 +5457,25 @@ export function BattlefieldStage({
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
                       scale={{ x: scaleX * silhouetteScale, y: baseScale * squashY * (readableInFog ? 1.05 : 1.02) }}
-                      alpha={silhouetteAlpha}
+                      alpha={silhouetteAlpha * turnCrossfade.outgoingAlpha}
                       tint={silhouetteTint}
                       x={spriteSwayX + (facingLeft ? -0.9 : 0.9)}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + (readableInFog ? 1.4 : 1.1)}
                       rotation={spriteRotation}
                       zIndex={0.8}
+                    />
+                  ) : null}
+                  {silhouetteAlpha > 0 && incomingTurnTexture ? (
+                    <Sprite
+                      texture={incomingTurnTexture}
+                      anchor={{ x: 0.5, y: anchorY }}
+                      scale={{ x: scaleX * silhouetteScale, y: baseScale * squashY * (readableInFog ? 1.05 : 1.02) }}
+                      alpha={silhouetteAlpha * turnCrossfade.incomingAlpha}
+                      tint={silhouetteTint}
+                      x={spriteSwayX + (facingLeft ? -0.9 : 0.9)}
+                      y={spriteBaseY + incomingTurnGroundOffsetY + spriteBobY + spriteCombatY + (readableInFog ? 1.4 : 1.1)}
+                      rotation={spriteRotation}
+                      zIndex={0.81}
                     />
                   ) : null}
                   {isFootUnit && isVisible ? (
@@ -5446,13 +5495,26 @@ export function BattlefieldStage({
                     texture={texture}
                     anchor={{ x: 0.5, y: anchorY }}
                     scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
-                    alpha={(isFriendly ? 1 : isVisible ? 1 : 0.72) * deathAlphaMul}
-                    tint={deathTint !== null ? deathTint : suppressed ? 0xb9b2a4 : routed ? 0xc7a39c : spriteTint}
+                    alpha={unitSpriteAlpha * turnCrossfade.outgoingAlpha}
+                    tint={unitSpriteTint}
                     x={spriteSwayX}
                     y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
                     rotation={spriteRotation + deathRotation}
                     zIndex={1}
                   />
+                  {incomingTurnTexture ? (
+                    <Sprite
+                      texture={incomingTurnTexture}
+                      anchor={{ x: 0.5, y: anchorY }}
+                      scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
+                      alpha={unitSpriteAlpha * turnCrossfade.incomingAlpha}
+                      tint={unitSpriteTint}
+                      x={spriteSwayX}
+                      y={spriteBaseY + incomingTurnGroundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
+                      rotation={spriteRotation + deathRotation}
+                      zIndex={1.01}
+                    />
+                  ) : null}
                   {settlingTexture ? (
                     <Sprite
                       texture={settlingTexture}
