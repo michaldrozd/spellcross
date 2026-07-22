@@ -10,6 +10,7 @@ describe('data bundle', () => {
     expect(bundle.research.length).toBeGreaterThan(0);
     expect(bundle.scenarios.length).toBeGreaterThan(1);
     expect(bundle.campaigns.length).toBe(1);
+    expect(bundle.dossiers).toHaveLength(bundle.campaigns[0].territories.length);
   });
 
   it('exports a prevalidated bundle', () => {
@@ -93,6 +94,40 @@ describe('data bundle', () => {
         expect(ranges, `unit ${unit.id} weaponTargets ${weapon}`).toContain(weapon);
       }
     }
+  });
+
+  it('gives every authored campaign sector one complete operation dossier', () => {
+    const campaignTerritoryIds = validatedStarterBundle.campaigns[0].territories
+      .map((territory) => territory.id)
+      .sort();
+    const dossierTerritoryIds = validatedStarterBundle.dossiers
+      .map((dossier) => dossier.territoryId)
+      .sort();
+
+    expect(dossierTerritoryIds).toEqual(campaignTerritoryIds);
+    expect(new Set(dossierTerritoryIds).size).toBe(dossierTerritoryIds.length);
+    for (const dossier of validatedStarterBundle.dossiers) {
+      expect(dossier.codename.length).toBeGreaterThan(4);
+      expect(dossier.situation.length).toBeGreaterThan(40);
+      expect(dossier.threat.length).toBeGreaterThan(40);
+      expect(dossier.command.length).toBeGreaterThan(40);
+      expect(dossier.victory.length).toBeGreaterThan(40);
+      expect(dossier.defeat.length).toBeGreaterThan(40);
+    }
+  });
+
+  it('rejects missing, duplicate, and unknown operation dossiers', () => {
+    const missing = structuredClone(starterBundle);
+    missing.dossiers = missing.dossiers.slice(1);
+    expect(() => loadContentBundle(missing)).toThrow(/has no operation dossier/);
+
+    const duplicate = structuredClone(starterBundle);
+    duplicate.dossiers.push(structuredClone(duplicate.dossiers[0]));
+    expect(() => loadContentBundle(duplicate)).toThrow(/Duplicate operation dossier/);
+
+    const unknown = structuredClone(starterBundle);
+    unknown.dossiers[0].territoryId = 'sector-nowhere';
+    expect(() => loadContentBundle(unknown)).toThrow(/unknown territory sector-nowhere/);
   });
 
   it('ships at least eighty unique authored unit definitions with no dead roster entries', () => {

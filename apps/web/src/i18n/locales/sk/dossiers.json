@@ -1,0 +1,163 @@
+{
+  "fallback": {
+    "chapter": "POĽNÁ SMERNICA",
+    "codename": "Neplánovaný kontakt",
+    "threat": "Sila ani zámer nepriateľa zatiaľ nie sú potvrdené.",
+    "command": "Zaistite pridelený sektor a zachovajte bojaschopnosť jednotiek pre ďalšie operácie.",
+    "victory": "Núdzová operácia je dokončená a sektor je opäť pod kontrolou Aliancie.",
+    "defeat": "Núdzová operácia zlyhala. Zvyšné jednotky ustupujú k najbližšej obrannej línii."
+  },
+  "sector-paris": {
+    "chapterTitle": "Zlomený horizont",
+    "codename": "Cesta lampášov",
+    "situation": "Za západným uzlom nakladajú evakuačné vlaky, zatiaľ čo mestská sieť zlyháva štvrť po štvrti.",
+    "threat": "Lovecké svorky sledujú núdzové vysielanie a skúšajú každú cestu, na ktorej ešte svietia svetlá.",
+    "command": "Udržte uzol, nechajte železničný prístup otvorený a získajte evakuačnej kolóne potrebný čas.",
+    "victory": "Posledný vlak opustil obvod vlastnou silou. Západný uzol je naším prvým spoľahlivým predmostím.",
+    "defeat": "Uzol padol skôr, než sa evakuácia skončila. Preživší sa rozptyľujú v nákladných tuneloch."
+  },
+  "sector-lyon": {
+    "chapterTitle": "Zlomený horizont",
+    "codename": "Stráž vyhne",
+    "situation": "Priemyselná štvrť má stále prúd, obrábacie stroje a jediné nepoškodené muničné lisy západne od Rýna.",
+    "threat": "Sabotéri sa presúvajú halami pecí za clonami dymu a falošných tepelných stôp.",
+    "command": "Uzavrite továrenské trasy a zabráňte demolačným tímom dostať sa k funkčným výrobným blokom.",
+    "victory": "Lisy opäť pracujú. Čerstvá munícia dorazí na front pred ďalším operačným cyklom.",
+    "defeat": "Zlievarenské bloky horia a výrobná linka stíchla. Náhradnej munície bude málo."
+  },
+  "sector-brussels": {
+    "chapterTitle": "Zlomený horizont",
+    "codename": "Papierové zatmenie",
+    "situation": "Podzemný veliteľský archív ukrýva posledný ucelený obraz inváznych trás na severnom fronte.",
+    "threat": "Nepriateľskí prieskumníci prenikli do vonkajších kancelárií a hľadajú spevnený dátový trezor.",
+    "command": "Dostaňte sa k archívu, zaistite poľné disky a evakuujte ich skôr, než veliteľský blok odrežú.",
+    "victory": "Archív je v rukách Aliancie. Jeho mapy trás odhaľujú cestu k prístavom Severného mora.",
+    "defeat": "Archív počas evakuácie stíchol. Severné velenie musí pracovať iba s útržkami a odhadmi."
+  },
+  "sector-strasbourg": {
+    "chapterTitle": "Železný koridor",
+    "codename": "Úzky prúd",
+    "situation": "Jediný použiteľný prechod cez Rýn spája západné sklady so všetkými jednotkami zhromažďovanými na východe.",
+    "threat": "Za riečnou hmlou sa sústreďujú ťažké útočné skupiny, kým infiltrátori označujú piliere mosta.",
+    "command": "Udržte oba prístupy a zachovajte konštrukciu mosta pre nasledujúce kolóny.",
+    "victory": "Prechod cez Rýn je bezpečný. Palivo, obrnená technika a poľné nemocnice môžu na centrálny front.",
+    "defeat": "Prechod je stratený a rieka rozdelila armádu. Centrálne formácie prideľujú palivo aj muníciu na prídel."
+  },
+  "sector-munich": {
+    "chapterTitle": "Železný koridor",
+    "codename": "Studená hradba",
+    "situation": "Doničená obranná línia drží južnú cestnú sieť už druhú noc bez vystriedania.",
+    "threat": "Nepriateľ využíva výpadok prúdu na presuny úderných jednotiek medzi zrútenými predmestiami a opustenými zárezmi trate.",
+    "command": "Posilnite líniu, obnovte pozorovateľne a zlomte ďalší útok ešte pred svitaním.",
+    "victory": "Hradba vydržala až do rána. Centrálne velenie má stabilnú základňu pre postup na Viedeň.",
+    "defeat": "Obranný pás sa v tme zlomil. Ustupujúce jednotky opúšťajú južnú cestnú sieť."
+  },
+  "sector-zurich": {
+    "chapterTitle": "Železný koridor",
+    "codename": "Biely trezor",
+    "situation": "Horské kryty obsahujú rezervné články, zdravotnícke zásoby a chránený vysielač pod starými opevneniami.",
+    "threat": "Podzemné tvory otvorili medzi bunkrami nové chodby a z tunelovej siete vytvorili pascu.",
+    "command": "Vyčistite prepojené kryty a obnovte vysielač bez zavalenia zásobovacích galérií.",
+    "victory": "Trezor je otvorený a alpský vysielač opäť pracuje. Južné krídlo dokáže viesť dlhšie operácie.",
+    "defeat": "Tunelová sieť sa za ústupom uzavrela. Zásoby aj vysielacia technika zostali pod horou."
+  },
+  "sector-amsterdam": {
+    "chapterTitle": "Železný koridor",
+    "codename": "Prílivová zámka",
+    "situation": "Prístavné žeriavy a prílivové brány môžu obnoviť námornú trasu pre ťažkú techniku, ktorú poškodená železnica neunesie.",
+    "threat": "Obojživelní nájazdníci obsadili móla a pripravujú zatopenie vnútorných nakladacích bazénov.",
+    "command": "Získajte ovládanie brán a vyčistite chránené kotvisko pre prvý konvoj Aliancie.",
+    "victory": "Prístav pracuje pod ochranou. Ťažký náklad sa už presúva z lodí na železnicu.",
+    "defeat": "Vnútorné bazény zaplavilo skôr, než sme ovládli brány. Severná námorná trasa je uzavretá."
+  },
+  "sector-copenhagen": {
+    "chapterTitle": "Železný koridor",
+    "codename": "Severná ihla",
+    "situation": "Pobrežný radar pri úžine je jedinou senzorovou reťazou, ktorá sleduje prístup z Baltu.",
+    "threat": "Pod búrkovým frontom sa zbiehajú rýchle vzdušné a pobrežné jednotky, aby stanicu natrvalo oslepili.",
+    "command": "Bráňte senzorový hrebeň a nedovoľte nepriateľovi obísť severné krídlo.",
+    "victory": "Severná ihla opäť sleduje priestor. Cez úžinu neprejde žiadny nepriateľ bez povšimnutia.",
+    "defeat": "Senzorový hrebeň stíchol. Severné velenie sa pripravuje na útoky bez varovania."
+  },
+  "sector-vienna": {
+    "chapterTitle": "Železný koridor",
+    "codename": "Mosadzný kruh",
+    "situation": "Vo vnútorných štvrtiach sa stále drží organizovaná posádka, ale všetky povrchové cesty do mesta sa zatvárajú.",
+    "threat": "Obliehacie tvory a skazené delostrelectvo sťahujú kruh okolo obrancov štvrť po štvrti.",
+    "command": "Prerazte obliehaciu líniu a otvorte zásobovací koridor skôr, než posádka vyčerpá rezervy.",
+    "victory": "Obliehací kruh je prelomený. Viedeň sa stáva predsunutým veliteľstvom východnej kampane.",
+    "defeat": "Pomocná kolóna sa nedostala do vnútorných štvrtí. Zvyšok posádky sa pokúša preraziť von."
+  },
+  "sector-prague": {
+    "chapterTitle": "Mŕtve frekvencie",
+    "codename": "Dutý zvon",
+    "situation": "Pod starým mestom sa na vojenských pásmach opakuje pulz, hoci na povrchu nie je žiadny vysielač.",
+    "threat": "Signál ohýba navigáciu a láka izolované družstvá k rituálnej komore pod sieťou ulíc.",
+    "command": "Zostúpte servisnými tunelmi, nájdite zdroj a prerušte ho pred ďalším pulzom.",
+    "victory": "Podzemný vysielač je zničený. Po prvý raz po týždňoch počuť na východných pásmach iba ľudské hlasy.",
+    "defeat": "Pulz pod mestom pokračuje. Jednotky pri Prahe vypínajú rádiá, aby nestratili orientáciu."
+  },
+  "sector-berlin": {
+    "chapterTitle": "Mŕtve frekvencie",
+    "codename": "Protokol mŕtveho éteru",
+    "situation": "Každé opustené rádio v ruinách začalo vysielať rovnakú sadu overovacích kódov Aliancie.",
+    "threat": "Inteligencia požierajúca signál využíva mŕtvu sieť na predvídanie pohybu a skladá obrancov zo sutín.",
+    "command": "Postupujte bez vysielania, zničte reléové hniezda a umlčte zdroj skôr, než spozná celú veliteľskú sieť.",
+    "victory": "Falošná sieť sa rozpadla na šum. Overovanie Aliancie je čisté a cesta na východ otvorená.",
+    "defeat": "Zdroj unikol do širšej siete. Velenie vymieňa kódy v celom operačnom priestore."
+  },
+  "sector-warsaw": {
+    "chapterTitle": "Mŕtve frekvencie",
+    "codename": "Žeravé relé",
+    "situation": "Poľné relé zostavené z civilných vysielačov koordinuje posledné bojaschopné východné brigády.",
+    "threat": "Diaľková paľba sa približuje k relé, zatiaľ čo obrnení nájazdníci pretínajú ulice medzi anténami.",
+    "command": "Posilnite obvod relé a počas útoku udržte aspoň jednu vysielaciu trasu.",
+    "victory": "Žeravé relé zostalo vo vysielaní. Východné brigády sa opäť pohybujú ako jedna sila.",
+    "defeat": "Relé počas útoku stíchlo. Susedné brigády ustupujú po oddelených trasách."
+  },
+  "sector-krakow": {
+    "chapterTitle": "Mŕtve frekvencie",
+    "codename": "Sklenený chór",
+    "situation": "Zrkadlové komory v citadele zosilňujú tón portálu, ktorý preniká betónom aj pancierom.",
+    "threat": "Rezonanční strážcovia prichádzajú v presných vlnách a každý posilňuje komoru, ktorá ho vytvorila.",
+    "command": "Rozbite vonkajšie harmonické uzly, preniknite do citadely a umlčte centrálny rezonátor.",
+    "victory": "Zrkadlá citadely zhasli. Ich posledná ozvena odhalila skutočný pôvod invázneho signálu ďalej na východe.",
+    "defeat": "Chór dosiahol plnú rezonanciu. Pozdĺž východného prístupu sa otvárajú nové portály."
+  },
+  "sector-kyiv": {
+    "chapterTitle": "Poludník popola",
+    "codename": "Posledné vysielanie",
+    "situation": "Východné mestské velenie vysiela zo zmenšujúceho sa obranného vrecka obkľúčeného prekrývajúcimi sa poľami portálov.",
+    "threat": "Nepriateľské delostrelectvo a vzdušní lovci zameriavajú každé vysielanie zo zvyšných veliteľských stanovíšť.",
+    "command": "Rozbite geometriu obliehania, preniknite k veliteľskému vrecku a obnovte chránený koridor na východ.",
+    "victory": "Posledné vysielanie sa zmenilo na signál k nástupu. Východné vrecko je spojené s líniou Aliancie.",
+    "defeat": "Posledné veliteľské stanovište prestalo vysielať. Východné vrecko musíme považovať za stratené."
+  },
+  "sector-carpathian": {
+    "chapterTitle": "Poludník popola",
+    "codename": "Kamenná žila",
+    "situation": "Úzka horská trasa je jediným pozemným prístupom, ktorý obchádza portálové búrky nad rovinami.",
+    "threat": "Hliadky sa presúvajú skrytými zárezmi, kým kamenní strážcovia blokujú serpentíny za nimi.",
+    "command": "Postupne vyčistite priesmyk a pripravte chránené palivové body pre záverečný postup.",
+    "victory": "Kamenná žila je otvorená. Ťažké formácie sa môžu kryto priblížiť k východnému frontu.",
+    "defeat": "Priesmyk zostal zablokovaný a palivová kolóna sa obrátila. Záverečný postup stráca južnú trasu."
+  },
+  "sector-blacksea": {
+    "chapterTitle": "Poludník popola",
+    "codename": "Utopená línia",
+    "situation": "Pobrežná čerpacia stanica stojí nad zatopenou trhlinou, ktorá privádza tvory do južného krídla.",
+    "threat": "Trhlina stúpa s každým prílivom a zaplavenými servisnými kanálmi prináša obrnené tvary.",
+    "command": "Zaistite stanicu, udržte hrádzu a zavaľte zatopený prístup pred vrcholom prílivu.",
+    "victory": "Trhlina je pochovaná pod hrádzou. Južné krídlo stíchlo a pobrežná cesta je bezpečná.",
+    "defeat": "Hrádza pod tlakom zlyhala. Pobrežné jednotky ustupujú do vnútrozemia pred ďalším prílivom."
+  },
+  "sector-rift": {
+    "chapterTitle": "Poludník popola",
+    "codename": "Koruna popola",
+    "situation": "Všetky zachytené signálne trasy sa zbiehajú v horiacej trhline, kde si obloha a zem navzájom odporujú.",
+    "threat": "Trhlina skladá poslednú stráž zo vzorov všetkých porazených síl, kým jej vládca zostupuje otvorom.",
+    "command": "Rozbite líniu ochranných znakov, prežite útok zbiehajúcej sa stráže a zrúťte trhlinu zvnútra jej obvodu.",
+    "victory": "Koruna popola je zlomená. Trhlina sa zmenšuje, nepriateľské sily strácajú súdržnosť a na východnú líniu prichádza úsvit.",
+    "defeat": "Trhlina zostala otvorená a jej vládca drží bojisko. Aliancia pripravuje poslednú obrannú líniu na západe."
+  }
+}

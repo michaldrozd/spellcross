@@ -168,8 +168,7 @@
   "outcome": {
     "sectorSecured": "SEKTOR ZABEZPEČENÝ",
     "missionFailed": "MISIA ZLYHALA",
-    "victoryFlavor": "Územie je naše. Prežívajúci sa presúvajú a sektor prechádza pod kontrolu Aliancie.",
-    "defeatFlavor": "Línia sa zlomila. Zvyšky útočnej sily ustupujú na preskupenie.",
+    "debrief": "VYHODNOTENIE OPERÁCIE",
     "enemiesDestroyed": "Zničení nepriatelia",
     "squadsSurviving": "Prežívajúce jednotky",
     "squadsLost": "Stratené jednotky",

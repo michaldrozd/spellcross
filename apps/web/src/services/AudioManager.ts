@@ -3,10 +3,15 @@
  * Handles all sound effects and music with rich procedural audio
  */
 
+import type { OperationAudioTheme } from '@spellcross/data';
+
+export type NarrativeSoundType = 'briefing' | 'debriefVictory' | 'debriefDefeat';
+
 type SoundType =
   | 'gunshot' | 'explosion' | 'tankMove' | 'infantry' | 'hit' | 'death' | 'select' | 'error'
   | 'victory' | 'defeat' | 'move' | 'turnStart' | 'magic'
-  | 'reaction' | 'noAmmo' | 'lowHealth' | 'objective' | 'mortar' | 'bow' | 'fire' | 'sniper';
+  | 'reaction' | 'noAmmo' | 'lowHealth' | 'objective' | 'mortar' | 'bow' | 'fire' | 'sniper'
+  | NarrativeSoundType;
 
 interface PlayOpts {
   intensity?: number;                         // normalized damage [0,1] — scales impact weight
@@ -15,6 +20,34 @@ interface PlayOpts {
 }
 
 export type MovementSoundProfile = 'foot' | 'track' | 'wheel' | 'rotor';
+export type AmbienceTheme = 'hq' | OperationAudioTheme;
+
+export function narrativeSoundTypeForOutcome(status: 'victory' | 'defeat'): NarrativeSoundType {
+  return status === 'victory' ? 'debriefVictory' : 'debriefDefeat';
+}
+
+export function ambienceProfileFor(theme: AmbienceTheme, weather: 'clear' | 'night' | 'fog' = 'clear') {
+  const profiles: Record<AmbienceTheme, {
+    root: number;
+    mix: number;
+    cutoff: number;
+    wind: number;
+    harmony: [number, number, number];
+    pulse: number;
+  }> = {
+    hq: { root: 73, mix: 0.12, cutoff: 720, wind: 0.12, harmony: [1, 1.5, 1.2], pulse: 0 },
+    frontline: { root: 55, mix: 0.18, cutoff: 600, wind: 0.2, harmony: [1, 1.5, 1.2], pulse: 0.5 },
+    siege: { root: 46, mix: 0.19, cutoff: 390, wind: 0.13, harmony: [1, 1.5, 1.25], pulse: 0.8 },
+    night: { root: 65, mix: 0.16, cutoff: 340, wind: 0.3, harmony: [1, 1.5, 1.189], pulse: 0.23 },
+    rift: { root: 41, mix: 0.17, cutoff: 760, wind: 0.26, harmony: [1, 1.414, 1.189], pulse: 0.37 }
+  };
+  const profile = profiles[theme];
+  return {
+    ...profile,
+    cutoff: weather === 'night' ? Math.min(profile.cutoff, 420) : profile.cutoff,
+    wind: profile.wind + (weather === 'fog' ? 0.2 : weather === 'night' ? 0.1 : 0)
+  };
+}
 
 export function movementSoundProfileFor(unitType: string, definitionId = ''): MovementSoundProfile {
   const id = definitionId.toLowerCase();
@@ -51,14 +84,18 @@ class AudioManagerClass {
     gunshot: 0.55, explosion: 0.6, tankMove: 0.7, infantry: 0.6, hit: 0.7, death: 0.7,
     select: 0.55, error: 0.7, victory: 0.9, defeat: 0.9, move: 0.8, turnStart: 0.6, magic: 0.8,
     reaction: 0.6, noAmmo: 0.5, lowHealth: 0.6, objective: 0.7, mortar: 0.62,
-    bow: 0.5, fire: 0.6, sniper: 0.62
+    bow: 0.5, fire: 0.6, sniper: 0.62, briefing: 0.62, debriefVictory: 0.86,
+    debriefDefeat: 0.78
   };
 
   // Procedural ambience bed (drone + wind), separate from the SFX limiter bus.
   private ambienceBus: GainNode | null = null;
   private ambienceNodes: AudioScheduledSourceNode[] = [];
-  private ambienceTheme: 'battle' | 'hq' | null = null;
+  private ambienceTheme: AmbienceTheme | null = null;
+  private ambienceWeather: 'clear' | 'night' | 'fog' | null = null;
   private lastMovementCue: { profile: MovementSoundProfile; requestedDurationMs: number; scheduledDurationSeconds: number } | null = null;
+  private lastNarrativeCue: NarrativeSoundType | null = null;
+  private lastAmbienceCue: { theme: AmbienceTheme; weather: 'clear' | 'night' | 'fog' } | null = null;
 
   constructor() {
     // Initialize audio context on first user interaction
@@ -562,6 +599,64 @@ class AudioManagerClass {
         break;
       }
 
+      case 'briefing': {
+        this.playNoise(0.16, volume * 0.25, 2800, 0.7, out);
+        [740, 555, 740].forEach((freq, index) => {
+          const oscillator = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const startsAt = t + 0.05 + index * 0.095;
+          oscillator.type = 'triangle';
+          oscillator.frequency.setValueAtTime(freq, startsAt);
+          gain.gain.setValueAtTime(0.0001, startsAt);
+          gain.gain.exponentialRampToValueAtTime(volume * 0.22, startsAt + 0.008);
+          gain.gain.exponentialRampToValueAtTime(0.001, startsAt + 0.075);
+          oscillator.connect(gain);
+          gain.connect(out);
+          oscillator.start(startsAt);
+          oscillator.stop(startsAt + 0.08);
+        });
+        break;
+      }
+
+      case 'debriefVictory': {
+        this.playNoise(0.1, volume * 0.14, 2400, 0.5, out);
+        [196, 247, 294, 392].forEach((freq, index) => {
+          const oscillator = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const startsAt = t + index * 0.13;
+          oscillator.type = index < 2 ? 'triangle' : 'sine';
+          oscillator.frequency.setValueAtTime(freq, startsAt);
+          gain.gain.setValueAtTime(0.0001, startsAt);
+          gain.gain.exponentialRampToValueAtTime(volume * 0.24, startsAt + 0.018);
+          gain.gain.exponentialRampToValueAtTime(0.001, startsAt + 0.48);
+          oscillator.connect(gain);
+          gain.connect(out);
+          oscillator.start(startsAt);
+          oscillator.stop(startsAt + 0.5);
+        });
+        break;
+      }
+
+      case 'debriefDefeat': {
+        this.playNoise(0.28, volume * 0.16, 900, 0.8, out);
+        [220, 185, 147].forEach((freq, index) => {
+          const oscillator = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const startsAt = t + index * 0.2;
+          oscillator.type = 'triangle';
+          oscillator.frequency.setValueAtTime(freq, startsAt);
+          oscillator.detune.setValueAtTime(index === 1 ? -9 : 7, startsAt);
+          gain.gain.setValueAtTime(0.0001, startsAt);
+          gain.gain.exponentialRampToValueAtTime(volume * 0.22, startsAt + 0.025);
+          gain.gain.exponentialRampToValueAtTime(0.001, startsAt + 0.56);
+          oscillator.connect(gain);
+          gain.connect(out);
+          oscillator.start(startsAt);
+          oscillator.stop(startsAt + 0.58);
+        });
+        break;
+      }
+
       case 'turnStart': {
         // Attention chime
         const chime = ctx.createOscillator();
@@ -925,37 +1020,45 @@ class AudioManagerClass {
     return this.lastMovementCue ? { ...this.lastMovementCue } : null;
   }
 
+  getPresentationState() {
+    return {
+      narrativeCue: this.lastNarrativeCue,
+      ambience: this.lastAmbienceCue ? { ...this.lastAmbienceCue } : null
+    };
+  }
+
   // Procedural ambience bed: a low minor drone + gusting wind, mood-shifted by weather. Sits under
   // the SFX so the battlefield isn't dead air between gunshots. Idempotent per theme; crossfades.
-  startAmbience(theme: 'battle' | 'hq', weather: 'clear' | 'night' | 'fog' = 'clear'): void {
+  startAmbience(theme: AmbienceTheme, weather: 'clear' | 'night' | 'fog' = 'clear'): void {
     if (!this.enabled) return;
-    if (this.ambienceTheme === theme) return;
+    if (this.ambienceTheme === theme && this.ambienceWeather === weather) return;
     this.stopAmbience();
     try {
       const ctx = this.getContext();
       const t = ctx.currentTime;
-      const themeBase = theme === 'battle' ? 0.18 : 0.12;
+      const profile = ambienceProfileFor(theme, weather);
       const bus = ctx.createGain();
       bus.gain.setValueAtTime(0.0001, t);
-      bus.gain.exponentialRampToValueAtTime(Math.max(0.0002, this.masterVolume * this.musicVolume * themeBase), t + 1.5);
+      bus.gain.exponentialRampToValueAtTime(Math.max(0.0002, this.masterVolume * this.musicVolume * profile.mix), t + 1.5);
       bus.connect(ctx.destination);
       this.ambienceBus = bus;
       this.ambienceTheme = theme;
+      this.ambienceWeather = weather;
+      this.lastAmbienceCue = { theme, weather };
 
       // drone: root + fifth + minor third, each a detuned pair for a slow breathing beat
-      const root = theme === 'battle' ? 55 : 73;
       const droneLp = ctx.createBiquadFilter();
       droneLp.type = 'lowpass';
-      droneLp.frequency.value = weather === 'night' ? 420 : 600;
+      droneLp.frequency.value = profile.cutoff;
       droneLp.connect(bus);
       const droneGain = ctx.createGain();
       droneGain.gain.value = weather === 'night' ? 0.5 : 0.7;
       droneGain.connect(droneLp);
-      [1, 1.5, 1.2].forEach((mult, i) => {
+      profile.harmony.forEach((mult, i) => {
         [-0.3, 0.3].forEach((detune) => {
           const o = ctx.createOscillator();
           o.type = i === 0 ? 'sine' : 'triangle';
-          o.frequency.value = root * mult;
+          o.frequency.value = profile.root * mult;
           o.detune.value = detune;
           const g = ctx.createGain();
           g.gain.value = (i === 0 ? 0.5 : 0.28) / 2;
@@ -979,10 +1082,22 @@ class AudioManagerClass {
       gustDepth.gain.value = 300;
       gust.connect(gustDepth); gustDepth.connect(windLp.frequency);
       const windGain = ctx.createGain();
-      windGain.gain.value = weather === 'fog' ? 0.5 : weather === 'night' ? 0.32 : 0.2;
+      windGain.gain.value = profile.wind;
       wind.connect(windLp); windLp.connect(windGain); windGain.connect(bus);
       wind.start(t); gust.start(t);
       this.ambienceNodes.push(wind, gust);
+
+      if (profile.pulse > 0) {
+        const pulse = ctx.createOscillator();
+        pulse.type = theme === 'rift' ? 'sawtooth' : 'sine';
+        pulse.frequency.value = profile.pulse;
+        const depth = ctx.createGain();
+        depth.gain.value = theme === 'siege' ? 0.18 : 0.1;
+        pulse.connect(depth);
+        depth.connect(droneGain.gain);
+        pulse.start(t);
+        this.ambienceNodes.push(pulse);
+      }
     } catch (e) {
       console.warn('Ambience failed:', e);
     }
@@ -994,6 +1109,7 @@ class AudioManagerClass {
     this.ambienceBus = null;
     this.ambienceNodes = [];
     this.ambienceTheme = null;
+    this.ambienceWeather = null;
     if (!bus) return;
     try {
       const ctx = this.getContext();
@@ -1016,7 +1132,8 @@ class AudioManagerClass {
     try {
       const ctx = this.getContext();
       const now = ctx.currentTime;
-      const target = Math.max(0.0002, this.masterVolume * this.musicVolume * (this.ambienceTheme === 'battle' ? 0.18 : 0.12));
+      const profile = ambienceProfileFor(this.ambienceTheme ?? 'hq', this.ambienceWeather ?? 'clear');
+      const target = Math.max(0.0002, this.masterVolume * this.musicVolume * profile.mix);
       bus.gain.cancelScheduledValues(now);
       bus.gain.setValueAtTime(Math.max(0.0002, bus.gain.value), now);
       bus.gain.exponentialRampToValueAtTime(Math.max(0.0001, target * 0.35), now + 0.2);
@@ -1030,7 +1147,8 @@ class AudioManagerClass {
     const ctx = this.getContext();
     const types: SoundType[] = [
       'gunshot', 'explosion', 'tankMove', 'infantry', 'hit', 'death', 'select', 'error',
-      'victory', 'defeat', 'move', 'turnStart', 'magic', 'reaction', 'noAmmo', 'lowHealth', 'objective'
+      'victory', 'defeat', 'move', 'turnStart', 'magic', 'reaction', 'noAmmo', 'lowHealth', 'objective',
+      'briefing', 'debriefVictory', 'debriefDefeat'
     ];
     const exts = ['webm', 'mp3', 'ogg', 'wav'];
     await Promise.all(types.map(async (type) => {
@@ -1072,6 +1190,9 @@ class AudioManagerClass {
   play(type: SoundType, opts?: PlayOpts): void {
     if (!this.enabled) return;
     try {
+      if (type === 'briefing' || type === 'debriefVictory' || type === 'debriefDefeat') {
+        this.lastNarrativeCue = type;
+      }
       if (!this.filesProbed) void this.probeFiles();
       if (this.playFile(type, opts)) return; // real SFX file if present
       this.generateSound(type, opts); // otherwise procedural fallback

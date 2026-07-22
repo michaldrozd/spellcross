@@ -196,6 +196,11 @@
   },
   "deployment": {
     "operationOrder": "OPERATION ORDER",
+    "dossier": "INTELLIGENCE DOSSIER",
+    "chapter": "CHAPTER {{number}} · {{title}}",
+    "situation": "SITUATION",
+    "threat": "THREAT",
+    "commandIntent": "COMMAND INTENT",
     "capacitySummary": "{{selected}} selected · {{capacity}} deployment slots · {{available}} ready",
     "selectReady": "SELECT TO CAPACITY",
     "clearOptional": "CLEAR OPTIONAL",

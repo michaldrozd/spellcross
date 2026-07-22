@@ -168,8 +168,7 @@
   "outcome": {
     "sectorSecured": "SECTOR SECURED",
     "missionFailed": "MISSION FAILED",
-    "victoryFlavor": "The ground is ours. Survivors are regrouping and the sector falls under Alliance control.",
-    "defeatFlavor": "The line broke. What remains of the strike force is pulling back to regroup.",
+    "debrief": "OPERATION DEBRIEF",
     "enemiesDestroyed": "Enemies destroyed",
     "squadsSurviving": "Squads surviving",
     "squadsLost": "Squads lost",

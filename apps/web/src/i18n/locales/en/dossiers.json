@@ -1,0 +1,163 @@
+{
+  "fallback": {
+    "chapter": "FIELD DIRECTIVE",
+    "codename": "Unscheduled Contact",
+    "threat": "Enemy strength and intent remain unconfirmed.",
+    "command": "Secure the assigned sector and preserve the force for follow-on operations.",
+    "victory": "The emergency operation is complete and the sector has returned to Alliance control.",
+    "defeat": "The emergency operation failed. Remaining units are withdrawing to the nearest defensible line."
+  },
+  "sector-paris": {
+    "chapterTitle": "Broken Horizon",
+    "codename": "Lantern Road",
+    "situation": "Evacuation trains are loading beyond the western junction while the city grid fails district by district.",
+    "threat": "Hunter packs are following emergency broadcasts and probing every road that still carries light.",
+    "command": "Hold the junction, keep the rail approach open, and buy the evacuation column the time it needs.",
+    "victory": "The last train cleared the perimeter under its own power. The western junction is now our first dependable foothold.",
+    "defeat": "The junction was overrun before the evacuation cleared. Survivors are scattering along the freight tunnels."
+  },
+  "sector-lyon": {
+    "chapterTitle": "Broken Horizon",
+    "codename": "Kiln Watch",
+    "situation": "The industrial quarter still has power, machine tools, and the only intact ammunition presses west of the Rhine.",
+    "threat": "Saboteurs are moving through the furnace halls behind screens of smoke and false heat signatures.",
+    "command": "Lock down the factory lanes and prevent demolition teams from reaching the working production blocks.",
+    "victory": "The presses are running again. Fresh ammunition will reach the field before the next operation cycle.",
+    "defeat": "The foundry blocks are burning and the production line is silent. Replacement ammunition will be scarce."
+  },
+  "sector-brussels": {
+    "chapterTitle": "Broken Horizon",
+    "codename": "Paper Eclipse",
+    "situation": "A buried command archive holds the last coherent picture of the invasion routes across the northern front.",
+    "threat": "Enemy scouts have breached the outer offices and are searching for the hardened records vault.",
+    "command": "Reach the archive, secure its field drives, and extract before the command block is isolated.",
+    "victory": "The archive is in Alliance hands. Its route tables expose a path toward the North Sea ports.",
+    "defeat": "The archive went dark during extraction. Northern command must now operate from fragments and dead reckoning."
+  },
+  "sector-strasbourg": {
+    "chapterTitle": "Iron Corridor",
+    "codename": "Narrow Current",
+    "situation": "One serviceable Rhine crossing connects the western depots to every force assembling in the east.",
+    "threat": "Heavy assault groups are massing behind the river mist while infiltrators mark the bridge piers.",
+    "command": "Hold both approaches and keep the bridge structure intact for the follow-on columns.",
+    "victory": "The Rhine crossing is secure. Fuel, armor, and field hospitals can now move into the central front.",
+    "defeat": "The crossing is lost and the river has split the army. Central formations are rationing fuel and ammunition."
+  },
+  "sector-munich": {
+    "chapterTitle": "Iron Corridor",
+    "codename": "Cold Rampart",
+    "situation": "A battered defensive line is holding the southern road network through a second night without relief.",
+    "threat": "The enemy is using the blackout to shift shock troops between collapsed suburbs and abandoned rail cuts.",
+    "command": "Reinforce the line, restore its observation posts, and break the next assault before dawn.",
+    "victory": "The rampart held through sunrise. Central command now has a stable base for the push toward Vienna.",
+    "defeat": "The defensive belt folded in the dark. Retreating units are abandoning the southern road network."
+  },
+  "sector-zurich": {
+    "chapterTitle": "Iron Corridor",
+    "codename": "White Vault",
+    "situation": "Mountain shelters contain reserve power cells, medical stores, and a protected relay beneath the old fortifications.",
+    "threat": "Burrowing creatures have opened new passages between the bunkers and turned the tunnel grid into an ambush maze.",
+    "command": "Clear the connected shelters and bring the relay back online without collapsing the supply galleries.",
+    "victory": "The vault is open and the alpine relay is transmitting. The southern flank can support sustained operations.",
+    "defeat": "The tunnel grid is sealed behind the retreat. Stores and relay equipment remain trapped below the mountain."
+  },
+  "sector-amsterdam": {
+    "chapterTitle": "Iron Corridor",
+    "codename": "Tidelock",
+    "situation": "The harbor cranes and tidal gates can reopen a sea route for heavy equipment that cannot cross the damaged rail net.",
+    "threat": "Amphibious raiders occupy the quays and are preparing to flood the inner loading basins.",
+    "command": "Retake the gate controls and clear a protected berth for the first Alliance convoy.",
+    "victory": "The harbor is working under guard. Heavy cargo is already moving from ship to rail.",
+    "defeat": "The inner basins flooded before the controls were secured. The northern sea route is closed."
+  },
+  "sector-copenhagen": {
+    "chapterTitle": "Iron Corridor",
+    "codename": "North Needle",
+    "situation": "Coastal radar on the strait is the only sensor chain watching the Baltic approach.",
+    "threat": "Fast aerial and littoral units are converging beneath a storm front to blind the station permanently.",
+    "command": "Defend the sensor ridge and deny the enemy a corridor around the northern flank.",
+    "victory": "The North Needle is tracking again. No hostile movement can cross the strait unseen.",
+    "defeat": "The sensor ridge has gone silent. Northern command is preparing for attacks without warning."
+  },
+  "sector-vienna": {
+    "chapterTitle": "Iron Corridor",
+    "codename": "Brass Ring",
+    "situation": "The inner districts still shelter an organized garrison, but every surface route into the city is closing.",
+    "threat": "Siege creatures and corrupted artillery are tightening a ring around the defenders quarter by quarter.",
+    "command": "Punch through the siege line and open a resupply corridor before the garrison exhausts its reserves.",
+    "victory": "The siege ring is broken. Vienna becomes the forward headquarters for the eastern campaign.",
+    "defeat": "The relief column could not reach the inner districts. The surviving garrison is attempting a breakout."
+  },
+  "sector-prague": {
+    "chapterTitle": "Dead Frequencies",
+    "codename": "Hollow Bell",
+    "situation": "A pulse beneath the old city is repeating on military bands with no transmitter above ground.",
+    "threat": "The signal bends navigation and draws isolated squads toward a ritual chamber below the street grid.",
+    "command": "Descend through the service tunnels, locate the source, and sever it before the next pulse.",
+    "victory": "The underground transmitter is broken. For the first time in weeks, the eastern bands carry only human voices.",
+    "defeat": "The pulse continues beneath the city. Units near Prague are shutting down their radios to stay oriented."
+  },
+  "sector-berlin": {
+    "chapterTitle": "Dead Frequencies",
+    "codename": "Dead Air Protocol",
+    "situation": "Every abandoned radio in the ruins has begun broadcasting the same set of Alliance authentication codes.",
+    "threat": "A signal-eating intelligence is using the dead network to predict movement and assemble defenders from the rubble.",
+    "command": "Advance under emissions control, destroy the relay nests, and silence the source before it learns the full command net.",
+    "victory": "The false network collapsed into static. Alliance authentication is clean and the road east is open.",
+    "defeat": "The source escaped into the wider network. Command codes are being replaced across the theatre."
+  },
+  "sector-warsaw": {
+    "chapterTitle": "Dead Frequencies",
+    "codename": "Ember Relay",
+    "situation": "A field relay assembled from civilian transmitters is coordinating the last intact eastern defense brigades.",
+    "threat": "Long-range fire is walking toward the relay while armored raiders cut the streets between its antenna sites.",
+    "command": "Reinforce the relay perimeter and keep at least one transmission route alive throughout the assault.",
+    "victory": "The Ember Relay stayed on the air. Eastern brigades are moving as one force again.",
+    "defeat": "The relay ceased transmitting during the assault. Neighboring brigades are falling back on separate routes."
+  },
+  "sector-krakow": {
+    "chapterTitle": "Dead Frequencies",
+    "codename": "Glass Choir",
+    "situation": "Mirrored chambers inside the citadel are amplifying a portal tone that can be heard through concrete and armor.",
+    "threat": "Resonant guardians arrive in measured waves, each one strengthening the chamber that produced it.",
+    "command": "Break the outer harmonics, breach the citadel, and silence the central resonator.",
+    "victory": "The citadel mirrors are dark. Their last echo reveals the true origin of the invasion signal farther east.",
+    "defeat": "The choir reached full resonance. New portals are opening along the eastern approach."
+  },
+  "sector-kyiv": {
+    "chapterTitle": "Ash Meridian",
+    "codename": "Last Broadcast",
+    "situation": "The eastern city command is transmitting from a shrinking defense pocket surrounded by overlapping portal fields.",
+    "threat": "Enemy artillery and airborne hunters are triangulating every broadcast from the remaining command posts.",
+    "command": "Break the siege geometry, reach the command pocket, and restore a protected eastbound corridor.",
+    "victory": "The last broadcast became a rally signal. The eastern pocket is linked to the Alliance line.",
+    "defeat": "The final command post stopped transmitting. The eastern pocket must be treated as lost."
+  },
+  "sector-carpathian": {
+    "chapterTitle": "Ash Meridian",
+    "codename": "Stone Vein",
+    "situation": "A narrow mountain route is the only ground approach that avoids the portal storms over the plains.",
+    "threat": "Patrols move through concealed cuts while rock-like sentries block the switchbacks behind them.",
+    "command": "Clear the pass in sequence and establish protected fuel points for the final advance.",
+    "victory": "The Stone Vein is open. Heavy formations can now approach the eastern front under cover.",
+    "defeat": "The pass remains blocked and the fuel column has turned back. The final advance loses its southern route."
+  },
+  "sector-blacksea": {
+    "chapterTitle": "Ash Meridian",
+    "codename": "Drowned Line",
+    "situation": "A coastal pumping station sits above a submerged breach that feeds creatures into the southern flank.",
+    "threat": "The breach rises with each tide, bringing armored shapes through flooded service channels.",
+    "command": "Secure the station, hold the seawall, and collapse the submerged approach before the tide peaks.",
+    "victory": "The breach is buried beneath the seawall. The southern flank is quiet and the coast road is secure.",
+    "defeat": "The seawall failed under pressure. Coastal units are withdrawing inland ahead of the next tide."
+  },
+  "sector-rift": {
+    "chapterTitle": "Ash Meridian",
+    "codename": "Ash Crown",
+    "situation": "All captured signal paths converge on a burning fracture where the sky and ground no longer agree.",
+    "threat": "The breach is assembling a final guard from every defeated pattern while its warden descends through the opening.",
+    "command": "Break the ward line, survive the converging guard, and collapse the fracture from within its perimeter.",
+    "victory": "The Ash Crown is broken. The fracture is shrinking, hostile formations are losing cohesion, and dawn reaches the eastern line.",
+    "defeat": "The fracture remains open and the warden holds the field. Alliance command is preparing one last defensive line in the west."
+  }
+}

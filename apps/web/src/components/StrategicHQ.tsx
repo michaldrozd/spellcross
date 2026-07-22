@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { clearToasts } from './Toast.js';
 import { unitPortrait } from './unitVisuals.js';
 import i18n from '../i18n/index.js';
+import type { LocalizedOperationDossier } from '../operationDossiers.js';
 import { AudioManager } from '../services/AudioManager.js';
 
 interface Territory {
@@ -85,6 +86,7 @@ interface StrategicHQProps {
   formations: FormationSummary[];
   territories: Territory[];
   operationPlans: Record<string, OperationPlan>;
+  operationDossiers: Record<string, LocalizedOperationDossier>;
   researchTopics: ResearchTopic[];
   currentResearch: { topicId: string; remaining: number } | null;
   pausedResearch: Record<string, number>;
@@ -643,7 +645,7 @@ const StrategicMapView: React.FC<{
 
 export const StrategicHQ: React.FC<StrategicHQProps> = ({
   campaignDifficulty, turn, operationAvailable, warClock, money, research, strategic,
-  army, reserves, formations, territories, operationPlans, researchTopics, currentResearch, pausedResearch, completedResearch,
+  army, reserves, formations, territories, operationPlans, operationDossiers, researchTopics, currentResearch, pausedResearch, completedResearch,
   log, onStartBattle, onEndTurn, onRecruit, onRefill, onRearm, onSetFormation, onDismiss,
   onResearch, onPauseResearch, onConvertMoney, onConvertResearch, onBack, popups, onDismissPopups, availableUnits
 }) => {
@@ -664,6 +666,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
   const openDeploymentPlanner = (territoryId: string) => {
     const plan = operationPlans[territoryId];
     if (!plan) return;
+    AudioManager.play('briefing');
     setSelectedDeploymentIds(defaultDeploymentSelection(plan));
     setPlanningTerritoryId(territoryId);
   };
@@ -750,6 +753,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
     ? territories.find((territory) => territory.id === planningTerritoryId)
     : undefined;
   const planningPlan = planningTerritoryId ? operationPlans[planningTerritoryId] : undefined;
+  const planningDossier = planningTerritoryId ? operationDossiers[planningTerritoryId] : undefined;
   const planningUnits = planningPlan
     ? planningPlan.availableUnitIds.flatMap((unitId) => {
         const unit = army.find((candidate) => candidate.id === unitId);
@@ -1280,6 +1284,36 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               </div>
               <button className="hq-modal-close" aria-label={t('deployment.cancel')} onClick={() => setPlanningTerritoryId(null)}>×</button>
             </header>
+            {planningDossier && (
+              <section className={`operation-dossier operation-dossier-${planningDossier.audioTheme}`}>
+                <header>
+                  <span>{t('deployment.dossier')}</span>
+                  <div>
+                    <small>{planningDossier.chapter == null
+                      ? planningDossier.chapterTitle
+                      : t('deployment.chapter', {
+                          number: planningDossier.chapter,
+                          title: planningDossier.chapterTitle
+                        })}</small>
+                    <h3>{planningDossier.codename}</h3>
+                  </div>
+                </header>
+                <div className="operation-dossier-grid">
+                  <article>
+                    <b>{t('deployment.situation')}</b>
+                    <p>{planningDossier.situation}</p>
+                  </article>
+                  <article>
+                    <b>{t('deployment.threat')}</b>
+                    <p>{planningDossier.threat}</p>
+                  </article>
+                  <article>
+                    <b>{t('deployment.commandIntent')}</b>
+                    <p>{planningDossier.command}</p>
+                  </article>
+                </div>
+              </section>
+            )}
             <div className="deployment-toolbar">
               <button onClick={() => {
                 setSelectedDeploymentIds(defaultDeploymentSelection(planningPlan));

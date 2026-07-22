@@ -196,6 +196,11 @@
   },
   "deployment": {
     "operationOrder": "OPERAČNÝ ROZKAZ",
+    "dossier": "SPRAVODAJSKÝ SPIS",
+    "chapter": "KAPITOLA {{number}} · {{title}}",
+    "situation": "SITUÁCIA",
+    "threat": "HROZBA",
+    "commandIntent": "ZÁMER VELENIA",
     "capacitySummary": "Vybraných: {{selected}} · miest: {{capacity}} · pripravených: {{available}}",
     "selectReady": "VYBRAŤ DO KAPACITY",
     "clearOptional": "ZRUŠIŤ VOLITEĽNÉ",

@@ -6,6 +6,7 @@ import enBattle from './locales/en/battle.json' with { type: 'json' };
 import enBattlefield from './locales/en/battlefield.json' with { type: 'json' };
 import enCampaign from './locales/en/campaign.json' with { type: 'json' };
 import enCommon from './locales/en/common.json' with { type: 'json' };
+import enDossiers from './locales/en/dossiers.json' with { type: 'json' };
 import enErrors from './locales/en/errors.json' with { type: 'json' };
 import enHq from './locales/en/hq.json' with { type: 'json' };
 import enLog from './locales/en/log.json' with { type: 'json' };
@@ -19,6 +20,7 @@ import skBattle from './locales/sk/battle.json' with { type: 'json' };
 import skBattlefield from './locales/sk/battlefield.json' with { type: 'json' };
 import skCampaign from './locales/sk/campaign.json' with { type: 'json' };
 import skCommon from './locales/sk/common.json' with { type: 'json' };
+import skDossiers from './locales/sk/dossiers.json' with { type: 'json' };
 import skErrors from './locales/sk/errors.json' with { type: 'json' };
 import skHq from './locales/sk/hq.json' with { type: 'json' };
 import skLog from './locales/sk/log.json' with { type: 'json' };
@@ -49,17 +51,17 @@ void i18n.use(initReactI18next).init({
   lng: detectInitialLanguage(),
   fallbackLng: 'en',
   defaultNS: 'common',
-  ns: ['common', 'mainmenu', 'hq', 'battle', 'battlefield', 'log', 'campaign', 'units', 'research', 'territories', 'scenarios', 'actions', 'errors'],
+  ns: ['common', 'mainmenu', 'hq', 'battle', 'battlefield', 'log', 'campaign', 'units', 'research', 'territories', 'scenarios', 'dossiers', 'actions', 'errors'],
   resources: {
     en: {
       common: enCommon, mainmenu: enMainmenu, hq: enHq, battle: enBattle, battlefield: enBattlefield,
       log: enLog, campaign: enCampaign, units: enUnits, research: enResearch, territories: enTerritories, scenarios: enScenarios,
-      actions: enActions, errors: enErrors
+      dossiers: enDossiers, actions: enActions, errors: enErrors
     },
     sk: {
       common: skCommon, mainmenu: skMainmenu, hq: skHq, battle: skBattle, battlefield: skBattlefield,
       log: skLog, campaign: skCampaign, units: skUnits, research: skResearch, territories: skTerritories, scenarios: skScenarios,
-      actions: skActions, errors: skErrors
+      dossiers: skDossiers, actions: skActions, errors: skErrors
     }
   },
   interpolation: { escapeValue: false },

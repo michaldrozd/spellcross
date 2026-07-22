@@ -75,7 +75,8 @@ import { SupplyButton } from './components/SupplyButton.js';
 import { ToastContainer, showToast } from './components/Toast.js';
 import { battlefieldDirectionalSprite, unitPortrait } from './components/unitVisuals.js';
 import i18n from './i18n/index.js';
-import { AudioManager, movementSoundProfileFor } from './services/AudioManager.js';
+import { localizeOperationDossier } from './operationDossiers.js';
+import { AudioManager, movementSoundProfileFor, narrativeSoundTypeForOutcome } from './services/AudioManager.js';
 
 const BattlefieldStage = React.lazy(async () => {
   const battlefieldModule = await import('./components/BattlefieldStage.js');
@@ -461,6 +462,7 @@ function analyzePathThreat(
 type BattleOutcomeData = {
   status: 'victory' | 'defeat';
   sectorName: string;
+  debrief: string;
   rounds: number;
   enemiesDestroyed: number;
   enemiesTotal: number;
@@ -479,6 +481,12 @@ const BattleView: React.FC<{
   const { t } = useTranslation(['battle', 'common', 'campaign']);
   const battle = campaign.activeBattle!;
   const { map } = battle.state;
+  const battleTerritory = campaign.territories.find((territory) => territory.id === battle.territoryId);
+  const operationDossier = localizeOperationDossier(
+    bundle.dossiers.find((dossier) => dossier.territoryId === battle.territoryId),
+    battle.territoryId,
+    battleTerritory ? localizedTerritoryBrief(battleTerritory) : localizedScenarioBrief(battle.scenario.id, battle.scenario.brief)
+  );
   const [selected, setSelected] = useState<string | null>(null);
   const [deployMode, setDeployMode] = useState(!battle.deployed);
   const [plannedPath, setPlannedPath] = useState<HexCoordinate[] | null>(null);
@@ -587,9 +595,9 @@ const BattleView: React.FC<{
   const [movingUnit, setMovingUnit] = useState<MovingUnit | null>(null);
   // Battlefield ambience bed for as long as this view is mounted; weather sets the mood.
   useEffect(() => {
-    AudioManager.startAmbience('battle', battle.state.weather ?? 'clear');
+    AudioManager.startAmbience(operationDossier.audioTheme, battle.state.weather ?? 'clear');
     return () => AudioManager.stopAmbience();
-  }, [battle.state.weather]);
+  }, [battle.state.weather, operationDossier.audioTheme]);
   const deployModeRef = useRef(deployMode);
   // Pending staged enemy-turn SFX timeouts, so they can be cancelled if the battle ends mid-stagger
   // (otherwise gunfire/explosions bleed over the victory/defeat screen).
@@ -1360,7 +1368,12 @@ const BattleView: React.FC<{
         const enemies = Array.from(battle.state.sides.otherSide.units.values());
         const survivingEnemies = enemies.filter((u) => u.stance !== 'destroyed');
         return { status, totalEnemies: enemies.length, surviving: survivingEnemies.length };
-      }
+      },
+      resolveOutcome: () => {
+        resolveOutcome();
+        return true;
+      },
+      audioState: () => AudioManager.getPresentationState()
     };
     const devWindow = window as typeof window & { __battleControl?: typeof battleControl };
     devWindow.__battleControl = battleControl;
@@ -1393,7 +1406,7 @@ const BattleView: React.FC<{
       aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
       aiSfxTimeoutsRef.current = [];
       AudioManager.duckAmbience();
-      AudioManager.play(status === 'victory' ? 'victory' : 'defeat');
+      AudioManager.play(narrativeSoundTypeForOutcome(status));
       setBattleOutcome(buildBattleOutcome(status));
       // Persist that the battle is decided (reward still applied on Continue). A reload now re-shows
       // the card instead of dropping the victory's reward/territory unlock.
@@ -1419,6 +1432,7 @@ const BattleView: React.FC<{
     return {
       status,
       sectorName: localizedScenarioName(battle.scenario.id, battle.scenario.name),
+      debrief: status === 'victory' ? operationDossier.victory : operationDossier.defeat,
       rounds: battle.state.round,
       enemiesTotal: enemyUnits.length,
       enemiesDestroyed: enemyUnits.filter(isDead).length,
@@ -2944,11 +2958,10 @@ const BattleView: React.FC<{
               {battleOutcome.status === 'victory' ? t('battle:outcome.sectorSecured') : t('battle:outcome.missionFailed')}
             </div>
             <p className="battle-outcome-sector">{battleOutcome.sectorName}</p>
-            <p className="battle-outcome-flavor">
-              {battleOutcome.status === 'victory'
-                ? t('battle:outcome.victoryFlavor')
-                : t('battle:outcome.defeatFlavor')}
-            </p>
+            <div className="battle-outcome-debrief">
+              <span>{t('battle:outcome.debrief')}</span>
+              <p>{battleOutcome.debrief}</p>
+            </div>
             {battleOutcome.objectives.length ? (
               <ul className="battle-outcome-objectives">
                 {battleOutcome.objectives.map((o, i) => (
@@ -3166,7 +3179,8 @@ export function App() {
         active: campaign.research.inProgress ? { ...campaign.research.inProgress } : null,
         paused: { ...campaign.research.paused },
         completed: Array.from(campaign.research.completed)
-      })
+      }),
+      audioState: () => AudioManager.getPresentationState()
     };
     const devWindow = window as typeof window & { __campaignControl?: typeof campaignControl };
     devWindow.__campaignControl = campaignControl;
@@ -3288,6 +3302,14 @@ export function App() {
     territory.id,
     getOperationDeploymentPlan(campaign, bundle, territory.id)
   ]));
+  const operationDossiers = Object.fromEntries(campaign.territories.map((territory) => [
+    territory.id,
+    localizeOperationDossier(
+      bundle.dossiers.find((dossier) => dossier.territoryId === territory.id),
+      territory.id,
+      localizedTerritoryBrief(territory)
+    )
+  ]));
   return (
     <>
       <ToastContainer />
@@ -3338,6 +3360,7 @@ export function App() {
         formations={campaign.formations}
         territories={territories}
         operationPlans={operationPlans}
+        operationDossiers={operationDossiers}
         researchTopics={researchTopics}
         currentResearch={campaign.research.inProgress ?? null}
         pausedResearch={campaign.research.paused}

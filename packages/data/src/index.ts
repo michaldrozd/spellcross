@@ -1,7 +1,11 @@
 import { z } from 'zod';
 
 import { cityScenarios, cityScenarioIdByTerritory } from './city-battlefields.js';
+import { operationAudioThemes, starterOperationDossiers, type OperationDossier } from './operation-dossiers.js';
 import { rosterExpansionResearch, rosterExpansionUnits } from './roster-expansion.js';
+
+export type { OperationAudioTheme, OperationDossier } from './operation-dossiers.js';
+export { starterOperationDossiers } from './operation-dossiers.js';
 
 export type FactionId = 'alliance' | 'otherSide';
 export type TerrainType =
@@ -263,6 +267,7 @@ export interface ContentBundle {
   scenarios: TacticalScenario[];
   territories: TerritorySpec[];
   campaigns: CampaignSpec[];
+  dossiers: OperationDossier[];
 }
 
 const hexCoordinateSchema = z.object({
@@ -547,12 +552,59 @@ const campaignSchema = z.object({
   territories: z.array(territorySchema)
 });
 
+const operationDossierSchema = z.object({
+  territoryId: z.string().min(1),
+  chapter: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+  chapterTitle: z.string().min(1),
+  codename: z.string().min(1),
+  situation: z.string().min(1),
+  threat: z.string().min(1),
+  command: z.string().min(1),
+  victory: z.string().min(1),
+  defeat: z.string().min(1),
+  audioTheme: z.enum(operationAudioThemes)
+});
+
 const bundleSchema = z.object({
   units: z.array(unitSchema),
   research: z.array(researchSchema),
   scenarios: z.array(scenarioSchema),
   territories: z.array(territorySchema),
-  campaigns: z.array(campaignSchema)
+  campaigns: z.array(campaignSchema),
+  dossiers: z.array(operationDossierSchema)
+}).superRefine((bundle, ctx) => {
+  const authoredTerritoryIds = new Set(bundle.territories.map((territory) => territory.id));
+  const campaignTerritoryIds = new Set(bundle.campaigns.flatMap((campaign) => (
+    campaign.territories.map((territory) => territory.id)
+  )));
+  const dossierTerritoryIds = new Set<string>();
+
+  bundle.dossiers.forEach((dossier, index) => {
+    if (!authoredTerritoryIds.has(dossier.territoryId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Operation dossier references unknown territory ${dossier.territoryId}`,
+        path: ['dossiers', index, 'territoryId']
+      });
+    }
+    if (dossierTerritoryIds.has(dossier.territoryId)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate operation dossier for territory ${dossier.territoryId}`,
+        path: ['dossiers', index, 'territoryId']
+      });
+    }
+    dossierTerritoryIds.add(dossier.territoryId);
+  });
+
+  campaignTerritoryIds.forEach((territoryId) => {
+    if (dossierTerritoryIds.has(territoryId)) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Campaign territory ${territoryId} has no operation dossier`,
+      path: ['dossiers']
+    });
+  });
 });
 
 export type UnitDataValidated = z.infer<typeof unitSchema>;
@@ -2316,7 +2368,8 @@ export const starterBundle: ContentBundle = {
   research: starterResearch,
   scenarios: starterScenarios,
   territories: starterTerritories,
-  campaigns: [starterCampaign]
+  campaigns: [starterCampaign],
+  dossiers: starterOperationDossiers
 };
 
 export const validatedStarterBundle = loadContentBundle(starterBundle);
