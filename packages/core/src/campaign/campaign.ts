@@ -63,6 +63,7 @@ export interface Formation {
 export interface ResearchState {
   known: Set<string>;
   completed: Set<string>;
+  paused: Record<string, number>;
   inProgress?: {
     topicId: string;
     remaining: number;
@@ -209,11 +210,13 @@ export interface SerializedCampaignState {
   resources: CampaignState['resources'];
   army: ArmyUnit[];
   reserves: ArmyUnit[];
-  formations: Formation[];
+  // Optional for saves created before formation management was exposed at HQ.
+  formations?: Formation[];
   territories: TerritoryState[];
   research: {
     known: string[];
     completed: string[];
+    paused?: Record<string, number>;
     inProgress?: ResearchState['inProgress'];
   };
   log: CampaignLogEntry[];
@@ -304,6 +307,56 @@ const findUnitDef = (bundle: ContentBundle, id: string): UnitData => {
   return def;
 };
 
+const STANDARD_FORMATIONS: Array<Omit<Formation, 'units'>> = [
+  { id: 'alpha', name: 'Task Force Alpha', bonus: { attack: 1, defense: 1, morale: 3 } },
+  { id: 'bravo', name: 'Task Force Bravo', bonus: { attack: 0, defense: 2, morale: 4 } },
+  { id: 'charlie', name: 'Task Force Charlie', bonus: { attack: 2, defense: 0, morale: 1 } }
+];
+
+const createDefaultFormations = (army: ArmyUnit[]): Formation[] => STANDARD_FORMATIONS.map((formation, index) => ({
+  ...structuredClone(formation),
+  units: index === 0 ? army.map((unit) => unit.id) : []
+}));
+
+const normalizeFormations = (formations: Formation[] | undefined, army: ArmyUnit[]): Formation[] => {
+  const armyIds = new Set(army.map((unit) => unit.id));
+  const claimedUnitIds = new Set<string>();
+  const normalized: Formation[] = [];
+  const formationIds = new Set<string>();
+
+  for (const formation of formations ?? []) {
+    if (!formation?.id || formationIds.has(formation.id)) continue;
+    formationIds.add(formation.id);
+    const units = (formation.units ?? []).filter((unitId) => {
+      if (!armyIds.has(unitId) || claimedUnitIds.has(unitId)) return false;
+      claimedUnitIds.add(unitId);
+      return true;
+    });
+    normalized.push({
+      id: formation.id,
+      name: formation.name || formation.id,
+      units,
+      bonus: {
+        attack: Number.isFinite(formation.bonus?.attack) ? formation.bonus.attack : 0,
+        defense: Number.isFinite(formation.bonus?.defense) ? formation.bonus.defense : 0,
+        morale: Number.isFinite(formation.bonus?.morale) ? formation.bonus.morale : 0
+      }
+    });
+  }
+
+  for (const standard of STANDARD_FORMATIONS) {
+    if (formationIds.has(standard.id)) continue;
+    formationIds.add(standard.id);
+    normalized.push({ ...structuredClone(standard), units: [] });
+  }
+
+  if (!normalized.length) return createDefaultFormations(army);
+  if (!(formations?.length)) {
+    normalized[0].units = army.map((unit) => unit.id);
+  }
+  return normalized;
+};
+
 export function createCampaign(
   bundle: ContentBundle,
   campaignId?: string,
@@ -314,7 +367,8 @@ export function createCampaign(
 
   const research: ResearchState = {
     known: addResearchUnlocksToKnown(bundle, spec.startingResearch),
-    completed: new Set(spec.startingResearch)
+    completed: new Set(spec.startingResearch),
+    paused: {}
   };
 
   // Create territories with proper locked/available status based on requires
@@ -337,13 +391,6 @@ export function createCampaign(
     currentHealth: findUnitDef(bundle, u.definitionId).stats.maxHealth
   }));
 
-  const defaultFormation: Formation = {
-    id: 'alpha',
-    name: 'Task Force Alpha',
-    units: army.map((u) => u.id),
-    bonus: { attack: 1, defense: 1, morale: 3 }
-  };
-
   return {
     campaignId: spec.id,
     difficulty,
@@ -357,7 +404,7 @@ export function createCampaign(
     ) as CampaignState['resources'],
     army,
     reserves: [],
-    formations: [defaultFormation],
+    formations: createDefaultFormations(army),
     territories,
     research,
     log: [{ key: 'campaignInitialized', params: { name: spec.name, campaignId: spec.id, difficulty } }],
@@ -400,11 +447,33 @@ export function startResearch(state: CampaignState, bundle: ContentBundle, topic
   }
   const topic = bundle.research.find((r) => r.id === topicId);
   if (!topic) throw new Error(`Research ${topicId} not found`);
+  if (state.research.completed.has(topicId)) {
+    throw new CampaignError('researchAlreadyCompleted', 'Research already completed');
+  }
   const unmet = (topic.requires ?? []).filter((req) => !state.research.completed.has(req));
   if (unmet.length) {
     throw new CampaignError('missingPrerequisites', `Missing prerequisites: ${unmet.join(', ')}`, { list: unmet.join(', ') });
   }
-  state.research.inProgress = { topicId, remaining: topic.cost };
+  const pausedRemaining = state.research.paused[topicId];
+  state.research.inProgress = {
+    topicId,
+    remaining: pausedRemaining == null ? topic.cost : Math.min(topic.cost, Math.max(1, pausedRemaining))
+  };
+  delete state.research.paused[topicId];
+  state.log.push({ key: pausedRemaining == null ? 'researchStarted' : 'researchResumed', params: { topic: topic.name, topicId } });
+}
+
+export function pauseResearch(state: CampaignState, bundle: ContentBundle) {
+  const active = state.research.inProgress;
+  if (!active) throw new CampaignError('noResearchInProgress', 'No research in progress');
+  const topic = bundle.research.find((candidate) => candidate.id === active.topicId);
+  if (!topic) {
+    state.research.inProgress = undefined;
+    return;
+  }
+  state.research.paused[active.topicId] = Math.min(topic.cost, Math.max(1, active.remaining));
+  state.research.inProgress = undefined;
+  state.log.push({ key: 'researchPaused', params: { topic: topic.name, topicId: topic.id } });
 }
 
 export function progressResearch(state: CampaignState, bundle: ContentBundle) {
@@ -421,6 +490,7 @@ export function progressResearch(state: CampaignState, bundle: ContentBundle) {
   state.research.inProgress.remaining -= spend;
   if (state.research.inProgress.remaining <= 0) {
     state.research.completed.add(topic.id);
+    delete state.research.paused[topic.id];
     for (const unlock of topic.unlocks) {
       state.research.known.add(unlock);
     }
@@ -673,6 +743,33 @@ export interface UnitServiceQuote {
   tierAfter: UnitTier;
 }
 
+export type RearmLockReason = 'nonAlliance' | 'uniqueUnit' | 'noAlternative';
+
+export function getRearmLockReason(bundle: ContentBundle, definitionId: string): RearmLockReason | undefined {
+  const definition = findUnitDef(bundle, definitionId);
+  if (definition.faction !== 'alliance') return 'nonAlliance';
+  if (definition.type === 'hero') return 'uniqueUnit';
+  const alternatives = bundle.units.filter((candidate) => (
+    candidate.faction === definition.faction
+    && candidate.type === definition.type
+    && candidate.id !== definition.id
+  ));
+  return alternatives.length ? undefined : 'noAlternative';
+}
+
+export function getUnitRearmOptions(state: CampaignState, bundle: ContentBundle, unitId: string): UnitData[] {
+  const unit = state.army.find((candidate) => candidate.id === unitId);
+  if (!unit) throw new Error('Unit not found');
+  if (getRearmLockReason(bundle, unit.definitionId)) return [];
+  const currentDefinition = findUnitDef(bundle, unit.definitionId);
+  return bundle.units.filter((candidate) => (
+    candidate.id !== currentDefinition.id
+    && candidate.faction === currentDefinition.faction
+    && candidate.type === currentDefinition.type
+    && isUnitUnlocked(state, bundle, candidate.id)
+  ));
+}
+
 export function projectUnitService(
   state: CampaignState,
   bundle: ContentBundle,
@@ -692,7 +789,17 @@ export function projectUnitService(
       tierAfter: unitTierForExperience(experienceAfter)
     };
   }
+  const currentDefinition = findUnitDef(bundle, unit.definitionId);
   const definition = findUnitDef(bundle, request.definitionId);
+  if (getRearmLockReason(bundle, currentDefinition.id)) {
+    throw new CampaignError('rearmLocked', 'This unit cannot change equipment');
+  }
+  if (definition.faction !== currentDefinition.faction || definition.type !== currentDefinition.type) {
+    throw new CampaignError('incompatibleRearm', 'Unit can only rearm within its combat category');
+  }
+  if (definition.id === currentDefinition.id) {
+    throw new CampaignError('alreadyEquipped', 'Unit already uses this equipment');
+  }
   const experienceAfter = Math.floor(unit.experience * 0.75);
   return {
     cost: Math.round(definition.cost * 0.5),
@@ -714,6 +821,9 @@ export function refillUnit(state: CampaignState, bundle: ContentBundle, unitId: 
   const unit = state.army.find((candidate) => candidate.id === unitId);
   if (!unit) throw new Error('Unit not found');
   const definition = findUnitDef(bundle, unit.definitionId);
+  if ((unit.currentHealth ?? definition.stats.maxHealth) >= definition.stats.maxHealth) {
+    throw new CampaignError('unitAtFullStrength', 'Unit is already at full strength');
+  }
   const quote = projectUnitService(state, bundle, unitId, { kind: 'refill', quality });
   if (state.resources.money < quote.cost) throw new CampaignError('notEnoughMoneyRefill', 'Not enough money to refill');
   const previousTier = unit.tier;
@@ -722,6 +832,10 @@ export function refillUnit(state: CampaignState, bundle: ContentBundle, unitId: 
   unit.experience = quote.experienceAfter;
   unit.tier = quote.tierAfter;
   recordServiceTierChange(state, bundle, unit, previousTier);
+  state.log.push({
+    key: 'unitRefilled',
+    params: { name: definition.name, unitId: definition.id, quality, cost: quote.cost }
+  });
 }
 
 export function rearmUnit(
@@ -746,6 +860,10 @@ export function rearmUnit(
   unit.tier = quote.tierAfter;
   unit.currentHealth = newDef.stats.maxHealth;
   recordServiceTierChange(state, bundle, unit, previousTier);
+  state.log.push({
+    key: 'unitRearmed',
+    params: { name: newDef.name, unitId: newDef.id, cost: quote.cost }
+  });
   return unit;
 }
 
@@ -759,6 +877,23 @@ export function dismissUnit(state: CampaignState, bundle: ContentBundle, unitId:
     ...f,
     units: f.units.filter((id) => id !== unitId)
   }));
+}
+
+export function setUnitFormation(state: CampaignState, unitId: string, formationId?: string) {
+  if (!state.army.some((unit) => unit.id === unitId)) {
+    throw new CampaignError('unitNotInArmy', 'Unit is not available in the field army');
+  }
+  const normalized = normalizeFormations(state.formations, state.army);
+  if (formationId && !normalized.some((formation) => formation.id === formationId)) {
+    throw new CampaignError('formationNotFound', 'Formation not found');
+  }
+  state.formations = normalized.map((formation) => ({
+    ...formation,
+    units: formation.units.filter((id) => id !== unitId)
+  }));
+  if (!formationId) return;
+  const formation = state.formations.find((candidate) => candidate.id === formationId)!;
+  formation.units.push(unitId);
 }
 
 const applyTierAdjustments = (definition: UnitData, tier: UnitTier): UnitDefinition => {
@@ -825,6 +960,81 @@ const applyResearchBonus = (state: CampaignState, bundle: ContentBundle, unit: U
   };
 };
 
+export interface OperationDeploymentPlan {
+  capacity: number;
+  availableUnitIds: string[];
+  requiredUnitIds: string[];
+  specialistUnitIds: string[];
+}
+
+const readyArmyUnits = (state: CampaignState) => state.army.filter(
+  (unit) => (unit.availableOnTurn ?? 0) <= state.turn
+);
+
+const requiredRosterUnitIds = (state: CampaignState, scenario: TacticalScenario) => {
+  const readyIds = new Set(readyArmyUnits(state).map((unit) => unit.id));
+  return Array.from(new Set(scenario.objectives
+    .filter((objective) => !objective.optional && (
+      objective.kind === 'reach' || objective.kind === 'protect' || objective.kind === 'interact'
+    ))
+    .flatMap((objective) => objective.unitIds ?? [])
+    .filter((unitId) => readyIds.has(unitId))));
+};
+
+export function getOperationDeploymentPlan(
+  state: CampaignState,
+  bundle: ContentBundle,
+  territoryId: string
+): OperationDeploymentPlan {
+  const territory = state.territories.find((candidate) => candidate.id === territoryId);
+  if (!territory) throw new CampaignError('territoryNotFound', 'Territory not found');
+  const scenario = bundle.scenarios.find((candidate) => candidate.id === territory.scenarioId);
+  if (!scenario) throw new Error(`Scenario ${territory.scenarioId} missing`);
+  return {
+    capacity: scenario.startZones.alliance.length,
+    availableUnitIds: readyArmyUnits(state).map((unit) => unit.id),
+    requiredUnitIds: requiredRosterUnitIds(state, scenario),
+    specialistUnitIds: Array.from(new Set(scenario.objectives
+      .filter((objective) => objective.optional && objective.kind === 'interact')
+      .flatMap((objective) => objective.unitIds ?? [])
+      .filter((unitId) => state.army.some((unit) => unit.id === unitId))))
+  };
+}
+
+const validateOperationSelection = (
+  state: CampaignState,
+  bundle: ContentBundle,
+  territoryId: string,
+  selectedUnitIds: string[] | undefined
+) => {
+  if (selectedUnitIds == null) return;
+  const plan = getOperationDeploymentPlan(state, bundle, territoryId);
+  if (selectedUnitIds.length === 0) {
+    throw new CampaignError('noDeployableUnits', 'No deployable units available for this operation');
+  }
+  const uniqueSelected = new Set(selectedUnitIds);
+  if (uniqueSelected.size !== selectedUnitIds.length) {
+    throw new CampaignError('duplicateDeploymentUnit', 'A unit can only be selected once');
+  }
+  if (selectedUnitIds.length > plan.capacity) {
+    throw new CampaignError('deploymentCapacityExceeded', 'Selected force exceeds deployment capacity', {
+      selected: selectedUnitIds.length,
+      capacity: plan.capacity
+    });
+  }
+  const availableIds = new Set(plan.availableUnitIds);
+  const unavailable = selectedUnitIds.filter((unitId) => !availableIds.has(unitId));
+  if (unavailable.length) {
+    throw new CampaignError('deploymentUnitUnavailable', 'Selected unit is not ready for deployment');
+  }
+  const missingRequired = plan.requiredUnitIds.filter((unitId) => !uniqueSelected.has(unitId));
+  if (missingRequired.length) {
+    throw new CampaignError('requiredDeploymentUnitMissing', 'A mission-critical unit is missing from deployment', {
+      list: missingRequired.join(', ')
+    });
+  }
+};
+
 const buildArmySide = (
   state: CampaignState,
   bundle: ContentBundle,
@@ -835,8 +1045,7 @@ const buildArmySide = (
   tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string; experience: number }>;
   startTiles: HexCoordinate[];
 } => {
-  const available = state.army
-    .filter((u) => (u.availableOnTurn ?? 0) <= state.turn)
+  const available = readyArmyUnits(state)
     .concat(
       // auto-attach supply truck if unlocked and not already present
       state.research.known.has('supply-truck-unlock') &&
@@ -861,7 +1070,7 @@ const buildArmySide = (
     });
   const startTiles = scenario.startZones.alliance;
   let rosterUnits = selectedUnitIds
-    ? available.filter((u) => selectedUnitIds.includes(u.id))
+    ? selectedUnitIds.map((unitId) => available.find((unit) => unit.id === unitId)!)
     : available;
   const transports = available.filter((u) => (findUnitDef(bundle, u.definitionId).stats.transportCapacity ?? 0) > 0);
   // Don't force a transport into an explicit full selection — deployment is truncated to the start
@@ -869,7 +1078,7 @@ const buildArmySide = (
   if (
     !rosterUnits.some((u) => transports.includes(u)) &&
     transports.length > 0 &&
-    (!selectedUnitIds || rosterUnits.length < startTiles.length)
+    !selectedUnitIds
   ) {
     const pick = transports[0];
     rosterUnits = [pick, ...rosterUnits.filter((u) => u.id !== pick.id)];
@@ -928,6 +1137,8 @@ export function startBattleForTerritory(
 
   const scenario = bundle.scenarios.find((s) => s.id === territory.scenarioId);
   if (!scenario) throw new Error(`Scenario ${territory.scenarioId} missing`);
+
+  validateOperationSelection(state, bundle, territoryId, selectedUnitIds);
 
   const { tacticalUnits, startTiles } = buildArmySide(state, bundle, scenario, selectedUnitIds);
 
@@ -1627,6 +1838,7 @@ export function serializeCampaignState(state: CampaignState): SerializedCampaign
     research: {
       known: Array.from(state.research.known),
       completed: Array.from(state.research.completed),
+      paused: { ...state.research.paused },
       inProgress: state.research.inProgress ? { ...state.research.inProgress } : undefined
     },
     log: [...state.log],
@@ -1664,6 +1876,23 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
 
   const army = structuredClone(snapshot.army).map(normalizeArmyUnitProgression);
   const reserves = structuredClone(snapshot.reserves).map(normalizeArmyUnitProgression);
+  const completedResearch = new Set(snapshot.research.completed);
+  const researchTopics = new Map(bundle.research.map((topic) => [topic.id, topic]));
+  const pausedResearch = Object.fromEntries(Object.entries(snapshot.research.paused ?? {}).flatMap(([topicId, remaining]) => {
+    const topic = researchTopics.get(topicId);
+    if (!topic || completedResearch.has(topicId) || !Number.isFinite(remaining) || remaining <= 0) return [];
+    return [[topicId, Math.min(topic.cost, Math.max(1, remaining))]];
+  }));
+  const activeTopic = snapshot.research.inProgress
+    ? researchTopics.get(snapshot.research.inProgress.topicId)
+    : undefined;
+  const inProgress = activeTopic && !completedResearch.has(activeTopic.id)
+    ? {
+        topicId: activeTopic.id,
+        remaining: Math.min(activeTopic.cost, Math.max(1, snapshot.research.inProgress?.remaining ?? activeTopic.cost))
+      }
+    : undefined;
+  if (inProgress) delete pausedResearch[inProgress.topicId];
   const activeBattle = snapshot.activeBattle ? decodeActiveBattle(snapshot.activeBattle) : undefined;
   if (activeBattle) {
     activeBattle.difficulty ??= difficulty;
@@ -1708,7 +1937,7 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     resources: { ...snapshot.resources },
     army,
     reserves,
-    formations: structuredClone(snapshot.formations),
+    formations: normalizeFormations(snapshot.formations, army),
     // Older builds flipped expired path sectors to 'failed', leaving those campaigns silently
     // unwinnable; normalize them back to attackable on load.
     territories: snapshot.territories.map((t) => ({
@@ -1718,8 +1947,9 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     })),
     research: {
       known: researchKnown,
-      completed: new Set(snapshot.research.completed),
-      inProgress: snapshot.research.inProgress ? { ...snapshot.research.inProgress } : undefined
+      completed: completedResearch,
+      paused: pausedResearch,
+      inProgress
     },
     activeBattle,
     log: snapshot.log.map(normalizeLegacyLogEntry),

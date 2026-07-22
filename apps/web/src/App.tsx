@@ -21,6 +21,8 @@ import {
   getEnemyActionBudget,
   getEnemyDecisionBudget,
   getEnemyDifficultyTier,
+  getOperationDeploymentPlan,
+  getUnitRearmOptions,
   hasWeaponLineOfFire,
   isoDistance as axialDistance,
   isoNeighbors,
@@ -35,7 +37,9 @@ import {
   performObjectiveAction,
   processTacticalEvents,
   projectUnitService,
+  pauseResearch,
   reactionThreats,
+  rearmUnit,
   recruitUnit,
   dismissUnit,
   refillUnit,
@@ -43,6 +47,7 @@ import {
   serializeCampaignState,
   startBattleForTerritory,
   startResearch,
+  setUnitFormation,
   TurnProcessor,
   typeEffectiveness,
   weaponFireMode,
@@ -1155,6 +1160,7 @@ const BattleView: React.FC<{
         actionPoints: objective.actionPoints,
         completed: isObjectiveMet(objective, battle)
       })),
+      deploymentRosterIds: () => Object.keys(battle.deployment),
       ammoFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!first) return null;
@@ -3029,10 +3035,10 @@ export function App() {
       setSavedSlots(loadAllSummaries());
     }
   }, [mode]);
-  const startBattle = (territoryId: string) => {
+  const startBattle = (territoryId: string, selectedUnitIds: string[]) => {
     try {
       mutate((state) => {
-        startBattleForTerritory(state, bundle, territoryId);
+        startBattleForTerritory(state, bundle, territoryId, selectedUnitIds);
       });
       setMode('battle');
     } catch (err) {
@@ -3109,6 +3115,21 @@ export function App() {
           return false;
         }
       },
+      setArmyUnitHealth: (unitId: string, health: number) => {
+        let updated = false;
+        mutate((state) => {
+          const unit = state.army.find((candidate) => candidate.id === unitId);
+          const definition = unit ? bundle.units.find((candidate) => candidate.id === unit.definitionId) : undefined;
+          if (!unit || !definition) return;
+          unit.currentHealth = Math.max(1, Math.min(definition.stats.maxHealth, health));
+          updated = true;
+        });
+        return updated;
+      },
+      setMoney: (amount: number) => {
+        mutate((state) => { state.resources.money = Math.max(0, amount); });
+        return true;
+      },
       dismissPopups: () => {
         mutate((state) => {
           state.popups = [];
@@ -3120,7 +3141,23 @@ export function App() {
         scenarioId: t.scenarioId,
         status: t.status,
         name: t.name
-      }))
+      })),
+      army: () => campaign.army.map((unit) => ({
+        id: unit.id,
+        definitionId: unit.definitionId,
+        health: unit.currentHealth,
+        experience: unit.experience,
+        tier: unit.tier
+      })),
+      formations: () => campaign.formations.map((formation) => ({
+        id: formation.id,
+        units: [...formation.units]
+      })),
+      research: () => ({
+        active: campaign.research.inProgress ? { ...campaign.research.inProgress } : null,
+        paused: { ...campaign.research.paused },
+        completed: Array.from(campaign.research.completed)
+      })
     };
     const devWindow = window as typeof window & { __campaignControl?: typeof campaignControl };
     devWindow.__campaignControl = campaignControl;
@@ -3185,9 +3222,25 @@ export function App() {
     });
   const toArmyUnit = (u: (typeof campaign.army)[number]) => {
     const def = bundle.units.find((d) => d.id === u.definitionId)!;
-    const refillQuote = campaign.army.some((unit) => unit.id === u.id)
-      ? projectUnitService(campaign, bundle, u.id, { kind: 'refill', quality: 'rookie' })
-      : { cost: 0, experienceAfter: u.experience, tierAfter: u.tier };
+    const isFieldUnit = campaign.army.some((unit) => unit.id === u.id);
+    const refillQuotes = Object.fromEntries((['rookie', 'veteran', 'elite'] as const).map((quality) => [
+      quality,
+      isFieldUnit
+        ? projectUnitService(campaign, bundle, u.id, { kind: 'refill', quality })
+        : { cost: 0, experienceAfter: u.experience, tierAfter: u.tier }
+    ])) as Record<'rookie' | 'veteran' | 'elite', ReturnType<typeof projectUnitService>>;
+    const rearmOptions = isFieldUnit
+      ? getUnitRearmOptions(campaign, bundle, u.id).map((candidate) => {
+          const quote = projectUnitService(campaign, bundle, u.id, { kind: 'rearm', definitionId: candidate.id });
+          return {
+            definitionId: candidate.id,
+            name: localizedUnitName(candidate.id, candidate.name),
+            cost: quote.cost,
+            experienceAfter: quote.experienceAfter,
+            tierAfter: quote.tierAfter
+          };
+        })
+      : [];
     return {
       id: u.id,
       definitionId: u.definitionId,
@@ -3198,9 +3251,9 @@ export function App() {
       maxHealth: def?.stats.maxHealth ?? 100,
       experience: u.experience ?? 0,
       level: experienceLevelFor(u.experience ?? 0),
-      refillCost: refillQuote.cost,
-      refillExperienceAfter: refillQuote.experienceAfter,
-      refillTierAfter: refillQuote.tierAfter,
+      refillQuotes,
+      rearmOptions,
+      formationId: campaign.formations.find((formation) => formation.units.includes(u.id))?.id,
       availableOnTurn: u.availableOnTurn,
     };
   };
@@ -3222,6 +3275,10 @@ export function App() {
     name: localizedResearchName(topic.id, topic.name),
     description: localizedResearchDescription(topic.id, topic.description),
   }));
+  const operationPlans = Object.fromEntries(campaign.territories.map((territory) => [
+    territory.id,
+    getOperationDeploymentPlan(campaign, bundle, territory.id)
+  ]));
   return (
     <>
       <ToastContainer />
@@ -3269,9 +3326,12 @@ export function App() {
         strategic={campaign.resources.strategic}
         army={armyUnits}
         reserves={reserveUnits}
+        formations={campaign.formations}
         territories={territories}
+        operationPlans={operationPlans}
         researchTopics={researchTopics}
         currentResearch={campaign.research.inProgress ?? null}
+        pausedResearch={campaign.research.paused}
         completedResearch={campaign.research.completed}
         log={campaign.log}
         popups={campaign.popups}
@@ -3293,10 +3353,34 @@ export function App() {
             showToast(reason, 'error');
           }
         }}
+        onRearm={(id, definitionId) => {
+          try {
+            mutate((s) => rearmUnit(s, bundle, id, definitionId));
+          } catch (err) {
+            const reason = err instanceof CampaignError ? t(`campaign:errors.${err.key}`, err.params) : t('campaign:errors.genericRearmFailed');
+            showToast(reason, 'error');
+          }
+        }}
+        onSetFormation={(id, formationId) => {
+          try {
+            mutate((s) => setUnitFormation(s, id, formationId));
+          } catch (err) {
+            const reason = err instanceof CampaignError ? t(`campaign:errors.${err.key}`, err.params) : t('campaign:errors.genericFormationFailed');
+            showToast(reason, 'error');
+          }
+        }}
         onDismiss={(id) => mutate((s) => dismissUnit(s, bundle, id))}
         onResearch={(topic) => {
           try {
             mutate((s) => startResearch(s, bundle, topic));
+          } catch (err) {
+            const reason = err instanceof CampaignError ? t(`campaign:errors.${err.key}`, err.params) : t('campaign:errors.genericResearchFailed');
+            showToast(reason, 'error');
+          }
+        }}
+        onPauseResearch={() => {
+          try {
+            mutate((s) => pauseResearch(s, bundle));
           } catch (err) {
             const reason = err instanceof CampaignError ? t(`campaign:errors.${err.key}`, err.params) : t('campaign:errors.genericResearchFailed');
             showToast(reason, 'error');

@@ -30,10 +30,34 @@ interface ArmyUnit {
   maxHealth: number;
   experience: number;
   level: number;
-  refillCost: number;
-  refillExperienceAfter: number;
-  refillTierAfter: string;
+  refillQuotes: Record<'rookie' | 'veteran' | 'elite', {
+    cost: number;
+    experienceAfter: number;
+    tierAfter: string;
+  }>;
+  rearmOptions: Array<{
+    definitionId: string;
+    name: string;
+    cost: number;
+    experienceAfter: number;
+    tierAfter: string;
+  }>;
+  formationId?: string;
   availableOnTurn?: number;
+}
+
+interface FormationSummary {
+  id: string;
+  name: string;
+  units: string[];
+  bonus: { attack: number; defense: number; morale: number };
+}
+
+interface OperationPlan {
+  capacity: number;
+  availableUnitIds: string[];
+  requiredUnitIds: string[];
+  specialistUnitIds: string[];
 }
 
 interface ResearchTopic {
@@ -55,18 +79,24 @@ interface StrategicHQProps {
   strategic: number;
   army: ArmyUnit[];
   reserves: ArmyUnit[];
+  formations: FormationSummary[];
   territories: Territory[];
+  operationPlans: Record<string, OperationPlan>;
   researchTopics: ResearchTopic[];
   currentResearch: { topicId: string; remaining: number } | null;
+  pausedResearch: Record<string, number>;
   completedResearch: Set<string>;
   log: CampaignState['log'];
   popups?: CampaignState['popups'];
-  onStartBattle: (territoryId: string) => void;
+  onStartBattle: (territoryId: string, selectedUnitIds: string[]) => void;
   onEndTurn: () => void;
   onRecruit: (unitId: string, tier: 'rookie' | 'veteran' | 'elite') => void;
   onRefill: (unitId: string, tier: 'rookie' | 'veteran' | 'elite') => void;
+  onRearm: (unitId: string, definitionId: string) => void;
+  onSetFormation: (unitId: string, formationId?: string) => void;
   onDismiss: (unitId: string) => void;
   onResearch: (topicId: string) => void;
+  onPauseResearch: () => void;
   onConvertMoney: (amount: number) => void;
   onConvertResearch: (amount: number) => void;
   onBack: () => void;
@@ -201,6 +231,9 @@ function localizedLogParams(params?: Record<string, string | number>) {
   }
   if (typeof params.tier === 'string') {
     resolved.tier = i18n.t(`hq:army.tier.${params.tier}`, { defaultValue: params.tier });
+  }
+  if (typeof params.quality === 'string') {
+    resolved.quality = i18n.t(`hq:army.tier.${params.quality}`, { defaultValue: params.quality });
   }
   return resolved;
 }
@@ -598,17 +631,54 @@ const StrategicMapView: React.FC<{
 
 export const StrategicHQ: React.FC<StrategicHQProps> = ({
   campaignDifficulty, turn, operationAvailable, warClock, money, research, strategic,
-  army, reserves, territories, researchTopics, currentResearch, completedResearch,
-  log, onStartBattle, onEndTurn, onRecruit, onRefill, onDismiss,
-  onResearch, onConvertMoney, onConvertResearch, onBack, popups, onDismissPopups, availableUnits
+  army, reserves, formations, territories, operationPlans, researchTopics, currentResearch, pausedResearch, completedResearch,
+  log, onStartBattle, onEndTurn, onRecruit, onRefill, onRearm, onSetFormation, onDismiss,
+  onResearch, onPauseResearch, onConvertMoney, onConvertResearch, onBack, popups, onDismissPopups, availableUnits
 }) => {
   const { t } = useTranslation(['hq', 'common', 'campaign']);
   const [activeTab, setActiveTab] = useState<'map' | 'army' | 'research'>('map');
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
   const [recruitFilter, setRecruitFilter] = useState<RecruitFilter>('all');
+  const [planningTerritoryId, setPlanningTerritoryId] = useState<string | null>(null);
+  const [selectedDeploymentIds, setSelectedDeploymentIds] = useState<string[]>([]);
+  const [serviceUnitId, setServiceUnitId] = useState<string | null>(null);
   const switchTab = (tab: 'map' | 'army' | 'research') => {
     clearToasts();
     setActiveTab(tab);
+  };
+  const formationName = (formation: FormationSummary) => t(`army.formationName.${formation.id}`, {
+    defaultValue: formation.name
+  });
+  const openDeploymentPlanner = (territoryId: string) => {
+    const plan = operationPlans[territoryId];
+    if (!plan) return;
+    const required = new Set(plan.requiredUnitIds);
+    const defaultSelection = [
+      ...plan.requiredUnitIds,
+      ...plan.availableUnitIds.filter((unitId) => !required.has(unitId))
+    ].slice(0, plan.capacity);
+    setSelectedDeploymentIds(defaultSelection);
+    setPlanningTerritoryId(territoryId);
+  };
+  const applyFormationToDeployment = (formation: FormationSummary) => {
+    if (!planningTerritoryId) return;
+    const plan = operationPlans[planningTerritoryId];
+    const allowed = new Set(plan.availableUnitIds);
+    const chosen = new Set(plan.requiredUnitIds);
+    for (const unitId of formation.units) {
+      if (allowed.has(unitId) && chosen.size < plan.capacity) chosen.add(unitId);
+    }
+    setSelectedDeploymentIds(Array.from(chosen));
+  };
+  const toggleDeploymentUnit = (unitId: string) => {
+    if (!planningTerritoryId) return;
+    const plan = operationPlans[planningTerritoryId];
+    if (plan.requiredUnitIds.includes(unitId)) return;
+    setSelectedDeploymentIds((current) => {
+      if (current.includes(unitId)) return current.filter((id) => id !== unitId);
+      if (current.length >= plan.capacity) return current;
+      return [...current, unitId];
+    });
   };
   const researchById = useMemo(
     () => new Map(researchTopics.map((topic) => [topic.id, topic])),
@@ -669,6 +739,17 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
     });
     return sections.filter((section) => section.units.length > 0);
   }, [army]);
+  const planningTerritory = planningTerritoryId
+    ? territories.find((territory) => territory.id === planningTerritoryId)
+    : undefined;
+  const planningPlan = planningTerritoryId ? operationPlans[planningTerritoryId] : undefined;
+  const planningUnits = planningPlan
+    ? planningPlan.availableUnitIds.flatMap((unitId) => {
+        const unit = army.find((candidate) => candidate.id === unitId);
+        return unit ? [unit] : [];
+      })
+    : [];
+  const serviceUnit = serviceUnitId ? army.find((unit) => unit.id === serviceUnitId) : undefined;
   const forceFocusUnit = army.find((unit) => armySectionKey(unit) === 'command')
     ?? army.find((unit) => armySectionKey(unit) === 'vehicles')
     ?? army[0];
@@ -830,7 +911,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
             territories={territories}
             selectedTerritory={selectedTerritory}
             onSelectTerritory={setSelectedTerritory}
-            onStartBattle={onStartBattle}
+            onStartBattle={openDeploymentPlanner}
             log={log}
             operationAvailable={operationAvailable}
           />
@@ -857,6 +938,29 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                   ))}
                 </div>
               )}
+              <section className="formation-command" aria-label={t('army.formations')}>
+                <div className="formation-command-heading">
+                  <div>
+                    <span>{t('army.taskGroups')}</span>
+                    <h4>{t('army.formations')}</h4>
+                  </div>
+                  <small>{t('army.formationHint')}</small>
+                </div>
+                <div className="formation-cards">
+                  {formations.map((formation) => (
+                    <article key={formation.id} className={`formation-card formation-card-${formation.id}`}>
+                      <span>{formation.id.toUpperCase()}</span>
+                      <b>{formationName(formation)}</b>
+                      <small>{t('army.formationMembers', { count: formation.units.length })}</small>
+                      <div>
+                        <i>{t('army.bonusAttack', { value: formation.bonus.attack })}</i>
+                        <i>{t('army.bonusDefense', { value: formation.bonus.defense })}</i>
+                        <i>{t('army.bonusMorale', { value: formation.bonus.morale })}</i>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
               {forceFocusUnit && (
                 <section className={`force-focus force-focus-${armySectionKey(forceFocusUnit)}`}>
                   <div className={`roster-token roster-token-${forceFocusUnit.unitType}`}>
@@ -905,22 +1009,20 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                             <span className={`readiness-chip readiness-${readinessKey}`}><b>{t(`army.readiness.${readinessKey}`)}</b>{t(`common:unitType.${u.unitType}`)}</span>
                           </div>
                           <div className="unit-actions">
-                            <div className="refill-action">
-                              <button
-                                onClick={() => onRefill(u.id, 'rookie')}
-                                title={t('army.refillImpact', {
-                                  xp: u.refillExperienceAfter,
-                                  tier: t(`army.tier.${u.refillTierAfter}`)
-                                })}
+                            <label className="formation-assignment">
+                              <span>{t('army.formation')}</span>
+                              <select
+                                aria-label={t('army.assignFormationFor', { unit: u.name })}
+                                value={u.formationId ?? ''}
+                                onChange={(event) => onSetFormation(u.id, event.target.value || undefined)}
                               >
-                                {t('army.refillCost', { cost: u.refillCost })}
-                              </button>
-                              <small>{t('army.refillImpactCompact', {
-                                before: u.experience,
-                                after: u.refillExperienceAfter,
-                                tier: t(`army.tier.${u.refillTierAfter}`)
-                              })}</small>
-                            </div>
+                                <option value="">{t('army.unassigned')}</option>
+                                {formations.map((formation) => (
+                                  <option key={formation.id} value={formation.id}>{formationName(formation)}</option>
+                                ))}
+                              </select>
+                            </label>
+                            <button className="unit-service-btn" onClick={() => setServiceUnitId(u.id)}>{t('army.service')}</button>
                             {u.unitType !== 'hero' && (
                               <button onClick={() => onDismiss(u.id)}>{t('army.dismiss')}</button>
                             )}
@@ -1022,6 +1124,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                     <div className="research-progress-bar" aria-hidden="true">
                       <i style={{ '--research-progress': `${activeResearchProgress}%` } as React.CSSProperties} />
                     </div>
+                    <button className="pause-research-btn" onClick={onPauseResearch}>{t('research.pauseProject')}</button>
                   </div>
                 ) : (
                   <div className="no-research">
@@ -1033,6 +1136,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               <div className="research-kpis">
                 <span><b>{Math.round(research)}</b>{t('research.rpBanked')}</span>
                 <span><b>{completedResearch.size}</b>{t('research.complete')}</span>
+                <span><b>{Object.keys(pausedResearch).length}</b>{t('research.paused')}</span>
                 <span><b>{readyResearchCount}</b>{t('research.ready')}</span>
               </div>
             </div>
@@ -1066,16 +1170,18 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                       const requirementNames = (topic.requires ?? []).map((id) => researchById.get(id)?.name ?? id);
                       const isCompleted = completedResearch.has(topic.id);
                       const isActive = currentResearch?.topicId === topic.id;
+                      const pausedRemaining = pausedResearch[topic.id];
+                      const isPaused = pausedRemaining != null;
                       const isLocked = missingRequirements.length > 0;
-                      const isWaiting = Boolean(currentResearch) && !isActive;
-                      const isRecommended = topic.id === recommendedResearchId && !isCompleted && !isActive && !isLocked && !isWaiting;
-                      const stateKey = isCompleted ? 'done' : isActive ? 'active' : isLocked ? 'locked' : isWaiting ? 'wait' : isRecommended ? 'priority' : 'ready';
+                      const isWaiting = Boolean(currentResearch) && !isActive && !isPaused;
+                      const isRecommended = topic.id === recommendedResearchId && !isCompleted && !isActive && !isPaused && !isLocked && !isWaiting;
+                      const stateKey = isCompleted ? 'done' : isActive ? 'active' : isPaused ? 'paused' : isLocked ? 'locked' : isWaiting ? 'wait' : isRecommended ? 'priority' : 'ready';
                       const branch = researchBranch(topic);
                       const isPathNode = focusResearchPathIds.has(topic.id);
                       return (
                         <div
                           key={topic.id}
-                          className={`research-card research-branch-${branch} ${isPathNode ? 'research-path-node' : ''} ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked-node' : ''} ${isWaiting ? 'waiting-node' : ''} ${isRecommended ? 'recommended-node' : ''} ${!isCompleted && !isActive && !isLocked && !isWaiting ? 'ready-node' : ''}`}
+                          className={`research-card research-branch-${branch} ${isPathNode ? 'research-path-node' : ''} ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isPaused ? 'paused-node' : ''} ${isLocked ? 'locked-node' : ''} ${isWaiting ? 'waiting-node' : ''} ${isRecommended ? 'recommended-node' : ''} ${!isCompleted && !isActive && !isPaused && !isLocked && !isWaiting ? 'ready-node' : ''}`}
                         >
                           <span className="research-branch-label">{researchBranchLabel(branch, t)}</span>
                           <span className="research-node-index">{topic.id.toUpperCase()}</span>
@@ -1091,6 +1197,16 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                             <span className="research-done">{t('research.completed')}</span>
                           ) : isActive ? (
                             <span className="research-progress-label">{t('research.inProgress')}</span>
+                          ) : isPaused ? (
+                            <button
+                              className="research-btn research-resume-btn"
+                              disabled={!!currentResearch}
+                              onClick={() => onResearch(topic.id)}
+                            >
+                              {currentResearch
+                                ? t('research.pauseCurrentToResume', { count: pausedRemaining })
+                                : t('research.resumeProject', { count: pausedRemaining })}
+                            </button>
                           ) : (
                             <button
                               className="research-btn"
@@ -1121,6 +1237,178 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
           </div>
         )}
       </div>
+      {planningTerritory && planningPlan && (
+        <div className="hq-modal-backdrop" role="presentation">
+          <section
+            className="hq-modal deployment-planner"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deployment-planner-title"
+          >
+            <header className="hq-modal-header">
+              <div>
+                <span>{t('deployment.operationOrder')}</span>
+                <h2 id="deployment-planner-title">{planningTerritory.name}</h2>
+                <p>{t('deployment.capacitySummary', {
+                  selected: selectedDeploymentIds.length,
+                  capacity: planningPlan.capacity,
+                  available: planningPlan.availableUnitIds.length
+                })}</p>
+              </div>
+              <button className="hq-modal-close" aria-label={t('deployment.cancel')} onClick={() => setPlanningTerritoryId(null)}>×</button>
+            </header>
+            <div className="deployment-toolbar">
+              <button onClick={() => {
+                const required = new Set(planningPlan.requiredUnitIds);
+                setSelectedDeploymentIds([
+                  ...planningPlan.requiredUnitIds,
+                  ...planningPlan.availableUnitIds.filter((unitId) => !required.has(unitId))
+                ].slice(0, planningPlan.capacity));
+              }}>{t('deployment.selectReady')}</button>
+              <button onClick={() => setSelectedDeploymentIds([...planningPlan.requiredUnitIds])}>{t('deployment.clearOptional')}</button>
+              <div className="deployment-formations" aria-label={t('deployment.selectFormation')}>
+                {formations.map((formation) => (
+                  <button key={formation.id} onClick={() => applyFormationToDeployment(formation)}>
+                    {formationName(formation)} <b>{formation.units.length}</b>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="deployment-roster">
+              {planningUnits.map((unit) => {
+                const selected = selectedDeploymentIds.includes(unit.id);
+                const required = planningPlan.requiredUnitIds.includes(unit.id);
+                const specialist = planningPlan.specialistUnitIds.includes(unit.id);
+                const healthPercent = Math.round((unit.currentHealth / unit.maxHealth) * 100);
+                const formation = formations.find((candidate) => candidate.id === unit.formationId);
+                return (
+                  <button
+                    key={unit.id}
+                    type="button"
+                    className={`deployment-unit ${selected ? 'selected' : ''} ${required ? 'required' : ''} ${specialist ? 'specialist' : ''}`}
+                    aria-pressed={selected}
+                    disabled={!selected && selectedDeploymentIds.length >= planningPlan.capacity}
+                    onClick={() => toggleDeploymentUnit(unit.id)}
+                  >
+                    <span className={`roster-token roster-token-${unit.unitType}`}>
+                      <img src={rosterPortrait(unit.definitionId, unit.unitType)} alt="" />
+                    </span>
+                    <span className="deployment-unit-copy">
+                      <b>{unit.name}</b>
+                      <small>{t(`army.tier.${unit.tier}`)} · {t(`common:unitType.${unit.unitType}`)} · {t('deployment.healthPct', { value: healthPercent })}</small>
+                      <i>{formation ? formationName(formation) : t('army.unassigned')}</i>
+                    </span>
+                    <span className="deployment-unit-flags">
+                      {required && <em>{t('deployment.required')}</em>}
+                      {specialist && <em>{t('deployment.specialist')}</em>}
+                      <strong>{selected ? '✓' : '+'}</strong>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <footer className="hq-modal-footer">
+              <div>
+                <b>{t('deployment.manifest', { selected: selectedDeploymentIds.length, capacity: planningPlan.capacity })}</b>
+                <small>{t('deployment.noSilentOverflow')}</small>
+              </div>
+              <button className="secondary-btn" onClick={() => setPlanningTerritoryId(null)}>{t('deployment.cancel')}</button>
+              <button
+                className="primary-btn deployment-confirm"
+                disabled={selectedDeploymentIds.length === 0 || selectedDeploymentIds.length > planningPlan.capacity}
+                onClick={() => {
+                  const territoryId = planningTerritory.id;
+                  const selectedUnitIds = [...selectedDeploymentIds];
+                  setPlanningTerritoryId(null);
+                  onStartBattle(territoryId, selectedUnitIds);
+                }}
+              >
+                {t('deployment.confirm')}
+              </button>
+            </footer>
+          </section>
+        </div>
+      )}
+      {serviceUnit && (
+        <div className="hq-modal-backdrop" role="presentation">
+          <section
+            className="hq-modal unit-service-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="unit-service-title"
+          >
+            <header className="hq-modal-header">
+              <div>
+                <span>{t('service.workOrder')}</span>
+                <h2 id="unit-service-title">{serviceUnit.name}</h2>
+                <p>{t('service.currentState', {
+                  health: serviceUnit.currentHealth,
+                  maxHealth: serviceUnit.maxHealth,
+                  experience: serviceUnit.experience,
+                  tier: t(`army.tier.${serviceUnit.tier}`)
+                })}</p>
+              </div>
+              <button className="hq-modal-close" aria-label={t('service.close')} onClick={() => setServiceUnitId(null)}>×</button>
+            </header>
+            <div className="service-balance"><span>{t('service.availableFunds')}</span><b>{Math.round(money)} CR</b></div>
+            <section className="service-section">
+              <div className="service-section-heading">
+                <div><span>{t('service.personnel')}</span><h3>{t('service.refillStrength')}</h3></div>
+                <small>{serviceUnit.currentHealth >= serviceUnit.maxHealth ? t('service.fullStrength') : t('service.refillHint')}</small>
+              </div>
+              <div className="service-options">
+                {(['rookie', 'veteran', 'elite'] as const).map((quality) => {
+                  const quote = serviceUnit.refillQuotes[quality];
+                  return (
+                    <button
+                      key={quality}
+                      disabled={serviceUnit.currentHealth >= serviceUnit.maxHealth || money < quote.cost}
+                      onClick={() => onRefill(serviceUnit.id, quality)}
+                    >
+                      <span>{t(`army.tier.${quality}`)}</span>
+                      <b>{quote.cost} CR</b>
+                      <small>{t('service.resultPreview', {
+                        experience: quote.experienceAfter,
+                        tier: t(`army.tier.${quote.tierAfter}`)
+                      })}</small>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+            <section className="service-section">
+              <div className="service-section-heading">
+                <div><span>{t('service.equipment')}</span><h3>{t('service.rearm')}</h3></div>
+                <small>{t('service.sameCategoryOnly')}</small>
+              </div>
+              {serviceUnit.rearmOptions.length ? (
+                <div className="service-options service-rearm-options">
+                  {serviceUnit.rearmOptions.map((option) => (
+                    <button
+                      key={option.definitionId}
+                      disabled={money < option.cost}
+                      onClick={() => onRearm(serviceUnit.id, option.definitionId)}
+                    >
+                      <span>{option.name}</span>
+                      <b>{option.cost} CR</b>
+                      <small>{t('service.resultPreview', {
+                        experience: option.experienceAfter,
+                        tier: t(`army.tier.${option.tierAfter}`)
+                      })}</small>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="service-empty">{t('service.noRearmOptions')}</p>
+              )}
+            </section>
+            <footer className="hq-modal-footer">
+              <div><b>{t('service.quoteNotice')}</b><small>{t('service.quoteHint')}</small></div>
+              <button className="primary-btn" onClick={() => setServiceUnitId(null)}>{t('service.close')}</button>
+            </footer>
+          </section>
+        </div>
+      )}
     </div>
   );
 };

@@ -4,18 +4,21 @@ import { startFreshCampaign } from './helpers';
 
 test('HQ previews and applies refill experience before committing the service', async ({ page }) => {
   await startFreshCampaign(page);
+  await page.evaluate(() => (window as any).__campaignControl.setArmyUnitHealth('captain', 1));
   await page.getByRole('button', { name: /Army \(/i }).click();
 
   const captain = page.locator('.unit-row').filter({ hasText: 'Captain John Alexander' });
   await expect(captain).toContainText('Elite');
   await expect(captain).toContainText('XP 60');
-  await expect(captain).toContainText('60→36 XP · Veteran');
 
-  const refill = captain.getByRole('button', { name: /REFILL/i });
-  await expect(refill).toHaveAttribute('title', 'After refill: 36 XP · Veteran');
-  await refill.click();
+  await captain.getByRole('button', { name: /SERVICE/i }).click();
+  const service = page.getByRole('dialog', { name: /Captain John Alexander/i });
+  const rookieRefill = service.locator('.service-options').first().locator('button').first();
+  await expect(rookieRefill).toContainText('Returns with 36 XP · Veteran');
+  await rookieRefill.click();
 
-  await expect(captain).toContainText('Veteran');
-  await expect(captain).toContainText('XP 36');
-  await expect(captain).toContainText('36→21 XP · Rookie');
+  await expect(service).toContainText('120/120 HP · 36 XP · Veteran');
+  await expect(service.locator('.service-options').first().locator('button').first())
+    .toContainText('Returns with 21 XP · Rookie');
+  await expect(service.locator('.service-options').first().locator('button').first()).toBeDisabled();
 });

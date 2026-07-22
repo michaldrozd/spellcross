@@ -34,6 +34,7 @@ test('research, battle entry, retreat, and autosave', async ({ page }) => {
   await page.getByRole('button', { name: /Territories/i }).click();
   await page.getByText(/^Paris$/).click({ force: true });
   await page.getByRole('button', { name: /Launch Attack/i }).click();
+  await page.getByRole('button', { name: /Confirm Deployment/i }).click();
   await expect(page.getByRole('button', { name: /^Start Battle$/i })).toBeVisible();
   const canvas = page.locator('canvas').first();
   await expect(canvas).toBeVisible();

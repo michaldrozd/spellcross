@@ -90,7 +90,7 @@ describe('campaign core', () => {
     if (!roster) throw new Error('expected a rookie infantry unit');
     roster.experience = 20;
 
-    const firstBattle = startBattleForTerritory(state, starterBundle, 'sector-paris', [roster.id]);
+    const firstBattle = startBattleForTerritory(state, starterBundle, 'sector-paris', ['captain', roster.id]);
     const tactical = firstBattle.state.sides.alliance.units.get(firstBattle.deployment[roster.id]);
     if (!tactical) throw new Error('expected deployed infantry');
     expect(tactical.experience).toBe(20);
@@ -115,7 +115,7 @@ describe('campaign core', () => {
     endStrategicTurn(state, starterBundle);
     const nextTerritory = state.territories.find((territory) => territory.status === 'available');
     if (!nextTerritory) throw new Error('expected an unlocked territory');
-    const secondBattle = startBattleForTerritory(state, starterBundle, nextTerritory.id, [roster.id]);
+    const secondBattle = startBattleForTerritory(state, starterBundle, nextTerritory.id, ['captain', roster.id]);
     const redeployed = secondBattle.state.sides.alliance.units.get(secondBattle.deployment[roster.id]);
     const definition = starterBundle.units.find((unit) => unit.id === roster.definitionId);
     if (!redeployed || !definition) throw new Error('expected redeployed infantry definition');
@@ -165,6 +165,7 @@ describe('campaign core', () => {
     if (!refillTarget) throw new Error('expected refill target');
     refillTarget.experience = 60;
     refillTarget.tier = 'elite';
+    refillTarget.currentHealth = 1;
     refillState.resources.money = 10_000;
     const refillQuote = projectUnitService(refillState, starterBundle, refillTarget.id, {
       kind: 'refill', quality: 'rookie'
@@ -179,6 +180,7 @@ describe('campaign core', () => {
     const eliteState = createCampaign(starterBundle);
     const eliteTarget = eliteState.army.find((unit) => unit.id === 'captain');
     if (!eliteTarget) throw new Error('expected elite refill target');
+    eliteTarget.currentHealth = 1;
     eliteState.resources.money = 10_000;
     const eliteQuote = projectUnitService(eliteState, starterBundle, eliteTarget.id, {
       kind: 'refill', quality: 'elite'
