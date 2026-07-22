@@ -31,14 +31,15 @@ import {
   UNIT_SHEET_DIRECTIONS,
   UNIT_SHEET_FRAME_SIZE,
   battlefieldDirectionalSprite,
-  canMovingUnitFadeCanopy,
   directionalSpriteGroundOffset,
+  featheredOcclusionAlpha,
   isSupportVehicleDefinition,
   directionNameForOrientation,
   directionNameForScreenVector,
   leavesMechanicalWreck,
   rasterUnitOverride,
   rasterVehiclePose,
+  rangeOverlayStyle,
   resolveMovementFrame,
   unitContactFootprint,
   unitPointerArea,
@@ -1472,12 +1473,8 @@ export function BattlefieldStage({
     () => movingUnit ? resolveMovementFrame(movingUnit, now) : null,
     [movingUnit, now]
   );
-  const movementOcclusionQ = activeMovementFrame
-    ? Math.round(activeMovementFrame.displayCoord.q * 2) / 2
-    : null;
-  const movementOcclusionR = activeMovementFrame
-    ? Math.round(activeMovementFrame.displayCoord.r * 2) / 2
-    : null;
+  const movementOcclusionQ = activeMovementFrame?.displayCoord.q ?? null;
+  const movementOcclusionR = activeMovementFrame?.displayCoord.r ?? null;
   const movementOcclusionCoordinate = useMemo(
     () => movementOcclusionQ === null || movementOcclusionR === null
       ? null
@@ -3751,19 +3748,20 @@ export function BattlefieldStage({
           y={p.y - avgHeight * ELEV_Y_OFFSET}
           draw={(g) => {
             g.clear();
+            const style = rangeOverlayStyle(externalTexturesAreColored);
             if (ISO_MODE && geom) {
               const shape = geom.inset(0.86);
-              g.beginFill(0x9fd07a, externalTexturesAreColored ? 0.10 : 0.13);
+              g.beginFill(style.fill, style.fillAlpha);
               drawPoly(g as PixiGraphics, shape);
               g.endFill();
-              g.lineStyle(1.35, 0x10190d, 0.18);
+              g.lineStyle(2.4, style.shadow, style.shadowAlpha);
               edges.forEach(([aIdx, bIdx], edgeIndex) => {
                 const d = edgeDirs[edgeIndex];
                 if (rangeOverlayCoords.has(`${q + d.dq},${r + d.dr}`)) return;
                 g.moveTo(shape[aIdx].x, shape[aIdx].y);
                 g.lineTo(shape[bIdx].x, shape[bIdx].y);
               });
-              g.lineStyle(0.75, 0xd2c66e, 0.3);
+              g.lineStyle(1.15, style.edge, style.edgeAlpha);
               edges.forEach(([aIdx, bIdx], edgeIndex) => {
                 const d = edgeDirs[edgeIndex];
                 if (rangeOverlayCoords.has(`${q + d.dq},${r + d.dr}`)) return;
@@ -3771,7 +3769,7 @@ export function BattlefieldStage({
                 g.lineTo(shape[bIdx].x, shape[bIdx].y);
               });
               if ((q * 7 + r * 11) % 3 === 0) {
-                g.lineStyle(0.65, 0xe5d98f, 0.1);
+                g.lineStyle(0.8, 0xe8e0a1, 0.42);
                 g.moveTo(shape[3].x * 0.36, shape[3].y * 0.36);
                 g.lineTo(shape[1].x * 0.56, shape[1].y * 0.56);
               }
@@ -3788,11 +3786,15 @@ export function BattlefieldStage({
               { x: -hw, y: s / 2 },
               { x: -hw, y: -s / 2 }
             ];
-            g.beginFill(0x89b46f, 0.075);
+            g.beginFill(style.fill, style.fillAlpha);
             g.moveTo(pts[0].x, pts[0].y);
             for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
             g.closePath();
             g.endFill();
+            g.lineStyle(2.2, style.shadow, style.shadowAlpha);
+            drawPoly(g as PixiGraphics, pts);
+            g.lineStyle(1.05, style.edge, style.edgeAlpha);
+            drawPoly(g as PixiGraphics, pts);
           }}
         />
       );
@@ -4335,7 +4337,7 @@ export function BattlefieldStage({
         : now - m.t;
       if (!mechanicalWreck && elapsed >= CORPSE_TTL_MS) return;
       const fade = mechanicalWreck ? 1 : Math.max(0, 1 - elapsed / CORPSE_TTL_MS);
-      const corpseTexturePath = mechanicalWreck ? null : rasterUnitOverride(m.definitionId);
+      const corpseTexturePath = rasterUnitOverride(m.definitionId);
       let corpseTexture: Texture | null = null;
       if (corpseTexturePath) {
         corpseTexture = unitTextureCache.get(corpseTexturePath) ?? null;
@@ -4346,15 +4348,22 @@ export function BattlefieldStage({
       }
 
       els.push(
-        <Container key={`dead-${m.id}`} x={x} y={y} alpha={fade * visibilityAlpha} zIndex={z}>
+        <Container key={`dead-${m.id}`} x={x} y={y} alpha={fade * visibilityAlpha} zIndex={z} sortableChildren>
           <Graphics
+            zIndex={2}
             draw={(g) => {
               g.clear();
               g.beginFill(0x000000, 0.20 + 0.25 * fade);
               g.drawEllipse(0, tileSize * 0.045, tileSize * (mechanicalWreck ? 0.32 : 0.26), tileSize * (mechanicalWreck ? 0.11 : 0.08));
               g.endFill();
               if (mechanicalWreck) {
-                if (!hitInFlight) {
+                g.beginFill(0x17150f, 0.72 * fade);
+                g.drawEllipse(tileSize * 0.015, tileSize * 0.052, tileSize * 0.37, tileSize * 0.115);
+                g.endFill();
+                g.lineStyle(1.1, 0x5d4e37, 0.36 * fade);
+                g.drawEllipse(tileSize * 0.015, tileSize * 0.052, tileSize * 0.34, tileSize * 0.095);
+                g.lineStyle();
+                if (!hitInFlight && !corpseTexture) {
                   const facing = orientationScreenVector(m.orientation);
                   g.beginFill(0x2f2e29, 0.96 * fade);
                   g.drawRoundedRect(-tileSize * 0.24, -tileSize * 0.115, tileSize * 0.48, tileSize * 0.21, 3);
@@ -4377,6 +4386,21 @@ export function BattlefieldStage({
                   g.drawEllipse(-tileSize * 0.11, -tileSize * 0.015, tileSize * 0.065, tileSize * 0.035);
                   g.drawEllipse(tileSize * 0.13, tileSize * 0.025, tileSize * 0.05, tileSize * 0.03);
                   g.endFill();
+                  for (const [debrisX, debrisY, debrisW, debrisH] of [
+                    [-0.33, 0.02, 0.08, 0.035],
+                    [0.3, 0.07, 0.06, 0.03],
+                    [-0.2, 0.13, 0.05, 0.025],
+                    [0.18, -0.12, 0.045, 0.022]
+                  ] as const) {
+                    g.beginFill(0x3d3931, 0.84 * fade);
+                    g.drawRect(
+                      debrisX * tileSize,
+                      debrisY * tileSize,
+                      Math.max(2, debrisW * tileSize),
+                      Math.max(1.5, debrisH * tileSize)
+                    );
+                    g.endFill();
+                  }
                 }
                 const emberLife = Math.max(0, 1 - elapsed / 14000);
                 if (emberLife > 0) {
@@ -4387,7 +4411,7 @@ export function BattlefieldStage({
                     g.endFill();
                   }
                 }
-                const flameLife = Math.max(0, 1 - elapsed / 7500);
+                const flameLife = Math.max(0, 1 - elapsed / 10_000);
                 if (flameLife > 0) {
                   const flicker = prefersReducedMotion ? 0.7 : 0.72 + Math.sin(now / 95) * 0.18;
                   g.beginFill(0x4b1909, flameLife * 0.78 * fade);
@@ -4403,21 +4427,28 @@ export function BattlefieldStage({
                 const smokeLife = Math.max(0, 1 - elapsed / WRECK_SMOKE_ANIMATION_MS);
                 const smokeBoost = Math.max(0, 1 - elapsed / 7000);
                 if (smokeLife > 0) {
-                  for (let s = 0; s < 6; s++) {
-                    const rise = prefersReducedMotion ? (0.14 + s / 6) % 1 : ((now / 1950) + s / 6) % 1;
-                    const sa = (1 - rise) * (0.18 + 0.62 * smokeBoost) * smokeLife * fade;
+                  const coreSmoke = smokeLife * (0.38 + smokeBoost * 0.42) * fade;
+                  g.beginFill(0x3f423d, coreSmoke);
+                  g.drawEllipse(-tileSize * 0.025, -tileSize * 0.18, tileSize * 0.18, tileSize * 0.16);
+                  g.endFill();
+                  g.beginFill(0x6a6d66, coreSmoke * 0.8);
+                  g.drawEllipse(tileSize * 0.035, -tileSize * 0.34, tileSize * 0.22, tileSize * 0.18);
+                  g.endFill();
+                  for (let s = 0; s < 8; s++) {
+                    const rise = prefersReducedMotion ? (0.14 + s / 8) % 1 : ((now / 2200) + s / 8) % 1;
+                    const sa = (1 - rise) * (0.24 + 0.7 * smokeBoost) * smokeLife * fade;
                     if (sa <= 0.01) continue;
                     const sx = prefersReducedMotion ? 0 : Math.sin((now / 900) + s * 1.65) * tileSize * (0.05 + rise * 0.05);
                     g.beginFill(rise < 0.38 ? 0x343530 : 0x777a73, sa);
-                    g.drawEllipse(sx, -tileSize * (0.1 + rise * 0.78), tileSize * (0.11 + rise * 0.21), tileSize * (0.08 + rise * 0.15));
+                    g.drawEllipse(sx, -tileSize * (0.1 + rise * 0.82), tileSize * (0.13 + rise * 0.24), tileSize * (0.09 + rise * 0.18));
                     g.endFill();
                   }
                 }
                 const settledHaze = Math.min(1, Math.max(0, elapsed) / 9000);
-                g.beginFill(0x545650, 0.075 * settledHaze * fade);
+                g.beginFill(0x545650, 0.11 * settledHaze * fade);
                 g.drawEllipse(-tileSize * 0.025, -tileSize * 0.24, tileSize * 0.16, tileSize * 0.12);
                 g.endFill();
-                g.beginFill(0x74766e, 0.045 * settledHaze * fade);
+                g.beginFill(0x74766e, 0.07 * settledHaze * fade);
                 g.drawEllipse(tileSize * 0.035, -tileSize * 0.39, tileSize * 0.2, tileSize * 0.14);
                 g.endFill();
               } else {
@@ -4442,12 +4473,14 @@ export function BattlefieldStage({
               texture={corpseTexture}
               anchor={{ x: 0.5, y: RASTER_UNIT_ANCHOR_Y[corpseTexturePath] ?? 0.9 }}
               scale={{
-                x: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024) * 1.06,
-                y: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024) * 0.62
+                x: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024) * (mechanicalWreck ? 1.12 : 1.06),
+                y: unitVisualHeight(tileSize, m.unitType ?? 'infantry', m.definitionId) / (RASTER_UNIT_VISIBLE_HEIGHTS[corpseTexturePath] ?? 1024) * (mechanicalWreck ? 0.68 : 0.62)
               }}
-              y={tileSize * 0.055}
-              alpha={0.94}
-              tint={0xb48d79}
+              y={tileSize * (mechanicalWreck ? 0.065 : 0.055)}
+              rotation={mechanicalWreck ? 0.08 : 0}
+              alpha={mechanicalWreck ? 0.88 : 0.94}
+              tint={mechanicalWreck ? 0x5b574e : 0xb48d79}
+              zIndex={1}
             />
           ) : null}
         </Container>
@@ -4772,7 +4805,7 @@ export function BattlefieldStage({
         }
 
         const stridePhase = movingThisUnit && movingUnit?.unitId === unit.id
-          ? Math.max(0, now - movingUnit.startTime - (movingUnit.preAlignDuration ?? 0)) / 280
+          ? Math.max(0, now - movingUnit.startTime - (movingUnit.preAlignDuration ?? 0)) / 360
           : movementPhase;
         const locomotionPhase = isGroundVehicle ? movementPhase : stridePhase;
         const stepWave = movingThisUnit ? Math.sin(locomotionPhase * Math.PI * 2) : 0;
@@ -5112,10 +5145,10 @@ export function BattlefieldStage({
                         const rearX = -contactVector.x * footprint.rx * 0.58;
                         const rearY = footprint.y - contactVector.y * footprint.ry * 0.42;
                         const dustPulse = turningThisUnit ? 0.82 : 0.72 + 0.28 * Math.abs(fastWave);
-                        g.beginFill(0x332f24, 0.34 * dustPulse);
+                        g.beginFill(0x332f24, 0.48 * dustPulse);
                         g.drawEllipse(rearX, rearY, footprint.rx * 0.52, footprint.ry * 0.23);
                         g.endFill();
-                        g.beginFill(0x8a7b57, 0.24 * dustPulse);
+                        g.beginFill(0x8a7b57, 0.34 * dustPulse);
                         g.drawEllipse(
                           rearX - contactVector.x * footprint.rx * 0.32 + perpX * footprint.ry * 0.32,
                           rearY - contactVector.y * footprint.ry * 0.2 + perpY * footprint.ry * 0.32,
@@ -5123,6 +5156,19 @@ export function BattlefieldStage({
                           footprint.ry * 0.14
                         );
                         g.endFill();
+                        for (let dustIndex = 0; dustIndex < 3; dustIndex += 1) {
+                          const dustAge = (((movementPhase % 1) + 1) % 1 + dustIndex / 3) % 1;
+                          const dustAlpha = (1 - dustAge) * 0.3 * dustPulse;
+                          const side = dustIndex % 2 === 0 ? -1 : 1;
+                          g.beginFill(dustIndex === 0 ? 0x8a7b57 : 0x4b4433, dustAlpha);
+                          g.drawEllipse(
+                            rearX - contactVector.x * footprint.rx * (0.34 + dustAge * 0.72) + perpX * side * footprint.ry * (0.18 + dustAge * 0.32),
+                            rearY - contactVector.y * footprint.ry * (0.18 + dustAge * 0.38) + perpY * side * footprint.ry * 0.2 - dustAge * tileSize * 0.035,
+                            footprint.rx * (0.13 + dustAge * 0.22),
+                            footprint.ry * (0.08 + dustAge * 0.1)
+                          );
+                          g.endFill();
+                        }
                       }
                       g.lineStyle();
                     }
@@ -5152,10 +5198,10 @@ export function BattlefieldStage({
                         const rearX = -contactVector.x * footprint.rx * 0.64;
                         const rearY = footprint.y - contactVector.y * footprint.ry * 0.46;
                         const dustPulse = turningThisUnit ? 0.78 : 0.68 + 0.3 * Math.abs(fastWave);
-                        g.beginFill(0x332f24, 0.3 * dustPulse);
+                        g.beginFill(0x332f24, 0.44 * dustPulse);
                         g.drawEllipse(rearX, rearY, footprint.rx * 0.46, footprint.ry * 0.21);
                         g.endFill();
-                        g.beginFill(0x8a7b57, 0.2 * dustPulse);
+                        g.beginFill(0x8a7b57, 0.31 * dustPulse);
                         g.drawEllipse(
                           rearX - contactVector.x * footprint.rx * 0.3 + perpX * footprint.ry * 0.26,
                           rearY - contactVector.y * footprint.ry * 0.18 + perpY * footprint.ry * 0.26,
@@ -5163,6 +5209,18 @@ export function BattlefieldStage({
                           footprint.ry * 0.12
                         );
                         g.endFill();
+                        for (let dustIndex = 0; dustIndex < 3; dustIndex += 1) {
+                          const dustAge = (((movementPhase % 1) + 1) % 1 + dustIndex / 3) % 1;
+                          const side = dustIndex % 2 === 0 ? -1 : 1;
+                          g.beginFill(dustIndex === 0 ? 0x8a7b57 : 0x4b4433, (1 - dustAge) * 0.27 * dustPulse);
+                          g.drawEllipse(
+                            rearX - contactVector.x * footprint.rx * (0.3 + dustAge * 0.78) + perpX * side * footprint.ry * (0.15 + dustAge * 0.28),
+                            rearY - contactVector.y * footprint.ry * (0.16 + dustAge * 0.42) + perpY * side * footprint.ry * 0.18 - dustAge * tileSize * 0.03,
+                            footprint.rx * (0.11 + dustAge * 0.2),
+                            footprint.ry * (0.07 + dustAge * 0.1)
+                          );
+                          g.endFill();
+                        }
                       }
                     }
                     if (!isGroundVehicle) {
@@ -5196,10 +5254,10 @@ export function BattlefieldStage({
                       const trackPhase = ((movementPhase % 1) + 1) % 1;
                       const rearX = -moveScreenVector.x * footprint.rx * 0.58;
                       const rearY = footprint.y - moveScreenVector.y * footprint.ry * 0.5;
-                      g.beginFill(0x2d2a20, turningThisUnit ? 0.3 : 0.26);
+                      g.beginFill(0x2d2a20, turningThisUnit ? 0.44 : 0.38);
                       g.drawEllipse(rearX, rearY, footprint.rx * 0.58, footprint.ry * 0.25);
                       g.endFill();
-                      g.beginFill(0x746849, turningThisUnit ? 0.24 : 0.2);
+                      g.beginFill(0x746849, turningThisUnit ? 0.34 : 0.29);
                       g.drawEllipse(rearX - moveScreenVector.x * footprint.rx * 0.34, rearY - moveScreenVector.y * footprint.ry * 0.18, footprint.rx * 0.27, footprint.ry * 0.15);
                       g.drawEllipse(rearX - moveScreenVector.x * footprint.rx * 0.62 + perpX * footprint.ry * 0.3, rearY - moveScreenVector.y * footprint.ry * 0.34 + perpY * footprint.ry * 0.3, footprint.rx * 0.19, footprint.ry * 0.11);
                       g.endFill();
@@ -5304,7 +5362,7 @@ export function BattlefieldStage({
                     sheetFrame
                   );
                 }
-                if (movementTransitionActive && (standaloneIdlePath !== null || (!movingThisUnit && !turningThisUnit))) {
+                if (movementTransitionActive && !movingThisUnit && !turningThisUnit) {
                   settlingTexture = standaloneIdlePath
                     ? (unitTextureCache.get(standaloneIdlePath) ?? crispTexture(Texture.from(standaloneIdlePath)))
                     : unitSheetTexture(unitTextureCache, directionalSprite, 'idle', spriteDirection, 0);
@@ -5414,27 +5472,27 @@ export function BattlefieldStage({
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
               // Vehicles carry weight: a road shake + suspension dip while moving (driven by fastWave,
               // which is only non-zero in motion — so idle vehicles sit still rather than statically skewed).
-              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? 1.05 : 0;
-              const vehicleRumbleY = isVehicleUnit ? Math.abs(fastWave) * 1.05 : 0;
+              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? 0.42 : 0;
+              const vehicleRumbleY = isVehicleUnit ? Math.abs(fastWave) * 0.38 : 0;
               // Suppressed/routed posture: a small downward duck, a foot-unit shudder, and (when routed)
               // a lean away from the threat — so a pinned squad reads at a glance without a label.
               const suppressed = unit.stance === 'suppressed';
               const routed = unit.stance === 'routed';
               const cowed = suppressed || routed;
               const cowerShudder = cowed && isFootUnit ? Math.sin(now / 90) * 1.1 : 0;
-              const spriteBobY = (isFootUnit ? -strideLift * (directionalSprite ? 5 : 3.6) : unitType === 'air' ? stepWave * 1.4 : -vehicleRumbleY);
-              const spriteSwayX = (isFootUnit ? stepWave * 2.3 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX + cowerShudder;
+              const spriteBobY = (isFootUnit ? -strideLift * (directionalSprite ? 2.4 : 2.8) : unitType === 'air' ? stepWave * 1.4 : -vehicleRumbleY);
+              const spriteSwayX = (isFootUnit ? stepWave * 1.2 : isVehicleUnit ? moveScreenVector.x * vehicleTrackJitter : 0) + hitOffsetX + shotOffsetX + cowerShudder;
               const spriteCombatY = hitOffsetY + shotOffsetY + (cowed && isFootUnit ? Math.sin(now / 60) * 0.6 : 0);
               const locomotionRotation = isFootUnit && movingThisUnit
-                ? -moveScreenVector.x * stepWave * 0.075
-                : isVehicleUnit && movingThisUnit ? fastWave * 0.011 : vehicleTurnLean;
+                ? -moveScreenVector.x * stepWave * 0.038
+                : isVehicleUnit && movingThisUnit ? fastWave * 0.004 : vehicleTurnLean;
               const spriteRotation = (vehiclePose ? vehiclePose.rotation : 0) + locomotionRotation + (routed ? -Math.sign(moveScreenVector.x || 1) * 0.12 : 0);
               // Volume-preserving impact squash: the struck unit compresses vertically / bulges wide at
               // the moment of contact and springs back as the hit pulse decays. Vehicles jello half as much.
               const hitSquash = incomingHit ? Math.sin(Math.min(1, hitElapsed / 180) * Math.PI) * hitPulse : 0;
               const squashAmt = (unitType === 'vehicle' || unitType === 'artillery') ? 0.5 : 1;
-              const squashX = (isFootUnit ? 1 + stepWave * 0.052 : 1) * (cowed ? 1.04 : 1) * (1 + hitSquash * 0.16 * squashAmt);
-              const squashY = (isFootUnit ? 1 - stepWave * 0.044 : 1) * (cowed ? 0.9 : 1) * (1 - hitSquash * 0.20 * squashAmt);
+              const squashX = (isFootUnit ? 1 + stepWave * 0.024 : 1) * (cowed ? 1.04 : 1) * (1 + hitSquash * 0.16 * squashAmt);
+              const squashY = (isFootUnit ? 1 - stepWave * 0.02 : 1) * (cowed ? 0.9 : 1) * (1 - hitSquash * 0.20 * squashAmt);
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
               // Death animation clock: one normalized 0→1 ramp over 2.1s from the killing blow, driving a
               // per-archetype death — infantry topple & sink, undead/demons dissolve & drift up, vehicles
@@ -5559,9 +5617,7 @@ export function BattlefieldStage({
                       texture={settlingTexture}
                       anchor={{ x: 0.5, y: anchorY }}
                       scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
-                      alpha={(directionalSprite === 'light_infantry' && movingThisUnit
-                        ? (readableInFog ? 1 : 0.28)
-                        : 1) * deathAlphaMul}
+                      alpha={deathAlphaMul}
                       tint={spriteTint}
                       x={spriteSwayX}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
@@ -5597,7 +5653,7 @@ export function BattlefieldStage({
                         g.lineTo(impactX + spark, impactY);
                         g.moveTo(impactX, impactY - spark * 0.65);
                         g.lineTo(impactX, impactY + spark * 0.65);
-                        g.lineStyle(Math.max(1, tileSize * 0.012), 0xffffff, 0.48 * alpha);
+                        g.lineStyle(Math.max(1, tileSize * 0.012), 0xf2d8a7, 0.48 * alpha);
                         g.drawCircle(impactX, impactY, spark * 0.34);
                       }}
                     />
@@ -5607,7 +5663,7 @@ export function BattlefieldStage({
                       anchor={{ x: 0.5, y: anchorY }}
                       scale={{ x: scaleX * 1.01, y: baseScale * squashY * 1.01 }}
                       alpha={Math.min(dyingShown ? 1 : 0.95, 0.38 * hitPulse + (dyingShown ? 0.9 : 0.85) * impactFlash)}
-                      tint={incomingHit.type === 'magic' ? 0xc58cff : impactFlash > 0.6 ? 0xffffff : 0xffe3a1}
+                      tint={incomingHit.type === 'magic' ? 0xc58cff : impactFlash > 0.6 ? 0xf2d8a7 : 0xffe3a1}
                       x={spriteSwayX}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
                       rotation={spriteRotation}
@@ -6006,10 +6062,10 @@ export function BattlefieldStage({
                     ? (elapsed <= 110 ? 1 : Math.max(0, 1 - (elapsed - 110) / 210))
                     : 1 - elapsed / 320;
                 if (fade <= 0) return;
-                const flashScale = isBurst ? 0.29 : effect.type === 'magic' ? 0.22 : effect.type === 'explosion' ? 0.08 : 0.52;
-                const flashReach = isBurst ? 0.62 : effect.type === 'explosion' ? 0.5 : 0.5;
-                const flashTail = isBurst ? 0.36 : effect.type === 'explosion' ? 0.28 : 0.38;
-                const flashWidth = isBurst ? 0.09 : effect.type === 'explosion' ? 0.08 : 0.1;
+                const flashScale = isBurst ? 0.12 : effect.type === 'magic' ? 0.22 : effect.type === 'explosion' ? 0.08 : 0.52;
+                const flashReach = isBurst ? 0.42 : effect.type === 'explosion' ? 0.5 : 0.5;
+                const flashTail = isBurst ? 0.25 : effect.type === 'explosion' ? 0.28 : 0.38;
+                const flashWidth = isBurst ? 0.055 : effect.type === 'explosion' ? 0.08 : 0.1;
                 const flashSize = tileSize * flashScale * fade;
                 const dx = toX - fromX;
                 const dy = toY - fromY;
@@ -6029,13 +6085,13 @@ export function BattlefieldStage({
                 g.endFill();
                 g.lineStyle(0);
                 g.beginFill(effect.type === 'magic' ? 0xc779ff : effect.type === 'explosion' ? 0xff8a24 : 0xffcf6a, 0.42 * fade);
-                g.drawCircle(0, 0, flashSize * (effect.type === 'explosion' ? 1.5 : 1.9));
+                g.drawCircle(0, 0, flashSize * (isBurst ? 1.15 : effect.type === 'explosion' ? 1.5 : 1.9));
                 g.endFill();
                 g.beginFill(effect.type === 'magic' ? 0xaa44ff : effect.type === 'explosion' ? 0xffb13b : 0xffd57a, 0.95 * fade);
-                g.drawCircle(0, 0, flashSize);
+                g.drawCircle(0, 0, flashSize * (isBurst ? 0.72 : 1));
                 g.endFill();
-                g.beginFill(0xffffff, 0.92 * fade);
-                g.drawCircle(0, 0, flashSize * (effect.type === 'explosion' ? 0.34 : 0.46));
+                g.beginFill(0xffedbd, 0.86 * fade);
+                g.drawCircle(0, 0, flashSize * (isBurst ? 0.3 : effect.type === 'explosion' ? 0.34 : 0.46));
                 g.endFill();
               }}
             />
@@ -6056,16 +6112,16 @@ export function BattlefieldStage({
                     const t = (elapsed - k * BURST_GAP) / BURST_FLIGHT;
                     if (t <= 0 || t >= 1) continue;
                     const jit = (((k * 37) % 7) - 3) * 0.7; // small per-round spread
-                    const tail = Math.max(0, t - 0.32);
+                    const tail = Math.max(0, t - (effect.type === 'sniper' ? 0.2 : 0.14));
                     const hx = fromX + dxb * t + pxb * jit;
                     const hy = fromY + dyb * t - tileSize * 0.15 + pyb * jit;
                     const lx = fromX + dxb * tail + pxb * jit;
                     const ly = fromY + dyb * tail - tileSize * 0.15 + pyb * jit;
-                    g.lineStyle(4, 0x15110a, 0.62); g.moveTo(lx, ly); g.lineTo(hx, hy);
-                    g.lineStyle(6, 0xffb936, 0.42); g.moveTo(lx, ly); g.lineTo(hx, hy);
-                    g.lineStyle(2.3, 0xffedaf, 1); g.moveTo(lx, ly); g.lineTo(hx, hy);
-                    g.beginFill(0xffd76a, 0.55); g.drawCircle(hx, hy, 3.4); g.endFill();
-                    g.beginFill(0xffffff, 0.98); g.drawCircle(hx, hy, 1.35); g.endFill();
+                    g.lineStyle(2.8, 0x15110a, 0.68); g.moveTo(lx, ly); g.lineTo(hx, hy);
+                    g.lineStyle(1.45, 0xc28f40, 0.9); g.moveTo(lx, ly); g.lineTo(hx, hy);
+                    g.lineStyle(0.72, 0xf0d49a, 0.96); g.moveTo(lx, ly); g.lineTo(hx, hy);
+                    g.beginFill(0xd6a24f, 0.72); g.drawCircle(hx, hy, 2.1); g.endFill();
+                    g.beginFill(0xffedbd, 0.92); g.drawCircle(hx, hy, 0.85); g.endFill();
                   }
                   return;
                 }
@@ -6090,23 +6146,23 @@ export function BattlefieldStage({
                   }
                   g.beginFill(0x2a2118, 0.95); g.drawCircle(tx, ty, 3.4); g.endFill();
                   g.beginFill(0xffcf5d, 0.95); g.drawCircle(tx, ty, 2.2); g.endFill();
-                  g.beginFill(0xfff3c8, 0.95); g.drawCircle(tx, ty, 1); g.endFill();
+                  g.beginFill(0xf0d4a1, 0.95); g.drawCircle(tx, ty, 1); g.endFill();
                 } else {
-                g.lineStyle(effect.type === 'explosion' ? 9.5 : 3.5, 0x15110a, 0.88);
+                g.lineStyle(effect.type === 'explosion' ? 5.2 : 3.5, 0x15110a, 0.88);
                 g.moveTo(sx, sy); g.lineTo(tx, ty);
                 if (effect.type === 'explosion') {
-                  g.lineStyle(8, 0xff8f22, 0.48);
+                  g.lineStyle(2.8, 0xb96828, 0.72);
                   g.moveTo(sx, sy); g.lineTo(tx, ty);
-                  g.lineStyle(3.6, 0xffedb2, 1);
+                  g.lineStyle(1.3, 0xe4c18a, 0.96);
                   g.moveTo(sx, sy); g.lineTo(tx, ty);
-                  g.beginFill(0xffa62f, 0.42);
-                  g.drawCircle(tx, ty, 9.5);
+                  g.beginFill(0x452b1c, 0.66);
+                  g.drawCircle(tx, ty, 5.2);
                   g.endFill();
-                  g.beginFill(0xffefb0, 1);
-                  g.drawCircle(tx, ty, 5.8);
+                  g.beginFill(0xb96c2a, 0.94);
+                  g.drawCircle(tx, ty, 3.1);
                   g.endFill();
-                  g.beginFill(0xffffff, 1);
-                  g.drawCircle(tx, ty, 2.4);
+                  g.beginFill(0xf0d19b, 0.96);
+                  g.drawCircle(tx, ty, 1.25);
                   g.endFill();
                 } else if (effect.type === 'magic') {
                   g.lineStyle(6, 0x9c55d8, 0.3);
@@ -6163,7 +6219,7 @@ export function BattlefieldStage({
             />
           )}
 
-          {travel >= 1 && elapsed < timing.projectileMs + 120 && effect.type !== 'melee' && !isBurst && (
+          {travel >= 1 && elapsed < timing.projectileMs + 120 && effect.type === 'magic' && (
             <Graphics
               draw={(g) => {
                 g.clear();
@@ -6232,83 +6288,65 @@ export function BattlefieldStage({
                 }
 
                 if (effect.type === 'explosion') {
-                  const primary = targetMaterial === 'armor' ? 0xffbd58 : targetMaterial === 'undead' ? 0xbec1ad : 0xb07a52;
-                  const secondary = targetMaterial === 'armor' ? 0xfff0b0 : targetMaterial === 'undead' ? 0xd8d6c2 : 0xd09a67;
+                  const primary = targetMaterial === 'armor' ? 0xc87934 : targetMaterial === 'undead' ? 0xa7a593 : 0x9d6849;
                   const dust = targetMaterial === 'armor' ? 0x4b4b42 : targetMaterial === 'undead' ? 0x6f7164 : 0x5b4b36;
                   const impactElapsed = elapsed - timing.impactAtMs;
-                  const flashHold = impactElapsed <= 120
-                    ? 1
-                    : Math.max(0, 1 - (impactElapsed - 120) / 210);
-                  const blastExpansion = easeOutCubic(clamp01(impactElapsed / 260));
-                  const blastRadius = tileSize * (0.34 + blastExpansion * 0.17);
-                  const flash = Math.max(0, 1 - hitProgress / 0.2);
-                  const fireLife = Math.max(0, 1 - hitProgress / 0.62);
-                  const shockRadius = tileSize * (0.2 + hitProgress * 0.78);
-                  const fireballLobes = [
-                    [-0.3, -0.26, 0.82],
-                    [0.12, -0.46, 0.7],
-                    [0.43, -0.08, 0.62],
-                    [-0.47, 0.1, 0.58],
-                    [0.08, 0.2, 0.74],
-                    [-0.12, -0.72, 0.46],
-                    [0.36, 0.34, 0.42],
-                    [-0.52, -0.38, 0.38],
+                  const flashLife = Math.max(0, 1 - impactElapsed / 180);
+                  const fireLife = Math.max(0, 1 - impactElapsed / 520);
+                  const dustLife = Math.max(0, 1 - impactElapsed / 980);
+                  const blastExpansion = easeOutCubic(clamp01(impactElapsed / 460));
+                  const blastRadius = tileSize * (0.18 + blastExpansion * 0.34);
+                  const plumeLobes = [
+                    [-0.34, -0.18, 0.72],
+                    [0.1, -0.5, 0.82],
+                    [0.42, -0.16, 0.56],
+                    [-0.5, 0.08, 0.48],
+                    [0.18, 0.16, 0.62],
+                    [-0.12, -0.82, 0.44],
+                    [0.52, 0.22, 0.36],
+                    [-0.58, -0.42, 0.32],
                   ] as const;
-                  g.beginFill(0xffbd55, flashHold * 0.8);
-                  g.drawEllipse(0, tileSize * 0.08, blastRadius * 1.08, blastRadius * 0.5);
-                  g.endFill();
-                  for (let i = 0; i < fireballLobes.length; i++) {
-                    const [offsetX, offsetY, lobeScale] = fireballLobes[i];
-                    const flicker = prefersReducedMotion ? 1 : 0.94 + Math.sin(now / 38 + i * 1.7) * 0.06;
+                  for (let i = 0; i < 7; i += 1) {
+                    const angle = -2.8 + i * 0.79;
+                    const distance = blastRadius * (0.28 + (i % 3) * 0.18);
+                    const dustX = Math.cos(angle) * distance;
+                    const dustY = Math.sin(angle) * distance * 0.38 + tileSize * 0.09;
+                    const dustScale = 0.2 + (i % 4) * 0.055;
+                    g.beginFill(i % 2 === 0 ? dust : 0x302b22, dustLife * (0.26 + (i % 3) * 0.08));
+                    g.drawEllipse(dustX, dustY, blastRadius * dustScale, blastRadius * dustScale * 0.34);
+                    g.endFill();
+                  }
+                  for (let i = 0; i < plumeLobes.length; i += 1) {
+                    const [offsetX, offsetY, lobeScale] = plumeLobes[i];
+                    const flicker = prefersReducedMotion ? 1 : 0.96 + Math.sin(now / 70 + i * 1.9) * 0.04;
+                    const rise = Math.sin(Math.min(1, impactElapsed / 900) * Math.PI) * tileSize * (0.08 + (i % 3) * 0.025);
                     const lobeX = offsetX * blastRadius;
-                    const lobeY = offsetY * blastRadius - tileSize * 0.04;
+                    const lobeY = offsetY * blastRadius - tileSize * 0.03 - rise;
                     const lobeRadius = blastRadius * lobeScale * flicker;
-                    g.beginFill(0x3b1d15, flashHold * 0.38);
-                    g.drawCircle(lobeX, lobeY, lobeRadius * 1.12);
+                    g.beginFill(i % 3 === 0 ? 0x25231f : 0x3d3b34, dustLife * (0.48 + (i % 2) * 0.12));
+                    g.drawEllipse(lobeX, lobeY, lobeRadius, lobeRadius * (0.7 + (i % 2) * 0.12));
                     g.endFill();
-                    g.beginFill(i % 3 === 0 ? 0xff8a24 : 0xffa638, flashHold * 0.92);
-                    g.drawCircle(lobeX, lobeY, lobeRadius * 0.88);
-                    g.endFill();
-                    if (i < 5) {
-                      g.beginFill(i % 2 === 0 ? 0xffd263 : 0xffad3e, flashHold * 0.84);
-                      g.drawCircle(
-                        lobeX - ux * lobeRadius * 0.12,
-                        lobeY - uy * lobeRadius * 0.12 - lobeRadius * 0.08,
-                        lobeRadius * 0.4,
-                      );
+                    if (fireLife > 0.05 && i < 5) {
+                      g.beginFill(i % 2 === 0 ? 0xbd5d25 : primary, fireLife * (0.5 + (i % 3) * 0.08));
+                      g.drawEllipse(lobeX, lobeY + lobeRadius * 0.06, lobeRadius * 0.56, lobeRadius * 0.46);
                       g.endFill();
                     }
                   }
-                  g.beginFill(0xfff5c9, flashHold * 0.94);
-                  g.drawCircle(-ux * blastRadius * 0.12, -tileSize * 0.08 - uy * blastRadius * 0.1, blastRadius * 0.25);
-                  g.endFill();
-                  g.beginFill(dust, hitAlpha * 0.46);
-                  g.drawEllipse(1, tileSize * 0.1, shockRadius * 0.9, shockRadius * 0.27);
-                  g.endFill();
-                  if (hitProgress < 0.72) {
-                    g.lineStyle(2.8 * (1 - hitProgress) + 0.5, 0xffd783, hitAlpha * 0.82);
-                    g.drawEllipse(0, tileSize * 0.09, shockRadius, shockRadius * 0.34);
-                    g.lineStyle(1.6 * (1 - hitProgress) + 0.4, 0x6b5a3a, hitAlpha * 0.7);
-                    g.drawEllipse(0, tileSize * 0.09, shockRadius * 1.22, shockRadius * 0.42);
-                  }
-                  for (let i = 0; i < 9; i++) {
-                    const angle = (Math.PI * 2 * i) / 9 + 0.35;
-                    const spread = tileSize * hitProgress * (0.13 + (i % 3) * 0.035);
-                    const lift = Math.sin(hitProgress * Math.PI) * tileSize * (0.12 + (i % 2) * 0.04);
-                    const puffX = Math.cos(angle) * spread;
-                    const puffY = Math.sin(angle) * spread * 0.62 - lift;
-                    const puffSize = tileSize * (0.075 + (i % 3) * 0.014) * (0.85 + fireLife * 0.5);
-                    g.beginFill(0x241a12, hitAlpha * 0.58);
-                    g.drawCircle(puffX, puffY, puffSize * 1.22);
-                    g.endFill();
-                    g.beginFill(i % 2 === 0 ? 0xff7b22 : primary, fireLife * 0.78);
-                    g.drawCircle(puffX, puffY, puffSize);
-                    g.endFill();
-                    if (fireLife > 0.3) {
-                      g.beginFill(secondary, fireLife * 0.72);
-                      g.drawCircle(puffX, puffY, puffSize * 0.45);
-                      g.endFill();
+                  if (flashLife > 0) {
+                    for (let rayIndex = 0; rayIndex < 5; rayIndex += 1) {
+                      const angle = -2.45 + rayIndex * 1.16;
+                      const inner = tileSize * 0.05;
+                      const outer = tileSize * (0.18 + (rayIndex % 2) * 0.08) * flashLife;
+                      g.lineStyle(3, 0x27140c, flashLife * 0.7);
+                      g.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+                      g.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
+                      g.lineStyle(1.25, 0xe0a15e, flashLife * 0.88);
+                      g.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+                      g.lineTo(Math.cos(angle) * outer, Math.sin(angle) * outer);
                     }
+                    g.beginFill(0xe5bd7d, flashLife * 0.82);
+                    g.drawEllipse(-ux * tileSize * 0.035, -uy * tileSize * 0.025, tileSize * 0.09, tileSize * 0.065);
+                    g.endFill();
                   }
                   if (effect.killed) {
                     const destructionProgress = clamp01(Math.max(0, impactElapsed - 100) / 720);
@@ -6325,16 +6363,32 @@ export function BattlefieldStage({
                       g.endFill();
                     }
                     if (destructionLife > 0) {
-                      const flamePulse = prefersReducedMotion ? 0.86 : 0.78 + Math.sin(now / 72) * 0.16;
-                      g.beginFill(0x4a1809, destructionLife * 0.82);
-                      g.drawEllipse(0, -tileSize * 0.12, tileSize * 0.24, tileSize * 0.34 * flamePulse);
-                      g.endFill();
-                      g.beginFill(emberColor, destructionLife * 0.9);
-                      g.drawEllipse(0, -tileSize * 0.15, tileSize * 0.15, tileSize * 0.25 * flamePulse);
-                      g.endFill();
-                      g.beginFill(0xffd85a, destructionLife * 0.82);
-                      g.drawEllipse(-tileSize * 0.025, -tileSize * 0.13, tileSize * 0.07, tileSize * 0.14 * flamePulse);
-                      g.endFill();
+                      for (const [flameX, flameY, flameScale, phase] of [
+                        [-0.11, -0.08, 0.13, 0],
+                        [0.04, -0.14, 0.17, 1.9],
+                        [0.15, -0.06, 0.1, 3.6]
+                      ] as const) {
+                        const flamePulse = prefersReducedMotion ? 0.86 : 0.82 + Math.sin(now / 88 + phase) * 0.12;
+                        const flameCenterX = flameX * tileSize;
+                        const flameBaseY = flameY * tileSize;
+                        const flameWidth = flameScale * tileSize;
+                        const flameHeight = flameScale * tileSize * 1.7 * flamePulse;
+                        const flameSway = Math.sin(now / 115 + phase) * flameWidth * 0.16;
+                        g.beginFill(0x32140c, destructionLife * 0.68);
+                        g.moveTo(flameCenterX - flameWidth * 0.55, flameBaseY + flameHeight * 0.35);
+                        g.lineTo(flameCenterX - flameWidth * 0.24, flameBaseY - flameHeight * 0.08);
+                        g.lineTo(flameCenterX + flameSway, flameBaseY - flameHeight * 0.72);
+                        g.lineTo(flameCenterX + flameWidth * 0.2, flameBaseY - flameHeight * 0.14);
+                        g.lineTo(flameCenterX + flameWidth * 0.52, flameBaseY + flameHeight * 0.38);
+                        g.closePath();
+                        g.endFill();
+                        g.beginFill(emberColor, destructionLife * 0.76);
+                        g.moveTo(flameCenterX - flameWidth * 0.24, flameBaseY + flameHeight * 0.3);
+                        g.lineTo(flameCenterX + flameSway * 0.5, flameBaseY - flameHeight * 0.42);
+                        g.lineTo(flameCenterX + flameWidth * 0.22, flameBaseY + flameHeight * 0.31);
+                        g.closePath();
+                        g.endFill();
+                      }
                     }
                   }
                   const debrisTint = targetMaterial === 'armor' ? 0x6f6a60 : targetMaterial === 'undead' ? 0x6f7164 : 0x5b4b36;
@@ -6346,9 +6400,6 @@ export function BattlefieldStage({
                     g.drawCircle(debrisX, debrisY, Math.max(1.1, 2.6 * hitAlpha));
                     g.endFill();
                   }
-                  g.beginFill(0xfff7d5, flash * 0.96);
-                  g.drawCircle(-ux * tileSize * 0.08, -uy * tileSize * 0.06, tileSize * (0.08 + flash * 0.1));
-                  g.endFill();
                 } else if (effect.type === 'melee') {
                   const primary = targetMaterial === 'undead' ? 0xd8d6c2 : 0xd09a67;
                   const edgeX = -ux * tileSize * 0.12;
@@ -6369,50 +6420,41 @@ export function BattlefieldStage({
                 } else {
                   const dust = targetMaterial === 'armor' ? 0x3c3d36 : 0x514436;
                   const spark = targetMaterial === 'armor' ? 0xffe9a8 : 0xd6a26a;
-                  const sparkBright = targetMaterial === 'armor' ? 0xfff3c0 : 0xffe0a0;
+                  const sparkBright = targetMaterial === 'armor' ? 0xe8c68f : 0xd5ad79;
                   const impactElapsed = elapsed - timing.impactAtMs;
-                  const contactFlash = Math.max(0, 1 - impactElapsed / 155);
-                  g.beginFill(spark, contactFlash * 0.48);
-                  g.drawCircle(0, 0, tileSize * (0.2 + contactFlash * 0.06));
+                  const contactFlash = Math.max(0, 1 - impactElapsed / 120);
+                  g.beginFill(0xf2d8a7, contactFlash * 0.88);
+                  g.drawEllipse(0, 0, tileSize * (0.055 + contactFlash * 0.025), tileSize * (0.035 + contactFlash * 0.015));
                   g.endFill();
-                  g.beginFill(0xffffff, contactFlash * 0.92);
-                  g.drawCircle(0, 0, tileSize * (0.075 + contactFlash * 0.035));
-                  g.endFill();
-                  g.beginFill(dust, hitAlpha * 0.38);
-                  g.drawEllipse(0, tileSize * 0.09, hitSize * 0.86, hitSize * 0.3);
+                  g.beginFill(dust, hitAlpha * 0.46);
+                  g.drawEllipse(0, tileSize * 0.09, hitSize * 0.72, hitSize * 0.24);
                   g.endFill();
                   const incomingAngle = Math.atan2(uy, ux);
-                  for (let i = 0; i < 7; i++) {
-                    const spread = -1.05 + i * 0.35;
+                  for (let i = 0; i < 4; i++) {
+                    const spread = -0.72 + i * 0.48;
                     const angle = incomingAngle + spread;
                     const inner = hitSize * (0.08 + (i % 2) * 0.04);
-                    const outer = hitSize * (0.52 + (i % 3) * 0.16 + hitProgress * 0.65);
+                    const outer = hitSize * (0.3 + (i % 3) * 0.13 + hitProgress * 0.28);
                     const innerX = Math.cos(angle) * inner;
                     const innerY = Math.sin(angle) * inner;
                     const outerX = Math.cos(angle) * outer;
                     const outerY = Math.sin(angle) * outer + hitSize * 0.18 * hitProgress;
-                    g.lineStyle(3.3, 0x1a0f07, hitAlpha * 0.84);
+                    g.lineStyle(2.2, 0x1a0f07, hitAlpha * 0.78);
                     g.moveTo(innerX, innerY);
                     g.lineTo(outerX, outerY);
-                    g.lineStyle(i % 2 === 0 ? 1.8 : 1.2, sparkBright, hitAlpha * (i % 2 === 0 ? 0.96 : 0.72));
+                    g.lineStyle(i % 2 === 0 ? 1.15 : 0.8, sparkBright, hitAlpha * (i % 2 === 0 ? 0.88 : 0.66));
                     g.moveTo(innerX, innerY);
                     g.lineTo(outerX, outerY);
                     g.beginFill(spark, hitAlpha * 0.72);
-                    g.drawCircle(outerX, outerY, Math.max(1, 2.2 * hitAlpha));
+                    g.drawCircle(outerX, outerY, Math.max(0.7, 1.55 * hitAlpha));
                     g.endFill();
                   }
-                  g.lineStyle(2.4, 0x23140b, hitAlpha * 0.9);
+                  g.lineStyle(1.8, 0x23140b, hitAlpha * 0.84);
                   g.moveTo(-ux * hitSize * 0.32, -uy * hitSize * 0.32);
                   g.lineTo(ux * hitSize * 0.28, uy * hitSize * 0.28);
-                  g.lineStyle(1.2, sparkBright, hitAlpha);
+                  g.lineStyle(0.9, sparkBright, hitAlpha * 0.86);
                   g.moveTo(-ux * hitSize * 0.22, -uy * hitSize * 0.22);
                   g.lineTo(ux * hitSize * 0.2, uy * hitSize * 0.2);
-                  g.beginFill(spark, hitAlpha * 0.5);
-                  g.drawCircle(0, 0, hitSize * 0.22);
-                  g.endFill();
-                  g.beginFill(0xfff6d0, hitAlpha * 0.92);
-                  g.drawCircle(0, 0, hitSize * 0.11);
-                  g.endFill();
                 }
               }}
             />
@@ -6502,40 +6544,26 @@ export function BattlefieldStage({
         // which painted hi-res props at 2x on their first frame.
         const bitmapScale = texture && isHiResPropTexture(texturePath) ? scale * 0.5 : scale;
         const bitmapScaleX = bitmapScale * (prop.flipX ? -1 : 1);
-        // Fade a tree to a ghost when a unit stands on it or up to ~4 rows up-screen behind its canopy
-        // (same iso column), within its horizontal span — so units are never fully hidden.
-        const treeOccluded = prop.kind === 'tree' && visibleUnitCoords.some((coord) => {
-          const sum = coord.q + coord.r;
-          const diff = coord.q - coord.r;
-          const tSum = prop.coordinate.q + prop.coordinate.r;
-          const tDiff = prop.coordinate.q - prop.coordinate.r;
-          return sum >= tSum - 4 && sum <= tSum && diff >= tDiff - 1 && diff <= tDiff + 1;
-        });
-        const movingUnitBehindCanopy = prop.kind === 'tree' && movementOcclusionCoordinate !== null && (() => {
-          const mover = movingUnit?.unitId
-            ? Object.values(battleState.sides)
-                .map((side) => side.units.get(movingUnit.unitId))
-                .find((unit): unit is UnitInstance => Boolean(unit))
-            : undefined;
-          if (!canMovingUnitFadeCanopy(
-            mover?.faction,
-            viewerFaction,
-            movementOcclusionCoordinate,
-            map.width,
-            visibleTiles
-          )) return false;
-          const unitPosition = toScreen(movementOcclusionCoordinate);
-          const unitGeom = topGeomFor(
-            Math.round(movementOcclusionCoordinate.q),
-            Math.round(movementOcclusionCoordinate.r)
-          );
-          const unitX = unitPosition.x;
-          const unitY = unitPosition.y - unitGeom.avgHeight * ELEV_Y_OFFSET;
-          return Math.abs(unitX - worldX) <= tileSize * 0.62
-            && unitY <= worldY + tileSize * 0.12
-            && unitY >= worldY - tileSize * 1.45;
-        })();
-        const occludeAlpha = movingUnitBehindCanopy ? 0.1 : treeOccluded ? 0.34 : 1;
+        const occludeAlpha = prop.kind === 'tree'
+          ? visibleUnitCoords.reduce((alpha, coordinate) => {
+              const unitPosition = toScreen(coordinate);
+              const displayQ = Math.min(map.width - 1, Math.max(0, Math.round(coordinate.q)));
+              const displayR = Math.min(map.height - 1, Math.max(0, Math.round(coordinate.r)));
+              const unitGeom = topGeomFor(displayQ, displayR);
+              const unitX = unitPosition.x;
+              const unitY = unitPosition.y - unitGeom.avgHeight * ELEV_Y_OFFSET;
+              const horizontalGap = Math.max(Math.abs(unitX - worldX) - tileSize * 0.62, 0);
+              const verticalGap = Math.max(
+                worldY - tileSize * 1.45 - unitY,
+                unitY - (worldY + tileSize * 0.12),
+                0
+              );
+              return Math.min(
+                alpha,
+                featheredOcclusionAlpha(Math.hypot(horizontalGap, verticalGap), tileSize * 0.5, 0.26)
+              );
+            }, 1)
+          : 1;
 
         return (
           <Container key={prop.id} x={worldX} y={worldY} zIndex={zIndex} sortableChildren>
@@ -6589,7 +6617,7 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [movementOcclusionCoordinate, map.props, map.width, exploredTiles, visibleTiles, battleState.sides, viewerFaction, propTextureCache, propAtlasTextures, topGeomFor, missingPropPaths, movingUnit?.unitId]);
+  }, [movementOcclusionCoordinate, map.props, map.width, map.height, exploredTiles, visibleTiles, battleState.sides, viewerFaction, propTextureCache, propAtlasTextures, topGeomFor, missingPropPaths, movingUnit?.unitId]);
 
   const procBuildings = useMemo(() => {
     const buildingProps = (map.props ?? []).filter(
@@ -6597,21 +6625,6 @@ export function BattlefieldStage({
     );
     if (buildingProps.length === 0) return [];
 
-    const focusCoords: Array<{ q: number; r: number }> = [];
-    for (const side of Object.values(battleState.sides)) {
-      if (selectedUnitId) {
-        const selected = side.units.get(selectedUnitId);
-        if (selected) focusCoords.push(selected.coordinate);
-      }
-      if (movingUnit?.unitId) {
-        const moving = side.units.get(movingUnit.unitId);
-        if (moving) focusCoords.push(movementOcclusionCoordinate ?? moving.coordinate);
-      }
-      if (targetUnitId) {
-        const target = side.units.get(targetUnitId);
-        if (target) focusCoords.push(target.coordinate);
-      }
-    }
     const W = map.width;
     const H = map.height;
     const idxAt = (q: number, r: number) => r * W + q;
@@ -6620,7 +6633,7 @@ export function BattlefieldStage({
     // Coordinates of units that are currently visible to the player. A building standing over one of
     // them is faded so the unit isn't completely hidden — the focus-fade above only fires for the
     // selected/target unit, so un-selected units behind a solid building were invisible.
-    const visibleUnitCoords: Array<{ q: number; r: number; sx: number; sy: number }> = [];
+    const visibleUnitCoords: Array<{ sx: number; sy: number; focused: boolean }> = [];
     for (const side of Object.values(battleState.sides)) {
       for (const u of side.units.values()) {
         if (u.stance === 'destroyed' || u.embarkedOn) continue;
@@ -6631,11 +6644,13 @@ export function BattlefieldStage({
             : u.coordinate;
           const displayQ = Math.min(W - 1, Math.max(0, Math.round(displayCoordinate.q)));
           const displayR = Math.min(H - 1, Math.max(0, Math.round(displayCoordinate.r)));
-          // Front-edge screen centre of the unit's tile, same convention buildings anchor on, so the
-          // occlusion test below can compare unit position against a building's real sprite rectangle.
-          const sw = worldCornerOfTile(displayQ, displayR, 'SW', topGeomFor);
-          const se = worldCornerOfTile(displayQ, displayR, 'SE', topGeomFor);
-          visibleUnitCoords.push({ q: displayQ, r: displayR, sx: (sw.x + se.x) / 2, sy: (sw.y + se.y) / 2 });
+          const unitPosition = toScreen(displayCoordinate);
+          const unitGeom = topGeomFor(displayQ, displayR);
+          visibleUnitCoords.push({
+            sx: unitPosition.x,
+            sy: unitPosition.y - unitGeom.avgHeight * ELEV_Y_OFFSET,
+            focused: u.id === selectedUnitId || u.id === targetUnitId || u.id === movingUnit?.unitId
+          });
         }
       }
     }
@@ -6668,13 +6683,6 @@ export function BattlefieldStage({
         const w = Math.max(1, b.w ?? 1);
         const h = Math.max(1, b.h ?? 1);
         const isVisible = footprint.some((i) => visibleTiles.has(i));
-        const focusNear = focusCoords.some((coord) =>
-          coord.q >= q0 - 1 && coord.q <= q0 + w && coord.r >= r0 - 1 && coord.r <= r0 + h
-        );
-        const focusTight = focusCoords.some((coord) =>
-          coord.q >= q0 && coord.q <= q0 + w - 1 && coord.r >= r0 && coord.r <= r0 + h - 1
-        );
-        const focusAlpha = focusTight ? 0.18 : 0.34;
         const bottomNW = worldCornerOfTile(q0, r0, 'NW', topGeomFor);
         const bottomNE = worldCornerOfTile(q0 + w - 1, r0, 'NE', topGeomFor);
         const bottomSE = worldCornerOfTile(q0 + w - 1, r0 + h - 1, 'SE', topGeomFor);
@@ -6714,12 +6722,26 @@ export function BattlefieldStage({
         const sprLeft = anchor.x - 0.5 * spriteW;
         const sprRight = anchor.x + 0.5 * spriteW;
         const occMargin = ISO_TILE_W * 0.3;
-        const unitOccluded = visibleUnitCoords.some((u) =>
-          u.sy <= anchor.y + 2 &&                       // unit is at/behind the building base (up-screen)
-          u.sy >= sprTop - occMargin &&                 // within the sprite's vertical reach
-          u.sx >= sprLeft - occMargin && u.sx <= sprRight + occMargin
-        );
-        const fogAlpha = (isVisible ? 1 : 0.62) * (focusNear ? focusAlpha : unitOccluded ? 0.4 : 1);
+        const buildingAlpha = visibleUnitCoords.reduce((alpha, unitCoord) => {
+          const horizontalGap = Math.max(
+            sprLeft - occMargin - unitCoord.sx,
+            unitCoord.sx - (sprRight + occMargin),
+            0
+          );
+          const verticalGap = Math.max(
+            sprTop - occMargin - unitCoord.sy,
+            unitCoord.sy - (anchor.y + 2),
+            0
+          );
+          const distance = Math.hypot(horizontalGap, verticalGap);
+          const unitAlpha = featheredOcclusionAlpha(
+            distance,
+            ISO_TILE_W * 0.42,
+            unitCoord.focused ? 0.2 : 0.4
+          );
+          return Math.min(alpha, unitAlpha);
+        }, 1);
+        const fogAlpha = (isVisible ? 1 : 0.62) * buildingAlpha;
         const fogShade = isVisible ? 0 : 0.06;
 
         if (painted) {

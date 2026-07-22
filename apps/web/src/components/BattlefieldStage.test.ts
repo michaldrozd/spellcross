@@ -11,15 +11,18 @@ import {
   deathMarkerVisible
 } from './combatVisuals.js';
 import {
+  DIRECTIONAL_UNIT_SPRITES,
   battlefieldDirectionalSprite,
   canMovingUnitFadeCanopy,
   directionalSpriteGroundOffset,
   directionNameForOrientation,
   directionNameForScreenVector,
+  featheredOcclusionAlpha,
   isSupportVehicleDefinition,
   leavesMechanicalWreck,
   rasterUnitOverride,
   rasterVehiclePose,
+  rangeOverlayStyle,
   resolveMovementFrame,
   unitVisualHeight,
   vehicleSheetDirectionNameForOrientation,
@@ -155,6 +158,27 @@ describe('canopy occlusion visibility', () => {
   it('fades for friendly movers and enemies on visible tiles', () => {
     expect(canMovingUnitFadeCanopy('alliance', 'alliance', coordinate, mapWidth, new Set())).toBe(true);
     expect(canMovingUnitFadeCanopy('otherSide', 'alliance', coordinate, mapWidth, new Set([23]))).toBe(true);
+  });
+});
+
+describe('occlusion transitions', () => {
+  it('eases occluders back to opaque instead of snapping', () => {
+    expect(featheredOcclusionAlpha(0, 40, 0.2)).toBe(0.2);
+    expect(featheredOcclusionAlpha(20, 40, 0.2)).toBeCloseTo(0.6);
+    expect(featheredOcclusionAlpha(40, 40, 0.2)).toBe(1);
+    expect(featheredOcclusionAlpha(30, 40, 0.2)).toBeGreaterThan(featheredOcclusionAlpha(10, 40, 0.2));
+  });
+});
+
+describe('range overlay presentation', () => {
+  it('keeps the map readable while giving the overlay a visible fill and edge', () => {
+    for (const coloredTerrain of [false, true]) {
+      const style = rangeOverlayStyle(coloredTerrain);
+      expect(style.fillAlpha).toBeGreaterThanOrEqual(0.3);
+      expect(style.fillAlpha).toBeLessThan(0.35);
+      expect(style.edgeAlpha).toBeGreaterThan(0.7);
+      expect(style.shadowAlpha).toBeGreaterThan(0.5);
+    }
   });
 });
 
@@ -355,6 +379,36 @@ describe('vehicle movement sheets', () => {
         4
       );
     }
+  });
+});
+
+describe('directional infantry walk cycles', () => {
+  it('ships grounded multi-pose movement for every directional foot family', async () => {
+    for (const spriteName of ['light_infantry', 'heavy_infantry', 'rangers']) {
+      const sheetPath = path.resolve(process.cwd(), `public/assets/generated/${spriteName}_walk_sheet.png`);
+      const sheet = await loadImage(sheetPath);
+      expect(sheet.width, spriteName).toBe(1024);
+      expect(sheet.height, spriteName).toBe(512);
+
+      const canvas = createCanvas(128, 128);
+      const ctx = canvas.getContext('2d');
+      for (let directionIndex = 0; directionIndex < APC_SHEET_DIRECTIONS.length; directionIndex += 1) {
+        const poses = new Set<string>();
+        for (let frameIndex = 0; frameIndex < 4; frameIndex += 1) {
+          ctx.clearRect(0, 0, 128, 128);
+          ctx.drawImage(sheet, directionIndex * 128, frameIndex * 128, 128, 128, 0, 0, 128, 128);
+          poses.add(Buffer.from(ctx.getImageData(0, 0, 128, 128).data).toString('base64'));
+        }
+        expect(poses.size, `${spriteName}:${APC_SHEET_DIRECTIONS[directionIndex]}`).toBeGreaterThanOrEqual(3);
+      }
+    }
+  });
+
+  it('routes commanders and all core infantry classes through directional cycles', () => {
+    expect(DIRECTIONAL_UNIT_SPRITES['john-alexander']).toBe('light_infantry');
+    expect(DIRECTIONAL_UNIT_SPRITES['field-medic']).toBe('light_infantry');
+    expect(DIRECTIONAL_UNIT_SPRITES['heavy-infantry']).toBe('heavy_infantry');
+    expect(DIRECTIONAL_UNIT_SPRITES.rangers).toBe('rangers');
   });
 });
 

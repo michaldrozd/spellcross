@@ -506,6 +506,24 @@ export const vehicleTurnCrossfade = (progress: number) => {
   return { outgoingAlpha: 1 - incomingAlpha, incomingAlpha };
 };
 
+export function rangeOverlayStyle(externalTexturesAreColored: boolean) {
+  return {
+    fill: 0x6f9f68,
+    fillAlpha: externalTexturesAreColored ? 0.3 : 0.32,
+    shadow: 0x071008,
+    shadowAlpha: 0.56,
+    edge: 0xd7d889,
+    edgeAlpha: 0.78
+  } as const;
+}
+
+export function featheredOcclusionAlpha(distanceFromOccluder: number, feather: number, obscuredAlpha: number) {
+  if (feather <= 0) return distanceFromOccluder <= 0 ? obscuredAlpha : 1;
+  const progress = Math.min(1, Math.max(0, distanceFromOccluder / feather));
+  const eased = progress * progress * (3 - 2 * progress);
+  return obscuredAlpha + (1 - obscuredAlpha) * eased;
+}
+
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
   if (definitionId.includes('ash-crown-sovereign')) return tile * 0.9;
   if (definitionId.includes('signal-eater')) return tile * 0.78;
