@@ -68,7 +68,7 @@
     "threat": "Obojživelní nájazdníci obsadili móla a pripravujú zatopenie vnútorných nakladacích bazénov.",
     "command": "Získajte ovládanie brán a vyčistite chránené kotvisko pre prvý konvoj Aliancie.",
     "victory": "Prístav pracuje pod ochranou. Ťažký náklad sa už presúva z lodí na železnicu.",
-    "defeat": "Vnútorné bazény zaplavilo skôr, než sme ovládli brány. Severná námorná trasa je uzavretá."
+    "defeat": "Vnútorné bazény boli zaplavené skôr, než sme ovládli brány. Severná námorná trasa je uzavretá."
   },
   "sector-copenhagen": {
     "chapterTitle": "Železný koridor",
@@ -101,16 +101,16 @@
     "chapterTitle": "Mŕtve frekvencie",
     "codename": "Protokol mŕtveho éteru",
     "situation": "Každé opustené rádio v ruinách začalo vysielať rovnakú sadu overovacích kódov Aliancie.",
-    "threat": "Inteligencia požierajúca signál využíva mŕtvu sieť na predvídanie pohybu a skladá obrancov zo sutín.",
+    "threat": "Neznáma inteligencia pohlcujúca signál využíva mŕtvu sieť na predvídanie pohybu a skladá obrancov zo sutín.",
     "command": "Postupujte bez vysielania, zničte reléové hniezda a umlčte zdroj skôr, než spozná celú veliteľskú sieť.",
-    "victory": "Falošná sieť sa rozpadla na šum. Overovanie Aliancie je čisté a cesta na východ otvorená.",
+    "victory": "Falošná sieť sa rozpadla na šum. Overovacie kódy Aliancie sú opäť bezpečné a cesta na východ je otvorená.",
     "defeat": "Zdroj unikol do širšej siete. Velenie vymieňa kódy v celom operačnom priestore."
   },
   "sector-warsaw": {
     "chapterTitle": "Mŕtve frekvencie",
     "codename": "Žeravé relé",
     "situation": "Poľné relé zostavené z civilných vysielačov koordinuje posledné bojaschopné východné brigády.",
-    "threat": "Diaľková paľba sa približuje k relé, zatiaľ čo obrnení nájazdníci pretínajú ulice medzi anténami.",
+    "threat": "Nepriateľská diaľková paľba sa krok za krokom približuje k relé, zatiaľ čo obrnení nájazdníci pretínajú ulice medzi anténami.",
     "command": "Posilnite obvod relé a počas útoku udržte aspoň jednu vysielaciu trasu.",
     "victory": "Žeravé relé zostalo vo vysielaní. Východné brigády sa opäť pohybujú ako jedna sila.",
     "defeat": "Relé počas útoku stíchlo. Susedné brigády ustupujú po oddelených trasách."
@@ -125,25 +125,25 @@
     "defeat": "Chór dosiahol plnú rezonanciu. Pozdĺž východného prístupu sa otvárajú nové portály."
   },
   "sector-kyiv": {
-    "chapterTitle": "Poludník popola",
+    "chapterTitle": "Popolový poludník",
     "codename": "Posledné vysielanie",
     "situation": "Východné mestské velenie vysiela zo zmenšujúceho sa obranného vrecka obkľúčeného prekrývajúcimi sa poľami portálov.",
     "threat": "Nepriateľské delostrelectvo a vzdušní lovci zameriavajú každé vysielanie zo zvyšných veliteľských stanovíšť.",
     "command": "Rozbite geometriu obliehania, preniknite k veliteľskému vrecku a obnovte chránený koridor na východ.",
-    "victory": "Posledné vysielanie sa zmenilo na signál k nástupu. Východné vrecko je spojené s líniou Aliancie.",
+    "victory": "Posledné vysielanie sa zmenilo na signál na nástup. Východné vrecko je spojené s líniou Aliancie.",
     "defeat": "Posledné veliteľské stanovište prestalo vysielať. Východné vrecko musíme považovať za stratené."
   },
   "sector-carpathian": {
-    "chapterTitle": "Poludník popola",
+    "chapterTitle": "Popolový poludník",
     "codename": "Kamenná žila",
     "situation": "Úzka horská trasa je jediným pozemným prístupom, ktorý obchádza portálové búrky nad rovinami.",
     "threat": "Hliadky sa presúvajú skrytými zárezmi, kým kamenní strážcovia blokujú serpentíny za nimi.",
     "command": "Postupne vyčistite priesmyk a pripravte chránené palivové body pre záverečný postup.",
-    "victory": "Kamenná žila je otvorená. Ťažké formácie sa môžu kryto priblížiť k východnému frontu.",
+    "victory": "Kamenná žila je otvorená. Ťažké formácie sa teraz môžu priblížiť k východnému frontu pod ochranou hôr.",
     "defeat": "Priesmyk zostal zablokovaný a palivová kolóna sa obrátila. Záverečný postup stráca južnú trasu."
   },
   "sector-blacksea": {
-    "chapterTitle": "Poludník popola",
+    "chapterTitle": "Popolový poludník",
     "codename": "Utopená línia",
     "situation": "Pobrežná čerpacia stanica stojí nad zatopenou trhlinou, ktorá privádza tvory do južného krídla.",
     "threat": "Trhlina stúpa s každým prílivom a zaplavenými servisnými kanálmi prináša obrnené tvary.",
@@ -152,7 +152,7 @@
     "defeat": "Hrádza pod tlakom zlyhala. Pobrežné jednotky ustupujú do vnútrozemia pred ďalším prílivom."
   },
   "sector-rift": {
-    "chapterTitle": "Poludník popola",
+    "chapterTitle": "Popolový poludník",
     "codename": "Koruna popola",
     "situation": "Všetky zachytené signálne trasy sa zbiehajú v horiacej trhline, kde si obloha a zem navzájom odporujú.",
     "threat": "Trhlina skladá poslednú stráž zo vzorov všetkých porazených síl, kým jej vládca zostupuje otvorom.",

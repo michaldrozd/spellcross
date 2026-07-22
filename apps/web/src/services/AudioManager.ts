@@ -22,11 +22,17 @@ interface PlayOpts {
 export type MovementSoundProfile = 'foot' | 'track' | 'wheel' | 'rotor';
 export type AmbienceTheme = 'hq' | OperationAudioTheme;
 
+const AMBIENCE_THEMES: readonly AmbienceTheme[] = ['hq', 'frontline', 'siege', 'night', 'rift'];
+
+export function normalizeAmbienceTheme(theme: string | null | undefined): AmbienceTheme {
+  return AMBIENCE_THEMES.includes(theme as AmbienceTheme) ? theme as AmbienceTheme : 'frontline';
+}
+
 export function narrativeSoundTypeForOutcome(status: 'victory' | 'defeat'): NarrativeSoundType {
   return status === 'victory' ? 'debriefVictory' : 'debriefDefeat';
 }
 
-export function ambienceProfileFor(theme: AmbienceTheme, weather: 'clear' | 'night' | 'fog' = 'clear') {
+export function ambienceProfileFor(theme: string | null | undefined, weather: 'clear' | 'night' | 'fog' = 'clear') {
   const profiles: Record<AmbienceTheme, {
     root: number;
     mix: number;
@@ -41,7 +47,7 @@ export function ambienceProfileFor(theme: AmbienceTheme, weather: 'clear' | 'nig
     night: { root: 65, mix: 0.16, cutoff: 340, wind: 0.3, harmony: [1, 1.5, 1.189], pulse: 0.23 },
     rift: { root: 41, mix: 0.17, cutoff: 760, wind: 0.26, harmony: [1, 1.414, 1.189], pulse: 0.37 }
   };
-  const profile = profiles[theme];
+  const profile = profiles[normalizeAmbienceTheme(theme)];
   return {
     ...profile,
     cutoff: weather === 'night' ? Math.min(profile.cutoff, 420) : profile.cutoff,
@@ -65,7 +71,7 @@ export function movementSoundDurationSeconds(durationMs: number) {
 // Older Safari only exposes the prefixed constructor.
 type WebkitAudioWindow = Window & { webkitAudioContext?: typeof AudioContext };
 
-class AudioManagerClass {
+export class AudioManagerClass {
   private sounds: Map<SoundType, HTMLAudioElement[]> = new Map();
   private masterVolume: number = 0.7;
   private sfxVolume: number = 0.8;
@@ -90,16 +96,17 @@ class AudioManagerClass {
 
   // Procedural ambience bed (drone + wind), separate from the SFX limiter bus.
   private ambienceBus: GainNode | null = null;
-  private ambienceNodes: AudioScheduledSourceNode[] = [];
+  private ambienceSources: AudioScheduledSourceNode[] = [];
+  private ambienceGraph: AudioNode[] = [];
   private ambienceTheme: AmbienceTheme | null = null;
   private ambienceWeather: 'clear' | 'night' | 'fog' | null = null;
   private lastMovementCue: { profile: MovementSoundProfile; requestedDurationMs: number; scheduledDurationSeconds: number } | null = null;
   private lastNarrativeCue: NarrativeSoundType | null = null;
-  private lastAmbienceCue: { theme: AmbienceTheme; weather: 'clear' | 'night' | 'fog' } | null = null;
 
-  constructor() {
+  constructor(audioContext?: AudioContext) {
+    this.audioContext = audioContext ?? null;
     // Initialize audio context on first user interaction
-    if (typeof window !== 'undefined') {
+    if (!audioContext && typeof window !== 'undefined') {
       const initAudio = () => {
         if (!this.audioContext) {
           this.audioContext = new (window.AudioContext || (window as WebkitAudioWindow).webkitAudioContext)();
@@ -1023,37 +1030,42 @@ class AudioManagerClass {
   getPresentationState() {
     return {
       narrativeCue: this.lastNarrativeCue,
-      ambience: this.lastAmbienceCue ? { ...this.lastAmbienceCue } : null
+      ambience: this.ambienceTheme && this.ambienceWeather
+        ? { theme: this.ambienceTheme, weather: this.ambienceWeather }
+        : null
     };
   }
 
   // Procedural ambience bed: a low minor drone + gusting wind, mood-shifted by weather. Sits under
-  // the SFX so the battlefield isn't dead air between gunshots. Idempotent per theme; crossfades.
-  startAmbience(theme: AmbienceTheme, weather: 'clear' | 'night' | 'fog' = 'clear'): void {
+  // the SFX so the battlefield isn't dead air between gunshots.
+  startAmbience(theme: string | null | undefined, weather: 'clear' | 'night' | 'fog' = 'clear'): void {
     if (!this.enabled) return;
-    if (this.ambienceTheme === theme && this.ambienceWeather === weather) return;
+    const resolvedTheme = normalizeAmbienceTheme(theme);
+    if (this.ambienceTheme === resolvedTheme && this.ambienceWeather === weather) return;
     this.stopAmbience();
     try {
       const ctx = this.getContext();
       const t = ctx.currentTime;
-      const profile = ambienceProfileFor(theme, weather);
+      const profile = ambienceProfileFor(resolvedTheme, weather);
       const bus = ctx.createGain();
       bus.gain.setValueAtTime(0.0001, t);
       bus.gain.exponentialRampToValueAtTime(Math.max(0.0002, this.masterVolume * this.musicVolume * profile.mix), t + 1.5);
       bus.connect(ctx.destination);
       this.ambienceBus = bus;
-      this.ambienceTheme = theme;
+      this.ambienceGraph.push(bus);
+      this.ambienceTheme = resolvedTheme;
       this.ambienceWeather = weather;
-      this.lastAmbienceCue = { theme, weather };
 
       // drone: root + fifth + minor third, each a detuned pair for a slow breathing beat
       const droneLp = ctx.createBiquadFilter();
       droneLp.type = 'lowpass';
       droneLp.frequency.value = profile.cutoff;
       droneLp.connect(bus);
+      this.ambienceGraph.push(droneLp);
       const droneGain = ctx.createGain();
       droneGain.gain.value = weather === 'night' ? 0.5 : 0.7;
       droneGain.connect(droneLp);
+      this.ambienceGraph.push(droneGain);
       profile.harmony.forEach((mult, i) => {
         [-0.3, 0.3].forEach((detune) => {
           const o = ctx.createOscillator();
@@ -1064,7 +1076,8 @@ class AudioManagerClass {
           g.gain.value = (i === 0 ? 0.5 : 0.28) / 2;
           o.connect(g); g.connect(droneGain);
           o.start(t);
-          this.ambienceNodes.push(o);
+          this.ambienceSources.push(o);
+          this.ambienceGraph.push(o, g);
         });
       });
 
@@ -1085,60 +1098,37 @@ class AudioManagerClass {
       windGain.gain.value = profile.wind;
       wind.connect(windLp); windLp.connect(windGain); windGain.connect(bus);
       wind.start(t); gust.start(t);
-      this.ambienceNodes.push(wind, gust);
+      this.ambienceSources.push(wind, gust);
+      this.ambienceGraph.push(wind, windLp, gust, gustDepth, windGain);
 
       if (profile.pulse > 0) {
         const pulse = ctx.createOscillator();
-        pulse.type = theme === 'rift' ? 'sawtooth' : 'sine';
+        pulse.type = resolvedTheme === 'rift' ? 'sawtooth' : 'sine';
         pulse.frequency.value = profile.pulse;
         const depth = ctx.createGain();
-        depth.gain.value = theme === 'siege' ? 0.18 : 0.1;
+        depth.gain.value = resolvedTheme === 'siege' ? 0.18 : 0.1;
         pulse.connect(depth);
         depth.connect(droneGain.gain);
         pulse.start(t);
-        this.ambienceNodes.push(pulse);
+        this.ambienceSources.push(pulse);
+        this.ambienceGraph.push(pulse, depth);
       }
     } catch (e) {
+      this.stopAmbience();
       console.warn('Ambience failed:', e);
     }
   }
 
   stopAmbience(): void {
-    const bus = this.ambienceBus;
-    const nodes = this.ambienceNodes;
+    const sources = this.ambienceSources;
+    const graph = this.ambienceGraph;
     this.ambienceBus = null;
-    this.ambienceNodes = [];
+    this.ambienceSources = [];
+    this.ambienceGraph = [];
     this.ambienceTheme = null;
     this.ambienceWeather = null;
-    if (!bus) return;
-    try {
-      const ctx = this.getContext();
-      bus.gain.cancelScheduledValues(ctx.currentTime);
-      bus.gain.setValueAtTime(Math.max(0.0002, bus.gain.value), ctx.currentTime);
-      bus.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1);
-      window.setTimeout(() => {
-        nodes.forEach((n) => { try { n.stop(); } catch { /* already stopped */ } });
-        try { bus.disconnect(); } catch { /* already gone */ }
-      }, 1100);
-    } catch {
-      nodes.forEach((n) => { try { n.stop(); } catch { /* ignore */ } });
-    }
-  }
-
-  // Dip the ambience bed briefly so a victory/defeat sting cuts through cleanly.
-  duckAmbience(): void {
-    const bus = this.ambienceBus;
-    if (!bus) return;
-    try {
-      const ctx = this.getContext();
-      const now = ctx.currentTime;
-      const profile = ambienceProfileFor(this.ambienceTheme ?? 'hq', this.ambienceWeather ?? 'clear');
-      const target = Math.max(0.0002, this.masterVolume * this.musicVolume * profile.mix);
-      bus.gain.cancelScheduledValues(now);
-      bus.gain.setValueAtTime(Math.max(0.0002, bus.gain.value), now);
-      bus.gain.exponentialRampToValueAtTime(Math.max(0.0001, target * 0.35), now + 0.2);
-      bus.gain.exponentialRampToValueAtTime(target, now + 2.4);
-    } catch { /* ignore */ }
+    sources.forEach((source) => { try { source.stop(); } catch { /* already stopped */ } });
+    graph.reverse().forEach((node) => { try { node.disconnect(); } catch { /* already disconnected */ } });
   }
 
   private async probeFiles(): Promise<void> {
@@ -1193,7 +1183,7 @@ class AudioManagerClass {
       if (type === 'briefing' || type === 'debriefVictory' || type === 'debriefDefeat') {
         this.lastNarrativeCue = type;
       }
-      if (!this.filesProbed) void this.probeFiles();
+      if (!this.filesProbed) void this.probeFiles().catch(() => {});
       if (this.playFile(type, opts)) return; // real SFX file if present
       this.generateSound(type, opts); // otherwise procedural fallback
     } catch (e) {

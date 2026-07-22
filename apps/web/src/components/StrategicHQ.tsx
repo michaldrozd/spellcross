@@ -291,6 +291,9 @@ const StrategicMapView: React.FC<{
   const nextLockedTerritory = useMemo(() => (
     territories.find((t) => t.status === 'locked')
   ), [territories]);
+  const rapidResponseOperations = useMemo(() => (
+    territories.filter((territory) => territory.status === 'available' && !territory.mapPosition)
+  ), [territories]);
 
   // Calculate connection lines between territories
   const connections = useMemo(() => {
@@ -558,6 +561,30 @@ const StrategicMapView: React.FC<{
 
       {/* Side panel - territory info */}
       <div className="territory-info-panel">
+        {rapidResponseOperations.length > 0 && (
+          <section className="rapid-response-operations" aria-label={translate('hq:territory.rapidResponse')}>
+            <header>
+              <span>{translate('hq:territory.rapidResponse')}</span>
+              <b>{rapidResponseOperations.length}</b>
+            </header>
+            <div className="rapid-response-list">
+              {rapidResponseOperations.map((territory) => (
+                <button
+                  type="button"
+                  className="rapid-response-operation"
+                  aria-pressed={selectedTerritory === territory.id}
+                  key={territory.id}
+                  onClick={() => onSelectTerritory(territory.id)}
+                >
+                  <span>{territory.name}</span>
+                  <small>{territory.remainingTimer != null
+                    ? translate('hq:territory.turnsBadge', { turns: territory.remainingTimer })
+                    : translate('hq:status.available')}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
         {selected ? (
           <>
             <h2>{selected.name}</h2>

@@ -82,6 +82,7 @@
     "launchAttack": "LAUNCH ATTACK",
     "operationCommitted": "OPERATION COMMITTED",
     "operationCommittedHint": "End the strategic turn before launching another operation.",
+    "rapidResponse": "RAPID RESPONSE",
     "sectorSecured": "SECTOR SECURED"
   },
   "army": {

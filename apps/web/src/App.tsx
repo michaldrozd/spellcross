@@ -1405,7 +1405,7 @@ const BattleView: React.FC<{
       // cancel pending staged enemy SFX so gunfire/explosions don't play over the result screen
       aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
       aiSfxTimeoutsRef.current = [];
-      AudioManager.duckAmbience();
+      AudioManager.stopAmbience();
       AudioManager.play(narrativeSoundTypeForOutcome(status));
       setBattleOutcome(buildBattleOutcome(status));
       // Persist that the battle is decided (reward still applied on Continue). A reload now re-shows

@@ -39,7 +39,10 @@ test('operation dossier carries briefing, battle mood, and specific victory debr
   await expect(outcome).toBeVisible();
   await expect(outcome).toContainText('OPERATION DEBRIEF');
   await expect(outcome).toContainText('The last train cleared the perimeter under its own power');
-  expect(await page.evaluate(() => (window as any).__battleControl.audioState().narrativeCue)).toBe('debriefVictory');
+  expect(await page.evaluate(() => (window as any).__battleControl.audioState())).toEqual({
+    narrativeCue: 'debriefVictory',
+    ambience: null
+  });
 });
 
 test('defeat uses the authored sector report and its own debrief cue', async ({ page }) => {
@@ -53,7 +56,36 @@ test('defeat uses the authored sector report and its own debrief cue', async ({ 
   const outcome = page.locator('.battle-outcome-card');
   await expect(outcome).toBeVisible();
   await expect(outcome).toContainText('The foundry blocks are burning and the production line is silent');
-  expect(await page.evaluate(() => (window as any).__battleControl.audioState().narrativeCue)).toBe('debriefDefeat');
+  expect(await page.evaluate(() => (window as any).__battleControl.audioState())).toEqual({
+    narrativeCue: 'debriefDefeat',
+    ambience: null
+  });
+});
+
+test('generated raids are visible and launch with a complete fallback dossier and safe ambience', async ({ page }) => {
+  await startFreshCampaign(page, 4);
+  await page.evaluate(() => (window as any).__campaignControl.endTurn(3));
+  await expect(page.locator('.rapid-response-operation')).toHaveCount(2);
+  await page.evaluate(() => (window as any).__campaignControl.dismissPopups());
+
+  const rapidResponse = page.locator('.rapid-response-operation').first();
+  await expect(rapidResponse).toContainText('Enemy Raid near');
+  await rapidResponse.click();
+  await expect(page.locator('.territory-info-panel')).toContainText('Enemy forces launch a counteroffensive');
+  await page.locator('.attack-btn-large').click();
+
+  const dossier = page.locator('.operation-dossier');
+  await expect(dossier).toBeVisible();
+  await expect(dossier).toContainText('FIELD DIRECTIVE');
+  await expect(dossier).toContainText('Unscheduled Contact');
+  await expect(dossier).toContainText('Enemy strength and intent remain unconfirmed');
+  await expect(dossier).toContainText('Secure the assigned sector');
+
+  await page.getByRole('button', { name: /Confirm Deployment/i }).click();
+  await page.waitForFunction(() => Boolean((window as any).__battleControl));
+  await page.waitForFunction(() => (
+    (window as any).__battleControl.audioState().ambience?.theme === 'frontline'
+  ));
 });
 
 test('Slovak mobile dossier stays contained and fully localized', async ({ page }) => {
