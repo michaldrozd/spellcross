@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { endStrategicTurns, launchBattle, retreatToHq, startFreshCampaign } from './helpers';
+import { endStrategicTurns, retreatToHq, startFreshCampaign } from './helpers';
 
 test('supply truck resupplies ammo mid-battle', async ({ page }) => {
   test.setTimeout(70_000);
@@ -7,11 +7,20 @@ test('supply truck resupplies ammo mid-battle', async ({ page }) => {
 
   await endStrategicTurns(page, 6);
 
-  const counterId = await page.evaluate(() => {
-    const territories = (window as any).__campaignControl?.territories?.() ?? [];
-    return territories.find((t: any) => /Counterattack/i.test(t.name))?.id ?? 'sector-paris';
-  });
-  await launchBattle(page, counterId);
+  await page.getByRole('button', { name: /Territories/i }).click();
+  await page.getByText(/^Paris$/).click({ force: true });
+  await page.getByRole('button', { name: /Launch Attack/i }).click();
+  const planner = page.getByRole('dialog', { name: /Paris Outskirts/i });
+  await expect(planner).toBeVisible();
+  await expect(planner.locator('.deployment-support')).toContainText(/Supply Truck/i);
+  await expect(planner.locator('.deployment-support')).toContainText(/Attached Support/i);
+  await planner.getByRole('button', { name: /Confirm Deployment/i }).click();
+  await page.waitForFunction(() => Boolean((window as any).__battleControl));
+
+  const supplyUnits = await page.evaluate(() => (
+    (window as any).__battleControl.allyUnits().filter((unit: any) => unit.definitionId === 'supply-truck')
+  ));
+  expect(supplyUnits).toHaveLength(1);
 
   const initialAmmo = await page.evaluate(() => (window as any).__battleControl?.ammoFirst?.()?.ammo ?? null);
   await page.evaluate(() => (window as any).__battleControl?.drainAmmo?.(3));

@@ -97,6 +97,7 @@
     "duplicateDeploymentUnit": "A unit can only be selected once",
     "deploymentCapacityExceeded": "Selected force ({{selected}}) exceeds deployment capacity ({{capacity}})",
     "deploymentUnitUnavailable": "Selected unit is not ready for deployment",
+    "requiredDeploymentUnitUnavailable": "Mission-critical unit is still in transit: {{list}}",
     "requiredDeploymentUnitMissing": "Mission-critical unit missing from deployment: {{list}}",
     "genericLaunchFailed": "Operation could not be launched",
     "genericRecruitFailed": "Recruitment failed",

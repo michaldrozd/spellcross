@@ -327,6 +327,8 @@ const normalizeFormations = (formations: Formation[] | undefined, army: ArmyUnit
   for (const formation of formations ?? []) {
     if (!formation?.id || formationIds.has(formation.id)) continue;
     formationIds.add(formation.id);
+    // Save order is authoritative: if legacy data lists a unit twice, the first
+    // formation claims it and later duplicates are discarded.
     const units = (formation.units ?? []).filter((unitId) => {
       if (!armyIds.has(unitId) || claimedUnitIds.has(unitId)) return false;
       claimedUnitIds.add(unitId);
@@ -964,21 +966,31 @@ export interface OperationDeploymentPlan {
   capacity: number;
   availableUnitIds: string[];
   requiredUnitIds: string[];
+  unavailableRequiredUnitIds: string[];
   specialistUnitIds: string[];
+  automaticSupportDefinitionIds: string[];
+  canDeployWithoutRoster: boolean;
 }
 
 const readyArmyUnits = (state: CampaignState) => state.army.filter(
   (unit) => (unit.availableOnTurn ?? 0) <= state.turn
 );
 
+const automaticSupportDefinitionIds = (state: CampaignState) => (
+  state.research.known.has('supply-truck-unlock')
+  && !state.army.some((unit) => unit.definitionId === 'supply-truck')
+    ? ['supply-truck']
+    : []
+);
+
 const requiredRosterUnitIds = (state: CampaignState, scenario: TacticalScenario) => {
-  const readyIds = new Set(readyArmyUnits(state).map((unit) => unit.id));
+  const rosterIds = new Set(state.army.map((unit) => unit.id));
   return Array.from(new Set(scenario.objectives
     .filter((objective) => !objective.optional && (
       objective.kind === 'reach' || objective.kind === 'protect' || objective.kind === 'interact'
     ))
     .flatMap((objective) => objective.unitIds ?? [])
-    .filter((unitId) => readyIds.has(unitId))));
+    .filter((unitId) => rosterIds.has(unitId))));
 };
 
 export function getOperationDeploymentPlan(
@@ -990,14 +1002,20 @@ export function getOperationDeploymentPlan(
   if (!territory) throw new CampaignError('territoryNotFound', 'Territory not found');
   const scenario = bundle.scenarios.find((candidate) => candidate.id === territory.scenarioId);
   if (!scenario) throw new Error(`Scenario ${territory.scenarioId} missing`);
+  const readyIds = new Set(readyArmyUnits(state).map((unit) => unit.id));
+  const requiredIds = requiredRosterUnitIds(state, scenario);
+  const automaticSupport = automaticSupportDefinitionIds(state);
   return {
-    capacity: scenario.startZones.alliance.length,
+    capacity: Math.max(0, scenario.startZones.alliance.length - automaticSupport.length),
     availableUnitIds: readyArmyUnits(state).map((unit) => unit.id),
-    requiredUnitIds: requiredRosterUnitIds(state, scenario),
+    requiredUnitIds: requiredIds.filter((unitId) => readyIds.has(unitId)),
+    unavailableRequiredUnitIds: requiredIds.filter((unitId) => !readyIds.has(unitId)),
     specialistUnitIds: Array.from(new Set(scenario.objectives
       .filter((objective) => objective.optional && objective.kind === 'interact')
       .flatMap((objective) => objective.unitIds ?? [])
-      .filter((unitId) => state.army.some((unit) => unit.id === unitId))))
+      .filter((unitId) => state.army.some((unit) => unit.id === unitId)))),
+    automaticSupportDefinitionIds: automaticSupport,
+    canDeployWithoutRoster: automaticSupport.length > 0 || (scenario.allianceForces?.length ?? 0) > 0
   };
 }
 
@@ -1007,9 +1025,14 @@ const validateOperationSelection = (
   territoryId: string,
   selectedUnitIds: string[] | undefined
 ) => {
-  if (selectedUnitIds == null) return;
   const plan = getOperationDeploymentPlan(state, bundle, territoryId);
-  if (selectedUnitIds.length === 0) {
+  if (plan.unavailableRequiredUnitIds.length) {
+    throw new CampaignError('requiredDeploymentUnitUnavailable', 'A mission-critical unit is still in transit', {
+      list: plan.unavailableRequiredUnitIds.join(', ')
+    });
+  }
+  if (selectedUnitIds == null) return;
+  if (selectedUnitIds.length === 0 && !plan.canDeployWithoutRoster) {
     throw new CampaignError('noDeployableUnits', 'No deployable units available for this operation');
   }
   const uniqueSelected = new Set(selectedUnitIds);
@@ -1045,22 +1068,15 @@ const buildArmySide = (
   tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string; experience: number }>;
   startTiles: HexCoordinate[];
 } => {
+  const automaticSupport: ArmyUnit[] = automaticSupportDefinitionIds(state).map((definitionId) => ({
+    id: nanoid(6),
+    definitionId,
+    tier: 'rookie',
+    experience: 0,
+    currentHealth: findUnitDef(bundle, definitionId).stats.maxHealth
+  }));
   const available = readyArmyUnits(state)
-    .concat(
-      // auto-attach supply truck if unlocked and not already present
-      state.research.known.has('supply-truck-unlock') &&
-      !state.army.some((u) => u.definitionId === 'supply-truck')
-        ? [
-            {
-              id: nanoid(6),
-              definitionId: 'supply-truck',
-              tier: 'rookie',
-              experience: 0,
-              currentHealth: bundle.units.find((u) => u.id === 'supply-truck')?.stats.maxHealth
-            }
-          ]
-        : []
-    )
+    .concat(automaticSupport)
     .sort((a, b) => {
       const defA = findUnitDef(bundle, a.definitionId);
       const defB = findUnitDef(bundle, b.definitionId);
@@ -1072,6 +1088,9 @@ const buildArmySide = (
   let rosterUnits = selectedUnitIds
     ? selectedUnitIds.map((unitId) => available.find((unit) => unit.id === unitId)!)
     : available;
+  if (selectedUnitIds && automaticSupport.length) {
+    rosterUnits = [...automaticSupport, ...rosterUnits];
+  }
   const transports = available.filter((u) => (findUnitDef(bundle, u.definitionId).stats.transportCapacity ?? 0) > 0);
   // Don't force a transport into an explicit full selection — deployment is truncated to the start
   // zone, so the injected unit would silently evict one the player deliberately picked.

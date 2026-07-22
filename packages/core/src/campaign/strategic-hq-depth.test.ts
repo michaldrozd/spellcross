@@ -34,6 +34,101 @@ describe('strategic HQ depth', () => {
     expect(Object.keys(battle.deployment)).toEqual(selectedUnitIds);
   });
 
+  it('reserves and attaches unlocked logistics support to an explicit selection', () => {
+    const state = createCampaign(starterBundle);
+    state.research.known.add('supply-truck-unlock');
+    const scenario = starterBundle.scenarios.find((candidate) => candidate.id === 'city-sector-paris')!;
+    const plan = getOperationDeploymentPlan(state, starterBundle, 'sector-paris');
+
+    expect(plan.capacity).toBe(scenario.startZones.alliance.length - 1);
+    expect(plan.automaticSupportDefinitionIds).toEqual(['supply-truck']);
+    expect(plan.canDeployWithoutRoster).toBe(true);
+
+    const selectedUnitIds = ['captain', 'lance-1'];
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris', selectedUnitIds);
+    expect(Object.keys(battle.deployment)).toEqual(expect.arrayContaining(selectedUnitIds));
+    expect(Object.keys(battle.deployment)).toHaveLength(selectedUnitIds.length + 1);
+    expect(Array.from(battle.state.sides.alliance.units.values())
+      .filter((unit) => unit.definitionId === 'supply-truck')).toHaveLength(1);
+
+    const fallback = createCampaign(starterBundle);
+    fallback.research.known.add('supply-truck-unlock');
+    const fallbackBattle = startBattleForTerritory(fallback, starterBundle, 'sector-paris');
+    expect(Array.from(fallbackBattle.state.sides.alliance.units.values())
+      .filter((unit) => unit.definitionId === 'supply-truck')).toHaveLength(1);
+  });
+
+  it('does not reserve or duplicate logistics support when the army owns a truck', () => {
+    const state = createCampaign(starterBundle);
+    state.research.known.add('supply-truck-unlock');
+    state.army.push({
+      id: 'owned-supply',
+      definitionId: 'supply-truck',
+      tier: 'rookie',
+      experience: 0,
+      currentHealth: 70
+    });
+    const scenario = starterBundle.scenarios.find((candidate) => candidate.id === 'city-sector-paris')!;
+    const plan = getOperationDeploymentPlan(state, starterBundle, 'sector-paris');
+    expect(plan.capacity).toBe(scenario.startZones.alliance.length);
+    expect(plan.automaticSupportDefinitionIds).toEqual([]);
+
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris', ['captain', 'owned-supply']);
+    expect(Array.from(battle.state.sides.alliance.units.values())
+      .filter((unit) => unit.definitionId === 'supply-truck')).toHaveLength(1);
+  });
+
+  it('blocks an operation while a mission-critical roster unit is in transit', () => {
+    const state = createCampaign(starterBundle);
+    state.army.find((unit) => unit.id === 'captain')!.availableOnTurn = state.turn + 1;
+    const plan = getOperationDeploymentPlan(state, starterBundle, 'sector-paris');
+    expect(plan.requiredUnitIds).not.toContain('captain');
+    expect(plan.unavailableRequiredUnitIds).toEqual(['captain']);
+    expect(() => startBattleForTerritory(state, starterBundle, 'sector-paris', ['lance-1']))
+      .toThrow(/still in transit/i);
+
+    const bundle = structuredClone(starterBundle);
+    const paris = bundle.scenarios.find((candidate) => candidate.id === 'city-sector-paris')!;
+    paris.allianceForces = [{ id: 'local-guide', definitionId: 'rangers', coordinate: { q: 2, r: 2 } }];
+    paris.objectives.push({
+      id: 'protect-local-guide',
+      kind: 'protect',
+      description: 'Keep the local guide alive.',
+      unitIds: ['local-guide']
+    });
+    const supportState = createCampaign(bundle);
+    expect(getOperationDeploymentPlan(supportState, bundle, 'sector-paris').unavailableRequiredUnitIds).toEqual([]);
+  });
+
+  it('keeps every required unit visible when requirements exceed capacity', () => {
+    const bundle = structuredClone(starterBundle);
+    const paris = bundle.scenarios.find((candidate) => candidate.id === 'city-sector-paris')!;
+    paris.startZones.alliance = paris.startZones.alliance.slice(0, 1);
+    paris.objectives.push({
+      id: 'protect-lance',
+      kind: 'protect',
+      description: 'Keep the infantry section alive.',
+      unitIds: ['lance-1']
+    });
+    const state = createCampaign(bundle);
+    const plan = getOperationDeploymentPlan(state, bundle, 'sector-paris');
+    expect(plan.capacity).toBe(1);
+    expect(plan.requiredUnitIds).toEqual(['captain', 'lance-1']);
+    expect(() => startBattleForTerritory(state, bundle, 'sector-paris', plan.requiredUnitIds))
+      .toThrow(/exceeds deployment capacity/i);
+  });
+
+  it('allows an empty roster selection when automatic support can conduct the operation', () => {
+    const state = createCampaign(starterBundle);
+    state.army = [];
+    state.formations.forEach((formation) => { formation.units = []; });
+    state.research.known.add('supply-truck-unlock');
+
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris', []);
+    expect(Array.from(battle.state.sides.alliance.units.values()).map((unit) => unit.definitionId))
+      .toEqual(['supply-truck']);
+  });
+
   it('rejects empty, duplicate, unavailable, and over-capacity deployment selections', () => {
     const makeState = () => createCampaign(starterBundle);
     expect(() => startBattleForTerritory(makeState(), starterBundle, 'sector-paris', []))

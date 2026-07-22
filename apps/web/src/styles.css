@@ -5447,6 +5447,15 @@ button:disabled {
   color: #e5c969;
 }
 
+.deployment-blocker {
+  margin: 0;
+  padding: 0.55rem 1rem;
+  border-bottom: 1px solid rgba(180, 92, 65, 0.45);
+  background: rgba(92, 31, 22, 0.32);
+  color: #efad8d;
+  font-size: 0.66rem;
+}
+
 .deployment-roster {
   min-height: 0;
   overflow-y: auto;
@@ -5481,6 +5490,18 @@ button:disabled {
 
 .deployment-unit.specialist:not(.required) {
   border-color: #557f78;
+}
+
+.deployment-unit.deployment-support {
+  border-color: #4f8a72;
+  background: linear-gradient(100deg, rgba(25, 59, 46, 0.98), rgba(9, 17, 14, 0.98));
+  box-shadow: inset 3px 0 #72b08f;
+  cursor: default;
+}
+
+.deployment-unit.deployment-support .deployment-unit-flags em {
+  border-color: rgba(99, 169, 132, 0.55);
+  color: #92d2b0;
 }
 
 .deployment-unit .roster-token {
@@ -5751,6 +5772,13 @@ button:disabled {
     max-width: 78px;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .deployment-unit.deployment-support .deployment-unit-flags em {
+    overflow: visible;
+    text-align: center;
+    text-overflow: clip;
+    white-space: normal;
   }
 
   .hq-modal-footer {

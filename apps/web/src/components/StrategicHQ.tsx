@@ -57,7 +57,10 @@ interface OperationPlan {
   capacity: number;
   availableUnitIds: string[];
   requiredUnitIds: string[];
+  unavailableRequiredUnitIds: string[];
   specialistUnitIds: string[];
+  automaticSupportDefinitionIds: string[];
+  canDeployWithoutRoster: boolean;
 }
 
 interface ResearchTopic {
@@ -121,6 +124,15 @@ function rosterPortrait(definitionId: string, unitType: string) {
 
 const recruitFilters = ['all', 'infantry', 'vehicle', 'artillery', 'air', 'support', 'hero'] as const;
 type RecruitFilter = (typeof recruitFilters)[number];
+
+function defaultDeploymentSelection(plan: OperationPlan) {
+  const selected = [...plan.requiredUnitIds];
+  for (const unitId of plan.availableUnitIds) {
+    if (selected.length >= plan.capacity) break;
+    if (!selected.includes(unitId)) selected.push(unitId);
+  }
+  return selected;
+}
 
 function researchBranch(topic: ResearchTopic) {
   const key = `${topic.id} ${topic.name} ${(topic.unlocks ?? []).join(' ')}`.toLowerCase();
@@ -652,12 +664,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
   const openDeploymentPlanner = (territoryId: string) => {
     const plan = operationPlans[territoryId];
     if (!plan) return;
-    const required = new Set(plan.requiredUnitIds);
-    const defaultSelection = [
-      ...plan.requiredUnitIds,
-      ...plan.availableUnitIds.filter((unitId) => !required.has(unitId))
-    ].slice(0, plan.capacity);
-    setSelectedDeploymentIds(defaultSelection);
+    setSelectedDeploymentIds(defaultDeploymentSelection(plan));
     setPlanningTerritoryId(territoryId);
   };
   const applyFormationToDeployment = (formation: FormationSummary) => {
@@ -749,6 +756,22 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
         return unit ? [unit] : [];
       })
     : [];
+  const automaticSupportUnits = planningPlan
+    ? planningPlan.automaticSupportDefinitionIds.flatMap((definitionId) => {
+        const unit = availableUnits.find((candidate) => candidate.id === definitionId);
+        return unit ? [unit] : [];
+      })
+    : [];
+  const unavailableRequiredUnits = planningPlan
+    ? planningPlan.unavailableRequiredUnitIds.flatMap((unitId) => {
+        const unit = army.find((candidate) => candidate.id === unitId);
+        return unit ? [unit] : [];
+      })
+    : [];
+  const deploymentCanConfirm = Boolean(planningPlan)
+    && unavailableRequiredUnits.length === 0
+    && selectedDeploymentIds.length <= (planningPlan?.capacity ?? 0)
+    && (selectedDeploymentIds.length > 0 || Boolean(planningPlan?.canDeployWithoutRoster));
   const serviceUnit = serviceUnitId ? army.find((unit) => unit.id === serviceUnitId) : undefined;
   const forceFocusUnit = army.find((unit) => armySectionKey(unit) === 'command')
     ?? army.find((unit) => armySectionKey(unit) === 'vehicles')
@@ -1259,11 +1282,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
             </header>
             <div className="deployment-toolbar">
               <button onClick={() => {
-                const required = new Set(planningPlan.requiredUnitIds);
-                setSelectedDeploymentIds([
-                  ...planningPlan.requiredUnitIds,
-                  ...planningPlan.availableUnitIds.filter((unitId) => !required.has(unitId))
-                ].slice(0, planningPlan.capacity));
+                setSelectedDeploymentIds(defaultDeploymentSelection(planningPlan));
               }}>{t('deployment.selectReady')}</button>
               <button onClick={() => setSelectedDeploymentIds([...planningPlan.requiredUnitIds])}>{t('deployment.clearOptional')}</button>
               <div className="deployment-formations" aria-label={t('deployment.selectFormation')}>
@@ -1274,7 +1293,36 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                 ))}
               </div>
             </div>
+            {unavailableRequiredUnits.length ? (
+              <p className="deployment-blocker" role="alert">
+                {t('deployment.requiredInTransit', { list: unavailableRequiredUnits.map((unit) => unit.name).join(', ') })}
+              </p>
+            ) : null}
+            {selectedDeploymentIds.length > planningPlan.capacity ? (
+              <p className="deployment-blocker" role="alert">
+                {t('deployment.requiredOverCapacity', {
+                  required: selectedDeploymentIds.length,
+                  capacity: planningPlan.capacity
+                })}
+              </p>
+            ) : null}
             <div className="deployment-roster">
+              {automaticSupportUnits.map((unit) => (
+                <div key={unit.id} className="deployment-unit deployment-support selected required">
+                  <span className={`roster-token roster-token-${unit.unitType}`}>
+                    <img src={rosterPortrait(unit.id, unit.unitType)} alt="" />
+                  </span>
+                  <span className="deployment-unit-copy">
+                    <b>{unit.name}</b>
+                    <small>{t(`common:unitType.${unit.unitType}`)} · {t('deployment.reservedSlot')}</small>
+                    <i>{t('deployment.automaticSupportHint')}</i>
+                  </span>
+                  <span className="deployment-unit-flags">
+                    <em>{t('deployment.automaticSupport')}</em>
+                    <strong>✓</strong>
+                  </span>
+                </div>
+              ))}
               {planningUnits.map((unit) => {
                 const selected = selectedDeploymentIds.includes(unit.id);
                 const required = planningPlan.requiredUnitIds.includes(unit.id);
@@ -1315,7 +1363,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               <button className="secondary-btn" onClick={() => setPlanningTerritoryId(null)}>{t('deployment.cancel')}</button>
               <button
                 className="primary-btn deployment-confirm"
-                disabled={selectedDeploymentIds.length === 0 || selectedDeploymentIds.length > planningPlan.capacity}
+                disabled={!deploymentCanConfirm}
                 onClick={() => {
                   const territoryId = planningTerritory.id;
                   const selectedUnitIds = [...selectedDeploymentIds];

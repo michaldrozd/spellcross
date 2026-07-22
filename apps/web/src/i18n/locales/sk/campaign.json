@@ -89,7 +89,7 @@
     "alreadyEquipped": "Jednotka už používa túto výzbroj",
     "rearmLocked": "Táto jednotka nemôže zmeniť výzbroj",
     "unitNotInArmy": "Jednotka nie je dostupná v poľnej armáde",
-    "formationNotFound": "Úkolová skupina sa nenašla",
+    "formationNotFound": "Operačná skupina sa nenašla",
     "battleInProgress": "Bitka už prebieha",
     "operationAlreadyLaunched": "V tomto kole už bola spustená operácia",
     "territoryNotFound": "Územie nenájdené",
@@ -98,13 +98,14 @@
     "duplicateDeploymentUnit": "Jednotku možno vybrať iba raz",
     "deploymentCapacityExceeded": "Vybrané sily ({{selected}}) prekračujú kapacitu nasadenia ({{capacity}})",
     "deploymentUnitUnavailable": "Vybraná jednotka nie je pripravená na nasadenie",
+    "requiredDeploymentUnitUnavailable": "Povinná jednotka je ešte na ceste: {{list}}",
     "requiredDeploymentUnitMissing": "V nasadení chýba povinná jednotka: {{list}}",
     "genericLaunchFailed": "Operáciu sa nepodarilo spustiť",
     "genericRecruitFailed": "Naverbovanie zlyhalo",
     "genericResearchFailed": "Výskum sa nepodarilo naplánovať",
     "genericRefillFailed": "Doplnenie zlyhalo",
     "genericRearmFailed": "Prezbrojenie zlyhalo",
-    "genericFormationFailed": "Priradenie úkolovej skupiny zlyhalo"
+    "genericFormationFailed": "Priradenie operačnej skupiny zlyhalo"
   },
   "dynamic": {
     "counterattack": { "name": "Nepriateľský protiútok", "brief": "Nepriateľské sily útočia pri križovatke. Zadrž ich." },
