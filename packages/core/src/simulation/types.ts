@@ -130,6 +130,7 @@ export interface BattlefieldMap {
 
 export type UnitStance = 'ready' | 'suppressed' | 'routed' | 'destroyed';
 export type WeaponFireMode = 'direct' | 'indirect';
+export type AttackMode = 'normal' | 'suppressive';
 
 export interface UnitStats {
   maxHealth: number;
@@ -186,6 +187,8 @@ export interface UnitInstance {
   // Tactical state
   entrench?: number; // 0..3, increases when stationary, reduces on hit
   movedThisRound?: boolean; // set to true when unit moves during its own turn
+  dugInThisRound?: boolean; // prevents a manual dig-in order from also receiving the passive end-turn gain
+  idleEntrenchedTurns?: number; // consecutive untouched turns spent at the unit type's entrenchment cap
 }
 
 export interface SideState {
@@ -246,6 +249,7 @@ export type BattleEvent =
       defenderRemainingHealth: number;
       defenderRemainingMorale: number;
       defenderAt?: HexCoordinate; // defender's position when the shot resolved (reaction fire = path tile)
+      attackMode?: AttackMode;
     }
   | {
       kind: 'unit:defeated';
@@ -263,6 +267,16 @@ export type BattleEvent =
       at: HexCoordinate;
     }
   | {
+      kind: 'unit:dug-in';
+      unitId: string;
+      level: number;
+    }
+  | {
+      kind: 'unit:rallied';
+      unitId: string;
+      morale: number;
+    }
+  | {
       kind: 'unit:level';
       unitId: string;
       level: number;
@@ -273,6 +287,7 @@ export interface ResolveAttackInput {
   defender: UnitInstance;
   weaponId: string;
   map: BattlefieldMap;
+  attackMode?: AttackMode;
 }
 
 export interface AttackResolution {

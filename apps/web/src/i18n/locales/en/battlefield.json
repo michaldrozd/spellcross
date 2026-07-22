@@ -24,7 +24,8 @@
   },
   "combat": {
     "miss": "MISS",
-    "kill": "KILL"
+    "kill": "KILL",
+    "suppress": "PIN -{{morale}}"
   },
   "webglRequired": {
     "title": "WEBGL REQUIRED",

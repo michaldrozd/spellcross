@@ -33,7 +33,7 @@ describe('Entrenchment', () => {
     // No movement this turn
     tp.endTurn();
     const unit = state.sides.alliance.units.get(id)!;
-    expect(unit.entrench).toBe(1);
+    expect(unit.entrench).toBe(2);
 
     // Move one step -> reset entrench
     tp.state.activeFaction = 'alliance';
@@ -50,13 +50,12 @@ describe('Entrenchment', () => {
     // entrench the ally
     tp.endTurn();
     const ally = state.sides.alliance.units.get(allyId)!;
-    expect(ally.entrench).toBe(1);
+    expect(ally.entrench).toBe(2);
 
     // switch to enemy and attack
     tp.state.activeFaction = 'otherSide';
     const res = tp.attackUnit({ attackerId: enemyId, defenderId: allyId, weaponId: 'pistol' });
     expect(res.success).toBe(true);
-    expect(ally.entrench).toBe(0);
+    expect(ally.entrench).toBe(1);
   });
 });
-

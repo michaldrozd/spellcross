@@ -43,6 +43,17 @@ export function combatEffectTypeForWeapon(definitionId: string, weaponId: string
   return 'gunshot';
 }
 
+export function combatEffectForShot(
+  definitionId: string,
+  weaponId: string,
+  attackMode: 'normal' | 'suppressive' = 'normal'
+) {
+  return {
+    type: combatEffectTypeForWeapon(definitionId, weaponId),
+    suppressive: attackMode === 'suppressive'
+  };
+}
+
 const DIRECT_FIRE_TIMING: Record<CombatEffectType, CombatEffectTiming> = {
   gunshot: { projectileMs: 370, impactAtMs: 145, impactMs: 460, totalMs: 2550, burstRounds: 5, burstGapMs: 55, burstFlightMs: 150 },
   sniper: { projectileMs: 180, impactAtMs: 170, impactMs: 500, totalMs: 2600, burstRounds: 1, burstGapMs: 0, burstFlightMs: 180 },

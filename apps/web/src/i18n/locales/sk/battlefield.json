@@ -24,7 +24,8 @@
   },
   "combat": {
     "miss": "MIMO",
-    "kill": "SMRTEĽNÉ"
+    "kill": "SMRTEĽNÉ",
+    "suppress": "TLAK -{{morale}}"
   },
   "webglRequired": {
     "title": "VYŽADUJE SA WEBGL",

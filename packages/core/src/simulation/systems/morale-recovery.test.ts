@@ -28,10 +28,10 @@ describe('Morale recovery at endTurn', () => {
     const allyId = Array.from(state.sides.alliance.units.keys())[0];
     const ally = state.sides.alliance.units.get(allyId)!;
 
-    // End alliance turn once: entrench +1, morale recovers base 3 + entrench 1 = +4 (no enemy within 2)
+    // Infantry prepares quickly: +2 entrench and +5 morale recovery outside contact.
     tp.endTurn();
-    expect(ally.entrench).toBe(1);
-    expect(ally.currentMorale).toBe(44);
+    expect(ally.entrench).toBe(2);
+    expect(ally.currentMorale).toBe(45);
 
     // Move enemy near within distance 2 and end their turn to process alliance recovery again
     const enemyId = Array.from(state.sides.otherSide.units.keys())[0];
@@ -40,9 +40,8 @@ describe('Morale recovery at endTurn', () => {
     tp.endTurn(); // otherSide ends -> alliance becomes active; then next endTurn applies to alliance
     tp.endTurn(); // now alliance ends, morale recovery applies with nearby enemy penalty (2)
 
-    // +3 base + entrench (now 2) = +5, -2 proximity = net +3 from previous 44 -> 47
-    expect(ally.entrench).toBe(2);
-    expect(ally.currentMorale).toBe(47);
+    // The second idle turn reaches cap 3: +6 recovery, -2 proximity = +4.
+    expect(ally.entrench).toBe(3);
+    expect(ally.currentMorale).toBe(49);
   });
 });
-

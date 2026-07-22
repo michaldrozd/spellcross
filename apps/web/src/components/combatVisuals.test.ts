@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest';
 
-import { combatEffectTiming } from './combatVisuals.js';
+import { combatEffectForShot, combatEffectTiming, combatEffectTypeForWeapon } from './combatVisuals.js';
+
+describe('combatEffectTypeForWeapon', () => {
+  it('keeps specific weapon keywords ahead of broad fallback terms for suppressive shots', () => {
+    expect(combatEffectTypeForWeapon('silence-stalker', 'silence-claw')).toBe('melee');
+    expect(combatEffectTypeForWeapon('siege-engine', 'chain-cannon')).toBe('gunshot');
+    expect(combatEffectTypeForWeapon('skeleton-archer', 'bone-quarrel')).toBe('arrow');
+    expect(combatEffectForShot('skeleton-archer', 'bone-quarrel', 'suppressive')).toEqual({
+      type: 'arrow',
+      suppressive: true
+    });
+  });
+});
 
 describe('combatEffectTiming', () => {
   it('starts direct impacts when their projectiles arrive', () => {

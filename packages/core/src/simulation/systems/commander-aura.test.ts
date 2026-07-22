@@ -29,10 +29,10 @@ describe('Commander aura', () => {
     const allyId = Array.from(state.sides.alliance.units.keys())[0];
     const ally = state.sides.alliance.units.get(allyId)!;
 
-    // End alliance turn: entrench +1; morale +3 base +1 entrench +2 aura = +6 -> 46
+    // End alliance turn: infantry entrench +2; morale +3 base +2 entrench +2 aura = +7.
     tp.endTurn();
-    expect(ally.entrench).toBe(1);
-    expect(ally.currentMorale).toBe(46);
+    expect(ally.entrench).toBe(2);
+    expect(ally.currentMorale).toBe(47);
 
     // Add a second hero; aura should not stack
     state.sides.alliance.units.set('hero2', {
@@ -43,9 +43,8 @@ describe('Commander aura', () => {
     tp.endTurn(); // otherSide ends
     tp.endTurn(); // alliance ends again
 
-    // Previous morale 46 -> +3 base +2 entrench +2 aura = +7 -> 53 (not +9)
-    expect(ally.entrench).toBe(2);
-    expect(ally.currentMorale).toBe(53);
+    // Previous morale 47 -> +3 base +3 entrench +2 aura = +8 -> 55 (not +10).
+    expect(ally.entrench).toBe(3);
+    expect(ally.currentMorale).toBe(55);
   });
 });
-

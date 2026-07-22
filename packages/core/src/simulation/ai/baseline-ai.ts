@@ -1,15 +1,31 @@
-import { calculateHitChance, canWeaponTarget, canAffordAttack, canWeaponReachCoordinate, estimateHitDamage, isMedicUnit, isSupplyUnit } from '../combat/combat-resolver.js';
+import {
+  calculateHitChance,
+  canWeaponTarget,
+  canAffordAttack,
+  canWeaponReachCoordinate,
+  estimateHitDamage,
+  isMedicUnit,
+  isSupplyUnit,
+  SUPPRESSIVE_DAMAGE_FACTOR,
+  SUPPRESSIVE_HIT_MORALE_FLOOR,
+  SUPPRESSIVE_MORALE_FACTOR,
+  SUPPRESSIVE_MISS_MORALE_DAMAGE
+} from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
+import { canDigIn, canRally } from '../systems/morale.js';
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { isIsoNeighbor, isoDirectionIndex, isoDistance, isoNeighbors } from '../utils/grid-iso.js';
 import { coordinateKey, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
 
 export type AIImmediateAction =
   | { type: 'attack'; attackerId: string; defenderId: string; weaponId: string }
+  | { type: 'suppress'; attackerId: string; defenderId: string; weaponId: string }
   | { type: 'attackTile'; unitId: string; target: HexCoordinate; weaponId: string }
   | { type: 'move'; unitId: string; path: HexCoordinate[] }
   | { type: 'supply'; supplierId: string; targetId: string }
   | { type: 'heal'; medicId: string; targetId: string }
+  | { type: 'digIn'; unitId: string }
+  | { type: 'rally'; unitId: string }
   | { type: 'endTurn' };
 
 function isUsableUnit(u: UnitInstance): boolean {
@@ -297,6 +313,48 @@ function flankAwareAttackScore(attacker: UnitInstance, defender: UnitInstance, w
   return hit * Math.max(1, dmg) * flankBonus * priorityScore(defender);
 }
 
+export function attackOrderValues(
+  state: TacticalBattleState,
+  attacker: UnitInstance,
+  defender: UnitInstance,
+  weaponId: string
+): { normal: number; suppressive: number; normalDamage: number } {
+  if (!canWeaponTarget(attacker, weaponId, defender)) return { normal: 0, suppressive: 0, normalDamage: 0 };
+  if (!canWeaponReachCoordinate(attacker, weaponId, defender.coordinate, state.map)) {
+    return { normal: 0, suppressive: 0, normalDamage: 0 };
+  }
+
+  const normalDamage = estimateHitDamage(attacker, defender, weaponId, state.map);
+  const normalHit = calculateHitChance({
+    attacker,
+    defender,
+    weaponId,
+    map: state.map,
+    weather: state.weather
+  });
+  const suppressiveHit = calculateHitChance({
+    attacker,
+    defender,
+    weaponId,
+    map: state.map,
+    weather: state.weather,
+    attackMode: 'suppressive'
+  });
+  const suppressedDamage = Math.max(0, Math.round(normalDamage * SUPPRESSIVE_DAMAGE_FACTOR));
+  const hitMorale = Math.max(
+    SUPPRESSIVE_HIT_MORALE_FLOOR,
+    Math.round(suppressedDamage * SUPPRESSIVE_MORALE_FACTOR)
+  );
+  const moralePressureWeight = defender.currentMorale <= 45 ? 0.7 : 0.3;
+  const expectedMorale = suppressiveHit * hitMorale + (1 - suppressiveHit) * SUPPRESSIVE_MISS_MORALE_DAMAGE;
+
+  return {
+    normal: normalHit * normalDamage,
+    suppressive: suppressiveHit * suppressedDamage + expectedMorale * moralePressureWeight,
+    normalDamage
+  };
+}
+
 function bestAttackFromHere(
   state: TacticalBattleState,
   attacker: UnitInstance,
@@ -403,7 +461,7 @@ export function decideNextAIAction(
   const skipAttacks = skipAttackChance > 0 && Math.random() < skipAttackChance;
   const side = state.sides[faction];
   const exclude = options.excludeUnitIds;
-  const units = Array.from(side.units.values()).filter((u) => isUsableUnit(u) && !(exclude && exclude.has(u.id)));
+  let units = Array.from(side.units.values()).filter((u) => isUsableUnit(u) && !(exclude && exclude.has(u.id)));
   if (units.length === 0) return { type: 'endTurn' };
 
   const enemiesAll = listEnemyUnits(state, faction);
@@ -412,6 +470,18 @@ export function decideNextAIAction(
   const attackEnemies = options.visibleEnemyIds
     ? enemiesAll.filter((e) => options.visibleEnemyIds!.has(e.id))
     : enemiesAll;
+
+  // A routed unit never re-enters the normal attack/advance planner. It first tries one legal retreat
+  // step; if boxed in but out of contact it rallies. A cornered unit with an adjacent enemy is simply
+  // skipped, allowing the rest of the side to act without feeding a rejected proposal loop.
+  for (const unit of units) {
+    if (unit.stance !== 'routed') continue;
+    const retreat = tryFallbackStep(state, unit, enemiesAll);
+    if (retreat?.length) return { type: 'move', unitId: unit.id, path: retreat };
+    if (canRally(state, unit)) return { type: 'rally', unitId: unit.id };
+  }
+  units = units.filter((unit) => unit.stance !== 'routed');
+  if (units.length === 0) return { type: 'endTurn' };
 
   // 0) Fallback/retreat for fragile units
   for (const u of units) {
@@ -451,7 +521,7 @@ export function decideNextAIAction(
 
   // 1) Global best immediate attack among all units (prioritizing objective occupiers and flanks)
   let bestAttack:
-    | { attackerId: string; defenderId: string; weaponId: string; score: number }
+    | { type: 'attack' | 'suppress'; attackerId: string; defenderId: string; weaponId: string; score: number }
     | null = null;
   if (!skipAttacks) {
     for (const u of units) {
@@ -466,7 +536,7 @@ export function decideNextAIAction(
             if (rawScore <= 0) continue;
             const score = rawScore + 2;
             if (!bestAttack || score > bestAttack.score) {
-              bestAttack = { attackerId: u.id, defenderId: target.id, weaponId, score };
+              bestAttack = { type: 'attack', attackerId: u.id, defenderId: target.id, weaponId, score };
             }
           }
         }
@@ -490,12 +560,32 @@ export function decideNextAIAction(
         } else if (isArtillery && chosenWeaponIsLongRange && defender && isoDistance(u.coordinate, defender.coordinate) <= 2) {
           // avoid point-blank for artillery; let movement handle reposition
         } else {
-          bestAttack = { attackerId: u.id, defenderId: choice.defenderId, weaponId: choice.weaponId, score: choice.score };
+          bestAttack = { type: 'attack', attackerId: u.id, defenderId: choice.defenderId, weaponId: choice.weaponId, score: choice.score };
+        }
+      }
+
+      if (u.stance === 'ready' && !u.statusEffects.has('suppression-used') && canAffordAttack(u)) {
+        for (const target of attackEnemies) {
+          for (const weaponId of Object.keys(u.stats.weaponRanges)) {
+            const values = attackOrderValues(state, u, target, weaponId);
+            // Suppression is the answer to armor/cover making a normal hit nearly inert, not a universal
+            // damage multiplier. A useful normal hit always stays on the ordinary attack lane.
+            if (values.normalDamage > 2 || values.suppressive <= values.normal) continue;
+            const score = values.suppressive * priorityScore(target);
+            if (!bestAttack || score > bestAttack.score) {
+              bestAttack = { type: 'suppress', attackerId: u.id, defenderId: target.id, weaponId, score };
+            }
+          }
         }
       }
     }
     if (bestAttack) {
-      return { type: 'attack', attackerId: bestAttack.attackerId, defenderId: bestAttack.defenderId, weaponId: bestAttack.weaponId };
+      return {
+        type: bestAttack.type,
+        attackerId: bestAttack.attackerId,
+        defenderId: bestAttack.defenderId,
+        weaponId: bestAttack.weaponId
+      };
     }
   }
 
@@ -514,6 +604,7 @@ export function decideNextAIAction(
       if (shot) {
         return { type: 'attack', attackerId: holder.id, defenderId: shot.defenderId, weaponId: shot.weaponId };
       }
+      if (canDigIn(holder)) return { type: 'digIn', unitId: holder.id };
       // The holder stays put guarding the anchor; ending the whole turn here would freeze
       // every other unit on the side for the rest of the battle.
       anchoredHolderId = holder.id;
@@ -624,6 +715,11 @@ export function decideNextAIAction(
     if (bestDemo) {
       return { type: 'attackTile', unitId: bestDemo.unitId, target: bestDemo.target, weaponId: bestDemo.weaponId };
     }
+  }
+
+  for (const unit of units) {
+    if (canDigIn(unit)) return { type: 'digIn', unitId: unit.id };
+    if (canRally(state, unit)) return { type: 'rally', unitId: unit.id };
   }
 
   // 3) Nothing to do → end turn

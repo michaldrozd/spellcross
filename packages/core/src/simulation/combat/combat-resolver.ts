@@ -1,5 +1,6 @@
 import { typeEffectiveness } from './damage-types.js';
 import type {
+  AttackMode,
   BattlefieldMap,
   BattleEvent,
   HexCoordinate,
@@ -9,6 +10,7 @@ import type {
   WeaponFireMode
 } from '../types.js';
 import { experienceAccuracyBonus, updateExperienceLevel } from './experience.js';
+import { stanceForMorale } from '../systems/morale.js';
 import { isoDistance } from '../utils/grid-iso.js';
 import { isoDirectionIndex } from '../utils/grid-iso.js';
 import { getTile, orientationDelta } from '../utils/grid.js';
@@ -21,6 +23,7 @@ export interface AttackInput {
   map: BattlefieldMap;
   weather?: 'clear' | 'night' | 'fog';
   random?: () => number;
+  attackMode?: AttackMode;
 }
 
 export interface AttackOutcome {
@@ -37,6 +40,12 @@ const MIN_MORALE = 0;
 const MAX_MORALE = 100;
 
 const MORALE_DAMAGE_FACTOR = 0.5;
+export const SUPPRESSIVE_ACCURACY_PENALTY = 0.12;
+export const SUPPRESSIVE_DAMAGE_FACTOR = 0.4;
+export const SUPPRESSIVE_MORALE_FACTOR = 1.5;
+// A weapon impact still rattles exposed crews when armor absorbs every HP of damage.
+export const SUPPRESSIVE_HIT_MORALE_FLOOR = 4;
+export const SUPPRESSIVE_MISS_MORALE_DAMAGE = 1;
 const FLANK_ACCURACY_BONUS = 0.08;
 const REAR_ACCURACY_BONUS = 0.15;
 const ARMOR_ABSORPTION_FACTOR = 0.65;
@@ -141,8 +150,9 @@ export function calculateHitChance(input: {
   weaponId: string;
   map: BattlefieldMap;
   weather?: 'clear' | 'night' | 'fog';
+  attackMode?: AttackMode;
 }): number {
-  const { attacker, defender, weaponId, map, weather = 'clear' } = input;
+  const { attacker, defender, weaponId, map, weather = 'clear', attackMode = 'normal' } = input;
 
   const maxRange = calculateAttackRange(attacker, weaponId, map);
   if (maxRange <= 0) {
@@ -176,12 +186,17 @@ export function calculateHitChance(input: {
   const elevationAdjust = elevationDiff > 0 ? 0.06 : elevationDiff < 0 ? -0.06 : 0;
 
   const weatherPenalty = WEATHER_ACCURACY_PENALTY[weather] ?? 0;
+  const attackModePenalty = attackMode === 'suppressive' ? SUPPRESSIVE_ACCURACY_PENALTY : 0;
 
   const hitChance = Math.min(
     MAX_HIT_CHANCE,
     Math.max(
       MIN_HIT_CHANCE,
-      (baseAccuracy + levelAccuracyBonus + overwatchBonus + elevationAdjust + flankBonus) - rangePenalty - coverPenalty - weatherPenalty
+      (baseAccuracy + levelAccuracyBonus + overwatchBonus + elevationAdjust + flankBonus)
+        - rangePenalty
+        - coverPenalty
+        - weatherPenalty
+        - attackModePenalty
     )
   );
 
@@ -189,7 +204,7 @@ export function calculateHitChance(input: {
 }
 
 export function resolveAttack(input: AttackInput): AttackOutcome {
-  const { attacker, defender, weaponId, map, random, weather = 'clear' } = input;
+  const { attacker, defender, weaponId, map, random, weather = 'clear', attackMode = 'normal' } = input;
 
   const events: BattleEvent[] = [];
   const maxRange = calculateAttackRange(attacker, weaponId, map);
@@ -198,7 +213,7 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
 
   const inRange = distance <= maxRange && maxRange > 0;
   const hitChance = inRange && weaponPower > 0 && defender.stance !== 'destroyed'
-    ? calculateHitChance({ attacker, defender, weaponId, map, weather })
+    ? calculateHitChance({ attacker, defender, weaponId, map, weather, attackMode })
     : 0;
 
   const roll = hitChance > 0 ? (random ?? Math.random)() : 1;
@@ -209,27 +224,39 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
 
   if (hit) {
     // Wounded attackers deal less; armor and cover absorb the rest (see estimateHitDamage).
-    damage = estimateHitDamage(attacker, defender, weaponId, map);
+    const normalDamage = estimateHitDamage(attacker, defender, weaponId, map);
+    damage = attackMode === 'suppressive'
+      ? Math.max(0, Math.round(normalDamage * SUPPRESSIVE_DAMAGE_FACTOR))
+      : normalDamage;
 
     const newHealth = Math.max(0, defender.currentHealth - damage);
     defender.currentHealth = newHealth;
 
-    moraleDamage = Math.max(0, Math.round(damage * MORALE_DAMAGE_FACTOR));
-    const newMorale = Math.min(MAX_MORALE, Math.max(MIN_MORALE, defender.currentMorale - moraleDamage));
-    defender.currentMorale = newMorale;
+    moraleDamage = attackMode === 'suppressive'
+      ? Math.max(SUPPRESSIVE_HIT_MORALE_FLOOR, Math.round(damage * SUPPRESSIVE_MORALE_FACTOR))
+      : Math.max(0, Math.round(damage * MORALE_DAMAGE_FACTOR));
 
     // entrenchment is reduced when taking a hit
     if (defender.entrench && defender.entrench > 0) {
       defender.entrench = Math.max(0, defender.entrench - 1);
     }
 
-    if (defender.currentHealth === 0) {
-      defender.stance = 'destroyed';
-      defender.destroyedAt = defender.destroyedAt ?? Date.now();
-    } else {
-      // Update stance from morale thresholds
-      defender.stance = defender.currentMorale <= 20 ? 'routed' : defender.currentMorale <= 40 ? 'suppressed' : 'ready';
-    }
+  } else if (attackMode === 'suppressive' && hitChance > 0) {
+    moraleDamage = SUPPRESSIVE_MISS_MORALE_DAMAGE;
+  }
+
+  if (moraleDamage > 0) {
+    defender.currentMorale = Math.min(
+      MAX_MORALE,
+      Math.max(MIN_MORALE, defender.currentMorale - moraleDamage)
+    );
+  }
+
+  if (defender.currentHealth === 0) {
+    defender.stance = 'destroyed';
+    defender.destroyedAt = defender.destroyedAt ?? Date.now();
+  } else {
+    defender.stance = stanceForMorale(defender.currentMorale);
   }
 
   events.push({
@@ -246,7 +273,8 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
     defenderRemainingMorale: defender.currentMorale,
     // Where the defender stood when this shot resolved. For reaction fire during a move this is the
     // path tile the mover was crossing — the UI uses it to anchor/time the muzzle to the glide.
-    defenderAt: { q: defender.coordinate.q, r: defender.coordinate.r }
+    defenderAt: { q: defender.coordinate.q, r: defender.coordinate.r },
+    attackMode
   });
 
   if (defender.currentHealth === 0) {

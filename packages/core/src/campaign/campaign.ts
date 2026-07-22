@@ -1579,6 +1579,11 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
         unit.experience = Math.max(0, Number.isFinite(unit.experience) ? unit.experience : 0);
         unit.level = experienceLevelFor(unit.experience);
         unit.careerProgression = true;
+        unit.dugInThisRound ??= false;
+        unit.idleEntrenchedTurns = Math.max(
+          0,
+          Number.isFinite(unit.idleEntrenchedTurns) ? unit.idleEntrenchedTurns ?? 0 : 0
+        );
       }
     }
     if (!hasCumulativeDeploymentExperience) {

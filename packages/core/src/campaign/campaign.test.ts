@@ -704,6 +704,8 @@ describe('campaign core', () => {
     if (!unit) throw new Error('expected deployed unit');
     unit.statusEffects.add('suppressed');
     unit.currentAmmo = Infinity;
+    unit.dugInThisRound = true;
+    unit.idleEntrenchedTurns = 3;
     battle.holdProgress['hold-square'] = 2;
     battle.triggeredEventIds.push('sector-lyon-reserve-wave');
 
@@ -718,8 +720,28 @@ describe('campaign core', () => {
     expect(restoredUnit?.statusEffects).toBeInstanceOf(Set);
     expect(restoredUnit?.statusEffects.has('suppressed')).toBe(true);
     expect(restoredUnit?.currentAmmo).toBe(Infinity);
+    expect(restoredUnit?.dugInThisRound).toBe(true);
+    expect(restoredUnit?.idleEntrenchedTurns).toBe(3);
     expect(restoredBattle.holdProgress['hold-square']).toBe(2);
     expect(restoredBattle.triggeredEventIds).toEqual(['sector-lyon-reserve-wave']);
+  });
+
+  it('defaults morale-depth fields in legacy in-progress battles', () => {
+    const state = createCampaign(starterBundle);
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');
+    const [unit] = battle.state.sides.alliance.units.values();
+    if (!unit) throw new Error('expected deployed unit');
+    const snapshot = JSON.parse(JSON.stringify(serializeCampaignState(state)));
+    const serializedUnit = snapshot.activeBattle.state.sides.alliance.units.v.find(
+      ([id]: [string, unknown]) => id === unit.id
+    )[1];
+    delete serializedUnit.dugInThisRound;
+    delete serializedUnit.idleEntrenchedTurns;
+
+    const restored = hydrateCampaignState(starterBundle, snapshot);
+    const restoredUnit = restored.activeBattle?.state.sides.alliance.units.get(unit.id);
+    expect(restoredUnit?.dugInThisRound).toBe(false);
+    expect(restoredUnit?.idleEntrenchedTurns).toBe(0);
   });
 
   it('converts strategic points at the documented ratios', () => {

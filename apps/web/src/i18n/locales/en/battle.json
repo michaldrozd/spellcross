@@ -27,6 +27,8 @@
     "hitDetail": "{{defender}} - {{damage}} damage",
     "missTitle": "Shot Missed",
     "missDetail": "{{attacker}} → {{defender}}",
+    "suppressionTitle": "Suppressive Fire",
+    "suppressionDetail": "{{defender}} lost {{morale}} morale",
     "enemyTurnTitle": "Enemy Turn",
     "enemyTurnDetail": "Hostile units are acting",
     "enemyPhaseTitle": "Enemy Phase",

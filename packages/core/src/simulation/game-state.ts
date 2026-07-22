@@ -49,7 +49,9 @@ export function createUnitInstance(
     statusEffects: new Set(),
     carrying: [],
     entrench: 0,
-    movedThisRound: false
+    movedThisRound: false,
+    dugInThisRound: false,
+    idleEntrenchedTurns: 0
   };
 }
 

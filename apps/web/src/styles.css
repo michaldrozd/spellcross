@@ -4071,6 +4071,12 @@ header.app-header {
   color: #77796d;
 }
 
+.unit-card.target-card .suppress-btn {
+  border-color: #9e8651 #292217 #17130d #746239;
+  background: linear-gradient(180deg, #4d4328, #211c13);
+  color: #ead391;
+}
+
 .unit-card h3 {
   margin: 0 0 0.5rem 0;
   font-size: 0.72rem;
@@ -4224,8 +4230,15 @@ header.app-header {
 .unit-actions {
   grid-column: 2 / span 2;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.32rem;
   margin-top: 0.28rem;
+}
+
+.unit-actions .posture-action {
+  border-color: #667765 #202a22 #111711 #4b5b4a;
+  background: linear-gradient(180deg, #334436, #18221a);
+  color: #c8d7bd;
 }
 
 .battle-log-panel {

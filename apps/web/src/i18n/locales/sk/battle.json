@@ -27,6 +27,8 @@
     "hitDetail": "{{defender}} - {{damage}} poškodenia",
     "missTitle": "Výstrel netrafil",
     "missDetail": "{{attacker}} → {{defender}}",
+    "suppressionTitle": "Potlačovacia paľba",
+    "suppressionDetail": "{{defender}} stratil {{morale}} morálky",
     "enemyTurnTitle": "Nepriateľský ťah",
     "enemyTurnDetail": "Nepriateľské jednotky konajú",
     "enemyPhaseTitle": "Nepriateľská fáza",

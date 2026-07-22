@@ -219,9 +219,11 @@ export interface AttackEffect {
   startTime: number;
   type: CombatEffectType;
   damage?: number;
+  moraleDamage?: number;
   hit?: boolean;
   killed: boolean;
   arc?: boolean; // indirect fire (mortar/howitzer/rocket) — the shell lobs in a high ballistic arc
+  suppressive?: boolean;
 }
 
 export interface MovingUnit {
@@ -6486,14 +6488,17 @@ export function BattlefieldStage({
             && (() => {
             // Damage number with a punchy pop (overshoot scale), an ease-out leap upward, and a size/
             // colour ramp by magnitude — so a big hit reads as a big number, not a uniform tick.
-            const dmg = effect.damage ?? 0;
+            const dmg = effect.suppressive ? effect.moraleDamage ?? 0 : effect.damage ?? 0;
             const textElapsed = elapsed - timing.impactAtMs - 35;
             const textLife = effect.killed ? 905 : 1085;
             const pop = easeOutBack(textElapsed / 170);
             const rise = tileSize * 0.5 + 20 * easeOutCubic(textElapsed / 760);
-            const fontSize = effect.hit ? Math.round(16 + Math.min(16, dmg * 0.7)) : 15;
+            const readableImpact = effect.suppressive || Boolean(effect.hit);
+            const fontSize = readableImpact ? Math.round(16 + Math.min(16, dmg * 0.7)) : 15;
             const big = dmg >= 18;
-            const fill = !effect.hit ? '#d8d1bc' : big ? '#ff8a3c' : dmg >= 9 ? '#ffc24a' : '#f3d58a';
+            const fill = effect.suppressive
+              ? '#ffd36d'
+              : !effect.hit ? '#d8d1bc' : big ? '#ff8a3c' : dmg >= 9 ? '#ffc24a' : '#f3d58a';
             return (
               // Counter-scaled so the combat text stays a fixed, crisp on-screen size
               // (net scale ≈ 1) instead of being blown up by the camera zoom.
@@ -6504,10 +6509,10 @@ export function BattlefieldStage({
                 scale={(1 / scale) * Math.max(0.2, pop)}
               >
                 <Text
-                  text={effect.hit ? `-${dmg}` : t('combat.miss')}
+                  text={effect.suppressive ? t('combat.suppress', { morale: dmg }) : effect.hit ? `-${dmg}` : t('combat.miss')}
                   anchor={{ x: 0.5, y: 0.5 }}
                   resolution={2}
-                  style={damageTextStyle(Boolean(effect.hit), big, fontSize, fill)}
+                  style={damageTextStyle(readableImpact, big, fontSize, fill)}
                   alpha={Math.max(0, 0.95 - textElapsed / textLife)}
                 />
               </Container>

@@ -19,6 +19,27 @@
     "reasonAlreadyActed": "Už konala",
     "tooltip": "Za 2 AP pripraví paľbu na reakciu"
   },
+  "digIn": {
+    "label": "Zakopať",
+    "reasonAir": "Vzdušné jednotky sa nemôžu zakopať",
+    "reasonRouted": "Utekajúce jednotky sa nemôžu zakopať",
+    "reasonMoved": "Po presune sa už nemožno zakopať",
+    "reasonFull": "Jednotka je úplne zakopaná",
+    "reasonNeedsAp": "Žiadne akčné body",
+    "tooltip": "Minie všetky zostávajúce AP a okamžite zlepší zakopanie"
+  },
+  "rally": {
+    "label": "Zomknúť",
+    "reasonSteady": "Morálka je stabilná",
+    "reasonNeedsAp": "Žiadne akčné body",
+    "reasonEnemyClose": "Nepriateľ je príliš blízko",
+    "tooltip": "Minie všetky zostávajúce AP a obnoví 8 morálky"
+  },
+  "suppress": {
+    "label": "Potlačiť",
+    "reasonUnavailable": "Treba pripravenú jednotku, 2 AP, muníciu a platný cieľ",
+    "tooltip": "Vymení poškodenie a presnosť za silnejší tlak na morálku"
+  },
   "supply": {
     "label": "Zásobovanie",
     "reasonNeedsAp": "Vyžaduje 2 AP",

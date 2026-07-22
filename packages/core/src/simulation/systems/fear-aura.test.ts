@@ -37,14 +37,14 @@ describe('Fear aura', () => {
     const near = byDef(state, 'alliance', 'near');
     const far = byDef(state, 'alliance', 'far');
 
-    tp.endTurn(); // alliance ends: entrench +1, base recovery +4
+    tp.endTurn(); // alliance ends: infantry entrench +2, base recovery +5
 
-    // near: 40 + 4 base − (fear 2 × 2) = 40 → suppressed
-    expect(near.currentMorale).toBe(40);
-    expect(near.stance).toBe('suppressed');
+    // near: 40 + 5 base - (fear 2 x 2) = 41.
+    expect(near.currentMorale).toBe(41);
+    expect(near.stance).toBe('ready');
 
-    // far: 40 + 4 base = 44, no fear in range → ready
-    expect(far.currentMorale).toBe(44);
+    // far: 40 + 5 base = 45, no fear in range.
+    expect(far.currentMorale).toBe(45);
     expect(far.stance).toBe('ready');
   });
 
@@ -72,8 +72,8 @@ describe('Fear aura', () => {
     tp.endTurn(); // alliance ends (no otherSide morale processed)
     tp.endTurn(); // otherSide ends: ghoul recovers; its own/lich fear must not touch it
 
-    // ghoul: 40 + 3 base + 1 entrench − 2 (human adjacent) = 42, untouched by the lich's fear
+    // ghoul: 40 + 3 base + 2 entrench - 2 (human adjacent) = 43, untouched by the lich's fear.
     expect(ghoul.stats.fear).toBe(1);
-    expect(ghoul.currentMorale).toBe(42);
+    expect(ghoul.currentMorale).toBe(43);
   });
 });

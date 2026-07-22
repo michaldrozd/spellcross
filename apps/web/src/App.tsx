@@ -56,12 +56,13 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import type { ArrivalEffect, AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
-import { combatEffectTiming, combatEffectTypeForWeapon } from './components/combatVisuals.js';
+import { combatEffectForShot, combatEffectTiming, combatEffectTypeForWeapon } from './components/combatVisuals.js';
 import { HealButton } from './components/HealButton.js';
 import { MainMenu } from './components/MainMenu.js';
 import type { SaveSlot } from './components/MainMenu.js';
 import { ObjectiveHud } from './components/ObjectiveHud.js';
 import { OverwatchButton } from './components/OverwatchButton.js';
+import { PostureActions } from './components/PostureActions.js';
 import { StrategicHQ } from './components/StrategicHQ.js';
 import { SupplyButton } from './components/SupplyButton.js';
 import { ToastContainer, showToast } from './components/Toast.js';
@@ -299,6 +300,13 @@ function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState)
     case 'unit:moved':
       return i18n.t('log:moved', { unit: unitDisplayName(event.unitId, battleState) });
     case 'unit:attacked':
+      if (event.attackMode === 'suppressive') {
+        return i18n.t('log:suppressed', {
+          attacker: unitDisplayName(event.attackerId, battleState),
+          defender: unitDisplayName(event.defenderId, battleState),
+          morale: event.moraleDamage
+        });
+      }
       return event.hit
         ? i18n.t('log:hit', { attacker: unitDisplayName(event.attackerId, battleState), defender: unitDisplayName(event.defenderId, battleState), damage: event.damage })
         : i18n.t('log:miss', { attacker: unitDisplayName(event.attackerId, battleState), defender: unitDisplayName(event.defenderId, battleState) });
@@ -308,6 +316,10 @@ function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState)
       return i18n.t('log:xpGained', { unit: unitDisplayName(event.unitId, battleState) });
     case 'tile:destroyed':
       return i18n.t('log:tileDestroyed', { q: event.at.q, r: event.at.r });
+    case 'unit:dug-in':
+      return i18n.t('log:dugIn', { unit: unitDisplayName(event.unitId, battleState), level: event.level });
+    case 'unit:rallied':
+      return i18n.t('log:rallied', { unit: unitDisplayName(event.unitId, battleState), morale: event.morale });
     case 'unit:level':
       return i18n.t('log:levelUp', { unit: unitDisplayName(event.unitId, battleState), level: event.level });
     case 'reinforcements:arrived':
@@ -317,7 +329,7 @@ function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState)
   }
 }
 function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: string, defenderId: string) {
-  if (!events) return { hit: false, damage: 0, killed: false };
+  if (!events) return { hit: false, damage: 0, moraleDamage: 0, killed: false, attackMode: 'normal' as const };
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i];
     if (
@@ -325,10 +337,16 @@ function visualOutcomeForAttack(events: BattleEvent[] | undefined, attackerId: s
       && event.attackerId === attackerId
       && event.defenderId === defenderId
     ) {
-      return { hit: event.hit, damage: event.damage, killed: event.defenderRemainingHealth === 0 };
+      return {
+        hit: event.hit,
+        damage: event.damage,
+        moraleDamage: event.moraleDamage,
+        killed: event.defenderRemainingHealth === 0,
+        attackMode: event.attackMode ?? 'normal'
+      };
     }
   }
-  return { hit: false, damage: 0, killed: false };
+  return { hit: false, damage: 0, moraleDamage: 0, killed: false, attackMode: 'normal' as const };
 }
 // Monotonic id for combat notices — Date.now() collided when several notices were created in the
 // same millisecond (e.g. rapid attacks), producing duplicate React keys.
@@ -691,6 +709,7 @@ const BattleView: React.FC<{
     selectedUnit?.coordinate.r,
     selectedUnit?.stats.weaponRanges,
     selectedUnit?.stats.weaponFireModes,
+    battle.state.timeline.length,
     map
   ]);
   const globalRangeTiles = globalRangeOverlay.tiles;
@@ -710,7 +729,13 @@ const BattleView: React.FC<{
       attacker: UnitInstance,
       defender: UnitInstance,
       weaponId: string,
-      outcome: { hit: boolean; damage: number; killed: boolean }
+      outcome: {
+        hit: boolean;
+        damage: number;
+        moraleDamage: number;
+        killed: boolean;
+        attackMode: 'normal' | 'suppressive';
+      }
     ) => ReturnType<typeof combatEffectTiming>;
     t: typeof t;
   } | null>(null);
@@ -840,6 +865,8 @@ const BattleView: React.FC<{
         type: effect.type,
         arc: effect.arc,
         hit: effect.hit,
+        suppressive: effect.suppressive,
+        moraleDamage: effect.moraleDamage,
         killed: effect.killed,
         startTime: effect.startTime
       })),
@@ -967,6 +994,12 @@ const BattleView: React.FC<{
         persist();
         return res.success;
       },
+      moveUnitPath: (unitId: string, path: HexCoordinate[]) => {
+        const proc = new TurnProcessor(battle.state);
+        const res = proc.moveUnit({ unitId, path });
+        persist();
+        return res;
+      },
       snapUnit: (unitId: string, q: number, r: number) => {
         for (const side of Object.values(battle.state.sides)) {
           const unit = side.units.get(unitId);
@@ -974,6 +1007,7 @@ const BattleView: React.FC<{
             unit.coordinate = { q, r };
             unit.embarkedOn = undefined;
             updateAllFactionsVision(battle.state);
+            persist();
             return true;
           }
         }
@@ -985,6 +1019,19 @@ const BattleView: React.FC<{
         tile.blocksVision = true;
         tile.cover = Math.max(3, tile.cover);
         updateAllFactionsVision(battle.state);
+        persist();
+        return true;
+      },
+      placeDestructibleVisionBlocker: (q: number, r: number, hp = 1) => {
+        const tile = getTile({ q, r });
+        if (!tile) return false;
+        tile.terrain = 'urban';
+        tile.blocksVision = true;
+        tile.cover = 3;
+        tile.destructible = true;
+        tile.hp = hp;
+        updateAllFactionsVision(battle.state);
+        persist();
         return true;
       },
       setWeaponFireMode: (unitId: string, weaponId: string, mode: 'direct' | 'indirect') => {
@@ -1131,6 +1178,10 @@ const BattleView: React.FC<{
           definitionId: u.definitionId,
           coord: u.coordinate,
           orientation: u.orientation,
+          ap: u.actionPoints,
+          morale: u.currentMorale,
+          stance: u.stance,
+          entrench: u.entrench ?? 0,
           embarkedOn: u.embarkedOn,
           carrying: u.carrying,
           cap: u.stats.transportCapacity ?? 0,
@@ -1157,6 +1208,7 @@ const BattleView: React.FC<{
           u.actionPoints = u.maxActionPoints;
         }
         updateAllFactionsVision(battle.state);
+        persist();
         return true;
       },
       selectUnit: (unitId?: string) => {
@@ -1196,6 +1248,53 @@ const BattleView: React.FC<{
         if (!target) return false;
         const proc = new TurnProcessor(battle.state);
         const res = proc.setOverwatch(target.id);
+        persist();
+        return res;
+      },
+      setUnitMorale: (unitId: string, morale: number) => {
+        const target = Object.values(battle.state.sides)
+          .map((side) => side.units.get(unitId))
+          .find((unit): unit is UnitInstance => Boolean(unit));
+        if (!target) return false;
+        target.currentMorale = Math.max(0, Math.min(100, morale));
+        target.stance = target.currentMorale <= 20 ? 'routed' : target.currentMorale <= 40 ? 'suppressed' : 'ready';
+        persist();
+        return true;
+      },
+      digIn: (unitId: string) => {
+        const proc = new TurnProcessor(battle.state);
+        const res = proc.digIn(unitId);
+        persist();
+        return res;
+      },
+      rally: (unitId: string) => {
+        const proc = new TurnProcessor(battle.state);
+        const res = proc.rally(unitId);
+        persist();
+        return res;
+      },
+      suppressUnitWith: (attackerId: string, defenderId: string, weaponId?: string) => {
+        const attacker = battle.state.sides.alliance.units.get(attackerId);
+        const defender = battle.state.sides.otherSide.units.get(defenderId);
+        if (!attacker || !defender) return { success: false, error: 'Unit not found' };
+        const weapon = weaponId ?? bestWeapon(attacker, defender, battle.state.map, battle.state.weather)?.weapon;
+        if (!weapon) return { success: false, error: 'No weapon available' };
+        const proc = new TurnProcessor(battle.state, { random: () => 0 });
+        const res = proc.suppressUnit({ attackerId, defenderId, weaponId: weapon });
+        if (res.success) {
+          addAttackEffect(
+            attacker,
+            defender,
+            weapon,
+            visualOutcomeForAttack(res.events as BattleEvent[] | undefined, attackerId, defenderId)
+          );
+        }
+        persist();
+        return res;
+      },
+      attackTileWith: (attackerId: string, q: number, r: number, weaponId: string) => {
+        const proc = new TurnProcessor(battle.state, { random: () => 0 });
+        const res = proc.attackTile({ attackerId, target: { q, r }, weaponId });
         persist();
         return res;
       },
@@ -1357,7 +1456,9 @@ const BattleView: React.FC<{
       const timing = addAttackEffect(shooter, target, ev.weapon, {
         hit: ev.hit !== false,
         damage: ev.damage ?? 0,
-        killed
+        moraleDamage: ev.moraleDamage ?? 0,
+        killed,
+        attackMode: ev.attackMode ?? 'normal'
       }, delay, reactAt);
       aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
         AudioManager.play(sfx);
@@ -1415,19 +1516,27 @@ const BattleView: React.FC<{
     attacker: UnitInstance,
     defender: UnitInstance,
     weaponId: string,
-    outcome: { hit: boolean; damage: number; killed: boolean },
+    outcome: { hit: boolean; damage: number; moraleDamage: number; killed: boolean; attackMode: 'normal' | 'suppressive' },
     delay = 0,
     atCoord?: { q: number; r: number }
   ) => {
     const to = atCoord ?? defender.coordinate;
-    const effectType = combatEffectTypeForWeapon(attacker.definitionId, weaponId);
+    const presentation = combatEffectForShot(attacker.definitionId, weaponId, outcome.attackMode);
+    const effectType = presentation.type;
     const arc = isIndirectFire(attacker, weaponId);
     const timing = combatEffectTiming(effectType, arc);
     const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
-    const noticeTitle = outcome.hit ? t('battle:notice.hitTitle') : t('battle:notice.missTitle');
-    const noticeDetail = outcome.hit
-      ? t('battle:notice.hitDetail', { defender: unitDisplayName(defender.id, battle.state), damage: outcome.damage })
-      : t('battle:notice.missDetail', { attacker: unitDisplayName(attacker.id, battle.state), defender: unitDisplayName(defender.id, battle.state) });
+    const noticeTitle = presentation.suppressive
+      ? t('battle:notice.suppressionTitle')
+      : outcome.hit ? t('battle:notice.hitTitle') : t('battle:notice.missTitle');
+    const noticeDetail = presentation.suppressive
+      ? t('battle:notice.suppressionDetail', {
+          defender: unitDisplayName(defender.id, battle.state),
+          morale: outcome.moraleDamage
+        })
+      : outcome.hit
+        ? t('battle:notice.hitDetail', { defender: unitDisplayName(defender.id, battle.state), damage: outcome.damage })
+        : t('battle:notice.missDetail', { attacker: unitDisplayName(attacker.id, battle.state), defender: unitDisplayName(defender.id, battle.state) });
     window.setTimeout(() => showPhaseNotice(noticeTitle, noticeDetail, noticeTone), delay);
     setAttackEffects(prev => [...prev, {
       id: `${attacker.id}-${defender.id}-${nextEffectId()}`,
@@ -1440,8 +1549,10 @@ const BattleView: React.FC<{
       type: effectType,
       arc,
       damage: outcome.damage,
+      moraleDamage: outcome.moraleDamage,
       hit: outcome.hit,
-      killed: outcome.killed
+      killed: outcome.killed,
+      suppressive: presentation.suppressive
     }]);
     return timing;
   };
@@ -1661,6 +1772,34 @@ const BattleView: React.FC<{
         playImpact(defender, attackOutcome.damage, hpBefore, timing.impactAtMs);
       }
     }
+    persist();
+    resolveOutcome();
+  };
+  const actSuppress = (attackerId: string, defender: UnitInstance) => {
+    if (autoTurnBusyRef.current || enemyTurnBusyRef.current || movingUnitRef.current) return;
+    const attacker = battle.state.sides.alliance.units.get(attackerId);
+    if (!attacker) return;
+    const weapon = bestWeapon(attacker, defender, battle.state.map, battle.state.weather);
+    if (!weapon) {
+      AudioManager.play('error');
+      addCombatNotice(t('battle:fireControl.attackUnavailable'));
+      return;
+    }
+
+    const hpBefore = defender.currentHealth / (defender.stats.maxHealth || 100);
+    const result = processor.suppressUnit({ attackerId, defenderId: defender.id, weaponId: weapon.weapon });
+    if (!result.success) {
+      AudioManager.play('error');
+      const reason = result.errorKey ? t(`errors:${result.errorKey}`) : t('errors:suppressionFailed');
+      showToast(reason, 'error');
+      addCombatNotice(reason);
+      return;
+    }
+
+    const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
+    AudioManager.play(firingSound(attacker, defender, weapon.weapon));
+    const timing = addAttackEffect(attacker, defender, weapon.weapon, attackOutcome);
+    if (attackOutcome.hit) playImpact(defender, attackOutcome.damage, hpBefore, timing.impactAtMs);
     persist();
     resolveOutcome();
   };
@@ -1891,6 +2030,29 @@ const BattleView: React.FC<{
               break;
             }
           }
+        } else if (action.type === 'suppress') {
+          const attacker = findBattleUnit(action.attackerId);
+          const defender = findBattleUnit(action.defenderId);
+          const defHpBefore = defender ? defender.currentHealth / (defender.stats.maxHealth || 100) : 1;
+          const result = aiProcessor.suppressUnit(action);
+          if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
+          if (attacker && defender) {
+            const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
+            const timing = addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
+            const visible = battle.state.vision.alliance.visibleTiles.has(
+              defender.coordinate.r * battle.state.map.width + defender.coordinate.q
+            );
+            if (visible) {
+              AudioManager.play(firingSound(attacker, defender, action.weaponId));
+              if (outcome.hit) playImpact(defender, outcome.damage, defHpBefore, timing.impactAtMs);
+              await sleep(700);
+            }
+            attacksMade += 1;
+            if (attacksMade >= maxEnemyAttacks) {
+              aiProcessor.endTurn();
+              break;
+            }
+          }
         } else if (action.type === 'attackTile') {
           // Snapshot visibility BEFORE the demolition — destroying the tile recomputes vision. Only the
           // blast on a tile the player can see should boom (and the destroyed structure is the visual).
@@ -1907,6 +2069,14 @@ const BattleView: React.FC<{
           const healRes = aiProcessor.heal({ medicId: action.medicId, targetId: action.targetId });
           if (!healRes.success) { failedUnitIds.add(action.medicId); continue; }
           await sleep(250);
+        } else if (action.type === 'digIn') {
+          const digInRes = aiProcessor.digIn(action.unitId);
+          if (!digInRes.success) { failedUnitIds.add(action.unitId); continue; }
+          await sleep(180);
+        } else if (action.type === 'rally') {
+          const rallyRes = aiProcessor.rally(action.unitId);
+          if (!rallyRes.success) { failedUnitIds.add(action.unitId); continue; }
+          await sleep(180);
         }
       }
     } finally {
@@ -2023,6 +2193,20 @@ const BattleView: React.FC<{
           await sleep(killed ? 140 : hit ? 70 : 0); // let the kill/hit land before moving on
           await sleep(700);
         }
+      } else if (action.type === 'suppress') {
+        const attacker = findBattleUnit(action.attackerId);
+        const defender = findBattleUnit(action.defenderId);
+        const defHpBefore = defender ? defender.currentHealth / (defender.stats.maxHealth || 100) : 1;
+        const result = proc.suppressUnit(action);
+        if (!result.success) { failedUnitIds.add(action.attackerId); continue; }
+        if (attacker && defender) {
+          setSelected(action.attackerId);
+          const outcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, action.attackerId, action.defenderId);
+          const timing = addAttackEffect(attacker, defender, action.weaponId, outcome, 0);
+          AudioManager.play(firingSound(attacker, defender, action.weaponId));
+          if (outcome.hit) playImpact(defender, outcome.damage, defHpBefore, timing.impactAtMs);
+          await sleep(700);
+        }
       } else if (action.type === 'attackTile') {
         const tileRes = proc.attackTile({ attackerId: action.unitId, target: action.target, weaponId: action.weaponId });
         if (tileRes && tileRes.success === false) { failedUnitIds.add(action.unitId); continue; }
@@ -2038,6 +2222,16 @@ const BattleView: React.FC<{
         if (!healRes.success) { failedUnitIds.add(action.medicId); continue; }
         AudioManager.play('select');
         await sleep(250);
+      } else if (action.type === 'digIn') {
+        const digInRes = proc.digIn(action.unitId);
+        if (!digInRes.success) { failedUnitIds.add(action.unitId); continue; }
+        AudioManager.play('objective');
+        await sleep(180);
+      } else if (action.type === 'rally') {
+        const rallyRes = proc.rally(action.unitId);
+        if (!rallyRes.success) { failedUnitIds.add(action.unitId); continue; }
+        AudioManager.play('turnStart');
+        await sleep(180);
       }
     }
     clearTargeting(true);
@@ -2308,6 +2502,34 @@ const BattleView: React.FC<{
                       })}
                     </div>
                     <div className="unit-actions">
+                      {!deployMode && !embarked && (
+                        <PostureActions
+                          battleState={battle.state}
+                          unit={unit}
+                          onDigIn={() => {
+                            const proc = new TurnProcessor(battle.state);
+                            const res = proc.digIn(unit.id);
+                            if (!res.success) {
+                              AudioManager.play('error');
+                              showToast(res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:cannotDigIn'), 'error');
+                              return;
+                            }
+                            AudioManager.play('objective');
+                            persist();
+                          }}
+                          onRally={() => {
+                            const proc = new TurnProcessor(battle.state);
+                            const res = proc.rally(unit.id);
+                            if (!res.success) {
+                              AudioManager.play('error');
+                              showToast(res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:cannotRally'), 'error');
+                              return;
+                            }
+                            AudioManager.play('turnStart');
+                            persist();
+                          }}
+                        />
+                      )}
                       {carrier && (
                         <button
                           className="sm-btn"
@@ -2408,6 +2630,9 @@ const BattleView: React.FC<{
                 const def = bundle.units.find(d => d.id === targetedEnemy.definitionId);
                 const weapon = attacker ? bestWeapon(attacker, targetedEnemy, battle.state.map, battle.state.weather) : null;
                 const canAttackNow = Boolean(attacker && weapon && canAffordAttack(attacker));
+                const canSuppressNow = canAttackNow
+                  && attacker?.stance === 'ready'
+                  && !attacker.statusEffects.has('suppression-used');
                 const attackBlockReason = !weapon
                   ? targetLineOfFireBlocked
                     ? t('battle:fireControl.blockedByTerrain')
@@ -2467,6 +2692,18 @@ const BattleView: React.FC<{
                         }}
                       >
                         {t('common:action.attack')}
+                      </button>
+                      <button
+                        className="sm-btn suppress-btn"
+                        disabled={!canSuppressNow}
+                        title={canSuppressNow ? t('actions:suppress.tooltip') : t('actions:suppress.reasonUnavailable')}
+                        onClick={() => {
+                          if (!canSuppressNow) return;
+                          actSuppress(selected, targetedEnemy);
+                          clearTargeting(false);
+                        }}
+                      >
+                        {t('actions:suppress.label')}
                       </button>
                       <button
                         className="sm-btn"

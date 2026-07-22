@@ -132,6 +132,46 @@ describe('direct and indirect fire', () => {
     expect(state.map.tiles[tileIndex(state.map, coordinate.target)].hp).toBe(12);
   });
 
+  it('opens direct fire through a demolished vision blocker', () => {
+    const map = battlefield();
+    Object.assign(map.tiles[tileIndex(map, coordinate.blocker)], {
+      destructible: true,
+      hp: 4
+    });
+    const state = createBattleState({
+      map,
+      sides: [
+        { faction: 'alliance', units: [
+          { definition: combatant('battery', 'alliance', { cannon: 4 }), coordinate: coordinate.shooter },
+          { definition: observer('alliance-spotter', 'alliance'), coordinate: coordinate.spotter }
+        ] },
+        { faction: 'otherSide', units: [
+          { definition: combatant('target', 'otherSide', { claws: 1 }), coordinate: coordinate.target }
+        ] }
+      ],
+      startingFaction: 'alliance'
+    });
+    const attackerId = unitIdByDefinition(state, 'alliance', 'battery');
+    const defenderId = unitIdByDefinition(state, 'otherSide', 'target');
+    const processor = new TurnProcessor(state, { random: () => 0 });
+
+    expect(processor.attackUnit({ attackerId, defenderId, weaponId: 'cannon' })).toMatchObject({
+      success: false,
+      errorKey: 'directFireBlocked'
+    });
+    expect(processor.attackTile({ attackerId, target: coordinate.blocker, weaponId: 'cannon' }).success).toBe(true);
+
+    const demolished = state.map.tiles[tileIndex(state.map, coordinate.blocker)];
+    expect(demolished).toMatchObject({
+      terrain: 'plain',
+      passable: true,
+      cover: 0,
+      blocksVision: false,
+      hp: 0
+    });
+    expect(processor.attackUnit({ attackerId, defenderId, weaponId: 'cannon' }).success).toBe(true);
+  });
+
   it('allows a spotted indirect reaction shot across a blocker but not a direct one', () => {
     const makeState = (indirect: boolean) => createBattleState({
       map: battlefield(),

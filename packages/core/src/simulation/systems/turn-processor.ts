@@ -1,4 +1,14 @@
 import {
+  canDigIn,
+  canRally,
+  ENTRENCHED_IDLE_MORALE_PENALTY,
+  entrenchmentCap,
+  entrenchmentStep,
+  isRoutedRetreatStep,
+  RALLY_MORALE_GAIN,
+  stanceForMorale
+} from './morale.js';
+import {
   canAffordAttack,
   calculateAttackRange,
   calculateHitChance,
@@ -14,7 +24,7 @@ import {
   spendAmmo
 } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
-import type { HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
+import type { AttackMode, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { isoDistance } from '../utils/grid-iso.js';
 import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
 import { coordinateKey, getTile, isNeighbor, tileIndex } from '../utils/grid.js';
@@ -158,19 +168,25 @@ export class TurnProcessor {
     const current = this.#state.activeFaction === 'alliance' ? 'alliance' : 'otherSide';
     const next = current === 'alliance' ? 'otherSide' : 'alliance';
 
-    // Apply entrenchment to units of the side that just ended their turn
+    // Resolve stationary defense and morale for the side that just ended its turn.
     const justEnded = this.#state.sides[current];
     for (const unit of justEnded.units.values()) {
       if (unit.stance === 'destroyed') continue;
       // embarked passengers ride inside the carrier; their coordinate is frozen at the embark tile,
       // so entrenching / morale-by-proximity here would use a stale position.
       if (unit.embarkedOn) continue;
-      // air cannot entrench, but still recovers morale and resets its move flag below
-      if (!unit.movedThisRound && unit.unitType !== 'air') {
-        unit.entrench = Math.min(3, (unit.entrench ?? 0) + 1);
+      const spentActionPoints = unit.actionPoints < unit.maxActionPoints;
+      const fullyIdle = !unit.movedThisRound && !unit.dugInThisRound && !spentActionPoints;
+      const cap = entrenchmentCap(unit);
+      if (fullyIdle && cap > 0) {
+        unit.entrench = Math.min(cap, (unit.entrench ?? 0) + entrenchmentStep(unit));
       }
-      // reset move flag for next time
-      unit.movedThisRound = false;
+
+      const fullyEntrenchedAndIdle = fullyIdle && cap > 0 && (unit.entrench ?? 0) >= cap;
+      unit.idleEntrenchedTurns = fullyEntrenchedAndIdle
+        ? (unit.idleEntrenchedTurns ?? 0) + 1
+        : 0;
+
       // Morale recovery and proximity effects
       const enemySide = this.#state.sides[next];
       let nearbyEnemy = false;
@@ -181,7 +197,7 @@ export class TurnProcessor {
       const baseRecovery = 3 + (unit.entrench ?? 0);
       const penalty = nearbyEnemy ? 2 : 0;
       unit.currentMorale = Math.min(100, Math.max(0, unit.currentMorale + baseRecovery - penalty));
-      unit.stance = unit.currentMorale <= 20 ? 'routed' : unit.currentMorale <= 40 ? 'suppressed' : 'ready';
+      unit.stance = stanceForMorale(unit.currentMorale);
 
       // Commander aura (+2 morale if any friendly hero within 2 hexes). Non-stacking.
       const hasCommanderNearby = (() => {
@@ -195,8 +211,7 @@ export class TurnProcessor {
       })();
       if (hasCommanderNearby) {
         unit.currentMorale = Math.min(100, unit.currentMorale + 2);
-        // re-derive stance: the aura can push a unit back up into the 'ready' band
-        unit.stance = unit.currentMorale <= 20 ? 'routed' : unit.currentMorale <= 40 ? 'suppressed' : 'ready';
+        unit.stance = stanceForMorale(unit.currentMorale);
       }
 
       // Fear aura: supernatural enemies (undead, demons, the titan) sap the morale of mundane
@@ -213,9 +228,20 @@ export class TurnProcessor {
         }
         if (dread > 0) {
           unit.currentMorale = Math.max(0, unit.currentMorale - dread * 2);
-          unit.stance = unit.currentMorale <= 20 ? 'routed' : unit.currentMorale <= 40 ? 'suppressed' : 'ready';
+          unit.stance = stanceForMorale(unit.currentMorale);
         }
       }
+
+      // A fully prepared unit that keeps doing nothing no longer heals back to perfect morale forever.
+      // The six-point penalty cancels an infantry bunker’s six-point safe recovery and slightly erodes
+      // vehicle crews, while one active turn resets the counter immediately.
+      if ((unit.idleEntrenchedTurns ?? 0) >= 2) {
+        unit.currentMorale = Math.max(0, unit.currentMorale - ENTRENCHED_IDLE_MORALE_PENALTY);
+        unit.stance = stanceForMorale(unit.currentMorale);
+      }
+
+      unit.movedThisRound = false;
+      unit.dugInThisRound = false;
     }
 
     this.#state.round += current === 'otherSide' ? 1 : 0;
@@ -237,6 +263,7 @@ export class TurnProcessor {
       if (unit.statusEffects.has('overwatch')) {
         unit.statusEffects.delete('overwatch');
       }
+      unit.statusEffects.delete('suppression-used');
       // ammo resupply: small trickle, full if on supply tile
       const cap = unit.stats.ammoCapacity;
       if (cap !== undefined) {
@@ -304,6 +331,10 @@ export class TurnProcessor {
         return { success: false, error: 'Path collides with another unit', errorKey: 'pathCollision' };
       }
 
+      if (unit.stance === 'routed' && !isRoutedRetreatStep(this.#state, unit, origin, step)) {
+        return { success: false, error: 'Routed units must retreat from the nearest enemy', errorKey: 'routedMustRetreat' };
+      }
+
       accumulatedCost += tile.movementCostModifier * movementMultiplier * weatherMoveMod;
       origin = { ...step };
       visited.add(coordinateKey(origin));
@@ -316,6 +347,8 @@ export class TurnProcessor {
     if (input.path.length > 0) {
       unit.movedThisRound = true;
       unit.entrench = 0;
+      unit.dugInThisRound = false;
+      unit.idleEntrenchedTurns = 0;
     }
 
     // Second pass: execute movement step-by-step and process reaction fire. Each defender may react at
@@ -416,6 +449,14 @@ export class TurnProcessor {
   }
 
   attackUnit(input: AttackActionInput): ActionResult {
+    return this.#executeAttack(input, 'normal');
+  }
+
+  suppressUnit(input: AttackActionInput): ActionResult {
+    return this.#executeAttack(input, 'suppressive');
+  }
+
+  #executeAttack(input: AttackActionInput, attackMode: AttackMode): ActionResult {
     const attackerSide = this.#state.sides[this.#state.activeFaction];
     const attacker = attackerSide.units.get(input.attackerId);
     if (!attacker) {
@@ -458,6 +499,12 @@ export class TurnProcessor {
     if (attacker.stance === 'routed') {
       return { success: false, error: 'Routed units cannot attack', errorKey: 'routedCannotAttack' };
     }
+    if (attackMode === 'suppressive' && attacker.stance !== 'ready') {
+      return { success: false, error: 'Only ready units can use suppressive fire', errorKey: 'suppressionRequiresReady' };
+    }
+    if (attackMode === 'suppressive' && attacker.statusEffects.has('suppression-used')) {
+      return { success: false, error: 'Unit already used suppressive fire this turn', errorKey: 'suppressionAlreadyUsed' };
+    }
 
     const maxRange = calculateAttackRange(attacker, input.weaponId, this.#state.map);
     const distance = isoDistance(attacker.coordinate, defender.coordinate);
@@ -487,12 +534,14 @@ export class TurnProcessor {
       weaponId: input.weaponId,
       map: this.#state.map,
       weather: this.#state.weather ?? 'clear',
-      random: this.#random
+      random: this.#random,
+      attackMode
     });
     attacker.orientation = isoDirectionIndex(attacker.coordinate, defender.coordinate);
 
     spendAttackCost(attacker);
     spendAmmo(attacker);
+    if (attackMode === 'suppressive') attacker.statusEffects.add('suppression-used');
     this.#state.timeline.push(...outcome.events);
 
     updateFactionVision(this.#state, attacker.faction);
@@ -526,12 +575,57 @@ export class TurnProcessor {
     const side = this.#state.sides[this.#state.activeFaction];
     const unit = side.units.get(unitId);
     if (!unit) return { success: false, error: 'Unit not found', errorKey: 'unitNotFound' };
+    if (unit.stance === 'routed') return { success: false, error: 'Routed units cannot set overwatch', errorKey: 'routedCannotOverwatch' };
+    if (unit.stance === 'suppressed') return { success: false, error: 'Suppressed units cannot set overwatch', errorKey: 'suppressedCannotOverwatch' };
     if (!canAffordAttack(unit)) return { success: false, error: 'Not enough AP for overwatch', errorKey: 'notEnoughApOverwatch' };
     if (unit.currentAmmo !== Infinity && unit.currentAmmo <= 0) return { success: false, error: 'No ammo', errorKey: 'noAmmo' };
     unit.statusEffects.add('overwatch');
     unit.actionPoints -= 2;
     this.#state.timeline.push({ kind: 'unit:xp', unitId: unit.id, amount: 0, reason: 'hit' });
     return { success: true };
+  }
+
+  digIn(unitId: string): ActionResult {
+    const side = this.#state.sides[this.#state.activeFaction];
+    const unit = side.units.get(unitId);
+    if (!unit) return { success: false, error: 'Unit not found', errorKey: 'unitNotFound' };
+    if (unit.unitType === 'air') return { success: false, error: 'Air units cannot dig in', errorKey: 'airCannotDigIn' };
+    if (unit.embarkedOn) return { success: false, error: 'Embarked units cannot dig in', errorKey: 'embarkedCannotDigIn' };
+    if (unit.stance === 'routed') return { success: false, error: 'Routed units cannot dig in', errorKey: 'routedCannotDigIn' };
+    if (unit.movedThisRound) return { success: false, error: 'A unit cannot dig in after moving', errorKey: 'movedCannotDigIn' };
+    if (unit.dugInThisRound) return { success: false, error: 'Unit already dug in this turn', errorKey: 'alreadyDugIn' };
+    if ((unit.entrench ?? 0) >= entrenchmentCap(unit)) {
+      return { success: false, error: 'Unit is fully entrenched', errorKey: 'fullyEntrenched' };
+    }
+    if (unit.actionPoints <= 0) return { success: false, error: 'No action points to dig in', errorKey: 'notEnoughApDigIn' };
+    if (!canDigIn(unit)) return { success: false, error: 'Unit cannot dig in', errorKey: 'cannotDigIn' };
+
+    unit.entrench = Math.min(entrenchmentCap(unit), (unit.entrench ?? 0) + entrenchmentStep(unit));
+    unit.actionPoints = 0;
+    unit.dugInThisRound = true;
+    unit.idleEntrenchedTurns = 0;
+    this.#state.timeline.push({ kind: 'unit:dug-in', unitId: unit.id, level: unit.entrench });
+    return { success: true, events: this.#state.timeline };
+  }
+
+  rally(unitId: string): ActionResult {
+    const side = this.#state.sides[this.#state.activeFaction];
+    const unit = side.units.get(unitId);
+    if (!unit) return { success: false, error: 'Unit not found', errorKey: 'unitNotFound' };
+    if (unit.stance !== 'suppressed' && unit.stance !== 'routed') {
+      return { success: false, error: 'Only shaken units can rally', errorKey: 'unitCannotRally' };
+    }
+    if (unit.actionPoints <= 0) return { success: false, error: 'No action points to rally', errorKey: 'notEnoughApRally' };
+    if (!canRally(this.#state, unit)) {
+      return { success: false, error: 'Enemy too close to rally', errorKey: 'enemyTooCloseToRally' };
+    }
+
+    unit.currentMorale = Math.min(100, unit.currentMorale + RALLY_MORALE_GAIN);
+    unit.stance = stanceForMorale(unit.currentMorale);
+    unit.actionPoints = 0;
+    unit.idleEntrenchedTurns = 0;
+    this.#state.timeline.push({ kind: 'unit:rallied', unitId: unit.id, morale: unit.currentMorale });
+    return { success: true, events: this.#state.timeline };
   }
 
   embark(input: EmbarkActionInput): ActionResult {
@@ -694,6 +788,7 @@ export class TurnProcessor {
       tile.cover = 0;
       tile.movementCostModifier = 1;
       tile.providesVisionBoost = false;
+      tile.blocksVision = false;
       this.#state.timeline.push({ kind: 'tile:destroyed', at: { ...input.target } });
       updateAllFactionsVision(this.#state);
     }

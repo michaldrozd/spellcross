@@ -19,6 +19,27 @@
     "reasonAlreadyActed": "Already acted",
     "tooltip": "Spend 2 AP to prepare reaction fire"
   },
+  "digIn": {
+    "label": "Dig in",
+    "reasonAir": "Air units cannot dig in",
+    "reasonRouted": "Routed units cannot dig in",
+    "reasonMoved": "Cannot dig in after moving",
+    "reasonFull": "Already fully entrenched",
+    "reasonNeedsAp": "No action points",
+    "tooltip": "Spend all remaining AP to improve entrenchment immediately"
+  },
+  "rally": {
+    "label": "Rally",
+    "reasonSteady": "Morale is steady",
+    "reasonNeedsAp": "No action points",
+    "reasonEnemyClose": "Enemy too close",
+    "tooltip": "Spend all remaining AP to restore 8 morale"
+  },
+  "suppress": {
+    "label": "Suppress",
+    "reasonUnavailable": "Needs a ready unit, 2 AP, ammo, and a valid target",
+    "tooltip": "Trade damage and accuracy for stronger morale pressure"
+  },
   "supply": {
     "label": "Resupply",
     "reasonNeedsAp": "Needs 2 AP",
