@@ -11,6 +11,7 @@ import {
   deathMarkerVisible
 } from './combatVisuals.js';
 import {
+  battlefieldDirectionalSprite,
   canMovingUnitFadeCanopy,
   directionalSpriteGroundOffset,
   directionNameForOrientation,
@@ -272,6 +273,37 @@ describe('death marker lifecycle', () => {
 });
 
 describe('vehicle movement sheets', () => {
+  it('uses a dedicated eight-direction battlefield sheet for the supply truck', async () => {
+    expect(rasterUnitOverride('supply-truck')).toBe('/assets/generated/supply_truck.png');
+    expect(battlefieldDirectionalSprite('support', 'supply-truck')).toBe('supply_truck_directional');
+
+    const sheetPath = path.resolve(process.cwd(), 'public/assets/generated/supply_truck_directional_idle_sheet.png');
+    const sheet = await loadImage(sheetPath);
+    expect(sheet.width).toBe(1024);
+    expect(sheet.height).toBe(128);
+
+    const canvas = createCanvas(128, 128);
+    const ctx = canvas.getContext('2d');
+    const directionFrames = APC_SHEET_DIRECTIONS.map((_, directionIndex) => {
+      ctx.clearRect(0, 0, 128, 128);
+      ctx.drawImage(sheet, directionIndex * 128, 0, 128, 128, 0, 0, 128, 128);
+      return Buffer.from(ctx.getImageData(0, 0, 128, 128).data).toString('base64');
+    });
+    expect(new Set(directionFrames).size).toBe(8);
+  });
+
+  it('keeps every supply-truck direction on the same wheel contact line', async () => {
+    const sheetPath = path.resolve(process.cwd(), 'public/assets/generated/supply_truck_directional_walk_sheet.png');
+    const sheet = await loadImage(sheetPath);
+    const frameBottomsByDirection = measureCellBottoms(sheet, 4);
+    const scale = 0.3;
+
+    for (const [directionIndex, direction] of APC_SHEET_DIRECTIONS.entries()) {
+      expect(new Set(frameBottomsByDirection[directionIndex])).toEqual(new Set([123]));
+      expect(directionalSpriteGroundOffset('supply_truck_directional', 'walk', direction, scale)).toBeCloseTo(1.5, 4);
+    }
+  });
+
   it('keeps M113 walk frames on a stable ground line', async () => {
     const sheetPath = path.resolve(process.cwd(), 'public/assets/generated/apc_directional_walk_sheet.png');
     const sheet = await loadImage(sheetPath);
@@ -356,6 +388,13 @@ describe('directionNameForScreenVector', () => {
 });
 
 describe('vehicleSheetDirectionNameForOrientation', () => {
+  it('maps all supply-truck movement orientations without reversing or substituting a side', () => {
+    const expectedDirections = ['se', 'e', 'ne', 'nw', 'w', 'sw', 's', 'n'];
+    expect(expectedDirections.map((_, orientation) => (
+      vehicleSheetDirectionNameForOrientation(orientation, 'supply_truck_directional')
+    ))).toEqual(expectedDirections);
+  });
+
   it('uses the current APC sheet orientation metadata while bypassing damaged side cells', () => {
     expect(vehicleSheetDirectionNameForOrientation(0, 'apc_directional')).toBe('se');
     expect(vehicleSheetDirectionNameForOrientation(1, 'apc_directional')).toBe('se');

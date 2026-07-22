@@ -14,6 +14,21 @@ interface PlayOpts {
   pan?: number;                               // stereo position [-1,1]
 }
 
+export type MovementSoundProfile = 'foot' | 'track' | 'wheel' | 'rotor';
+
+export function movementSoundProfileFor(unitType: string, definitionId = ''): MovementSoundProfile {
+  const id = definitionId.toLowerCase();
+  if (unitType === 'air') return 'rotor';
+  if (unitType === 'support' && (id.includes('truck') || id.includes('radar'))) return 'wheel';
+  if (id === 'mortar-team') return 'foot';
+  if (unitType === 'vehicle' || unitType === 'artillery') return 'track';
+  return 'foot';
+}
+
+export function movementSoundDurationSeconds(durationMs: number) {
+  return Math.max(0.3, Math.min(8, (durationMs || 400) / 1000));
+}
+
 // Older Safari only exposes the prefixed constructor.
 type WebkitAudioWindow = Window & { webkitAudioContext?: typeof AudioContext };
 
@@ -43,6 +58,7 @@ class AudioManagerClass {
   private ambienceBus: GainNode | null = null;
   private ambienceNodes: AudioScheduledSourceNode[] = [];
   private ambienceTheme: 'battle' | 'hq' | null = null;
+  private lastMovementCue: { profile: MovementSoundProfile; requestedDurationMs: number; scheduledDurationSeconds: number } | null = null;
 
   constructor() {
     // Initialize audio context on first user interaction
@@ -726,14 +742,41 @@ class AudioManagerClass {
     n.start(at); n.stop(at + 0.055);
   }
 
+  private scheduleRoadThump(at: number, vol: number, dest: AudioNode, salt: number): void {
+    const ctx = this.getContext();
+    const body = ctx.createOscillator();
+    body.type = 'sine';
+    body.frequency.setValueAtTime(78 + (salt % 3) * 9, at);
+    body.frequency.exponentialRampToValueAtTime(42, at + 0.09);
+    const bodyGain = ctx.createGain();
+    bodyGain.gain.setValueAtTime(0.0001, at);
+    bodyGain.gain.exponentialRampToValueAtTime(vol, at + 0.006);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, at + 0.12);
+    body.connect(bodyGain); bodyGain.connect(dest);
+    body.start(at); body.stop(at + 0.13);
+
+    const chassis = this.noiseSource(0.055);
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.frequency.setValueAtTime(780 + (salt % 4) * 110, at);
+    band.Q.value = 1.1;
+    const chassisGain = ctx.createGain();
+    chassisGain.gain.setValueAtTime(0.0001, at);
+    chassisGain.gain.exponentialRampToValueAtTime(vol * 0.42, at + 0.004);
+    chassisGain.gain.exponentialRampToValueAtTime(0.0001, at + 0.05);
+    chassis.connect(band); band.connect(chassisGain); chassisGain.connect(dest);
+    chassis.start(at); chassis.stop(at + 0.06);
+  }
+
   // Realistic movement loop that lasts the whole glide: engine + tracks (tank), engine + tyre roll
   // (wheeled), boot footsteps (infantry), or rotor chop (air). Replaces the old one-shot beep/rumble.
-  playMovement(profile: 'foot' | 'track' | 'wheel' | 'rotor', durationMs: number): void {
+  playMovement(profile: MovementSoundProfile, durationMs: number): void {
     if (!this.enabled) return;
     try {
       const ctx = this.getContext();
       const vol = this.masterVolume * this.sfxVolume;
-      const dur = Math.max(0.3, Math.min(2.6, (durationMs || 400) / 1000));
+      const dur = movementSoundDurationSeconds(durationMs);
+      this.lastMovementCue = { profile, requestedDurationMs: durationMs, scheduledDurationSeconds: dur };
       const t = ctx.currentTime;
       const stop = t + dur + 0.06;
 
@@ -753,31 +796,39 @@ class AudioManagerClass {
 
       if (profile === 'track' || profile === 'wheel') {
         const isTrack = profile === 'track';
-        const base = isTrack ? 46 : 72; // heavy diesel idle vs lighter, higher truck engine
+        const base = isTrack ? 46 : 54;
 
         // diesel "chug" amplitude modulation that the engine oscillators pass through
         const am = ctx.createGain();
-        am.gain.setValueAtTime(isTrack ? 0.55 : 0.7, t);
+        am.gain.setValueAtTime(isTrack ? 0.55 : 0.72, t);
         const amLfo = ctx.createOscillator();
         amLfo.type = isTrack ? 'square' : 'sine';
-        amLfo.frequency.setValueAtTime(isTrack ? 9 : 24, t);
+        amLfo.frequency.setValueAtTime(isTrack ? 9 : 12, t);
         const amDepth = ctx.createGain();
-        amDepth.gain.setValueAtTime(isTrack ? 0.45 : 0.3, t);
+        amDepth.gain.setValueAtTime(isTrack ? 0.45 : 0.24, t);
         amLfo.connect(amDepth); amDepth.connect(am.gain);
         amLfo.start(t); amLfo.stop(stop);
 
         const engineLp = ctx.createBiquadFilter();
         engineLp.type = 'lowpass';
-        engineLp.frequency.setValueAtTime(isTrack ? 320 : 620, t);
+        engineLp.frequency.setValueAtTime(isTrack ? 320 : 480, t);
         const engineGain = ctx.createGain();
-        engineGain.gain.setValueAtTime(vol * (isTrack ? 0.34 : 0.27), t);
+        engineGain.gain.setValueAtTime(vol * (isTrack ? 0.34 : 0.32), t);
         am.connect(engineLp); engineLp.connect(engineGain); engineGain.connect(fade);
 
         // detuned sawtooth oscillators with a slow rev wobble = a thick engine tone
         [0, 0.6, 1.7].forEach((det, i) => {
           const o = ctx.createOscillator();
-          o.type = 'sawtooth';
+          o.type = isTrack || i === 0 ? 'sawtooth' : 'triangle';
           o.frequency.setValueAtTime(base + det, t);
+          if (!isTrack) {
+            const revvedFrequency = (base + det) * 1.17;
+            const revUpAt = t + Math.min(0.42, dur * 0.3);
+            const coastAt = Math.max(revUpAt + 0.02, t + dur - 0.24);
+            o.frequency.linearRampToValueAtTime(revvedFrequency, revUpAt);
+            o.frequency.setValueAtTime(revvedFrequency, coastAt);
+            o.frequency.linearRampToValueAtTime((base + det) * 0.94, t + dur);
+          }
           const rev = ctx.createOscillator();
           rev.type = 'sine';
           rev.frequency.setValueAtTime(0.6 + i * 0.25, t);
@@ -808,15 +859,30 @@ class AudioManagerClass {
             this.scheduleClank(t + ti + jitter, vol * 0.12, fade, k++);
           }
         } else {
-          // tyre roll = steady low-passed noise
-          const n = this.noiseSource(dur);
-          const lp = ctx.createBiquadFilter();
-          lp.type = 'lowpass';
-          lp.frequency.setValueAtTime(900, t);
-          const g = ctx.createGain();
-          g.gain.setValueAtTime(vol * 0.1, t);
-          n.connect(lp); lp.connect(g); g.connect(fade);
-          n.start(t); n.stop(stop);
+          const tyre = this.noiseSource(dur);
+          const tyreBand = ctx.createBiquadFilter();
+          tyreBand.type = 'bandpass';
+          tyreBand.frequency.setValueAtTime(520, t);
+          tyreBand.Q.value = 0.65;
+          const tyreGain = ctx.createGain();
+          tyreGain.gain.setValueAtTime(vol * 0.14, t);
+          tyre.connect(tyreBand); tyreBand.connect(tyreGain); tyreGain.connect(fade);
+          tyre.start(t); tyre.stop(stop);
+
+          const road = this.noiseSource(dur);
+          const roadLp = ctx.createBiquadFilter();
+          roadLp.type = 'lowpass';
+          roadLp.frequency.setValueAtTime(190, t);
+          const roadGain = ctx.createGain();
+          roadGain.gain.setValueAtTime(vol * 0.12, t);
+          road.connect(roadLp); roadLp.connect(roadGain); roadGain.connect(fade);
+          road.start(t); road.stop(stop);
+
+          let bumpIndex = 0;
+          for (let ti = 0.18; ti < dur - 0.08; ti += 0.38) {
+            const jitter = Math.sin((ti + 0.17) * 73.1) * 0.025;
+            this.scheduleRoadThump(t + ti + jitter, vol * 0.13, fade, bumpIndex++);
+          }
         }
       } else if (profile === 'rotor') {
         // helicopter: a strong low "whomp-whomp" chop (noise gated by a low LFO) + a faint turbine whine
@@ -853,6 +919,10 @@ class AudioManagerClass {
     } catch (e) {
       console.warn('Movement audio failed:', e);
     }
+  }
+
+  getLastMovementCue() {
+    return this.lastMovementCue ? { ...this.lastMovementCue } : null;
   }
 
   // Procedural ambience bed: a low minor drone + gusting wind, mood-shifted by weather. Sits under

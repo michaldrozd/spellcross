@@ -26,14 +26,13 @@ import {
   DIRECTIONAL_UNIT_FRAME_SIZES,
   DIRECTIONAL_UNIT_GROUND_BIAS,
   DIRECTIONAL_UNIT_SOURCE_HEIGHTS,
-  DIRECTIONAL_UNIT_SPRITES,
   RASTER_UNIT_ANCHOR_Y,
   RASTER_UNIT_VISIBLE_HEIGHTS,
   UNIT_SHEET_DIRECTIONS,
   UNIT_SHEET_FRAME_SIZE,
+  battlefieldDirectionalSprite,
   canMovingUnitFadeCanopy,
   directionalSpriteGroundOffset,
-  directionalVehicleSprite,
   isSupportVehicleDefinition,
   directionNameForOrientation,
   directionNameForScreenVector,
@@ -5071,10 +5070,11 @@ export function BattlefieldStage({
                     const baseAlpha = isSelected || isTarget ? (isFriendly ? 0.18 : 0.26) : (isFriendly ? 0.20 : 0.26);
                     const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * (1.22 - strideLift * 0.08);
-                    const isApcContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv') || (unitType === 'support' && definitionId.includes('truck'));
-                    const shadowAlpha = isGroundVehicle ? (isApcContact ? 0 : (movingThisUnit ? 0.07 : 0.10)) : footprint.alpha;
-                    const shadowRx = isGroundVehicle ? footprint.rx * (isApcContact ? 0.34 : 0.55) : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * (isApcContact ? 0.1 : 0.24) : footprint.ry;
+                    const isTrackedContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv');
+                    const isWheeledContact = unitType === 'support' && definitionId.includes('truck');
+                    const shadowAlpha = isGroundVehicle ? (isTrackedContact ? 0 : (movingThisUnit ? 0.07 : 0.10)) : footprint.alpha;
+                    const shadowRx = isGroundVehicle ? footprint.rx * (isTrackedContact ? 0.34 : 0.55) : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * (isTrackedContact ? 0.1 : 0.24) : footprint.ry;
                     const showFactionBase = isVisible || readableInFog;
 	                  if (showFactionBase) {
 	                    // Ground vehicles get the team disc too (their large silhouette dilutes it, so 0.7x);
@@ -5089,10 +5089,10 @@ export function BattlefieldStage({
                   }
 	                    if (shadowAlpha > 0) {
 		                    g.beginFill(isGroundVehicle ? 0x020403 : 0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
-		                    g.drawEllipse(1, footprint.y + (isGroundVehicle && !isApcContact ? tileSize * 0.012 : 0), shadowRx, shadowRy);
+		                    g.drawEllipse(1, footprint.y + (isGroundVehicle && !isTrackedContact ? tileSize * 0.012 : 0), shadowRx, shadowRy);
 		                    g.endFill();
 	                    }
-                    if (isApcContact && (isVisible || readableInFog)) {
+                    if (isTrackedContact && (isVisible || readableInFog)) {
                       const contactVector = movingThisUnit || turningThisUnit
                         ? moveScreenVector
                         : orientationScreenVector(animatedOrientation);
@@ -5126,6 +5126,45 @@ export function BattlefieldStage({
                       }
                       g.lineStyle();
                     }
+                    if (isWheeledContact && (isVisible || readableInFog)) {
+                      const contactVector = movingThisUnit || turningThisUnit
+                        ? moveScreenVector
+                        : orientationScreenVector(animatedOrientation);
+                      const perpX = -contactVector.y;
+                      const perpY = contactVector.x;
+                      const wheelGap = footprint.ry * 0.78;
+                      const contactY = footprint.y + tileSize * 0.004;
+                      for (const axlePosition of [-0.43, -0.13, 0.42]) {
+                        for (const sideOffset of [-1, 1]) {
+                          const along = footprint.rx * axlePosition;
+                          const side = wheelGap * sideOffset;
+                          g.beginFill(0x060705, isSelected ? 0.5 : 0.42);
+                          g.drawEllipse(
+                            contactVector.x * along + perpX * side,
+                            contactY + contactVector.y * along * 0.26 + perpY * side,
+                            footprint.rx * 0.08,
+                            footprint.ry * 0.12
+                          );
+                          g.endFill();
+                        }
+                      }
+                      if (movingThisUnit || turningThisUnit) {
+                        const rearX = -contactVector.x * footprint.rx * 0.64;
+                        const rearY = footprint.y - contactVector.y * footprint.ry * 0.46;
+                        const dustPulse = turningThisUnit ? 0.78 : 0.68 + 0.3 * Math.abs(fastWave);
+                        g.beginFill(0x332f24, 0.3 * dustPulse);
+                        g.drawEllipse(rearX, rearY, footprint.rx * 0.46, footprint.ry * 0.21);
+                        g.endFill();
+                        g.beginFill(0x8a7b57, 0.2 * dustPulse);
+                        g.drawEllipse(
+                          rearX - contactVector.x * footprint.rx * 0.3 + perpX * footprint.ry * 0.26,
+                          rearY - contactVector.y * footprint.ry * 0.18 + perpY * footprint.ry * 0.26,
+                          footprint.rx * 0.21,
+                          footprint.ry * 0.12
+                        );
+                        g.endFill();
+                      }
+                    }
                     if (!isGroundVehicle) {
 		                    g.beginFill(0x000000, isVisible ? footprint.alpha * 0.45 : footprint.alpha * 0.22);
                       g.drawEllipse(
@@ -5149,7 +5188,7 @@ export function BattlefieldStage({
                         g.endFill();
                       }
                     }
-                    if (isGroundVehicle && (isVisible || readableInFog) && (movingThisUnit || turningThisUnit) && !isApcContact) {
+                    if (isGroundVehicle && (isVisible || readableInFog) && (movingThisUnit || turningThisUnit) && !isTrackedContact && !isWheeledContact) {
                       const perpX = -moveScreenVector.y;
                       const perpY = moveScreenVector.x;
                       const trackHalf = footprint.rx * 0.76;
@@ -5204,12 +5243,9 @@ export function BattlefieldStage({
               let anchorY = 0.95;
               let canMirrorForFacing = true;
               const rasterOverridePath = rasterUnitOverride(defId);
-              const vehicleDirectionalSprite = directionalVehicleSprite(unitType, defId);
-              // A hand-authored sprite wins over the generic directional sheet — otherwise a unit
-              // typed as `vehicle` (e.g. the Breorn titan) would fall back to the shared tank frames.
-              const directionalSprite = rasterOverridePath
-                ? undefined
-                : DIRECTIONAL_UNIT_SPRITES[defId] ?? vehicleDirectionalSprite;
+              // Unique static art wins over generic vehicle sheets. Definitions with a dedicated
+              // directional set, such as the supply truck, opt back into the motion renderer.
+              const directionalSprite = battlefieldDirectionalSprite(unitType, defId);
               const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
               const isVehicleUnit = isGroundVehicle;
               const footMovementDirection = directionNameForScreenVector(moveScreenVector);

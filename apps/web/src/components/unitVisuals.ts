@@ -9,7 +9,8 @@ export const DIRECTIONAL_UNIT_SPRITES: Record<string, string> = {
 const VEHICLE_DIRECTIONAL_SPRITES = {
   tank: 'tank_directional',
   apc: 'm113_apc',
-  artillery: 'artillery_directional'
+  artillery: 'artillery_directional',
+  supplyTruck: 'supply_truck_directional'
 } as const;
 
 const OPPOSITE_DIRECTION_NAMES: Record<string, string> = {
@@ -48,7 +49,8 @@ export const UNIT_SHEET_FRAME_SIZE = 128;
 
 export const DIRECTIONAL_UNIT_ASSET_VERSION: Record<string, string> = {
   light_infantry: 'light-infantry-generated-20260721-4',
-  m113_apc: 'm113-generated-20260503-1'
+  m113_apc: 'm113-generated-20260503-1',
+  supply_truck_directional: 'supply-truck-20260722-1'
 };
 
 export const DIRECTIONAL_UNIT_FRAME_SIZES: Record<string, { width: number; height: number }> = {
@@ -326,6 +328,7 @@ export const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
   m113_apc: 1,
   rangers: 0.77,
   apc_directional: 1,
+  supply_truck_directional: 1,
   tank_directional: 0.72
 };
 
@@ -333,6 +336,7 @@ export const DIRECTIONAL_UNIT_SOURCE_HEIGHTS: Record<string, number> = {
   artillery_directional: 110,
   apc_directional: 88,
   m113_apc: 121,
+  supply_truck_directional: 104,
   tank_directional: 86
 };
 
@@ -344,7 +348,8 @@ const DIRECTIONAL_UNIT_GROUND_BOTTOMS: Record<string, { idle: number; walk: Reco
 };
 
 const DIRECTIONAL_UNIT_ALPHA_BOTTOMS: Record<string, Record<string, number>> = {
-  m113_apc: { n: 121, ne: 126, e: 119, se: 125, s: 121, sw: 124, w: 119, nw: 126 }
+  m113_apc: { n: 121, ne: 126, e: 119, se: 125, s: 121, sw: 124, w: 119, nw: 126 },
+  supply_truck_directional: { n: 123, ne: 123, e: 123, se: 123, s: 123, sw: 123, w: 123, nw: 123 }
 };
 
 const DIRECTIONAL_UNIT_DIRECTION_LIFT: Record<string, Record<string, number>> = {};
@@ -589,6 +594,7 @@ export function rasterVehiclePose(vector: { x: number; y: number }) {
 }
 
 export function directionalVehicleSprite(unitType: string, definitionId: string) {
+  if (unitType === 'support' && definitionId === 'supply-truck') return VEHICLE_DIRECTIONAL_SPRITES.supplyTruck;
   if (isSupportVehicleDefinition(unitType, definitionId)) return VEHICLE_DIRECTIONAL_SPRITES.apc;
   if (unitType === 'artillery') return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   if (unitType !== 'vehicle') return undefined;
@@ -596,6 +602,13 @@ export function directionalVehicleSprite(unitType: string, definitionId: string)
   if (definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
   if (definitionId.includes('artillery') || definitionId.includes('mlrs') || definitionId.includes('howitzer')) return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   return VEHICLE_DIRECTIONAL_SPRITES.tank;
+}
+
+export function battlefieldDirectionalSprite(unitType: string, definitionId: string) {
+  const vehicleSprite = directionalVehicleSprite(unitType, definitionId);
+  if (definitionId === 'supply-truck') return vehicleSprite;
+  if (rasterUnitOverride(definitionId)) return undefined;
+  return DIRECTIONAL_UNIT_SPRITES[definitionId] ?? vehicleSprite;
 }
 
 const MECHANICAL_WRECK_DEFINITION_IDS = new Set([

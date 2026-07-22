@@ -59,9 +59,9 @@ import { OverwatchButton } from './components/OverwatchButton.js';
 import { StrategicHQ } from './components/StrategicHQ.js';
 import { SupplyButton } from './components/SupplyButton.js';
 import { ToastContainer, showToast } from './components/Toast.js';
-import { unitPortrait } from './components/unitVisuals.js';
+import { battlefieldDirectionalSprite, unitPortrait } from './components/unitVisuals.js';
 import i18n from './i18n/index.js';
-import { AudioManager } from './services/AudioManager.js';
+import { AudioManager, movementSoundProfileFor } from './services/AudioManager.js';
 
 const BattlefieldStage = React.lazy(async () => {
   const battlefieldModule = await import('./components/BattlefieldStage.js');
@@ -104,7 +104,7 @@ const movingUnitDuration = (moving: MovingUnit) => {
   }
   return (moving.preAlignDuration ?? 0) + movementDuration + turnDuration;
 };
-// When the glide reaches a given path tile, accounting for segment-turn pauses (M113) so the reaction
+// When the glide reaches a given path tile, accounting for directional-vehicle turn pauses so the reaction
 // muzzle/HIT lands exactly as the sprite arrives there rather than a corner-turn too early.
 const arrivalDelayForPath = (moving: MovingUnit, coord: HexCoordinate) => {
   const fullPath = moving.path;
@@ -122,15 +122,6 @@ const arrivalDelayForPath = (moving: MovingUnit, coord: HexCoordinate) => {
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 // Man-portable "artillery" that is actually a foot crew (mortar team) — walks, doesn't track.
 const isFootCrew = (definitionId: string) => definitionId === 'mortar-team';
-// Pick the realistic movement-audio profile for a unit: air = rotor chop, supply trucks = wheeled
-// engine + tyres, self-propelled guns/tanks/APCs = diesel engine + track clatter, foot crews and
-// infantry = footsteps.
-const movementProfileFor = (unitType: string, isTruck: boolean, definitionId = ''): 'foot' | 'track' | 'wheel' | 'rotor' =>
-  unitType === 'air' ? 'rotor'
-    : isTruck ? 'wheel'
-      : isFootCrew(definitionId) ? 'foot'
-        : (unitType === 'vehicle' || unitType === 'artillery') ? 'track'
-          : 'foot';
 interface SlotSummary {
   difficulty: CampaignDifficulty;
   turn: number;
@@ -738,6 +729,15 @@ const BattleView: React.FC<{
       return occ;
     };
     const battleControl = {
+      movementPresentationForDefinition: (definitionId: string) => {
+        const definition = bundle.units.find((candidate) => candidate.id === definitionId);
+        if (!definition) return null;
+        return {
+          audioProfile: movementSoundProfileFor(definition.type, definition.id),
+          directionalSprite: battlefieldDirectionalSprite(definition.type, definition.id)
+        };
+      },
+      movementAudioState: () => AudioManager.getLastMovementCue(),
       rosterDefinitions: () => bundle.units.map((definition) => ({
         id: definition.id,
         faction: definition.faction,
@@ -1459,7 +1459,7 @@ const BattleView: React.FC<{
     const unitType = unit.unitType;
     const isTruck = unitType === 'support' && unit.definitionId.toLowerCase().includes('truck');
     const isVehicleMove = (unitType === 'vehicle' || unitType === 'artillery' || isTruck) && !isFootCrew(unit.definitionId);
-    const moveProfile = movementProfileFor(unitType, isTruck, unit.definitionId);
+    const moveProfile = movementSoundProfileFor(unitType, unit.definitionId);
     const finalCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
     const actualPath: HexCoordinate[] = [];
     for (const step of path.path) {
@@ -1468,8 +1468,9 @@ const BattleView: React.FC<{
     }
     const fullPath = [startCoord, ...actualPath];
     const stepDuration = isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS;
-    const isM113Move = unit.definitionId.toLowerCase().includes('m113');
-    const preAlignDuration = isVehicleMove ? (isM113Move ? 0 : 150) : 0;
+    const definitionId = unit.definitionId.toLowerCase();
+    const usesDirectionalTurns = definitionId.includes('m113') || definitionId === 'supply-truck';
+    const preAlignDuration = isVehicleMove ? (usesDirectionalTurns ? 0 : 150) : 0;
     let moving: MovingUnit | null = null;
     if (fullPath.length >= 2) {
       moving = {
@@ -1478,7 +1479,7 @@ const BattleView: React.FC<{
         startTime: Date.now(),
         stepDuration,
         preAlignDuration,
-        segmentTurnDuration: isM113Move ? 90 : 0
+        segmentTurnDuration: usesDirectionalTurns ? 90 : 0
       };
       // realistic engine/track/footstep audio matched to how long this glide actually takes
       AudioManager.playMovement(moveProfile, movingUnitDuration(moving));
@@ -1517,15 +1518,15 @@ const BattleView: React.FC<{
     const def = unit.definitionId.toLowerCase();
     const isTruck = unitType === 'support' && def.includes('truck');
     const isVehicleMove = (unitType === 'vehicle' || unitType === 'artillery' || isTruck) && !isFootCrew(def);
-    const moveProfile = movementProfileFor(unitType, isTruck, def);
-    const isM113Move = def.includes('m113');
+    const moveProfile = movementSoundProfileFor(unitType, def);
+    const usesDirectionalTurns = def.includes('m113') || def === 'supply-truck';
     const moving: MovingUnit = {
       unitId,
       path: fullPath,
       startTime: Date.now(),
       stepDuration: isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS,
-      preAlignDuration: isVehicleMove ? (isM113Move ? 0 : 150) : 0,
-      segmentTurnDuration: isM113Move ? 90 : 0
+      preAlignDuration: isVehicleMove ? (usesDirectionalTurns ? 0 : 150) : 0,
+      segmentTurnDuration: usesDirectionalTurns ? 90 : 0
     };
     AudioManager.playMovement(moveProfile, movingUnitDuration(moving)); // realistic engine/track/footstep for the whole glide
     movingUnitRef.current = moving;
