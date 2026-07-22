@@ -13,6 +13,7 @@ import {
   decideNextAIAction,
   endStrategicTurn,
   estimateHitDamage,
+  experienceLevelFor,
   evaluateBattleOutcome,
   getCampaignDifficultyRules,
   getBattleRetreatForecast,
@@ -29,6 +30,7 @@ import {
   isUnitUnlocked,
   planPathForUnitIso as planPathForUnit,
   processTacticalEvents,
+  projectUnitService,
   reactionThreats,
   recruitUnit,
   dismissUnit,
@@ -41,6 +43,7 @@ import {
   typeEffectiveness,
   weaponDamageRole,
   calculateStrengthModifier,
+  nextExperienceLevelThreshold,
   updateAllFactionsVision
 } from '@spellcross/core';
 import type { BattleEvent, BattlefieldMap, CampaignDifficulty, CampaignState, HexCoordinate, TacticalBattleState, TriggeredTacticalEvent, UnitInstance } from '@spellcross/core';
@@ -2183,6 +2186,7 @@ const BattleView: React.FC<{
                 const apPct = Math.max(0, Math.min(100, Math.round((unit.actionPoints / unit.maxActionPoints) * 100)));
                 const moralePct = Math.max(0, Math.min(100, unit.currentMorale));
                 const displayName = localizedUnitName(unit.definitionId, def?.name ?? unit.definitionId);
+                const nextLevelExperience = nextExperienceLevelThreshold(unit.experience);
                 return (
                   <div className="unit-details">
                     <div className="unit-monitor">
@@ -2235,9 +2239,14 @@ const BattleView: React.FC<{
                     </div>
                     <div className="unit-armory">
                       <p className="unit-armory-top">
-                        <span>ARM <b>{unit.stats.armor}</b></span>
-                        {unit.level != null && <span>LVL <b>{unit.level}</b></span>}
-                        <span>XP <b>{unit.experience ?? 0}</b>{unit.level != null ? `/${unit.level * 100}` : ''}</span>
+                        <span>{t('battle:panel.armor')} <b>{unit.stats.armor}</b></span>
+                        <span>{t('battle:panel.level')} <b>{unit.level}</b></span>
+                        <span>
+                          {t('battle:panel.experience')} <b>{unit.experience}</b>
+                          {nextLevelExperience != null
+                            ? `/${nextLevelExperience}`
+                            : ` · ${t('battle:panel.maxLevel')}`}
+                        </span>
                       </p>
                       {Object.keys(unit.stats.weaponRanges).map((wid) => {
                         const roleLabel: Record<string, string> = {
@@ -2827,6 +2836,9 @@ export function App() {
     });
   const toArmyUnit = (u: (typeof campaign.army)[number]) => {
     const def = bundle.units.find((d) => d.id === u.definitionId)!;
+    const refillQuote = campaign.army.some((unit) => unit.id === u.id)
+      ? projectUnitService(campaign, bundle, u.id, { kind: 'refill', quality: 'rookie' })
+      : { cost: 0, experienceAfter: u.experience, tierAfter: u.tier };
     return {
       id: u.id,
       definitionId: u.definitionId,
@@ -2836,6 +2848,10 @@ export function App() {
       currentHealth: u.currentHealth ?? def?.stats.maxHealth ?? 100,
       maxHealth: def?.stats.maxHealth ?? 100,
       experience: u.experience ?? 0,
+      level: experienceLevelFor(u.experience ?? 0),
+      refillCost: refillQuote.cost,
+      refillExperienceAfter: refillQuote.experienceAfter,
+      refillTierAfter: refillQuote.tierAfter,
       availableOnTurn: u.availableOnTurn,
     };
   };

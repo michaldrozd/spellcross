@@ -2610,6 +2610,20 @@ body {
   background: linear-gradient(180deg, rgba(31, 39, 49, 0.9), rgba(10, 14, 19, 0.96));
 }
 
+.army-view .refill-action {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 128px;
+}
+
+.army-view .refill-action small {
+  color: #9fae9f;
+  font-family: "Courier New", monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
 .recruit-intel {
   display: grid;
   gap: 0.34rem;

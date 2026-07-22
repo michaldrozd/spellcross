@@ -6,6 +6,7 @@ import type {
   TacticalBattleState,
   UnitInstance
 } from '../types.js';
+import { experienceAccuracyBonus, updateExperienceLevel } from './experience.js';
 import { isoDistance } from '../utils/grid-iso.js';
 import { isoDirectionIndex } from '../utils/grid-iso.js';
 import { getTile, orientationDelta } from '../utils/grid.js';
@@ -127,6 +128,7 @@ export function calculateHitChance(input: {
   }
 
   const baseAccuracy = attacker.stats.weaponAccuracy[weaponId] ?? 0.6;
+  const levelAccuracyBonus = attacker.careerProgression ? experienceAccuracyBonus(attacker.level) : 0;
   const overwatchBonus = attacker.statusEffects.has('overwatch') ? attacker.stats.overwatchAccuracyBonus ?? 0.06 : 0;
 
   const normalizedDistance = maxRange === 0 ? 1 : distance / maxRange;
@@ -152,7 +154,7 @@ export function calculateHitChance(input: {
     MAX_HIT_CHANCE,
     Math.max(
       MIN_HIT_CHANCE,
-      (baseAccuracy + overwatchBonus + elevationAdjust + flankBonus) - rangePenalty - coverPenalty - weatherPenalty
+      (baseAccuracy + levelAccuracyBonus + overwatchBonus + elevationAdjust + flankBonus) - rangePenalty - coverPenalty - weatherPenalty
     )
   );
 
@@ -238,10 +240,8 @@ export function resolveAttack(input: AttackInput): AttackOutcome {
     }
   }
 
-  // Leveling: +1 level per 100 XP threshold crossed
-  while (attacker.level != null && attacker.experience >= attacker.level * 100) {
-    attacker.level += 1;
-    events.push({ kind: 'unit:level', unitId: attacker.id, level: attacker.level });
+  for (const level of updateExperienceLevel(attacker)) {
+    events.push({ kind: 'unit:level', unitId: attacker.id, level });
   }
 
   return {

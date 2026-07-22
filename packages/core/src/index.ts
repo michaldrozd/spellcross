@@ -7,6 +7,7 @@ export * from './simulation/pathfinding/hex-pathfinder.js';
 export * from './simulation/pathfinding/iso-pathfinder.js';
 export * from './simulation/combat/combat-resolver.js';
 export * from './simulation/combat/damage-types.js';
+export * from './simulation/combat/experience.js';
 export { axialDistance } from './simulation/utils/grid.js';
 export { coordinateKey } from './simulation/utils/grid.js';
 export { isoDistance, isoNeighbors, isoWithinRange, isoLine } from './simulation/utils/grid-iso.js';

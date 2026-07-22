@@ -29,6 +29,10 @@ interface ArmyUnit {
   currentHealth: number;
   maxHealth: number;
   experience: number;
+  level: number;
+  refillCost: number;
+  refillExperienceAfter: number;
+  refillTierAfter: string;
   availableOnTurn?: number;
 }
 
@@ -897,11 +901,26 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                               <b>HP</b> {u.currentHealth}/{u.maxHealth}
                               <i style={{ '--stat-percent': `${healthPercent}%` } as React.CSSProperties} />
                             </span>
-                            <span><b>XP</b> {u.experience}</span>
+                            <span><b>{t('army.level')}</b> {u.level} · <b>XP</b> {u.experience}</span>
                             <span className={`readiness-chip readiness-${readinessKey}`}><b>{t(`army.readiness.${readinessKey}`)}</b>{t(`common:unitType.${u.unitType}`)}</span>
                           </div>
                           <div className="unit-actions">
-                            <button onClick={() => onRefill(u.id, 'rookie')}>{t('army.refill')}</button>
+                            <div className="refill-action">
+                              <button
+                                onClick={() => onRefill(u.id, 'rookie')}
+                                title={t('army.refillImpact', {
+                                  xp: u.refillExperienceAfter,
+                                  tier: t(`army.tier.${u.refillTierAfter}`)
+                                })}
+                              >
+                                {t('army.refillCost', { cost: u.refillCost })}
+                              </button>
+                              <small>{t('army.refillImpactCompact', {
+                                before: u.experience,
+                                after: u.refillExperienceAfter,
+                                tier: t(`army.tier.${u.refillTierAfter}`)
+                              })}</small>
+                            </div>
                             {u.unitType !== 'hero' && (
                               <button onClick={() => onDismiss(u.id)}>{t('army.dismiss')}</button>
                             )}

@@ -13,12 +13,17 @@ import {
   getEnemyActionBudget,
   getEnemyDecisionBudget,
   getEnemyDifficultyTier,
+  minimumExperienceForTier,
+  projectUnitService,
   recruitUnit,
+  rearmUnit,
+  refillUnit,
   retreatFromBattle,
   serializeCampaignState,
   startBattleForTerritory,
   hydrateCampaignState,
   isUnitUnlocked,
+  unitTierForExperience,
   processTacticalEvents
 } from './campaign.js';
 import { TurnProcessor } from '../simulation/systems/turn-processor.js';
@@ -71,6 +76,131 @@ describe('campaign core', () => {
     expect(state.resources.money).toBeLessThan(beforeMoney);
     expect(recruit.availableOnTurn).toBe(state.turn + 2);
     expect(state.reserves).toContain(recruit);
+    expect(recruit.experience).toBe(minimumExperienceForTier('veteran'));
+
+    state.resources.money = 10_000;
+    const elite = recruitUnit(state, starterBundle, 'light-infantry', 'elite');
+    expect(elite.experience).toBe(minimumExperienceForTier('elite'));
+    expect(unitTierForExperience(elite.experience)).toBe('elite');
+  });
+
+  it('promotes earned veterans and deploys cumulative XP with real tier bonuses', () => {
+    const state = createCampaign(starterBundle);
+    const roster = state.army.find((unit) => unit.tier === 'rookie' && unit.definitionId === 'light-infantry');
+    if (!roster) throw new Error('expected a rookie infantry unit');
+    roster.experience = 20;
+
+    const firstBattle = startBattleForTerritory(state, starterBundle, 'sector-paris', [roster.id]);
+    const tactical = firstBattle.state.sides.alliance.units.get(firstBattle.deployment[roster.id]);
+    if (!tactical) throw new Error('expected deployed infantry');
+    expect(tactical.experience).toBe(20);
+    expect(tactical.level).toBe(1);
+    expect(tactical.careerProgression).toBe(true);
+    expect(Array.from(firstBattle.state.sides.otherSide.units.values())
+      .every((unit) => unit.careerProgression)).toBe(true);
+    expect(firstBattle.deploymentExperience?.[roster.id]).toBe(20);
+
+    tactical.experience = 25;
+    tactical.level = 1;
+    applyBattleOutcome(state, starterBundle, 'victory');
+
+    expect(roster.experience).toBe(25);
+    expect(roster.tier).toBe('veteran');
+    expect(state.log.some((entry) => entry.key === 'unitPromoted'
+      && entry.params?.unitId === roster.definitionId
+      && entry.params?.tier === 'veteran')).toBe(true);
+    expect(state.popups?.some((popup) => popup.key === 'unitPromoted'
+      && popup.params?.unitId === roster.definitionId)).toBe(true);
+
+    endStrategicTurn(state, starterBundle);
+    const nextTerritory = state.territories.find((territory) => territory.status === 'available');
+    if (!nextTerritory) throw new Error('expected an unlocked territory');
+    const secondBattle = startBattleForTerritory(state, starterBundle, nextTerritory.id, [roster.id]);
+    const redeployed = secondBattle.state.sides.alliance.units.get(secondBattle.deployment[roster.id]);
+    const definition = starterBundle.units.find((unit) => unit.id === roster.definitionId);
+    if (!redeployed || !definition) throw new Error('expected redeployed infantry definition');
+    expect(redeployed.experience).toBe(25);
+    expect(redeployed.level).toBe(1);
+    for (const [weaponId, accuracy] of Object.entries(definition.stats.weaponAccuracy)) {
+      expect(redeployed.stats.weaponAccuracy[weaponId]).toBeCloseTo(Math.min(0.98, accuracy + 0.08));
+    }
+  });
+
+  it.each(['victory', 'defeat'] as const)('does not double-count deployment XP after %s', (result) => {
+    const state = createCampaign(starterBundle);
+    const roster = state.army.find((unit) => unit.id === 'captain');
+    if (!roster) throw new Error('expected campaign captain');
+    roster.experience = 60;
+    roster.tier = 'elite';
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris', [roster.id]);
+    const tactical = battle.state.sides.alliance.units.get(battle.deployment[roster.id]);
+    if (!tactical) throw new Error('expected deployed captain');
+    tactical.experience += 5;
+
+    applyBattleOutcome(state, starterBundle, result);
+
+    expect(state.army.find((unit) => unit.id === roster.id)?.experience).toBe(65);
+  });
+
+  it('preserves earned XP when a cut-off hero is recovered during retreat', () => {
+    const state = createCampaign(starterBundle);
+    const roster = state.army.find((unit) => unit.id === 'captain');
+    if (!roster) throw new Error('expected campaign captain');
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-paris', [roster.id]);
+    const tactical = battle.state.sides.alliance.units.get(battle.deployment[roster.id]);
+    if (!tactical) throw new Error('expected deployed captain');
+    tactical.experience += 5;
+    tactical.coordinate = { q: battle.state.map.width - 1, r: 0 };
+
+    retreatFromBattle(state, starterBundle);
+
+    const recovered = state.army.find((unit) => unit.id === roster.id);
+    expect(recovered?.experience).toBe(65);
+    expect(recovered?.currentHealth).toBe(1);
+  });
+
+  it('uses one projection for refill and rearm XP, tier and cost', () => {
+    const refillState = createCampaign(starterBundle);
+    const refillTarget = refillState.army.find((unit) => unit.id === 'captain');
+    if (!refillTarget) throw new Error('expected refill target');
+    refillTarget.experience = 60;
+    refillTarget.tier = 'elite';
+    refillState.resources.money = 10_000;
+    const refillQuote = projectUnitService(refillState, starterBundle, refillTarget.id, {
+      kind: 'refill', quality: 'rookie'
+    });
+    expect(refillQuote).toMatchObject({ experienceAfter: 36, tierAfter: 'veteran' });
+    const moneyBeforeRefill = refillState.resources.money;
+    refillUnit(refillState, starterBundle, refillTarget.id, 'rookie');
+    expect(refillTarget.experience).toBe(refillQuote.experienceAfter);
+    expect(refillTarget.tier).toBe(refillQuote.tierAfter);
+    expect(moneyBeforeRefill - refillState.resources.money).toBe(refillQuote.cost);
+
+    const eliteState = createCampaign(starterBundle);
+    const eliteTarget = eliteState.army.find((unit) => unit.id === 'captain');
+    if (!eliteTarget) throw new Error('expected elite refill target');
+    eliteState.resources.money = 10_000;
+    const eliteQuote = projectUnitService(eliteState, starterBundle, eliteTarget.id, {
+      kind: 'refill', quality: 'elite'
+    });
+    refillUnit(eliteState, starterBundle, eliteTarget.id, 'elite');
+    expect(eliteQuote.experienceAfter).toBe(60);
+    expect(eliteTarget.tier).toBe('elite');
+
+    const rearmState = createCampaign(starterBundle);
+    const rearmTarget = rearmState.army.find((unit) => unit.definitionId === 'light-infantry');
+    if (!rearmTarget) throw new Error('expected rearm target');
+    rearmTarget.experience = 70;
+    rearmTarget.tier = 'elite';
+    rearmState.resources.money = 10_000;
+    const rearmQuote = projectUnitService(rearmState, starterBundle, rearmTarget.id, {
+      kind: 'rearm', definitionId: 'rangers'
+    });
+    const moneyBeforeRearm = rearmState.resources.money;
+    rearmUnit(rearmState, starterBundle, rearmTarget.id, 'rangers');
+    expect(rearmTarget.experience).toBe(rearmQuote.experienceAfter);
+    expect(rearmTarget.tier).toBe(rearmQuote.tierAfter);
+    expect(moneyBeforeRearm - rearmState.resources.money).toBe(rearmQuote.cost);
   });
 
   it('pre-populates unlocks from starting research and blocks locked units', () => {
@@ -319,6 +449,46 @@ describe('campaign core', () => {
     expect(restored.popups?.[0]?.key).toBe('testReport');
     expect(restored.popups?.[0]?.params?.note).toBe('Recovered report');
   });
+
+  it.each(['victory', 'retreat'] as const)(
+    'migrates low-XP legacy tiers and in-flight battle deltas through %s',
+    (exit) => {
+      const state = createCampaign(starterBundle);
+      const roster = state.army.find((unit) => unit.id === 'captain');
+      if (!roster) throw new Error('expected campaign captain');
+      roster.tier = 'elite';
+      roster.experience = 37;
+      const battle = startBattleForTerritory(state, starterBundle, 'sector-paris', [roster.id]);
+      const tacticalId = battle.deployment[roster.id];
+      const tactical = battle.state.sides.alliance.units.get(tacticalId);
+      if (!tactical) throw new Error('expected deployed captain');
+      tactical.experience = 5;
+      tactical.level = 1;
+      if (exit === 'retreat') tactical.coordinate = { q: battle.state.map.width - 1, r: 0 };
+
+      const snapshot = serializeCampaignState(state);
+      const encodedBattle = snapshot.activeBattle as any;
+      delete encodedBattle.deploymentExperience;
+      const encodedTactical = encodedBattle.state.sides.alliance.units.v
+        .find(([unitId]: [string]) => unitId === tacticalId)?.[1];
+      if (!encodedTactical) throw new Error('expected encoded tactical unit');
+      encodedTactical.experience = 5;
+      encodedTactical.level = 1;
+
+      const restored = hydrateCampaignState(starterBundle, snapshot);
+      const restoredRoster = restored.army.find((unit) => unit.id === roster.id);
+      const restoredTactical = restored.activeBattle?.state.sides.alliance.units.get(tacticalId);
+      expect(restoredRoster?.tier).toBe('elite');
+      expect(restoredRoster?.experience).toBe(60);
+      expect(restoredTactical?.experience).toBe(65);
+      expect(restoredTactical?.level).toBe(1);
+
+      if (exit === 'victory') applyBattleOutcome(restored, starterBundle, 'victory');
+      else retreatFromBattle(restored, starterBundle);
+
+      expect(restored.army.find((unit) => unit.id === roster.id)?.experience).toBe(65);
+    }
+  );
 
   it('loads pre-difficulty saves as Commander campaigns', () => {
     const snapshot = serializeCampaignState(createCampaign(starterBundle, undefined, 'story'));

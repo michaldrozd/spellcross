@@ -107,6 +107,10 @@
     "forceRoster": "FORCE ROSTER",
     "yourForces": "YOUR FORCES",
     "refill": "REFILL",
+    "refillCost": "REFILL · {{cost}}",
+    "refillImpact": "After refill: {{xp}} XP · {{tier}}",
+    "refillImpactCompact": "{{before}}→{{after}} XP · {{tier}}",
+    "level": "LVL",
     "dismiss": "DISMISS",
     "readiness": {
       "ready": "READY",

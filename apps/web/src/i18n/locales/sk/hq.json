@@ -107,6 +107,10 @@
     "forceRoster": "ZOZNAM SÍL",
     "yourForces": "TVOJE JEDNOTKY",
     "refill": "DOPLNIŤ",
+    "refillCost": "DOPLNIŤ · {{cost}}",
+    "refillImpact": "Po doplnení: {{xp}} XP · {{tier}}",
+    "refillImpactCompact": "{{before}}→{{after}} XP · {{tier}}",
+    "level": "ÚR.",
     "dismiss": "PREPUSTIŤ",
     "readiness": {
       "ready": "PRIPRAVENÝ",

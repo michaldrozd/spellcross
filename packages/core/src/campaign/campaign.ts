@@ -10,8 +10,9 @@ import type {
 } from '@spellcross/data';
 import { nanoid } from 'nanoid';
 
+import { experienceLevelFor } from '../simulation/combat/experience.js';
 import { createBattleState, createUnitInstance } from '../simulation/game-state.js';
-import type { HexCoordinate, TacticalBattleState, UnitDefinition } from '../simulation/types.js';
+import type { HexCoordinate, TacticalBattleState, UnitDefinition, UnitInstance } from '../simulation/types.js';
 import { coordinateKey } from '../simulation/utils/grid.js';
 import { updateAllFactionsVision } from '../simulation/visibility/vision.js';
 
@@ -86,6 +87,7 @@ export interface ActiveBattle {
   scenario: TacticalScenario;
   state: TacticalBattleState;
   deployment: Record<string, string>; // army unit id -> tactical unit id
+  deploymentExperience?: Record<string, number>; // army unit id -> cumulative XP at deployment
   startTiles: HexCoordinate[];
   holdProgress: Record<string, number>;
   // Last battle round in which each hold objective was credited, so progress
@@ -248,6 +250,28 @@ const tierCostMultiplier = (tier: UnitTier) => {
   }
 };
 
+const UNIT_TIER_EXPERIENCE_FLOORS: Record<UnitTier, number> = {
+  rookie: 0,
+  veteran: 25,
+  elite: 60
+};
+
+const UNIT_TIER_ORDER: UnitTier[] = ['rookie', 'veteran', 'elite'];
+
+export const minimumExperienceForTier = (tier: UnitTier) => UNIT_TIER_EXPERIENCE_FLOORS[tier];
+
+export function unitTierForExperience(experience: number): UnitTier {
+  if (experience >= UNIT_TIER_EXPERIENCE_FLOORS.elite) return 'elite';
+  if (experience >= UNIT_TIER_EXPERIENCE_FLOORS.veteran) return 'veteran';
+  return 'rookie';
+}
+
+const normalizeArmyUnitProgression = (unit: ArmyUnit): ArmyUnit => {
+  const storedExperience = Number.isFinite(unit.experience) ? Math.max(0, unit.experience) : 0;
+  const experience = Math.max(storedExperience, minimumExperienceForTier(unit.tier));
+  return { ...unit, experience, tier: unitTierForExperience(experience) };
+};
+
 const findCampaignSpec = (bundle: ContentBundle, id?: string): CampaignSpec => {
   if (id) {
     const spec = bundle.campaigns.find((c) => c.id === id);
@@ -302,7 +326,7 @@ export function createCampaign(
     };
   });
 
-  const army: ArmyUnit[] = spec.startingUnits.map((u) => ({
+  const army: ArmyUnit[] = spec.startingUnits.map((u) => normalizeArmyUnitProgression({
     id: u.id,
     definitionId: u.definitionId,
     tier: u.tier,
@@ -620,7 +644,7 @@ export function recruitUnit(
     id: nanoid(6),
     definitionId: def.id,
     tier,
-    experience: tier === 'rookie' ? 0 : tier === 'veteran' ? 25 : 50,
+    experience: minimumExperienceForTier(tier),
     currentHealth: def.stats.maxHealth,
     availableOnTurn
   };
@@ -630,21 +654,72 @@ export function recruitUnit(
   return unit;
 }
 
-export function refillUnit(state: CampaignState, bundle: ContentBundle, unitId: string, tier: UnitTier) {
+const REFILL_EXPERIENCE_RETENTION: Record<UnitTier, number> = {
+  rookie: 0.6,
+  veteran: 0.85,
+  // Elite replacements preserve the veteran cadre; their higher service price pays for that continuity.
+  elite: 1
+};
+
+export type UnitServiceRequest =
+  | { kind: 'refill'; quality: UnitTier }
+  | { kind: 'rearm'; definitionId: string };
+
+export interface UnitServiceQuote {
+  cost: number;
+  experienceAfter: number;
+  tierAfter: UnitTier;
+}
+
+export function projectUnitService(
+  state: CampaignState,
+  bundle: ContentBundle,
+  unitId: string,
+  request: UnitServiceRequest
+): UnitServiceQuote {
   const unit = state.army.find((u) => u.id === unitId);
   if (!unit) throw new Error('Unit not found');
-  const def = findUnitDef(bundle, unit.definitionId);
-  const cost = Math.round(def.cost * 0.35 * tierCostMultiplier(tier));
-  if (state.resources.money < cost) throw new CampaignError('notEnoughMoneyRefill', 'Not enough money to refill');
-  state.resources.money -= cost;
-  unit.currentHealth = def.stats.maxHealth;
-
-  // XP impact
-  if (tier === 'rookie') {
-    unit.experience = Math.floor(unit.experience * 0.6);
-  } else if (tier === 'veteran') {
-    unit.experience = Math.floor(unit.experience * 0.85);
+  if (request.kind === 'refill') {
+    const retention = REFILL_EXPERIENCE_RETENTION[request.quality];
+    if (retention == null) throw new Error('Invalid refill quality');
+    const definition = findUnitDef(bundle, unit.definitionId);
+    const experienceAfter = Math.floor(unit.experience * retention);
+    return {
+      cost: Math.round(definition.cost * 0.35 * tierCostMultiplier(request.quality)),
+      experienceAfter,
+      tierAfter: unitTierForExperience(experienceAfter)
+    };
   }
+  const definition = findUnitDef(bundle, request.definitionId);
+  const experienceAfter = Math.floor(unit.experience * 0.75);
+  return {
+    cost: Math.round(definition.cost * 0.5),
+    experienceAfter,
+    tierAfter: unitTierForExperience(experienceAfter)
+  };
+}
+
+const recordServiceTierChange = (state: CampaignState, bundle: ContentBundle, unit: ArmyUnit, previousTier: UnitTier) => {
+  if (unit.tier === previousTier) return;
+  const definition = findUnitDef(bundle, unit.definitionId);
+  state.log.push({
+    key: 'unitTierAdjusted',
+    params: { name: definition.name, unitId: definition.id, tier: unit.tier, previousTier }
+  });
+};
+
+export function refillUnit(state: CampaignState, bundle: ContentBundle, unitId: string, quality: UnitTier) {
+  const unit = state.army.find((candidate) => candidate.id === unitId);
+  if (!unit) throw new Error('Unit not found');
+  const definition = findUnitDef(bundle, unit.definitionId);
+  const quote = projectUnitService(state, bundle, unitId, { kind: 'refill', quality });
+  if (state.resources.money < quote.cost) throw new CampaignError('notEnoughMoneyRefill', 'Not enough money to refill');
+  const previousTier = unit.tier;
+  state.resources.money -= quote.cost;
+  unit.currentHealth = definition.stats.maxHealth;
+  unit.experience = quote.experienceAfter;
+  unit.tier = quote.tierAfter;
+  recordServiceTierChange(state, bundle, unit, previousTier);
 }
 
 export function rearmUnit(
@@ -659,13 +734,16 @@ export function rearmUnit(
   if (!isUnitUnlocked(state, bundle, newDef.id)) {
     throw new CampaignError('unitNotUnlocked', 'Unit not unlocked by research');
   }
-  const cost = Math.round(newDef.cost * 0.5);
-  if (state.resources.money < cost) throw new CampaignError('notEnoughMoneyRearm', 'Not enough money to rearm');
+  const quote = projectUnitService(state, bundle, unitId, { kind: 'rearm', definitionId: newDefinitionId });
+  if (state.resources.money < quote.cost) throw new CampaignError('notEnoughMoneyRearm', 'Not enough money to rearm');
 
-  state.resources.money -= cost;
+  const previousTier = unit.tier;
+  state.resources.money -= quote.cost;
   unit.definitionId = newDef.id;
-  unit.experience = Math.floor(unit.experience * 0.75);
+  unit.experience = quote.experienceAfter;
+  unit.tier = quote.tierAfter;
   unit.currentHealth = newDef.stats.maxHealth;
+  recordServiceTierChange(state, bundle, unit, previousTier);
   return unit;
 }
 
@@ -752,7 +830,7 @@ const buildArmySide = (
   selectedUnitIds?: string[]
 ): {
   rosterUnits: ArmyUnit[];
-  tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string }>;
+  tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string; experience: number }>;
   startTiles: HexCoordinate[];
 } => {
   const available = state.army
@@ -811,7 +889,7 @@ const buildArmySide = (
     const escorts = rosterUnits.filter((u) => escortIds.has(u.id));
     rosterUnits = [...escorts, ...rosterUnits.filter((u) => !escortIds.has(u.id))];
   }
-  const tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string }> = [];
+  const tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string; experience: number }> = [];
 
   for (let i = 0; i < Math.min(startTiles.length, rosterUnits.length); i++) {
     const roster = rosterUnits[i];
@@ -823,7 +901,8 @@ const buildArmySide = (
     tacticalUnits.push({
       definition: withResearch,
       coordinate: startTiles[i],
-      rosterId: roster.id
+      rosterId: roster.id,
+      experience: roster.experience
     });
   }
   return { rosterUnits, tacticalUnits, startTiles };
@@ -851,7 +930,8 @@ export function startBattleForTerritory(
   const alliedSupport = (scenario.allianceForces ?? []).map((u) => ({
     scenarioId: u.id,
     definition: findUnitDef(bundle, u.definitionId),
-    coordinate: u.coordinate
+    coordinate: u.coordinate,
+    experience: 0
   }));
 
   if (tacticalUnits.length + alliedSupport.length === 0) {
@@ -862,7 +942,8 @@ export function startBattleForTerritory(
 
   const enemyUnits = enemyForces.map((unit) => ({
     definition: findUnitDef(bundle, unit.definitionId),
-    coordinate: unit.coordinate
+    coordinate: unit.coordinate,
+    experience: 0
   }));
 
   const battleState = createBattleState({
@@ -871,7 +952,7 @@ export function startBattleForTerritory(
       {
         faction: 'alliance',
         units: tacticalUnits
-          .map((u) => ({ definition: u.definition, coordinate: u.coordinate }))
+          .map((u) => ({ definition: u.definition, coordinate: u.coordinate, experience: u.experience }))
           .concat(alliedSupport)
       },
       { faction: 'otherSide', units: enemyUnits }
@@ -911,12 +992,14 @@ export function startBattleForTerritory(
   }
 
   const deployment: Record<string, string> = {};
+  const deploymentExperience: Record<string, number> = {};
   const allianceUnits = Array.from(battleState.sides.alliance.units.values());
   for (let i = 0; i < allianceUnits.length; i++) {
     const rosterId = tacticalUnits[i]?.rosterId;
     if (rosterId) {
       deployment[rosterId] = allianceUnits[i].id;
       const roster = state.army.find((u) => u.id === rosterId);
+      deploymentExperience[rosterId] = roster?.experience ?? 0;
       if (roster?.currentHealth != null) {
         allianceUnits[i].currentHealth = Math.min(roster.currentHealth, allianceUnits[i].currentHealth);
       }
@@ -932,6 +1015,7 @@ export function startBattleForTerritory(
     scenario,
     state: battleState,
     deployment,
+    deploymentExperience,
     startTiles,
     holdProgress: {},
     holdCountedRound: {},
@@ -1208,6 +1292,32 @@ export type BattleRetreatForecast = {
   recoveredHeroIds: string[];
 };
 
+const reconcileRosterProgression = (
+  state: CampaignState,
+  bundle: ContentBundle,
+  battle: ActiveBattle,
+  roster: ArmyUnit,
+  unit: UnitInstance
+) => {
+  const deployedWith = battle.deploymentExperience?.[roster.id] ?? 0;
+  const earnedExperience = Math.max(0, unit.experience - deployedWith);
+  const previousTier = roster.tier;
+  roster.experience = Math.max(0, roster.experience + earnedExperience);
+  roster.tier = unitTierForExperience(roster.experience);
+  if (UNIT_TIER_ORDER.indexOf(roster.tier) <= UNIT_TIER_ORDER.indexOf(previousTier)) return;
+
+  const definition = findUnitDef(bundle, roster.definitionId);
+  const params = {
+    name: definition.name,
+    unitId: definition.id,
+    tier: roster.tier,
+    previousTier,
+    level: experienceLevelFor(roster.experience)
+  };
+  state.log.push({ key: 'unitPromoted', params });
+  state.popups?.push({ turn: state.turn, key: 'unitPromoted', params, kind: 'reward' });
+};
+
 export function getBattleRetreatForecast(
   state: CampaignState,
   bundle: ContentBundle
@@ -1261,7 +1371,7 @@ export function retreatFromBattle(state: CampaignState, bundle: ContentBundle) {
       continue; // lost during retreat
     }
     roster.currentHealth = recoveredHeroIds.has(roster.id) ? 1 : unit.currentHealth;
-    roster.experience += unit.experience;
+    reconcileRosterProgression(state, bundle, battle, roster, unit);
     updatedArmy.push(roster);
   }
   state.army = updatedArmy;
@@ -1302,7 +1412,7 @@ export function applyBattleOutcome(
     roster.currentHealth = hero && (unit.stance === 'destroyed' || unit.currentHealth <= 0)
       ? 1
       : unit.currentHealth;
-    roster.experience += unit.experience;
+    reconcileRosterProgression(state, bundle, battle, roster, unit);
     survivors.push(roster);
   }
 
@@ -1453,6 +1563,8 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     researchKnown.add(k);
   }
 
+  const army = structuredClone(snapshot.army).map(normalizeArmyUnitProgression);
+  const reserves = structuredClone(snapshot.reserves).map(normalizeArmyUnitProgression);
   const activeBattle = snapshot.activeBattle ? decodeActiveBattle(snapshot.activeBattle) : undefined;
   if (activeBattle) {
     activeBattle.difficulty ??= difficulty;
@@ -1460,6 +1572,26 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     activeBattle.holdProgress ??= {};
     activeBattle.holdCountedRound ??= {};
     activeBattle.triggeredEventIds ??= [];
+    const hasCumulativeDeploymentExperience = activeBattle.deploymentExperience != null;
+    const deploymentExperience = { ...(activeBattle.deploymentExperience ?? {}) };
+    for (const side of Object.values(activeBattle.state.sides)) {
+      for (const unit of side.units.values()) {
+        unit.experience = Math.max(0, Number.isFinite(unit.experience) ? unit.experience : 0);
+        unit.level = experienceLevelFor(unit.experience);
+        unit.careerProgression = true;
+      }
+    }
+    if (!hasCumulativeDeploymentExperience) {
+      for (const [rosterId, tacticalId] of Object.entries(activeBattle.deployment)) {
+        const roster = army.find((unit) => unit.id === rosterId);
+        const tactical = activeBattle.state.sides.alliance.units.get(tacticalId);
+        if (!roster || !tactical) continue;
+        tactical.experience = roster.experience + tactical.experience;
+        tactical.level = experienceLevelFor(tactical.experience);
+        deploymentExperience[rosterId] = roster.experience;
+      }
+    }
+    activeBattle.deploymentExperience = deploymentExperience;
   }
 
   const state: CampaignState = {
@@ -1469,8 +1601,8 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     lastOperationTurn: snapshot.lastOperationTurn,
     globalTimer: snapshot.globalTimer ?? 15,
     resources: { ...snapshot.resources },
-    army: structuredClone(snapshot.army),
-    reserves: structuredClone(snapshot.reserves),
+    army,
+    reserves,
     formations: structuredClone(snapshot.formations),
     // Older builds flipped expired path sectors to 'failed', leaving those campaigns silently
     // unwinnable; normalize them back to attackable on load.

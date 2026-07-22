@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 
+import { experienceLevelFor } from './combat/experience.js';
 import type {
   BattlefieldMap,
   FactionId,
@@ -15,7 +16,7 @@ export interface CreateBattleStateOptions {
   map: BattlefieldMap;
   sides: Array<{
     faction: FactionId;
-    units: Array<{ definition: UnitDefinition; coordinate: HexCoordinate }>;
+    units: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; experience?: number }>;
   }>;
   startingFaction?: FactionId;
   supplyZones?: Partial<Record<FactionId, HexCoordinate[]>>;
@@ -76,6 +77,9 @@ export function createBattleState(options: CreateBattleStateOptions): TacticalBa
       occupied.add(key);
 
       const instance = createUnitInstance(unitSpec.definition, side.faction, unitSpec.coordinate);
+      instance.experience = Math.max(0, unitSpec.experience ?? 0);
+      instance.level = experienceLevelFor(instance.experience);
+      instance.careerProgression = unitSpec.experience != null;
       units.set(instance.id, instance);
     }
 

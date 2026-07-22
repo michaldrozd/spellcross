@@ -172,6 +172,9 @@ export interface UnitInstance {
   stance: UnitStance;
   experience: number;
   level: number;
+  // Persistent campaign combatants gain the bounded level bonus; throwaway sandbox instances still
+  // record XP for diagnostics without acquiring strength that cannot be written back to a roster.
+  careerProgression?: boolean;
   statusEffects: Set<string>;
   destroyedAt?: number; // timestamp when destroyed (used for short-lived markers)
   currentAmmo: number; // tracks remaining ammo; Infinity when unlimited
