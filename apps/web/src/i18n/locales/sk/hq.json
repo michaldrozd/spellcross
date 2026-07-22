@@ -93,6 +93,8 @@
     "noUnitsYet": "Zatiaľ nenaverbované žiadne jednotky",
     "inTransit": "NA CESTE",
     "recruit": "VERBOVANIE",
+    "filterLabel": "Filtrovať verbovateľné jednotky",
+    "allTypes": "Všetky",
     "locked": "UZAMKNUTÉ",
     "inForce": "V AKCII",
     "turnPlus2": "K+2",

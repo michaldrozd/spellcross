@@ -1,9 +1,11 @@
 import { createCanvas, loadImage } from 'canvas';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
   activeKillingEffectForTarget,
+  combatEffectTypeForWeapon,
   deathMarkerExpired,
   deathMarkerVisible
 } from './combatVisuals.js';
@@ -11,7 +13,9 @@ import {
   directionalSpriteGroundOffset,
   directionNameForOrientation,
   directionNameForScreenVector,
+  isSupportVehicleDefinition,
   leavesMechanicalWreck,
+  rasterUnitOverride,
   rasterVehiclePose,
   resolveMovementFrame,
   unitVisualHeight,
@@ -75,6 +79,55 @@ describe('unitVisualHeight', () => {
     for (const vector of movementVectors) {
       expect(rasterVehiclePose(vector).rotation).toBe(0);
     }
+  });
+
+  it('keeps large battlefield commanders visually dominant', () => {
+    const tile = 56;
+
+    expect(unitVisualHeight(tile, 'air', 'ash-crown-sovereign')).toBe(tile * 0.9);
+    expect(unitVisualHeight(tile, 'vehicle', 'glass-regent')).toBe(tile * 0.82);
+    expect(unitVisualHeight(tile, 'support', 'signal-eater')).toBe(tile * 0.78);
+  });
+});
+
+describe('roster expansion combat effects', () => {
+  it.each([
+    ['firefly-105', 'fragment-shell', 'explosion'],
+    ['breach-engineers', 'demolition-charge', 'explosion'],
+    ['kestrel-recon-drone', 'laser-designator', 'sniper'],
+    ['bone-ballista', 'bone-quarrel', 'arrow'],
+    ['resonance-cannon', 'resonance-wave', 'magic'],
+    ['rift-predator', 'phase-claw', 'melee'],
+    ['glass-regent', 'prism-beam', 'magic'],
+    ['ash-crown-sovereign', 'crown-fire', 'fire'],
+    ['renegade-cell', 'antitank-charge', 'explosion']
+  ] as const)('maps %s / %s to %s', (definitionId, weaponId, expected) => {
+    expect(combatEffectTypeForWeapon(definitionId, weaponId)).toBe(expected);
+  });
+});
+
+describe('roster expansion visuals', () => {
+  const definitionIds = [
+    'firefly-105', 'badger-mortar-carrier', 'thunderhead-155', 'tempest-counterbattery',
+    'horizon-radar', 'tidewalker-apc', 'aegis-assault-tank', 'valkyrie-mobile-infantry',
+    'breach-engineers', 'cerberus-gunship', 'kestrel-recon-drone', 'wardog-fire-support',
+    'razorwing-flock', 'gloom-balloon', 'ironroot-colossus', 'bone-ballista',
+    'resonance-cannon', 'slime-harvester', 'rift-predator', 'veil-magus', 'gate-conjurer',
+    'thorn-elf-master', 'ash-mammoth', 'dread-fortress', 'signal-eater', 'glass-regent',
+    'ash-crown-sovereign', 'renegade-cell'
+  ];
+
+  it('maps every new definition to a shipped raster asset', () => {
+    for (const definitionId of definitionIds) {
+      const assetPath = rasterUnitOverride(definitionId);
+      expect(assetPath, definitionId).not.toBeNull();
+      expect(existsSync(path.resolve(process.cwd(), `public${assetPath}`)), definitionId).toBe(true);
+    }
+  });
+
+  it('treats the counterbattery radar as a ground vehicle', () => {
+    expect(isSupportVehicleDefinition('support', 'horizon-radar')).toBe(true);
+    expect(isSupportVehicleDefinition('support', 'veil-magus')).toBe(false);
   });
 });
 
@@ -149,6 +202,8 @@ describe('leavesMechanicalWreck', () => {
     expect(leavesMechanicalWreck('vehicle', 'leopard-2')).toBe(true);
     expect(leavesMechanicalWreck('artillery', 'spg-m109')).toBe(true);
     expect(leavesMechanicalWreck('support', 'supply-truck')).toBe(true);
+    expect(leavesMechanicalWreck('artillery', 'thunderhead-155')).toBe(true);
+    expect(leavesMechanicalWreck('vehicle', 'dread-fortress')).toBe(true);
   });
 });
 

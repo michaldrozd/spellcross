@@ -32,6 +32,7 @@ import {
   UNIT_SHEET_FRAME_SIZE,
   directionalSpriteGroundOffset,
   directionalVehicleSprite,
+  isSupportVehicleDefinition,
   directionNameForOrientation,
   directionNameForScreenVector,
   leavesMechanicalWreck,
@@ -4705,7 +4706,7 @@ export function BattlefieldStage({
         let easedProgress = 0;
         const unitType: string = unit.unitType;
         const definitionId = unit.definitionId.toLowerCase();
-        const isSupportVehicle = unitType === 'support' && definitionId.includes('truck');
+        const isSupportVehicle = isSupportVehicleDefinition(unitType, definitionId);
         const isGroundVehicle = unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicle;
 
         if (movingUnit && movingUnit.unitId === unit.id && activeMovementFrame) {

@@ -93,6 +93,8 @@
     "noUnitsYet": "No units recruited yet",
     "inTransit": "IN TRANSIT",
     "recruit": "RECRUIT",
+    "filterLabel": "Filter recruitable units",
+    "allTypes": "All",
     "locked": "LOCKED",
     "inForce": "IN FORCE",
     "turnPlus2": "T+2",

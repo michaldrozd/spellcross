@@ -4,6 +4,7 @@ import React, { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { clearToasts } from './Toast.js';
+import { unitPortrait } from './unitVisuals.js';
 import i18n from '../i18n/index.js';
 import { AudioManager } from '../services/AudioManager.js';
 
@@ -76,21 +77,22 @@ interface StrategicHQProps {
     canRecruit: boolean;
     ownedCount: number;
     reserveCount: number;
+    requiredResearch?: string;
   }[];
 }
 
 function rosterPortrait(definitionId: string, unitType: string) {
-  if (definitionId === 'm113' || definitionId.includes('truck')) return '/assets/generated/apc_m113.png';
-  if (definitionId.includes('ranger') || definitionId.includes('sniper')) return '/assets/generated/sniper_team.png';
-  if (unitType === 'vehicle') return '/assets/generated/tank_m1_abrams.png';
-  if (unitType === 'artillery') return '/assets/generated/artillery_mlrs.png';
-  return '/assets/generated/infantry_squad.png';
+  return unitPortrait(unitType, definitionId, true);
 }
+
+const recruitFilters = ['all', 'infantry', 'vehicle', 'artillery', 'air', 'support'] as const;
+type RecruitFilter = (typeof recruitFilters)[number];
 
 function researchBranch(topic: ResearchTopic) {
   const key = `${topic.id} ${topic.name} ${(topic.unlocks ?? []).join(' ')}`.toLowerCase();
-  if (key.includes('optics') || key.includes('ranger') || key.includes('sniper')) return 'recon';
-  if (key.includes('armor') || key.includes('plating') || key.includes('leopard')) return 'armor';
+  if (topic.id === 'mobile-fire-support' || topic.id === 'deep-fires-network') return 'artillery';
+  if (key.includes('optics') || key.includes('recon') || key.includes('ranger') || key.includes('sniper')) return 'recon';
+  if (key.includes('armor') || key.includes('plating') || key.includes('leopard') || key.includes('tank')) return 'armor';
   if (key.includes('ammo') || key.includes('corps') || key.includes('infantry') || key.includes('mortar')) return 'infantry';
   if (key.includes('supply')) return 'logistics';
   if (key.includes('arcane') || key.includes('wyrm') || key.includes('sky')) return 'arcane';
@@ -599,6 +601,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
   const { t } = useTranslation(['hq', 'common', 'campaign']);
   const [activeTab, setActiveTab] = useState<'map' | 'army' | 'research'>('map');
   const [selectedTerritory, setSelectedTerritory] = useState<string | null>(null);
+  const [recruitFilter, setRecruitFilter] = useState<RecruitFilter>('all');
   const switchTab = (tab: 'map' | 'army' | 'research') => {
     clearToasts();
     setActiveTab(tab);
@@ -936,8 +939,20 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
             </div>
             <div className="recruit-panel">
               <h3>{t('army.recruit')}</h3>
+              <div className="recruit-filters" aria-label={t('army.filterLabel')}>
+                {recruitFilters.map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    aria-pressed={recruitFilter === filter}
+                    onClick={() => setRecruitFilter(filter)}
+                  >
+                    {filter === 'all' ? t('army.allTypes') : t(`common:unitType.${filter}`)}
+                  </button>
+                ))}
+              </div>
               <div className="recruit-options">
-                {availableUnits.map((u) => (
+                {availableUnits.filter((u) => recruitFilter === 'all' || u.unitType === recruitFilter).map((u) => (
                   <button
                     key={u.id}
                     className={`recruit-btn ${!u.canAfford ? 'recruit-btn-short' : ''}`}
@@ -946,15 +961,20 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                       if (u.canRecruit) onRecruit(u.id, 'rookie');
                     }}
                   >
-                    <span>{u.name}</span>
-                    <span className="recruit-meta">
-                      {!u.unlocked
-                        ? t('army.locked')
-                        : u.unitType === 'hero' && u.ownedCount > 0
-                          ? t('army.inForce')
-                          : u.unitType === 'hero' && u.reserveCount > 0
-                            ? t('army.inTransit')
-                            : `${u.cost} CR · ${u.canAfford ? t('army.turnPlus2') : t('army.needFunds')}`}
+                    <span className="recruit-portrait" aria-hidden="true">
+                      <img src={rosterPortrait(u.id, u.unitType)} alt="" loading="lazy" />
+                    </span>
+                    <span className="recruit-copy">
+                      <span>{u.name}</span>
+                      <span className="recruit-meta">
+                        {!u.unlocked
+                          ? `${t('army.locked')}${u.requiredResearch ? ` · ${u.requiredResearch}` : ''}`
+                          : u.unitType === 'hero' && u.ownedCount > 0
+                            ? t('army.inForce')
+                            : u.unitType === 'hero' && u.reserveCount > 0
+                              ? t('army.inTransit')
+                              : `${u.cost} CR · ${u.canAfford ? t('army.turnPlus2') : t('army.needFunds')}`}
+                      </span>
                     </span>
                   </button>
                 ))}

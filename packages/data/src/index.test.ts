@@ -52,7 +52,8 @@ describe('data bundle', () => {
     }
 
     for (const scenario of bundle.scenarios) {
-      for (const force of [...scenario.otherSideForces, ...(scenario.allianceForces ?? [])]) {
+      const reinforcements = (scenario.events ?? []).flatMap((event) => event.reinforcements);
+      for (const force of [...scenario.otherSideForces, ...(scenario.allianceForces ?? []), ...reinforcements]) {
         expect(unitIds, `scenario ${scenario.id} spawns ${force.definitionId}`).toContain(force.definitionId);
       }
     }
@@ -65,6 +66,49 @@ describe('data bundle', () => {
         expect(ranges, `unit ${unit.id} weaponTargets ${weapon}`).toContain(weapon);
       }
     }
+  });
+
+  it('ships at least eighty unique authored unit definitions with no dead roster entries', () => {
+    const bundle = validatedStarterBundle;
+    const ids = bundle.units.map((unit) => unit.id);
+    const names = bundle.units.map((unit) => unit.name);
+    expect(ids.length).toBeGreaterThanOrEqual(80);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(new Set(names).size).toBe(names.length);
+
+    const campaign = bundle.campaigns[0];
+    const obtainableAlliance = new Set([
+      ...campaign.startingUnits.map((unit) => unit.definitionId),
+      ...bundle.research.flatMap((topic) => topic.unlocks)
+    ]);
+    for (const unit of bundle.units.filter((candidate) => candidate.faction === 'alliance')) {
+      expect(obtainableAlliance, `Alliance unit ${unit.id} is neither starting nor research-unlocked`).toContain(unit.id);
+    }
+
+    const encounteredEnemies = new Set(bundle.scenarios.flatMap((scenario) => [
+      ...scenario.otherSideForces.map((unit) => unit.definitionId),
+      ...(scenario.events ?? []).flatMap((event) => event.reinforcements.map((unit) => unit.definitionId))
+    ]));
+    for (const unit of bundle.units.filter((candidate) => candidate.faction === 'otherSide')) {
+      expect(encounteredEnemies, `Other Side unit ${unit.id} never appears in campaign content`).toContain(unit.id);
+    }
+  });
+
+  it('gives the new Alliance fire-support units separate tactical jobs', () => {
+    const byId = new Map(validatedStarterBundle.units.map((unit) => [unit.id, unit]));
+    const firefly = byId.get('firefly-105')!;
+    const badger = byId.get('badger-mortar-carrier')!;
+    const thunderhead = byId.get('thunderhead-155')!;
+    const tempest = byId.get('tempest-counterbattery')!;
+    const radar = byId.get('horizon-radar')!;
+
+    expect(firefly.stats.weaponTargets?.['fragment-shell']).toEqual(['infantry', 'support', 'hero']);
+    expect(badger.stats.mobility).toBeGreaterThan(thunderhead.stats.mobility);
+    expect(thunderhead.stats.weaponPower.howitzer).toBeGreaterThan(badger.stats.weaponPower.mortar);
+    expect(tempest.stats.weaponRanges['counterbattery-shell']).toBeGreaterThan(thunderhead.stats.weaponRanges.howitzer);
+    expect(tempest.stats.weaponTargets?.['counterbattery-shell']).toEqual(['vehicle', 'artillery', 'support']);
+    expect(radar.stats.spotter).toBe(true);
+    expect(Object.keys(radar.stats.weaponRanges)).toHaveLength(0);
   });
 
   it('pays out monotonically with difficulty so harder sectors fund the next tier', () => {

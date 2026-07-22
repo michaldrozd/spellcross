@@ -103,7 +103,35 @@ export const RASTER_UNIT_VISIBLE_HEIGHTS: Record<string, number> = {
   '/assets/generated/void_drake.png': 1210,
   '/assets/generated/demon_engine.png': 1211,
   '/assets/generated/wolf_rider.png': 1121,
-  '/assets/generated/hell_rider.png': 1250
+  '/assets/generated/hell_rider.png': 1250,
+  '/assets/generated/firefly_105.png': 512,
+  '/assets/generated/badger_mortar_carrier.png': 571,
+  '/assets/generated/thunderhead_155.png': 838,
+  '/assets/generated/tempest_counterbattery.png': 574,
+  '/assets/generated/horizon_radar.png': 842,
+  '/assets/generated/tidewalker_apc.png': 668,
+  '/assets/generated/aegis_assault_tank.png': 594,
+  '/assets/generated/valkyrie_mobile_infantry.png': 564,
+  '/assets/generated/breach_engineers.png': 858,
+  '/assets/generated/cerberus_gunship.png': 562,
+  '/assets/generated/kestrel_recon_drone.png': 677,
+  '/assets/generated/wardog_fire_support.png': 589,
+  '/assets/generated/razorwing_flock.png': 820,
+  '/assets/generated/gloom_balloon.png': 939,
+  '/assets/generated/ironroot_colossus.png': 915,
+  '/assets/generated/bone_ballista.png': 683,
+  '/assets/generated/resonance_cannon.png': 912,
+  '/assets/generated/slime_harvester.png': 611,
+  '/assets/generated/rift_predator.png': 601,
+  '/assets/generated/veil_magus.png': 896,
+  '/assets/generated/gate_conjurer.png': 893,
+  '/assets/generated/thorn_elf_master.png': 894,
+  '/assets/generated/ash_mammoth.png': 895,
+  '/assets/generated/dread_fortress.png': 748,
+  '/assets/generated/signal_eater.png': 1000,
+  '/assets/generated/glass_regent.png': 986,
+  '/assets/generated/ash_crown_sovereign.png': 942,
+  '/assets/generated/renegade_cell.png': 684
 };
 
 export const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
@@ -155,12 +183,68 @@ export const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
   '/assets/generated/void_drake.png': 0.85,
   '/assets/generated/demon_engine.png': 0.8,
   '/assets/generated/wolf_rider.png': 0.9,
-  '/assets/generated/hell_rider.png': 0.92
+  '/assets/generated/hell_rider.png': 0.92,
+  '/assets/generated/firefly_105.png': 0.86,
+  '/assets/generated/badger_mortar_carrier.png': 0.9,
+  '/assets/generated/thunderhead_155.png': 0.9,
+  '/assets/generated/tempest_counterbattery.png': 0.89,
+  '/assets/generated/horizon_radar.png': 0.9,
+  '/assets/generated/tidewalker_apc.png': 0.91,
+  '/assets/generated/aegis_assault_tank.png': 0.94,
+  '/assets/generated/valkyrie_mobile_infantry.png': 0.88,
+  '/assets/generated/breach_engineers.png': 0.89,
+  '/assets/generated/cerberus_gunship.png': 0.92,
+  '/assets/generated/kestrel_recon_drone.png': 0.81,
+  '/assets/generated/wardog_fire_support.png': 0.91,
+  '/assets/generated/razorwing_flock.png': 0.88,
+  '/assets/generated/gloom_balloon.png': 0.96,
+  '/assets/generated/ironroot_colossus.png': 0.93,
+  '/assets/generated/bone_ballista.png': 0.94,
+  '/assets/generated/resonance_cannon.png': 0.95,
+  '/assets/generated/slime_harvester.png': 0.9,
+  '/assets/generated/rift_predator.png': 0.94,
+  '/assets/generated/veil_magus.png': 0.94,
+  '/assets/generated/gate_conjurer.png': 0.93,
+  '/assets/generated/thorn_elf_master.png': 0.91,
+  '/assets/generated/ash_mammoth.png': 0.93,
+  '/assets/generated/dread_fortress.png': 0.96,
+  '/assets/generated/signal_eater.png': 0.99,
+  '/assets/generated/glass_regent.png': 0.97,
+  '/assets/generated/ash_crown_sovereign.png': 0.95,
+  '/assets/generated/renegade_cell.png': 0.88
 };
 
 // Per-unit raster sprite overrides keyed by a substring of the unit definitionId. Checked after the
 // type-branch fallback so each new unit gets its own art; add a line here per generated sprite.
 const RASTER_UNIT_OVERRIDES: Array<[string, string]> = [
+  ['firefly-105', '/assets/generated/firefly_105.png'],
+  ['badger-mortar-carrier', '/assets/generated/badger_mortar_carrier.png'],
+  ['thunderhead-155', '/assets/generated/thunderhead_155.png'],
+  ['tempest-counterbattery', '/assets/generated/tempest_counterbattery.png'],
+  ['horizon-radar', '/assets/generated/horizon_radar.png'],
+  ['tidewalker-apc', '/assets/generated/tidewalker_apc.png'],
+  ['aegis-assault-tank', '/assets/generated/aegis_assault_tank.png'],
+  ['valkyrie-mobile-infantry', '/assets/generated/valkyrie_mobile_infantry.png'],
+  ['breach-engineers', '/assets/generated/breach_engineers.png'],
+  ['cerberus-gunship', '/assets/generated/cerberus_gunship.png'],
+  ['kestrel-recon-drone', '/assets/generated/kestrel_recon_drone.png'],
+  ['wardog-fire-support', '/assets/generated/wardog_fire_support.png'],
+  ['razorwing-flock', '/assets/generated/razorwing_flock.png'],
+  ['gloom-balloon', '/assets/generated/gloom_balloon.png'],
+  ['ironroot-colossus', '/assets/generated/ironroot_colossus.png'],
+  ['bone-ballista', '/assets/generated/bone_ballista.png'],
+  ['resonance-cannon', '/assets/generated/resonance_cannon.png'],
+  ['slime-harvester', '/assets/generated/slime_harvester.png'],
+  ['rift-predator', '/assets/generated/rift_predator.png'],
+  ['veil-magus', '/assets/generated/veil_magus.png'],
+  ['gate-conjurer', '/assets/generated/gate_conjurer.png'],
+  ['thorn-elf-master', '/assets/generated/thorn_elf_master.png'],
+  ['ash-mammoth', '/assets/generated/ash_mammoth.png'],
+  ['dread-fortress', '/assets/generated/dread_fortress.png'],
+  ['signal-eater', '/assets/generated/signal_eater.png'],
+  ['glass-regent', '/assets/generated/glass_regent.png'],
+  ['ash-crown-sovereign', '/assets/generated/ash_crown_sovereign.png'],
+  ['renegade-cell', '/assets/generated/renegade_cell.png'],
   ['light-tank', '/assets/generated/light_tank.png'],
   ['breorn', '/assets/generated/breorn_titan.png'],
   ['ka-orc', '/assets/generated/ka_orc.png'],
@@ -418,6 +502,14 @@ export const vehicleTurnCrossfade = (progress: number) => {
 };
 
 export function unitVisualHeight(tile: number, unitType: string, definitionId: string, directionalSprite?: string) {
+  if (definitionId.includes('ash-crown-sovereign')) return tile * 0.9;
+  if (definitionId.includes('signal-eater')) return tile * 0.78;
+  if (definitionId.includes('glass-regent')) return tile * 0.82;
+  if (definitionId.includes('dread-fortress')) return tile * 0.78;
+  if (definitionId.includes('ash-mammoth')) return tile * 0.82;
+  if (definitionId.includes('ironroot-colossus')) return tile * 0.72;
+  if (definitionId.includes('slime-harvester')) return tile * 0.55;
+  if (definitionId.includes('gate-conjurer')) return tile * 0.6;
   if (definitionId.includes('mortar')) return tile * 0.52; // foot crew, not a towed gun
   if (definitionId.includes('orc')) return tile * 0.6; // hulking orcs read larger than human infantry
   if (definitionId.includes('lich')) return tile * 0.56; // crowned lich lord stands taller than a robed caster
@@ -458,8 +550,12 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
   return tile * 0.54;
 }
 
+export function isSupportVehicleDefinition(unitType: string, definitionId: string) {
+  return unitType === 'support' && (definitionId.includes('truck') || definitionId.includes('radar'));
+}
+
 export function unitContactFootprint(tile: number, unitType: string, definitionId: string): UnitVisualFootprint {
-  if (unitType === 'support' && definitionId.includes('truck')) return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.035 };
+  if (isSupportVehicleDefinition(unitType, definitionId)) return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.035 };
   if (unitType === 'vehicle') return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.035 };
   if (unitType === 'artillery') return { rx: tile * 0.3, ry: tile * 0.075, alpha: 0.4, y: tile * 0.06 };
   if (unitType === 'air') return { rx: tile * 0.22, ry: tile * 0.055, alpha: 0.12, y: tile * 0.08 };
@@ -479,7 +575,7 @@ export function rasterVehiclePose(vector: { x: number; y: number }) {
 }
 
 export function directionalVehicleSprite(unitType: string, definitionId: string) {
-  if (unitType === 'support' && definitionId.includes('truck')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
+  if (isSupportVehicleDefinition(unitType, definitionId)) return VEHICLE_DIRECTIONAL_SPRITES.apc;
   if (unitType === 'artillery') return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   if (unitType !== 'vehicle') return undefined;
   if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return undefined;
@@ -490,9 +586,14 @@ export function directionalVehicleSprite(unitType: string, definitionId: string)
 
 const MECHANICAL_WRECK_DEFINITION_IDS = new Set([
   'avenger-aa',
+  'aegis-assault-tank',
+  'badger-mortar-carrier',
   'bradley-ifv',
   'demon-engine',
+  'dread-fortress',
+  'firefly-105',
   'gepard-aa',
+  'horizon-radar',
   'humvee-scout',
   'leopard-2',
   'light-tank',
@@ -501,10 +602,15 @@ const MECHANICAL_WRECK_DEFINITION_IDS = new Set([
   'mlrs-battery',
   'paladin-acs',
   'railgun-tank',
+  'resonance-cannon',
   'siege-walker',
   'sky-lance',
   'spg-m109',
-  'supply-truck'
+  'supply-truck',
+  'tempest-counterbattery',
+  'thunderhead-155',
+  'tidewalker-apc',
+  'wardog-fire-support'
 ]);
 
 export function leavesMechanicalWreck(_unitType: string | undefined, definitionId: string) {
@@ -512,8 +618,7 @@ export function leavesMechanicalWreck(_unitType: string | undefined, definitionI
 }
 
 export function unitPointerArea(tile: number, unitType: string, definitionId: string, selected = false): UnitPointerArea {
-  const isTruck = definitionId.includes('truck');
-  if (unitType === 'vehicle' || (unitType === 'support' && isTruck)) {
+  if (unitType === 'vehicle' || isSupportVehicleDefinition(unitType, definitionId)) {
     return selected
       ? { x: -tile * 0.18, y: -tile * 0.03, width: tile * 0.36, height: tile * 0.17 }
       : { x: -tile * 0.27, y: -tile * 0.34, width: tile * 0.54, height: tile * 0.52 };

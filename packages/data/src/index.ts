@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { cityScenarios, cityScenarioIdByTerritory } from './city-battlefields.js';
+import { rosterExpansionResearch, rosterExpansionUnits } from './roster-expansion.js';
 
 export type FactionId = 'alliance' | 'otherSide';
 export type TerrainType =
@@ -1222,7 +1223,8 @@ export const starterUnits: UnitData[] = [
       fear: 3,
       weaponRanges: { maul: 1, quake: 3 }, weaponPower: { maul: 44, quake: 30 }, weaponAccuracy: { maul: 0.8, quake: 0.6 }
     }
-  }
+  },
+  ...rosterExpansionUnits
 ];
 
 export const starterResearch: ResearchTopic[] = [
@@ -1314,7 +1316,8 @@ export const starterResearch: ResearchTopic[] = [
     requires: ['siege-ops'],
     statBonus: { range: 1 },
     applyTo: ['artillery']
-  }
+  },
+  ...rosterExpansionResearch
 ];
 
 const borderMap = makeMap('evac-corridor', 14, 10, (q, r) => {

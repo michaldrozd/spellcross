@@ -23,6 +23,25 @@ export type TargetedCombatEffect = {
 export const CORPSE_TTL_MS = 20_000;
 export const WRECK_SMOKE_ANIMATION_MS = 24_000;
 
+export function combatEffectTypeForWeapon(definitionId: string, weaponId: string): CombatEffectType {
+  const unitId = definitionId.toLowerCase();
+  const weapon = weaponId.toLowerCase();
+  const has = (...keywords: string[]) => keywords.some((keyword) => weapon.includes(keyword));
+  const caster = unitId.includes('warlock') || unitId.includes('necromancer') || unitId.includes('lich');
+
+  if ((caster || has('hex', 'curse', 'doom', 'shadow', 'scream', 'shriek', 'psi', 'spectral', 'bolt',
+          'resonance', 'static', 'prism', 'shard', 'void', 'portal', 'silence'))
+      && !has('blade', 'cannon', 'shell', 'rocket', 'missile')) return 'magic';
+  if (has('fire', 'flame', 'flamer', 'magma', 'breath', 'pyro', 'oil', 'incend')) return 'fire';
+  if (has('bow', 'arrow', 'dart', 'crossbow', 'quarrel')) return 'arrow';
+  if (has('axe', 'blade', 'sword', 'maul', 'slam', 'fang', 'bite', 'mandible', 'claw', 'cleaver', 'talon',
+          'lance', 'spear', 'fist', 'mace', 'hammer', 'gore', 'tusk', 'dive', 'javelin', 'bone', 'razor', 'engulf')) return 'melee';
+  if (has('shell', 'rocket', 'boulder', 'cannon', 'howitzer', 'mortar', 'siege', 'quake', 'grenade',
+          'missile', 'sam', 'flak', 'spit', 'bomb', 'charge') || weapon === 'at' || has('antitank')) return 'explosion';
+  if (has('sniper', 'marksman', 'railgun', 'railrifle', 'dmr', 'laser')) return 'sniper';
+  return 'gunshot';
+}
+
 const DIRECT_FIRE_TIMING: Record<CombatEffectType, CombatEffectTiming> = {
   gunshot: { projectileMs: 370, impactAtMs: 145, impactMs: 460, totalMs: 2550, burstRounds: 5, burstGapMs: 55, burstFlightMs: 150 },
   sniper: { projectileMs: 180, impactAtMs: 170, impactMs: 500, totalMs: 2600, burstRounds: 1, burstGapMs: 0, burstFlightMs: 180 },

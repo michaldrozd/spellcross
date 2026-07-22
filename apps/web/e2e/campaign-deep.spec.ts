@@ -23,7 +23,10 @@ test('campaign deep flow: research, outpost strike, slot swap', async ({ page })
   const turnStart = await getTurn(page);
   await endStrategicTurns(page);
   await page.getByRole('button', { name: /Research/i }).click();
-  await expect(page.locator('.research-card').filter({ hasText: 'Optics II' })).toContainText(/DONE|COMPLETED/);
+  const optics = page.locator('.research-card').filter({
+    has: page.locator('h4', { hasText: /^Optics II$/ })
+  });
+  await expect(optics).toContainText(/DONE|COMPLETED/);
   await page.getByRole('button', { name: /Territories/i }).click();
 
   await launchBattle(page, 'sector-munich');

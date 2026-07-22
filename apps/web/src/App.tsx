@@ -49,7 +49,7 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import type { ArrivalEffect, AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
-import { combatEffectTiming } from './components/combatVisuals.js';
+import { combatEffectTiming, combatEffectTypeForWeapon } from './components/combatVisuals.js';
 import { HealButton } from './components/HealButton.js';
 import { MainMenu } from './components/MainMenu.js';
 import type { SaveSlot } from './components/MainMenu.js';
@@ -340,32 +340,6 @@ const nextNoticeId = () => (combatNoticeSeq += 1);
 // repeatedly in a single tick — a monotonic suffix keeps each effect's React key unique.
 let attackEffectSeq = 0;
 const nextEffectId = () => (attackEffectSeq += 1);
-// Classify an attack by the actual WEAPON, not by the unit's chassis. Keying off unit type made every
-// vehicle/creature "explode" (wolves, sword-cavalry) and defaulted everything else to a rifle burst
-// (longbows, great-axes, snipers). Keyword order matters — earlier categories win.
-function effectTypeForAttack(attacker: UnitInstance, defender: UnitInstance, weaponId: string): AttackEffect['type'] {
-  const definitionId = attacker.definitionId.toLowerCase();
-  const w = weaponId.toLowerCase();
-  const has = (...ks: string[]) => ks.some((k) => w.includes(k));
-  const casterName = definitionId.includes('warlock') || definitionId.includes('necromancer') || definitionId.includes('lich');
-  // magic: spellcasters + sonic/soul/energy attacks (but soul/rune-BLADES are melee, handled below)
-  if ((casterName || has('hex', 'curse', 'doom', 'shadow', 'scream', 'shriek', 'psi', 'spectral', 'bolt')) && !has('blade')) {
-    return 'magic';
-  }
-  // fire: flamethrowers, fire-breath, incendiary, magma, burning oil
-  if (has('flame', 'flamer', 'hellfire', 'magma', 'breath', 'pyro', 'oil', 'incend')) return 'fire';
-  // bow/arrow: single arced projectile, not a burst
-  if (has('bow', 'arrow', 'dart', 'crossbow', 'quarrel')) return 'arrow';
-  // melee: blades, bludgeons, natural weapons, thrown lances/javelins, swoop dives
-  if (has('axe', 'blade', 'sword', 'maul', 'slam', 'fang', 'bite', 'mandible', 'claw', 'cleaver', 'talon',
-          'lance', 'spear', 'fist', 'mace', 'hammer', 'gore', 'tusk', 'dive', 'javelin', 'bone')) return 'melee';
-  // heavy ordnance
-  if (has('shell', 'rocket', 'boulder', 'cannon', 'howitzer', 'mortar', 'siege', 'quake', 'grenade', 'missile', 'sam', 'flak', 'spit')) return 'explosion';
-  if (w === 'at' || has('antitank')) return 'explosion';
-  // single high-power shot (bolt-action / rail / marksman): one crack, not a burst
-  if (has('sniper', 'marksman', 'railgun', 'railrifle', 'dmr')) return 'sniper';
-  return 'gunshot';
-}
 function soundForAttackEffect(effectType: AttackEffect['type']) {
   switch (effectType) {
     case 'explosion':
@@ -389,7 +363,7 @@ function soundForAttackEffect(effectType: AttackEffect['type']) {
 function firingSound(attacker: UnitInstance, defender: UnitInstance, weaponId: string) {
   const id = attacker.definitionId.toLowerCase();
   if (id.includes('mortar') || weaponId.toLowerCase().includes('mortar')) return 'mortar' as const;
-  return soundForAttackEffect(effectTypeForAttack(attacker, defender, weaponId));
+  return soundForAttackEffect(combatEffectTypeForWeapon(attacker.definitionId, weaponId));
 }
 // Indirect fire (mortars, howitzers, rocket batteries) lobs its shell in a high ballistic arc rather
 // than a flat tracer. Direct-fire tank shells stay flat even though they're also 'explosion' type.
@@ -1292,7 +1266,7 @@ const BattleView: React.FC<{
     atCoord?: { q: number; r: number }
   ) => {
     const to = atCoord ?? defender.coordinate;
-    const effectType = effectTypeForAttack(attacker, defender, weaponId);
+    const effectType = combatEffectTypeForWeapon(attacker.definitionId, weaponId);
     const arc = isIndirectFire(attacker, weaponId, effectType);
     const timing = combatEffectTiming(effectType, arc);
     const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
@@ -2392,7 +2366,13 @@ const BattleView: React.FC<{
             </div>
           </div>
           <div className="battle-controls">
-            <button className={showRanges ? 'active' : undefined} onClick={() => setShowRanges((v) => !v)}>{showRanges ? t('battle:action.hideRanges') : t('battle:action.showRanges')}</button>
+            <button
+              className={showRanges ? 'active' : undefined}
+              aria-pressed={showRanges}
+              onClick={() => setShowRanges((v) => !v)}
+            >
+              {showRanges ? t('battle:action.hideRanges') : t('battle:action.showRanges')}
+            </button>
             <OverwatchButton unit={deployMode ? undefined : selectedUnit} onOverwatch={() => {
               if (!selectedUnit || deployMode) return;
               const proc = new TurnProcessor(battle.state);
@@ -2706,13 +2686,13 @@ export function App() {
   // Show strategic HQ
   const availableUnits = bundle.units
     .filter((u) => u.faction === 'alliance')
-    .slice(0, 6)
     .map((u) => {
       const ownedCount = campaign.army.filter((unit) => unit.definitionId === u.id).length;
       const reserveCount = campaign.reserves.filter((unit) => unit.definitionId === u.id).length;
       const unlocked = isUnitUnlocked(campaign, bundle, u.id);
       const canAfford = campaign.resources.money >= u.cost;
       const uniqueHeroAlreadyQueued = u.type === 'hero' && (ownedCount > 0 || reserveCount > 0);
+      const unlockingTopic = bundle.research.find((topic) => topic.unlocks.includes(u.id));
       return {
         id: u.id,
         name: localizedUnitName(u.id, u.name),
@@ -2723,6 +2703,9 @@ export function App() {
         canRecruit: unlocked && canAfford && !uniqueHeroAlreadyQueued,
         ownedCount,
         reserveCount,
+        requiredResearch: unlockingTopic
+          ? localizedResearchName(unlockingTopic.id, unlockingTopic.name)
+          : undefined,
       };
     });
   const toArmyUnit = (u: (typeof campaign.army)[number]) => {

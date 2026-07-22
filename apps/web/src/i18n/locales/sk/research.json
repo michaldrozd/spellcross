@@ -42,5 +42,25 @@
   "extended-barrels": {
     "name": "Predĺžené hlavne",
     "description": "Dlhšie hlavne a lepšie náplne: +1 k dostrelu všetkého nasadeného delostrelectva."
+  },
+  "mobile-fire-support": {
+    "name": "Mobilná palebná podpora",
+    "description": "Ľahké batérie a mínometné nosiče držia tempo s manévrujúcimi jednotkami."
+  },
+  "deep-fires-network": {
+    "name": "Sieť hĺbkovej paľby",
+    "description": "Protibatériový radar prepája ďalekonosné delá do koordinovanej údernej siete."
+  },
+  "expeditionary-mobility": {
+    "name": "Expedičná mobilita",
+    "description": "Rýchle transportéry a mobilné útočné tímy využijú prielom skôr, než sa nepriateľ preskupí."
+  },
+  "autonomous-recon": {
+    "name": "Autonómne prieskumné krídlo",
+    "description": "Prieskumné drony a bojové stroje rozširujú senzorový aj úderný dosah Aliancie."
+  },
+  "aegis-project": {
+    "name": "Projekt Aegis",
+    "description": "Chránená prielomová platforma prenesie vojnu do opevnených oblastí trhlín."
   }
 }

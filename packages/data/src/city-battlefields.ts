@@ -399,10 +399,24 @@ function generate(cfg: CityConfig): Generated {
 // enemy units (wolf-rider, hell-rider, skeleton-horde, arrow-tower) into play on the hard sectors. ---
 const ROSTER_BY_DIFFICULTY: Record<number, string[]> = {
   1: ['orc-warband', 'ghoul-pack', 'skeleton-horde'],
-  2: ['orc-warband', 'ghoul-pack', 'wolf-rider', 'necromancer', 'ka-orc', 'war-orc', 'dark-elf-archers', 'dire-wolves'],
-  3: ['ogre-brute', 'wolf-rider', 'necromancer', 'specter', 'arrow-tower', 'antitank-orc', 'harpy-swarm', 'arachnoid'],
-  4: ['ogre-brute', 'hell-rider', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde', 'death-knight', 'stone-golem', 'antitank-orc'],
-  5: ['demon-engine', 'hell-rider', 'lich-lord', 'void-drake', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde', 'specter', 'breorn-titan', 'black-angel', 'death-knight', 'stone-golem']
+  2: [
+    'orc-warband', 'ghoul-pack', 'wolf-rider', 'necromancer', 'ka-orc', 'war-orc',
+    'dark-elf-archers', 'dire-wolves', 'razorwing-flock', 'rift-predator', 'thorn-elf-master'
+  ],
+  3: [
+    'ogre-brute', 'wolf-rider', 'necromancer', 'specter', 'arrow-tower', 'antitank-orc',
+    'harpy-swarm', 'arachnoid', 'gloom-balloon', 'bone-ballista', 'slime-harvester'
+  ],
+  4: [
+    'ogre-brute', 'hell-rider', 'warlock', 'salamander', 'arrow-tower', 'skeleton-horde',
+    'death-knight', 'stone-golem', 'antitank-orc', 'ironroot-colossus', 'resonance-cannon',
+    'veil-magus', 'gate-conjurer', 'renegade-cell'
+  ],
+  5: [
+    'demon-engine', 'hell-rider', 'lich-lord', 'void-drake', 'warlock', 'salamander',
+    'arrow-tower', 'skeleton-horde', 'specter', 'breorn-titan', 'black-angel',
+    'death-knight', 'stone-golem', 'ash-mammoth', 'dread-fortress'
+  ]
 };
 
 interface SignatureEventDefinition {
@@ -414,7 +428,7 @@ const SIGNATURE_EVENTS: Partial<Record<string, SignatureEventDefinition>> = {
   'sector-berlin': {
     messageKey: 'signalEaterAwakes',
     reinforcements: [
-      { id: 'signal-eater', definitionId: 'specter' },
+      { id: 'signal-eater', definitionId: 'signal-eater' },
       { id: 'hush-knight', definitionId: 'death-knight' },
       { id: 'static-witch', definitionId: 'warlock' },
       { id: 'echo-rider', definitionId: 'hell-rider' }
@@ -423,7 +437,7 @@ const SIGNATURE_EVENTS: Partial<Record<string, SignatureEventDefinition>> = {
   'sector-krakow': {
     messageKey: 'glassChoirMarches',
     reinforcements: [
-      { id: 'glass-regent', definitionId: 'stone-golem' },
+      { id: 'glass-regent', definitionId: 'glass-regent' },
       { id: 'choir-cantor', definitionId: 'warlock' },
       { id: 'cinder-voice', definitionId: 'salamander' },
       { id: 'mirror-guard', definitionId: 'death-knight' }
@@ -432,7 +446,7 @@ const SIGNATURE_EVENTS: Partial<Record<string, SignatureEventDefinition>> = {
   'sector-rift': {
     messageKey: 'ashCrownDescends',
     reinforcements: [
-      { id: 'ash-crown', definitionId: 'breorn-titan' },
+      { id: 'ash-crown', definitionId: 'ash-crown-sovereign' },
       { id: 'crown-wing', definitionId: 'black-angel' },
       { id: 'rift-harrower', definitionId: 'void-drake' },
       { id: 'ember-seer', definitionId: 'lich-lord' }
@@ -638,7 +652,12 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
   // enemies: count scales with difficulty (the starter army of 6 stomped the old 3-4), placed spread
   // across the REACHABLE enemy half so the player can engage every one (no forced timeouts). Units cycle
   // through the roster so a count above the roster size still fields varied foes.
-  const roster = ROSTER_BY_DIFFICULTY[cfg.difficulty] ?? ROSTER_BY_DIFFICULTY[3];
+  const tierRoster = ROSTER_BY_DIFFICULTY[cfg.difficulty] ?? ROSTER_BY_DIFFICULTY[3];
+  // Each city starts at a deterministic point in its tier roster. Without rotation, every city
+  // deployed only the first handful of definitions and the back half existed in data but never
+  // appeared on a battlefield.
+  const rosterOffset = Array.from(cfg.territoryId).reduce((sum, char) => sum + char.charCodeAt(0), 0) % tierRoster.length;
+  const roster = tierRoster.map((_, index) => tierRoster[(index + rosterOffset) % tierRoster.length]);
   // scale with both difficulty and map area so the enlarged battlefields don't feel empty (diff1 ~7 … diff5 ~13)
   // Cap the area term so big Rift maps no longer stack both a swarm of bodies AND the heavies on top.
   const enemyCount = 3 + cfg.difficulty + Math.min(3, Math.floor((cfg.width * cfg.height) / 320));

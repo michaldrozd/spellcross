@@ -124,9 +124,9 @@ describe('Per-city battlefields', () => {
   });
 
   it.each([
-    ['sector-berlin', 'signalEaterAwakes', 'specter'],
-    ['sector-krakow', 'glassChoirMarches', 'stone-golem'],
-    ['sector-rift', 'ashCrownDescends', 'breorn-titan']
+    ['sector-berlin', 'signalEaterAwakes', 'signal-eater'],
+    ['sector-krakow', 'glassChoirMarches', 'glass-regent'],
+    ['sector-rift', 'ashCrownDescends', 'ash-crown-sovereign']
   ] as const)('gives %s a chained signature encounter', (territoryId, messageKey, leadDefinitionId) => {
     const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
     expect(scenario?.events).toHaveLength(2);

@@ -42,5 +42,25 @@
   "extended-barrels": {
     "name": "Extended Barrels",
     "description": "Longer gun tubes and better charges: +1 range to all artillery you field."
+  },
+  "mobile-fire-support": {
+    "name": "Mobile Fire Support",
+    "description": "Light batteries and mortar carriers keep pace with the maneuver force."
+  },
+  "deep-fires-network": {
+    "name": "Deep Fires Network",
+    "description": "Counterbattery radar links long-range guns into a coordinated strike grid."
+  },
+  "expeditionary-mobility": {
+    "name": "Expeditionary Mobility",
+    "description": "Fast transports and mobile assault teams exploit gaps before the enemy can reform."
+  },
+  "autonomous-recon": {
+    "name": "Autonomous Recon Wing",
+    "description": "Recon drones and hunter gunships extend the Alliance sensor and strike envelope."
+  },
+  "aegis-project": {
+    "name": "Aegis Project",
+    "description": "A protected breakthrough chassis carries the war into fortified rift zones."
   }
 }
