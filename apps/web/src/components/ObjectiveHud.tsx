@@ -1,5 +1,5 @@
 import type { ActiveBattle } from '@spellcross/core';
-import { isObjectiveMet } from '@spellcross/core';
+import { checkObjectiveAction, isObjectiveMet } from '@spellcross/core';
 import type { TacticalObjective } from '@spellcross/data';
 import type { TFunction } from 'i18next';
 import React from 'react';
@@ -9,6 +9,8 @@ import i18n from '../i18n/index.js';
 
 interface Props {
   battle: ActiveBattle;
+  selectedUnitId?: string;
+  onObjectiveAction: (objectiveId: string) => void;
 }
 
 function localizedObjectiveText(scenarioId: string, objectiveId: string, fallback: string) {
@@ -39,13 +41,16 @@ function statusLine(objective: TacticalObjective, battle: ActiveBattle, met: boo
           : t('objective.notReached');
     case 'protect':
       return met ? t('objective.protected') : t('objective.lost');
+    case 'interact':
+      return met ? t('objective.completed') : t('objective.pendingAction');
     default:
       return '';
   }
 }
 
-export const ObjectiveHud: React.FC<Props> = ({ battle }) => {
+export const ObjectiveHud: React.FC<Props> = ({ battle, selectedUnitId, onObjectiveAction }) => {
   const { t } = useTranslation('actions');
+  const { t: errorText } = useTranslation('errors');
   const objectives = battle.scenario.objectives;
   if (!objectives?.length) return null;
   return (
@@ -55,11 +60,27 @@ export const ObjectiveHud: React.FC<Props> = ({ battle }) => {
         {objectives.map((objective) => {
           const met = isObjectiveMet(objective, battle);
           const failed = objective.kind === 'protect' && !met;
+          const actionCheck = objective.kind === 'interact'
+            ? checkObjectiveAction(battle, selectedUnitId, objective.id)
+            : null;
           return (
             <li key={objective.id} className={met ? 'met' : failed ? 'failed' : ''}>
               <span className="obj-dot">{met ? '✓' : failed ? '✕' : '○'}</span>
-              <span className="obj-text">{localizedObjectiveText(battle.scenario.id, objective.id, objective.description)}</span>
+              <span className="obj-text">
+                {localizedObjectiveText(battle.scenario.id, objective.id, objective.description)}
+                {objective.optional ? <small className="objective-optional">{t('objective.optional')}</small> : null}
+              </span>
               <span className="obj-status">{statusLine(objective, battle, met, t)}</span>
+              {objective.kind === 'interact' && actionCheck && !met ? (
+                <button
+                  className="objective-action"
+                  disabled={!actionCheck.success}
+                  title={actionCheck.errorKey ? errorText(actionCheck.errorKey) : t(`objective.actionTooltip.${objective.actionKey}`)}
+                  onClick={() => onObjectiveAction(objective.id)}
+                >
+                  {t(`objective.action.${objective.actionKey}`)}
+                </button>
+              ) : null}
             </li>
           );
         })}

@@ -148,6 +148,109 @@ describe('data bundle', () => {
     expect(supplyDefinitions).toEqual(['supply-truck']);
   });
 
+  it('requires complete and satisfiable mission-action definitions', () => {
+    const missingAction = structuredClone(starterBundle);
+    missingAction.scenarios[0].objectives = [{
+      id: 'terminal',
+      kind: 'interact',
+      description: 'Use the terminal.',
+      target: { q: 1, r: 1 },
+      actionPoints: 2
+    }];
+    expect(() => loadContentBundle(missingAction)).toThrow(/Interact objective requires an action key/);
+
+    const missingCost = structuredClone(starterBundle);
+    missingCost.scenarios[0].objectives = [{
+      id: 'terminal',
+      kind: 'interact',
+      description: 'Use the terminal.',
+      target: { q: 1, r: 1 },
+      actionKey: 'disruptWard'
+    }];
+    expect(() => loadContentBundle(missingCost)).toThrow(/Interact objective requires an AP cost/);
+
+    const zeroCost = structuredClone(starterBundle);
+    zeroCost.scenarios[0].objectives = [{
+      id: 'terminal',
+      kind: 'interact',
+      description: 'Use the terminal.',
+      target: { q: 1, r: 1 },
+      actionKey: 'disruptWard',
+      actionPoints: 0
+    }];
+    expect(() => loadContentBundle(zeroCost)).toThrow();
+
+    const restrictedRequired = structuredClone(starterBundle);
+    restrictedRequired.scenarios[0].objectives = [{
+      id: 'terminal',
+      kind: 'interact',
+      description: 'Use the terminal.',
+      target: { q: 1, r: 1 },
+      unitIds: ['captain'],
+      actionKey: 'disruptWard',
+      actionPoints: 2
+    }];
+    expect(() => loadContentBundle(restrictedRequired)).toThrow(/Required interact objectives cannot restrict eligible units/);
+  });
+
+  it('requires valid tactical event triggers and references', () => {
+    const triggerless = structuredClone(starterBundle);
+    triggerless.scenarios[0].events = [{
+      id: 'reserve',
+      messageKey: 'wardBeaconSecured',
+      faction: 'alliance',
+      reinforcements: [{ id: 'ranger', definitionId: 'rangers', coordinate: { q: 1, r: 1 } }]
+    }];
+    expect(() => loadContentBundle(triggerless)).toThrow(/requires a round, attrition, or objective trigger/);
+
+    const unknownObjective = structuredClone(starterBundle);
+    unknownObjective.scenarios[0].events = [{
+      id: 'reserve',
+      triggerObjectiveId: 'missing-objective',
+      messageKey: 'wardBeaconSecured',
+      faction: 'alliance',
+      reinforcements: [{ id: 'ranger', definitionId: 'rangers', coordinate: { q: 1, r: 1 } }]
+    }];
+    expect(() => loadContentBundle(unknownObjective)).toThrow(/Unknown objective trigger missing-objective/);
+
+    const unknownPrerequisite = structuredClone(starterBundle);
+    unknownPrerequisite.scenarios[0].events = [{
+      id: 'reserve',
+      triggerRound: 2,
+      triggerAfterEventId: 'missing-event',
+      messageKey: 'wardBeaconSecured',
+      faction: 'alliance',
+      reinforcements: [{ id: 'ranger', definitionId: 'rangers', coordinate: { q: 1, r: 1 } }]
+    }];
+    expect(() => loadContentBundle(unknownPrerequisite)).toThrow(/Unknown prerequisite event missing-event/);
+  });
+
+  it('ships bridge demolitions as paid interactions and an optional Rift reserve action', () => {
+    const bridgeheads = validatedStarterBundle.scenarios.filter((scenario) => (
+      scenario.id === 'bridgehead'
+      || ['city-sector-strasbourg', 'city-sector-vienna', 'city-sector-warsaw', 'city-sector-blacksea'].includes(scenario.id)
+    ));
+    expect(bridgeheads).toHaveLength(5);
+    for (const scenario of bridgeheads) {
+      expect(scenario.objectives.find((objective) => objective.actionKey === 'plantCharges')).toMatchObject({
+        kind: 'interact',
+        actionPoints: 2
+      });
+    }
+
+    const rift = validatedStarterBundle.scenarios.find((scenario) => scenario.id === 'city-sector-rift');
+    expect(rift?.objectives.find((objective) => objective.id === 'sector-rift-disrupt-ward')).toMatchObject({
+      kind: 'interact',
+      optional: true,
+      actionKey: 'disruptWard',
+      actionPoints: 2
+    });
+    expect(rift?.events?.find((event) => event.triggerObjectiveId === 'sector-rift-disrupt-ward')).toMatchObject({
+      faction: 'alliance',
+      messageKey: 'wardBeaconSecured'
+    });
+  });
+
   it('pays out monotonically with difficulty so harder sectors fund the next tier', () => {
     const territories = validatedStarterBundle.campaigns[0].territories.filter((t) => t.difficulty);
     const maxByTier = new Map<number, number>();

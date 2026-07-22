@@ -67,5 +67,15 @@
   "attackFailed": "Attack failed",
   "suppressionFailed": "Suppressive fire failed",
   "cannotSetOverwatch": "Cannot set overwatch",
-  "cannotRally": "Cannot rally"
+  "cannotRally": "Cannot rally",
+  "objectiveActionSelectUnit": "Select an Alliance unit",
+  "objectiveActionNotFound": "Mission objective not found",
+  "objectiveActionInvalid": "Mission action is unavailable",
+  "objectiveActionCompleted": "Mission action already completed",
+  "objectiveActionWrongTurn": "Wait for the Alliance turn",
+  "objectiveActionWrongFaction": "Only Alliance units can perform this action",
+  "objectiveActionUnitUnavailable": "This unit cannot perform mission actions",
+  "objectiveActionUnitRestricted": "This objective requires a different unit",
+  "objectiveActionOutOfRange": "Move onto or beside the objective",
+  "objectiveActionNotEnoughAp": "Not enough action points for this mission action"
 }

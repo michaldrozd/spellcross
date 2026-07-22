@@ -529,7 +529,14 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
       // No hard turn limit on the far objective: a timed reach across the enlarged maps defeated the
       // player even while they were winning by elimination (army intact, foes nearly cleared, lost on
       // the deadline). Win by reaching the charge point OR routing the defenders — reach is the fast lane.
-      objs.push({ id: `${id}-reach`, kind: 'reach', description: 'Plant charges at the far objective.', target: anchor });
+      objs.push({
+        id: `${id}-reach`,
+        kind: 'interact',
+        description: 'Plant charges at the far objective.',
+        target: anchor,
+        actionKey: 'plantCharges',
+        actionPoints: 2
+      });
       break;
     case 'convoy': {
       const convoyId = `${id}-convoy`;
@@ -564,6 +571,15 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
       } else if (id === 'sector-rift') {
         objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Bring down the wardens of the Ash Crown.' });
         objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Anchor the seal inside the burning scar for 3 rounds.', target: hold, turnLimit: 3 });
+        objs.push({
+          id: `${id}-disrupt-ward`,
+          kind: 'interact',
+          description: 'Disrupt the outer ward to open a reserve corridor.',
+          target: anchor,
+          optional: true,
+          actionKey: 'disruptWard',
+          actionPoints: 2
+        });
       } else {
         objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Destroy the ritual guardians.' });
         objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Hold the spire grounds for 3 rounds.', target: hold, turnLimit: 3 });
@@ -633,7 +649,7 @@ function buildEvents(
     definitionId: reinforcement.definitionId,
     coordinate: spots[4 + index]
   }));
-  return [reserveEvent, {
+  const signatureEvent: TacticalScenarioEvent = {
     id: `${cfg.territoryId}-signature-wave`,
     triggerRound: roundByGameplay[cfg.gameplay] + 2,
     triggerEnemyRemaining: 0,
@@ -641,6 +657,19 @@ function buildEvents(
     messageKey: signature.messageKey,
     faction: 'otherSide',
     reinforcements: signatureReinforcements
+  };
+  if (cfg.territoryId !== 'sector-rift') return [reserveEvent, signatureEvent];
+
+  return [reserveEvent, signatureEvent, {
+    id: `${cfg.territoryId}-ward-corridor-reserve`,
+    triggerObjectiveId: `${cfg.territoryId}-disrupt-ward`,
+    messageKey: 'wardBeaconSecured',
+    faction: 'alliance',
+    reinforcements: [{
+      id: `${cfg.territoryId}-ward-rangers`,
+      definitionId: 'rangers',
+      coordinate: g.allianceZone[0] ?? g.reachable[0]
+    }]
   }];
 }
 

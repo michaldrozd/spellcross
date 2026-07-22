@@ -31,6 +31,8 @@ import {
   isSupplyUnit,
   isUnitUnlocked,
   planPathForUnitIso as planPathForUnit,
+  checkObjectiveAction,
+  performObjectiveAction,
   processTacticalEvents,
   projectUnitService,
   reactionThreats,
@@ -324,6 +326,12 @@ function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState)
       return i18n.t('log:levelUp', { unit: unitDisplayName(event.unitId, battleState), level: event.level });
     case 'reinforcements:arrived':
       return i18n.t('log:reinforcements', { count: event.unitIds.length, faction: faction(event.faction) });
+    case 'objective:completed': {
+      return i18n.t('log:objectiveCompleted', {
+        unit: unitDisplayName(event.unitId, battleState),
+        action: i18n.t(`actions:objective.action.${event.actionKey}`)
+      });
+    }
     default:
       return i18n.t('log:genericEvent');
   }
@@ -1138,6 +1146,15 @@ const BattleView: React.FC<{
       }),
       rangeOverlayTiles: () => Array.from(globalRangeTilesRef.current).sort(),
       blockedRangeOverlayTiles: () => Array.from(blockedRangeTilesRef.current).sort(),
+      objectives: () => battle.scenario.objectives.map((objective) => ({
+        id: objective.id,
+        kind: objective.kind,
+        target: objective.target,
+        optional: Boolean(objective.optional),
+        actionKey: objective.actionKey,
+        actionPoints: objective.actionPoints,
+        completed: isObjectiveMet(objective, battle)
+      })),
       ammoFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!first) return null;
@@ -1511,6 +1528,32 @@ const BattleView: React.FC<{
       if (unit) return unit;
     }
     return undefined;
+  };
+  const executeObjectiveAction = (unitId: string, objectiveId: string, announce = true) => {
+    const result = performObjectiveAction(battle, unitId, objectiveId);
+    if (!result.success) {
+      if (announce) {
+        showToast(result.errorKey ? t(`errors:${result.errorKey}`) : t('errors:objectiveActionInvalid'), 'error');
+      }
+      return result;
+    }
+
+    const objective = battle.scenario.objectives.find((candidate) => candidate.id === objectiveId)!;
+    const action = t(`actions:objective.action.${objective.actionKey}`);
+    if (announce) {
+      addCombatNotice(t('battle:notice.objectiveActionDetail', { action }));
+      showPhaseNotice(
+        t('battle:notice.objectiveActionTitle'),
+        t('battle:notice.objectiveActionDetail', { action }),
+        'alliance',
+        2200
+      );
+      AudioManager.play('objective');
+    }
+    presentTacticalEvents(processTacticalEvents(campaign, bundle));
+    persist();
+    resolveOutcome();
+    return result;
   };
   const addAttackEffect = (
     attacker: UnitInstance,
@@ -2112,14 +2155,20 @@ const BattleView: React.FC<{
     aiSfxTimeoutsRef.current.forEach((t) => window.clearTimeout(t));
     aiSfxTimeoutsRef.current = [];
     const proc = new TurnProcessor(battle.state);
-    // Only evac/reach tiles are passed as goals. We deliberately do NOT pass hold tiles or enemy
+    // Only evac/reach and required interaction tiles are passed as goals. We deliberately do NOT pass hold tiles or enemy
     // coordinates: passing hold tiles parks the squad defensively (verified: hold sectors then time out
     // instead of winning by elimination), and enemy coordinates trip the planner's "contest" lane into
     // out-of-range attacks. With no goal the planner advances on the nearest enemy — seek-and-destroy.
-    const reachTargets = battle.scenario.objectives.filter((o) => o.kind === 'reach').map((o) => o.target).filter(Boolean) as HexCoordinate[];
+    const reachTargets = battle.scenario.objectives
+      .filter((objective) => (
+        objective.kind === 'reach'
+        || (objective.kind === 'interact' && !objective.optional && !isObjectiveMet(objective, battle))
+      ))
+      .map((objective) => objective.target)
+      .filter(Boolean) as HexCoordinate[];
     const objectiveTargets = reachTargets;
     const requiredObjectiveRosterIds = battle.scenario.objectives
-      .filter((objective) => objective.kind === 'reach')
+      .filter((objective) => objective.kind === 'reach' || objective.kind === 'interact')
       .flatMap((objective) => objective.unitIds ?? []);
     const objectiveUnitIds = requiredObjectiveRosterIds.length > 0
       ? new Set(requiredObjectiveRosterIds
@@ -2136,6 +2185,17 @@ const BattleView: React.FC<{
     while (battle.state.activeFaction === 'alliance' && safety < 80) {
       safety += 1;
       if (autoTurnAbortRef.current) break; // player clicked Stop — hand the rest of the turn back to them
+      const pendingInteraction = battle.scenario.objectives
+        .filter((objective) => objective.kind === 'interact' && !objective.optional && !isObjectiveMet(objective, battle))
+        .flatMap((objective) => Array.from(battle.state.sides.alliance.units.values()).map((unit) => ({ objective, unit })))
+        .find(({ objective, unit }) => checkObjectiveAction(battle, unit.id, objective.id).success);
+      if (pendingInteraction) {
+        setSelected(pendingInteraction.unit.id);
+        executeObjectiveAction(pendingInteraction.unit.id, pendingInteraction.objective.id);
+        await sleep(300);
+        if (evaluateBattleOutcome(battle) !== 'ongoing') break;
+        continue;
+      }
       // Fog of war: the squad may only fire at enemies on tiles we can currently see. Recomputed each
       // step because advancing reveals more of the map. (Movement still seeks all enemies, to scout.)
       const seenTiles = battle.state.vision.alliance.visibleTiles;
@@ -2402,7 +2462,15 @@ const BattleView: React.FC<{
           <div className="mission-info">
             <h2>{localizedScenarioName(battle.scenario.id, battle.scenario.name)}</h2>
             <p className="muted">{localizedScenarioBrief(battle.scenario.id, battle.scenario.brief)}</p>
-            {!deployMode ? <ObjectiveHud battle={battle} /> : null}
+            {!deployMode ? (
+              <ObjectiveHud
+                battle={battle}
+                selectedUnitId={selected ?? undefined}
+                onObjectiveAction={(objectiveId) => {
+                  if (selected) executeObjectiveAction(selected, objectiveId);
+                }}
+              />
+            ) : null}
           </div>
         </div>
         <div className="battle-bottom-bar">

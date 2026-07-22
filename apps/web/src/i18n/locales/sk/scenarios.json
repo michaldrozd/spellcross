@@ -44,7 +44,8 @@
     "brief": "Zrúťte rituálnu vežu, zlomte príšery a zastavte zapálenie portálu.",
     "objectives": {
       "eliminate-portal": "Zničte rituálnych strážcov.",
-      "hold-spire": "Udržte okolie veže 3 kolá."
+      "hold-spire": "Udržte okolie veže 3 kolá.",
+      "disrupt-ward": "Voliteľné: narušte vonkajšiu ochranu a otvorte koridor pre zálohy Aliancie."
     }
   },
   "city-sector-paris": {
@@ -180,7 +181,8 @@
     "brief": "Prekročte horiacu jazvu, ukotvite pečať a prežite samozvaného vládcu, ktorý povstane z poslednej trhliny.",
     "objectives": {
       "sector-rift-eliminate": "Zničte strážcov Popolavej koruny.",
-      "sector-rift-hold": "Udržte pečať v horiacej jazve 3 kolá."
+      "sector-rift-hold": "Udržte pečať v horiacej jazve 3 kolá.",
+      "sector-rift-disrupt-ward": "Voliteľné: prelomte ochranný maják a privolajte prieskumníkov Aliancie cez jazvu."
     }
   }
 }

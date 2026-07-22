@@ -129,10 +129,21 @@ describe('Per-city battlefields', () => {
     ['sector-rift', 'ashCrownDescends', 'ash-crown-sovereign']
   ] as const)('gives %s a chained signature encounter', (territoryId, messageKey, leadDefinitionId) => {
     const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
-    expect(scenario?.events).toHaveLength(2);
+    expect(scenario?.events).toHaveLength(territoryId === 'sector-rift' ? 3 : 2);
     const [reserve, signature] = scenario?.events ?? [];
     expect(signature?.triggerAfterEventId).toBe(reserve?.id);
     expect(signature?.messageKey).toBe(messageKey);
     expect(signature?.reinforcements[0]?.definitionId).toBe(leadDefinitionId);
+  });
+
+  it('rewards the optional Rift ward action with one Alliance ranger', () => {
+    const scenario = cityScenarios.find((candidate) => candidate.id === 'city-sector-rift');
+    const objective = scenario?.objectives.find((candidate) => candidate.id === 'sector-rift-disrupt-ward');
+    const reward = scenario?.events?.find((event) => event.triggerObjectiveId === objective?.id);
+
+    expect(objective).toMatchObject({ kind: 'interact', optional: true, actionKey: 'disruptWard', actionPoints: 2 });
+    expect(reward).toMatchObject({ faction: 'alliance', messageKey: 'wardBeaconSecured' });
+    expect(reward?.reinforcements).toHaveLength(1);
+    expect(reward?.reinforcements[0]?.definitionId).toBe('rangers');
   });
 });

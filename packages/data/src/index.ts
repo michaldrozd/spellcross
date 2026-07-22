@@ -153,7 +153,8 @@ export interface ResearchTopic {
   applyTo?: Array<'infantry' | 'vehicle' | 'artillery' | 'air' | 'support' | 'hero'>;
 }
 
-export type ObjectiveKind = 'eliminate' | 'reach' | 'protect' | 'hold';
+export type ObjectiveKind = 'eliminate' | 'reach' | 'protect' | 'hold' | 'interact';
+export type TacticalObjectiveActionKey = 'plantCharges' | 'disruptWard';
 
 export interface TacticalObjective {
   id: string;
@@ -162,6 +163,9 @@ export interface TacticalObjective {
   target?: HexCoordinate;
   turnLimit?: number;
   unitIds?: string[];
+  optional?: boolean;
+  actionKey?: TacticalObjectiveActionKey;
+  actionPoints?: number;
 }
 
 export interface ScenarioUnit {
@@ -182,12 +186,14 @@ export type TacticalEventMessageKey =
   | 'portalSurge'
   | 'signalEaterAwakes'
   | 'glassChoirMarches'
-  | 'ashCrownDescends';
+  | 'ashCrownDescends'
+  | 'wardBeaconSecured';
 
 export interface TacticalScenarioEvent {
   id: string;
-  triggerRound: number;
+  triggerRound?: number;
   triggerEnemyRemaining?: number;
+  triggerObjectiveId?: string;
   triggerAfterEventId?: string;
   messageKey: TacticalEventMessageKey;
   faction: FactionId;
@@ -365,8 +371,9 @@ const scenarioUnitSchema = z.object({
 
 const tacticalScenarioEventSchema = z.object({
   id: z.string(),
-  triggerRound: z.number().int().positive(),
+  triggerRound: z.number().int().positive().optional(),
   triggerEnemyRemaining: z.number().int().nonnegative().optional(),
+  triggerObjectiveId: z.string().optional(),
   messageKey: z.enum([
     'evacPursuit',
     'rescueHunters',
@@ -377,20 +384,57 @@ const tacticalScenarioEventSchema = z.object({
     'portalSurge',
     'signalEaterAwakes',
     'glassChoirMarches',
-    'ashCrownDescends'
+    'ashCrownDescends',
+    'wardBeaconSecured'
   ]),
   triggerAfterEventId: z.string().optional(),
   faction: z.enum(['alliance', 'otherSide']),
   reinforcements: z.array(scenarioUnitSchema).min(1)
+}).superRefine((event, context) => {
+  if (event.triggerRound == null && event.triggerEnemyRemaining == null && !event.triggerObjectiveId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Tactical event requires a round, attrition, or objective trigger',
+      path: ['triggerRound']
+    });
+  }
 });
 
 const tacticalObjectiveSchema = z.object({
   id: z.string(),
-  kind: z.enum(['eliminate', 'reach', 'protect', 'hold']),
+  kind: z.enum(['eliminate', 'reach', 'protect', 'hold', 'interact']),
   description: z.string(),
   target: hexCoordinateSchema.optional(),
   turnLimit: z.number().int().positive().optional(),
-  unitIds: z.array(z.string()).optional()
+  unitIds: z.array(z.string()).min(1).optional(),
+  optional: z.boolean().optional(),
+  actionKey: z.enum(['plantCharges', 'disruptWard']).optional(),
+  actionPoints: z.number().int().positive().optional()
+}).superRefine((objective, context) => {
+  if (objective.kind === 'interact') {
+    if (!objective.target) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'Interact objective requires a target', path: ['target'] });
+    }
+    if (!objective.actionKey) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'Interact objective requires an action key', path: ['actionKey'] });
+    }
+    if (objective.actionPoints == null) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'Interact objective requires an AP cost', path: ['actionPoints'] });
+    }
+    if (!objective.optional && objective.unitIds?.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Required interact objectives cannot restrict eligible units',
+        path: ['unitIds']
+      });
+    }
+  } else if (objective.actionKey || objective.actionPoints != null) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Only interact objectives may define mission actions',
+      path: ['actionKey']
+    });
+  }
 });
 
 const scenarioSchema = z.object({
@@ -407,6 +451,32 @@ const scenarioSchema = z.object({
   otherSideForces: z.array(scenarioUnitSchema),
   objectives: z.array(tacticalObjectiveSchema),
   events: z.array(tacticalScenarioEventSchema).optional()
+}).superRefine((scenario, context) => {
+  if (scenario.objectives.every((objective) => objective.optional)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Scenario requires at least one mandatory objective',
+      path: ['objectives']
+    });
+  }
+  const objectiveIds = new Set(scenario.objectives.map((objective) => objective.id));
+  const eventIds = new Set((scenario.events ?? []).map((event) => event.id));
+  scenario.events?.forEach((event, index) => {
+    if (event.triggerObjectiveId && !objectiveIds.has(event.triggerObjectiveId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Unknown objective trigger ${event.triggerObjectiveId}`,
+        path: ['events', index, 'triggerObjectiveId']
+      });
+    }
+    if (event.triggerAfterEventId && !eventIds.has(event.triggerAfterEventId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Unknown prerequisite event ${event.triggerAfterEventId}`,
+        path: ['events', index, 'triggerAfterEventId']
+      });
+    }
+  });
 });
 
 const territorySchema = z.object({
@@ -1871,10 +1941,12 @@ export const starterScenarios: TacticalScenario[] = [
       { id: 'eliminate', kind: 'eliminate', description: 'Destroy or rout all defenders.' },
       {
         id: 'reach-bridge',
-        kind: 'reach',
+        kind: 'interact',
         description: 'Plant charges on the bridge span.',
         target: { q: 4, r: 3 },
-        turnLimit: 6
+        turnLimit: 6,
+        actionKey: 'plantCharges',
+        actionPoints: 2
       }
     ]
   },
@@ -1947,7 +2019,27 @@ export const starterScenarios: TacticalScenario[] = [
     ],
     objectives: [
       { id: 'eliminate-portal', kind: 'eliminate', description: 'Destroy the ritual guardians.' },
-      { id: 'hold-spire', kind: 'hold', description: 'Hold the spire grounds for 3 rounds.', target: { q: 6, r: 3 }, turnLimit: 3 }
+      { id: 'hold-spire', kind: 'hold', description: 'Hold the spire grounds for 3 rounds.', target: { q: 6, r: 3 }, turnLimit: 3 },
+      {
+        id: 'disrupt-ward',
+        kind: 'interact',
+        description: 'Disrupt the outer ward to open a reserve corridor.',
+        target: { q: 4, r: 4 },
+        optional: true,
+        actionKey: 'disruptWard',
+        actionPoints: 2
+      }
+    ],
+    events: [
+      {
+        id: 'ward-corridor-reserve',
+        triggerObjectiveId: 'disrupt-ward',
+        messageKey: 'wardBeaconSecured',
+        faction: 'alliance',
+        reinforcements: [
+          { id: 'ward-rangers', definitionId: 'rangers', coordinate: { q: 2, r: 6 } }
+        ]
+      }
     ]
   },
   // Per-city unique battlefields — one generated map per sector (see city-battlefields.ts).

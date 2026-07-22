@@ -3423,7 +3423,7 @@ header.app-header {
 .objective-hud {
   margin-top: 0.5rem;
   padding: 0.4rem 0.55rem;
-  max-width: 360px;
+  width: min(520px, calc(100vw - 2rem));
   background: rgba(10, 14, 12, 0.7);
   border: 1px solid var(--panel-border);
   border-left: 2px solid var(--accent);
@@ -3450,7 +3450,7 @@ header.app-header {
 
 .objective-hud li {
   display: grid;
-  grid-template-columns: 0.9rem 1fr auto;
+  grid-template-columns: 0.9rem minmax(0, 1fr) auto auto;
   align-items: baseline;
   gap: 0.4rem;
   font-size: 0.74rem;
@@ -3469,6 +3469,45 @@ header.app-header {
   font-size: 0.68rem;
   color: var(--text-dim);
   white-space: nowrap;
+}
+
+.objective-hud .obj-text {
+  min-width: 0;
+}
+
+.objective-optional {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.28rem;
+  border: 1px solid rgba(126, 167, 107, 0.45);
+  color: #8fb57d;
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.objective-action {
+  min-width: 5.6rem;
+  padding: 0.22rem 0.42rem;
+  border: 1px solid #8c7430;
+  background: linear-gradient(#433718, #261f0f);
+  color: #f0d36c;
+  font: 700 0.62rem "Courier New", monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.objective-action:hover:not(:disabled) {
+  border-color: #d2ae3e;
+  filter: brightness(1.16);
+}
+
+.objective-action:disabled {
+  border-color: #384038;
+  background: #161b17;
+  color: #657064;
+  cursor: not-allowed;
 }
 
 .objective-hud li.met .obj-status { color: #79b85e; }
@@ -4501,6 +4540,36 @@ header.app-header {
     max-width: calc(100vw - 7.5rem);
     font-size: 0.68rem;
     line-height: 1.18;
+  }
+
+  .objective-hud {
+    width: calc(100vw - 1.25rem);
+    margin-top: 0.35rem;
+    padding: 0.3rem 0.4rem;
+  }
+
+  .objective-hud li {
+    grid-template-columns: 0.75rem minmax(0, 1fr) auto;
+    gap: 0.25rem;
+    font-size: 0.64rem;
+  }
+
+  .objective-hud .obj-status {
+    display: none;
+  }
+
+  .objective-action {
+    min-width: 4.8rem;
+    padding-inline: 0.3rem;
+    font-size: 0.55rem;
+  }
+
+  .battle-phase-notice {
+    top: 10.75rem;
+    left: 0.5rem;
+    right: 0.5rem;
+    min-width: 0;
+    max-width: none;
   }
 
   .deploy-banner {

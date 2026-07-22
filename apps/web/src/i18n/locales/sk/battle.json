@@ -32,7 +32,9 @@
     "enemyTurnTitle": "Nepriateľský ťah",
     "enemyTurnDetail": "Nepriateľské jednotky konajú",
     "enemyPhaseTitle": "Nepriateľská fáza",
-    "enemyPhaseDetail": "{{unit}} útočí"
+    "enemyPhaseDetail": "{{unit}} útočí",
+    "objectiveActionTitle": "Akcia misie splnená",
+    "objectiveActionDetail": "{{action}}"
   },
   "scriptedEvents": {
     "evacPursuit": {
@@ -74,6 +76,10 @@
     "ashCrownDescends": {
       "title": "Popolavá koruna zostupuje",
       "detail": "Horiaca jazva sa otvorila samozvanému vládcovi a jeho poslednej družine: {{count}} kontaktov."
+    },
+    "wardBeaconSecured": {
+      "title": "Koridor ochranou je otvorený",
+      "detail": "Prelomená ochrana odkryla bezpečný prístup. Na bojisko vstupujú prieskumníci Aliancie: {{count}} jednotka."
     }
   },
   "autoTurn": {

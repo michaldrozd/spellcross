@@ -8,7 +8,18 @@
     "securing": "Udrž cez protiútok",
     "notReached": "Nesplnené",
     "protected": "Ochránené",
-    "lost": "Stratené"
+    "lost": "Stratené",
+    "completed": "Splnené",
+    "pendingAction": "Vyžaduje akciu",
+    "optional": "Bonus",
+    "action": {
+      "plantCharges": "Umiestniť nálože",
+      "disruptWard": "Narušiť ochranu"
+    },
+    "actionTooltip": {
+      "plantCharges": "Minie uvedené AP na aktiváciu demolačného bodu",
+      "disruptWard": "Minie uvedené AP na prelomenie ochrany a otvorenie koridoru pre zálohy"
+    }
   },
   "overwatch": {
     "label": "Pohotovosť",

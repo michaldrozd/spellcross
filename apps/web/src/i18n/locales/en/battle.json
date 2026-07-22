@@ -32,7 +32,9 @@
     "enemyTurnTitle": "Enemy Turn",
     "enemyTurnDetail": "Hostile units are acting",
     "enemyPhaseTitle": "Enemy Phase",
-    "enemyPhaseDetail": "{{unit}} attacking"
+    "enemyPhaseDetail": "{{unit}} attacking",
+    "objectiveActionTitle": "Mission Action Complete",
+    "objectiveActionDetail": "{{action}}"
   },
   "scriptedEvents": {
     "evacPursuit": {
@@ -74,6 +76,10 @@
     "ashCrownDescends": {
       "title": "The Ash Crown Descends",
       "detail": "The burning scar opens for its self-crowned warden and final retinue: {{count}} contacts."
+    },
+    "wardBeaconSecured": {
+      "title": "Ward Corridor Open",
+      "detail": "The broken ward reveals a safe approach. Alliance rangers enter the battlefield: {{count}} unit."
     }
   },
   "autoTurn": {

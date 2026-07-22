@@ -11,5 +11,6 @@
   "tileDestroyed": "Tile destroyed at {{q}},{{r}}",
   "levelUp": "Level up: {{unit}} (level {{level}})",
   "reinforcements": "Reinforcements: {{count}} units joined {{faction}}",
+  "objectiveCompleted": "Mission action: {{unit}} completed {{action}}",
   "genericEvent": "Battle event"
 }

@@ -67,5 +67,15 @@
   "attackFailed": "Útok zlyhal",
   "suppressionFailed": "Potlačovacia paľba zlyhala",
   "cannotSetOverwatch": "Nemožno nastaviť pohotovostnú paľbu",
-  "cannotRally": "Jednotka sa nemôže zomknúť"
+  "cannotRally": "Jednotka sa nemôže zomknúť",
+  "objectiveActionSelectUnit": "Vyber jednotku Aliancie",
+  "objectiveActionNotFound": "Cieľ misie sa nenašiel",
+  "objectiveActionInvalid": "Akcia misie nie je dostupná",
+  "objectiveActionCompleted": "Akcia misie už bola splnená",
+  "objectiveActionWrongTurn": "Počkaj na ťah Aliancie",
+  "objectiveActionWrongFaction": "Túto akciu môžu vykonať iba jednotky Aliancie",
+  "objectiveActionUnitUnavailable": "Táto jednotka nemôže vykonať akciu misie",
+  "objectiveActionUnitRestricted": "Tento cieľ vyžaduje inú jednotku",
+  "objectiveActionOutOfRange": "Presuň sa na cieľ alebo vedľa neho",
+  "objectiveActionNotEnoughAp": "Na akciu misie chýbajú akčné body"
 }

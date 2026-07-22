@@ -230,6 +230,12 @@ export type BattleEvent =
       coordinates: HexCoordinate[];
     }
   | {
+      kind: 'objective:completed';
+      objectiveId: string;
+      unitId: string;
+      actionKey: 'plantCharges' | 'disruptWard';
+    }
+  | {
       kind: 'unit:moved';
       unitId: string;
       from: HexCoordinate;

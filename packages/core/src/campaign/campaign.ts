@@ -13,6 +13,7 @@ import { nanoid } from 'nanoid';
 import { experienceLevelFor } from '../simulation/combat/experience.js';
 import { createBattleState, createUnitInstance } from '../simulation/game-state.js';
 import type { HexCoordinate, TacticalBattleState, UnitDefinition, UnitInstance } from '../simulation/types.js';
+import { isoDistance } from '../simulation/utils/grid-iso.js';
 import { coordinateKey } from '../simulation/utils/grid.js';
 import { updateAllFactionsVision } from '../simulation/visibility/vision.js';
 
@@ -98,6 +99,7 @@ export interface ActiveBattle {
   reachClaimedRound: Record<string, number>;
   difficulty: CampaignDifficulty;
   triggeredEventIds: string[];
+  completedObjectiveIds: string[];
   // True once the player has left deployment. Persisted so a reloaded in-progress battle resumes in
   // normal play (with saved unit positions/AP) instead of re-opening DEPLOYMENT and allowing free moves.
   deployed?: boolean;
@@ -882,12 +884,14 @@ const buildArmySide = (
   if (apc) {
     rosterUnits = [apc, ...rosterUnits.filter((u) => u.id !== apc.id)];
   }
-  // Units a reach objective names (the captain on evac maps) must never be truncated out of a small
-  // start zone — an undeployed escort target would leave the objective unmeetable all battle.
-  const escortIds = new Set(scenario.objectives.filter((o) => o.kind === 'reach').flatMap((o) => o.unitIds ?? []));
-  if (escortIds.size > 0) {
-    const escorts = rosterUnits.filter((u) => escortIds.has(u.id));
-    rosterUnits = [...escorts, ...rosterUnits.filter((u) => !escortIds.has(u.id))];
+  // Units named by positional or interaction objectives must never be truncated out of a small start
+  // zone. Required interact objectives cannot restrict a unit, but optional specialist tasks may.
+  const objectiveUnitIds = new Set(scenario.objectives
+    .filter((objective) => objective.kind === 'reach' || objective.kind === 'interact')
+    .flatMap((objective) => objective.unitIds ?? []));
+  if (objectiveUnitIds.size > 0) {
+    const objectiveUnits = rosterUnits.filter((unit) => objectiveUnitIds.has(unit.id));
+    rosterUnits = [...objectiveUnits, ...rosterUnits.filter((unit) => !objectiveUnitIds.has(unit.id))];
   }
   const tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string; experience: number }> = [];
 
@@ -1021,7 +1025,8 @@ export function startBattleForTerritory(
     holdCountedRound: {},
     reachClaimedRound: {},
     difficulty: state.difficulty,
-    triggeredEventIds: []
+    triggeredEventIds: [],
+    completedObjectiveIds: []
   };
   state.lastOperationTurn = state.turn;
   state.activeBattle = activeBattle;
@@ -1100,13 +1105,19 @@ export function processTacticalEvents(
   for (const event of battle.scenario.events ?? []) {
     if (triggered.has(event.id)) continue;
     if (event.triggerAfterEventId && !triggeredBeforeProcessing.has(event.triggerAfterEventId)) continue;
-    const dueByRound = battle.state.round >= event.triggerRound;
+    const dueByRound = event.triggerRound != null && battle.state.round >= event.triggerRound;
     const dueByAttrition = event.triggerEnemyRemaining != null && enemyRemaining <= event.triggerEnemyRemaining;
-    if (!dueByRound && !dueByAttrition) continue;
+    const dueByObjective = event.triggerObjectiveId != null
+      && battle.scenario.objectives.some((objective) => (
+        objective.id === event.triggerObjectiveId && isObjectiveMet(objective, battle)
+      ));
+    if (!dueByRound && !dueByAttrition && !dueByObjective) continue;
 
     battle.triggeredEventIds.push(event.id);
     triggered.add(event.id);
-    const requestedUnits = event.reinforcements.slice(0, waveSize);
+    const requestedUnits = event.faction === 'alliance'
+      ? event.reinforcements
+      : event.reinforcements.slice(0, waveSize);
     if (requestedUnits.length === 0) continue;
 
     const occupied = new Set<string>();
@@ -1173,6 +1184,89 @@ const isReachObjectiveOccupied = (objective: TacticalObjective, battle: ActiveBa
   });
 };
 
+export type ObjectiveActionErrorKey =
+  | 'objectiveActionSelectUnit'
+  | 'objectiveActionNotFound'
+  | 'objectiveActionInvalid'
+  | 'objectiveActionCompleted'
+  | 'objectiveActionWrongTurn'
+  | 'objectiveActionWrongFaction'
+  | 'objectiveActionUnitUnavailable'
+  | 'objectiveActionUnitRestricted'
+  | 'objectiveActionOutOfRange'
+  | 'objectiveActionNotEnoughAp';
+
+export interface ObjectiveActionResult {
+  success: boolean;
+  errorKey?: ObjectiveActionErrorKey;
+  actionPoints?: number;
+}
+
+const rejectObjectiveAction = (errorKey: ObjectiveActionErrorKey): ObjectiveActionResult => ({
+  success: false,
+  errorKey
+});
+
+const battleUnit = (battle: ActiveBattle, unitId: string) => (
+  battle.state.sides.alliance.units.get(unitId)
+  ?? battle.state.sides.otherSide.units.get(unitId)
+);
+
+export function checkObjectiveAction(
+  battle: ActiveBattle,
+  unitId: string | undefined,
+  objectiveId: string
+): ObjectiveActionResult {
+  const objective = battle.scenario.objectives.find((candidate) => candidate.id === objectiveId);
+  if (!objective) return rejectObjectiveAction('objectiveActionNotFound');
+  if (objective.kind !== 'interact' || !objective.target || !objective.actionKey || !objective.actionPoints) {
+    return rejectObjectiveAction('objectiveActionInvalid');
+  }
+  if ((battle.completedObjectiveIds ?? []).includes(objective.id)) {
+    return rejectObjectiveAction('objectiveActionCompleted');
+  }
+  if (!unitId) return rejectObjectiveAction('objectiveActionSelectUnit');
+  if (battle.state.activeFaction !== 'alliance') return rejectObjectiveAction('objectiveActionWrongTurn');
+
+  const unit = battleUnit(battle, unitId);
+  if (!unit) return rejectObjectiveAction('objectiveActionSelectUnit');
+  if (unit.faction !== 'alliance') return rejectObjectiveAction('objectiveActionWrongFaction');
+  if (unit.stance === 'destroyed' || unit.stance === 'routed' || unit.embarkedOn) {
+    return rejectObjectiveAction('objectiveActionUnitUnavailable');
+  }
+  if (objective.unitIds?.length) {
+    const eligibleTacticalIds = new Set(objective.unitIds
+      .map((rosterId) => battle.deployment[rosterId])
+      .filter((tacticalId): tacticalId is string => Boolean(tacticalId)));
+    if (!eligibleTacticalIds.has(unit.id)) return rejectObjectiveAction('objectiveActionUnitRestricted');
+  }
+  if (isoDistance(unit.coordinate, objective.target) > 1) {
+    return rejectObjectiveAction('objectiveActionOutOfRange');
+  }
+  if (unit.actionPoints < objective.actionPoints) {
+    return rejectObjectiveAction('objectiveActionNotEnoughAp');
+  }
+  return { success: true, actionPoints: objective.actionPoints };
+}
+
+export function performObjectiveAction(
+  battle: ActiveBattle,
+  unitId: string,
+  objectiveId: string
+): ObjectiveActionResult {
+  const check = checkObjectiveAction(battle, unitId, objectiveId);
+  if (!check.success) return check;
+
+  const unit = battle.state.sides.alliance.units.get(unitId)!;
+  const objective = battle.scenario.objectives.find((candidate) => candidate.id === objectiveId)!;
+  const actionPoints = check.actionPoints!;
+  unit.actionPoints -= actionPoints;
+  battle.completedObjectiveIds ??= [];
+  battle.completedObjectiveIds.push(objectiveId);
+  battle.state.timeline.push({ kind: 'objective:completed', objectiveId, unitId, actionKey: objective.actionKey! });
+  return { success: true, actionPoints };
+}
+
 export const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattle): boolean => {
   switch (objective.kind) {
     case 'eliminate': {
@@ -1208,6 +1302,8 @@ export const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattl
       const limit = objective.turnLimit ?? 1;
       return (battle.holdProgress[objective.id] ?? 0) >= limit;
     }
+    case 'interact':
+      return (battle.completedObjectiveIds ?? []).includes(objective.id);
     default:
       return false;
   }
@@ -1248,17 +1344,20 @@ export function evaluateBattleOutcome(battle: ActiveBattle): 'victory' | 'defeat
   tickHoldProgress(battle);
   tickReachProgress(battle);
 
-  const defeatByProtect = battle.scenario.objectives.some((o) => o.kind === 'protect' && !isObjectiveMet(o, battle));
+  const requiredObjectives = battle.scenario.objectives.filter((objective) => !objective.optional);
+  const defeatByProtect = requiredObjectives.some((o) => o.kind === 'protect' && !isObjectiveMet(o, battle));
   if (defeatByProtect) return 'defeat';
 
-  const allMet = battle.scenario.objectives.every((o) => isObjectiveMet(o, battle));
+  const allMet = requiredObjectives.every((o) => isObjectiveMet(o, battle));
   if (allMet) return 'victory';
 
   // Alternate win: securing the primary objective — reach (extraction flare / far bank / charges) or
   // hold (secure the relay/spire for N rounds) — wins even with enemies alive; protects are enforced
   // above, and routing everyone still wins via the all-enemies-dead shortcut. This makes the brief copy
   // honest on evac, bridgehead, and raid/hold sectors instead of secretly requiring a full wipe too.
-  const primaryObjectives = battle.scenario.objectives.filter((o) => o.kind === 'reach' || o.kind === 'hold');
+  const primaryObjectives = requiredObjectives.filter(
+    (objective) => objective.kind === 'reach' || objective.kind === 'hold' || objective.kind === 'interact'
+  );
   if (primaryObjectives.length > 0 && primaryObjectives.every((o) => isObjectiveMet(o, battle))) {
     return 'victory';
   }
@@ -1276,8 +1375,8 @@ export function evaluateBattleOutcome(battle: ActiveBattle): 'victory' | 'defeat
 
   // reach/hold with turn limit missed?
   const turn = battle.state.round;
-  const timedFailure = battle.scenario.objectives.some((o) => {
-    if (o.turnLimit && o.kind === 'reach' && turn > o.turnLimit + 1) {
+  const timedFailure = requiredObjectives.some((o) => {
+    if (o.turnLimit && (o.kind === 'reach' || o.kind === 'interact') && turn > o.turnLimit + 1) {
       return !isObjectiveMet(o, battle);
     }
     return false;
@@ -1572,6 +1671,7 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     activeBattle.holdProgress ??= {};
     activeBattle.holdCountedRound ??= {};
     activeBattle.triggeredEventIds ??= [];
+    activeBattle.completedObjectiveIds ??= [];
     const hasCumulativeDeploymentExperience = activeBattle.deploymentExperience != null;
     const deploymentExperience = { ...(activeBattle.deploymentExperience ?? {}) };
     for (const side of Object.values(activeBattle.state.sides)) {
