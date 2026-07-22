@@ -127,6 +127,7 @@ export interface UnitStatsData {
   weaponRanges: Record<string, number>;
   weaponPower: Record<string, number>;
   weaponAccuracy: Record<string, number>;
+  weaponFireModes?: Record<string, 'direct' | 'indirect'>;
   weaponTargets?: Record<string, Array<UnitData['type']>>;
 }
 
@@ -312,7 +313,18 @@ const unitStatsSchema = z.object({
   weaponRanges: z.record(z.string(), z.number().int().nonnegative()),
   weaponPower: z.record(z.string(), z.number().nonnegative()),
   weaponAccuracy: z.record(z.string(), z.number().min(0).max(1)),
+  weaponFireModes: z.record(z.string(), z.enum(['direct', 'indirect'])).optional(),
   weaponTargets: z.record(z.string(), z.array(z.enum(['infantry', 'vehicle', 'air', 'artillery', 'support', 'hero']))).optional()
+}).superRefine((stats, context) => {
+  for (const weaponId of Object.keys(stats.weaponFireModes ?? {})) {
+    if (!(weaponId in stats.weaponRanges)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['weaponFireModes', weaponId],
+        message: `Unknown weapon ${weaponId}`
+      });
+    }
+  }
 });
 
 const unitSchema = z.object({
@@ -555,7 +567,8 @@ export const starterUnits: UnitData[] = [
       ammoCapacity: 6,
       weaponRanges: { mortar: 8 },
       weaponPower: { mortar: 18 },
-      weaponAccuracy: { mortar: 0.55 }
+      weaponAccuracy: { mortar: 0.55 },
+      weaponFireModes: { mortar: 'indirect' }
     }
   },
   {
@@ -759,7 +772,8 @@ export const starterUnits: UnitData[] = [
       ammoCapacity: 6,
       weaponRanges: { howitzer: 9 },
       weaponPower: { howitzer: 26 },
-      weaponAccuracy: { howitzer: 0.58 }
+      weaponAccuracy: { howitzer: 0.58 },
+      weaponFireModes: { howitzer: 'indirect' }
     }
   },
   {
@@ -1116,7 +1130,8 @@ export const starterUnits: UnitData[] = [
     id: 'mlrs-battery', name: 'MLRS Battery', faction: 'alliance', type: 'artillery', role: 'support', cost: 250,
     stats: {
       maxHealth: 80, mobility: 6, vision: 5, armor: 3, morale: 68, ammoCapacity: 4,
-      weaponRanges: { rockets: 13 }, weaponPower: { rockets: 30 }, weaponAccuracy: { rockets: 0.54 }
+      weaponRanges: { rockets: 13 }, weaponPower: { rockets: 30 }, weaponAccuracy: { rockets: 0.54 },
+      weaponFireModes: { rockets: 'indirect' }
     }
   },
   {

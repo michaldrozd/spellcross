@@ -106,7 +106,9 @@
     "confirm": "Confirm Retreat"
   },
   "rangeOverlay": {
-    "label": "Range Overlay"
+    "label": "Range Overlay",
+    "available": "Clear",
+    "blockedByTerrain": "Blocked"
   },
   "panel": {
     "selectedUnit": "Selected Unit",
@@ -135,6 +137,7 @@
     "effWeak": "WEAK",
     "effOk": "OK",
     "likelyKill": "LIKELY KILL",
+    "lineOfFireBlocked": "Direct fire is blocked by terrain",
     "noWeaponCanHit": "No weapon can hit this target",
     "combatLog": "Combat Log",
     "tacticalLinkReady": "TACTICAL LINK READY",
@@ -143,6 +146,7 @@
   },
   "fireControl": {
     "blockedByRange": "Blocked by range",
+    "blockedByTerrain": "Line of fire blocked",
     "need2Ap": "Need 2 AP",
     "hostileContact": "Hostile Contact",
     "hex": "Hex",

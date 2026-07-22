@@ -6,6 +6,7 @@ export const rosterExpansionUnits: UnitData[] = [
     stats: {
       maxHealth: 85, mobility: 8, vision: 5, armor: 3, morale: 68, ammoCapacity: 8,
       weaponRanges: { 'fragment-shell': 8 }, weaponPower: { 'fragment-shell': 19 }, weaponAccuracy: { 'fragment-shell': 0.66 },
+      weaponFireModes: { 'fragment-shell': 'indirect' },
       weaponTargets: { 'fragment-shell': ['infantry', 'support', 'hero'] }
     }
   },
@@ -14,6 +15,7 @@ export const rosterExpansionUnits: UnitData[] = [
     stats: {
       maxHealth: 75, mobility: 9, vision: 5, armor: 3, morale: 65, ammoCapacity: 8,
       weaponRanges: { mortar: 9 }, weaponPower: { mortar: 22 }, weaponAccuracy: { mortar: 0.6 },
+      weaponFireModes: { mortar: 'indirect' },
       weaponTargets: { mortar: ['infantry', 'vehicle', 'artillery', 'support', 'hero'] }
     }
   },
@@ -22,6 +24,7 @@ export const rosterExpansionUnits: UnitData[] = [
     stats: {
       maxHealth: 95, mobility: 5, vision: 5, armor: 5, morale: 72, ammoCapacity: 5,
       weaponRanges: { howitzer: 12 }, weaponPower: { howitzer: 36 }, weaponAccuracy: { howitzer: 0.55 },
+      weaponFireModes: { howitzer: 'indirect' },
       weaponTargets: { howitzer: ['infantry', 'vehicle', 'artillery', 'support', 'hero'] }
     }
   },
@@ -30,6 +33,7 @@ export const rosterExpansionUnits: UnitData[] = [
     stats: {
       maxHealth: 80, mobility: 6, vision: 8, armor: 3, morale: 74, ammoCapacity: 6,
       weaponRanges: { 'counterbattery-shell': 15 }, weaponPower: { 'counterbattery-shell': 31 }, weaponAccuracy: { 'counterbattery-shell': 0.64 },
+      weaponFireModes: { 'counterbattery-shell': 'indirect' },
       weaponTargets: { 'counterbattery-shell': ['vehicle', 'artillery', 'support'] }
     }
   },
@@ -113,6 +117,7 @@ export const rosterExpansionUnits: UnitData[] = [
     stats: {
       maxHealth: 180, mobility: 4, vision: 5, armor: 12, morale: 95, fear: 2,
       weaponRanges: { tusks: 1, 'spore-mortar': 5 }, weaponPower: { tusks: 38, 'spore-mortar': 22 }, weaponAccuracy: { tusks: 0.82, 'spore-mortar': 0.56 },
+      weaponFireModes: { 'spore-mortar': 'indirect' },
       weaponTargets: { 'spore-mortar': ['infantry', 'vehicle', 'artillery', 'support', 'hero'] }
     }
   },

@@ -2,14 +2,17 @@ import { typeEffectiveness } from './damage-types.js';
 import type {
   BattlefieldMap,
   BattleEvent,
+  HexCoordinate,
   MapTile,
   TacticalBattleState,
-  UnitInstance
+  UnitInstance,
+  WeaponFireMode
 } from '../types.js';
 import { experienceAccuracyBonus, updateExperienceLevel } from './experience.js';
 import { isoDistance } from '../utils/grid-iso.js';
 import { isoDirectionIndex } from '../utils/grid-iso.js';
 import { getTile, orientationDelta } from '../utils/grid.js';
+import { hasLineOfSight } from '../visibility/vision.js';
 
 export interface AttackInput {
   attacker: UnitInstance;
@@ -100,6 +103,30 @@ export function calculateAttackRange(attacker: UnitInstance, weaponId: string, m
   if (!map) return baseRange;
   const tile = getTile(map, attacker.coordinate);
   return baseRange + elevationRangeBonus(tile);
+}
+
+export function weaponFireMode(attacker: UnitInstance, weaponId: string): WeaponFireMode {
+  return attacker.stats.weaponFireModes?.[weaponId] ?? 'direct';
+}
+
+export function hasWeaponLineOfFire(
+  attacker: UnitInstance,
+  weaponId: string,
+  target: HexCoordinate,
+  map: BattlefieldMap
+): boolean {
+  if (weaponFireMode(attacker, weaponId) === 'indirect') return getTile(map, target) != null;
+  return hasLineOfSight(map, attacker.coordinate, target);
+}
+
+export function canWeaponReachCoordinate(
+  attacker: UnitInstance,
+  weaponId: string,
+  target: HexCoordinate,
+  map: BattlefieldMap
+): boolean {
+  const range = calculateAttackRange(attacker, weaponId, map);
+  return range > 0 && isoDistance(attacker.coordinate, target) <= range && hasWeaponLineOfFire(attacker, weaponId, target, map);
 }
 
 export function canWeaponTarget(attacker: UnitInstance, weaponId: string, defender: UnitInstance): boolean {

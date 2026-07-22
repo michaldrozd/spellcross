@@ -13,6 +13,7 @@ import {
 import {
   DIRECTIONAL_UNIT_SPRITES,
   battlefieldDirectionalSprite,
+  blockedRangeOverlayStyle,
   canMovingUnitFadeCanopy,
   quantizeMovementOcclusionCoordinate,
   directionalSpriteGroundOffset,
@@ -192,6 +193,9 @@ describe('range overlay presentation', () => {
       expect(style.fillAlpha).toBeLessThan(0.35);
       expect(style.edgeAlpha).toBeGreaterThan(0.7);
       expect(style.shadowAlpha).toBeGreaterThan(0.5);
+      const blockedStyle = blockedRangeOverlayStyle(coloredTerrain);
+      expect(blockedStyle.fill).not.toBe(style.fill);
+      expect(blockedStyle.edgeAlpha).toBeGreaterThan(style.edgeAlpha);
     }
   });
 });

@@ -737,6 +737,30 @@ body {
   white-space: nowrap;
 }
 
+.battle-mode-badge .range-overlay-key {
+  display: grid;
+  grid-template-columns: 0.6rem auto 0.6rem auto;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.24rem;
+  color: #aabfc2;
+  font-size: 0.52rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.range-overlay-key i {
+  width: 0.5rem;
+  height: 0.5rem;
+  border: 1px solid #d7d889;
+  background: #6f9f68;
+}
+
+.range-overlay-key i.blocked {
+  border-color: #f0a06a;
+  background: #8f4134;
+}
+
 .battle-phase-notice {
   position: absolute;
   top: 4.65rem;
@@ -3981,9 +4005,7 @@ header.app-header {
   color: #d6cba1;
   font-size: 0.82rem;
   line-height: 1.12;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 
 .fire-control-metrics {
@@ -4018,6 +4040,11 @@ header.app-header {
 
 .fire-control-metrics .fire-control-warning strong {
   color: #d08869;
+  font-size: 0.68rem;
+  line-height: 1.05;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .unit-card.target-card .target-actions {
@@ -4344,7 +4371,7 @@ header.app-header {
   text-shadow: 0 0 7px rgba(220, 91, 71, 0.24);
 }
 
-@media (max-width: 1120px) {
+@media (max-width: 1600px) {
   .battle-bottom-bar {
     gap: 0.38rem;
     padding-left: 0.55rem;
@@ -4352,22 +4379,26 @@ header.app-header {
   }
 
   .battle-controls {
-    flex-basis: 150px;
-    width: 150px;
+    flex-basis: 140px;
+    width: 140px;
     grid-auto-rows: 38px;
     gap: 5px;
     padding: 1.16rem 0.5rem 0.5rem;
   }
 
   .unit-card {
-    min-width: 420px;
+    min-width: 380px;
     max-width: 460px;
     padding: 0.68rem 0.66rem 0.72rem;
   }
 
   .unit-card.target-card {
-    min-width: 296px;
+    min-width: 280px;
     max-width: 312px;
+  }
+
+  .battle-bottom-bar:has(> .unit-card.target-card) > .target-card:not(.unit-card) {
+    display: none;
   }
 
   .selected-unit-card.empty {
@@ -4376,7 +4407,7 @@ header.app-header {
   }
 
   .battle-log-panel {
-    min-width: 186px;
+    min-width: 160px;
     max-width: none;
     padding: 0.68rem 0.66rem;
   }

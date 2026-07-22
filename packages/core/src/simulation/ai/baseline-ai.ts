@@ -1,9 +1,8 @@
-import { calculateHitChance, canWeaponTarget, canAffordAttack, calculateAttackRange, estimateHitDamage, isMedicUnit, isSupplyUnit } from '../combat/combat-resolver.js';
+import { calculateHitChance, canWeaponTarget, canAffordAttack, canWeaponReachCoordinate, estimateHitDamage, isMedicUnit, isSupplyUnit } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { isIsoNeighbor, isoDirectionIndex, isoDistance, isoNeighbors } from '../utils/grid-iso.js';
 import { coordinateKey, getTile, isNeighbor, orientationDelta, tileIndex } from '../utils/grid.js';
-import { hasLineOfSight } from '../visibility/vision.js';
 
 export type AIImmediateAction =
   | { type: 'attack'; attackerId: string; defenderId: string; weaponId: string }
@@ -54,20 +53,17 @@ function isAnyEnemyVisible(state: TacticalBattleState, faction: FactionId): bool
   return false;
 }
 
-function bestEnemyShotThreat(
+export function bestEnemyShotThreat(
   state: TacticalBattleState,
   enemy: UnitInstance,
   defenderAt: UnitInstance
 ): number {
   if (enemy.stance === 'destroyed') return 0;
   if (!canAffordAttack(enemy)) return 0;
-  if (!hasLineOfSight(state.map, enemy.coordinate, defenderAt.coordinate)) return 0;
   let best = 0;
   for (const weaponId of Object.keys(enemy.stats.weaponRanges)) {
     if (!canWeaponTarget(enemy, weaponId, defenderAt)) continue;
-    const maxRange = calculateAttackRange(enemy, weaponId, state.map) ?? 0;
-    const dist = isoDistance(enemy.coordinate, defenderAt.coordinate);
-    if (dist > maxRange) continue;
+    if (!canWeaponReachCoordinate(enemy, weaponId, defenderAt.coordinate, state.map)) continue;
     const hit = calculateHitChance({ attacker: enemy, defender: defenderAt, weaponId, map: state.map, weather: state.weather });
     if (hit <= 0) continue;
     const power = enemy.stats.weaponPower[weaponId] ?? 0;
@@ -89,13 +85,13 @@ function findDemolitionTarget(
     if (!tile?.destructible) continue;
     if ((tile.hp ?? 0) <= 0) continue;
     const coord: HexCoordinate = { q: idx % state.map.width, r: Math.floor(idx / state.map.width) };
+    const vision = state.vision[unit.faction];
+    if (vision && !vision.visibleTiles.has(tileIndex(state.map, coord))) continue;
     const distToGoal = goals.length
       ? Math.min(...goals.map((g) => isoDistance(coord, g)))
       : isoDistance(coord, unit.coordinate);
     for (const weaponId of Object.keys(unit.stats.weaponRanges)) {
-      const range = calculateAttackRange(unit, weaponId, state.map);
-      if (range <= 0 || isoDistance(unit.coordinate, coord) > range) continue;
-      if (!hasLineOfSight(state.map, unit.coordinate, coord)) continue;
+      if (!canWeaponReachCoordinate(unit, weaponId, coord, state.map)) continue;
       const power = unit.stats.weaponPower[weaponId] ?? 0;
       if (power <= 0) continue; // a zero-power weapon would spend AP+ammo to deal no damage
       const score = power + Math.max(0, 6 - distToGoal);
@@ -289,6 +285,7 @@ function buildThreatAwarePathToward(
 }
 
 function flankAwareAttackScore(attacker: UnitInstance, defender: UnitInstance, weaponId: string, map: TacticalBattleState['map'], weather?: TacticalBattleState['weather']): number {
+  if (!canWeaponReachCoordinate(attacker, weaponId, defender.coordinate, map)) return 0;
   const hit = calculateHitChance({ attacker, defender, weaponId, map, weather });
   if (hit <= 0) return 0;
   // Expected EFFECTIVE damage (armour + weapon-vs-target-class), not raw power — so a unit fires its

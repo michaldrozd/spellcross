@@ -9,6 +9,7 @@
   "noAmmo": "No ammo",
   "weaponCannotTarget": "Weapon cannot target this unit type",
   "cannotAttackFriendly": "Cannot attack friendly unit",
+  "directFireBlocked": "Direct fire is blocked by terrain",
   "targetAlreadyDestroyed": "Target already destroyed",
   "targetEmbarked": "Target is embarked",
   "routedCannotAttack": "Routed units cannot attack",

@@ -9,6 +9,7 @@
   "noAmmo": "Žiadna munícia",
   "weaponCannotTarget": "Zbraň nemôže zasiahnuť tento typ jednotky",
   "cannotAttackFriendly": "Nemožno útočiť na spojeneckú jednotku",
+  "directFireBlocked": "Terén blokuje priamu paľbu",
   "targetAlreadyDestroyed": "Cieľ je už zničený",
   "targetEmbarked": "Cieľ je naložený v prepravnej jednotke",
   "routedCannotAttack": "Utekajúce jednotky nemôžu útočiť",

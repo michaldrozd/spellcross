@@ -106,7 +106,9 @@
     "confirm": "Potvrdiť ústup"
   },
   "rangeOverlay": {
-    "label": "Prehľad dosahu"
+    "label": "Prehľad dosahu",
+    "available": "Voľná",
+    "blockedByTerrain": "Blokovaná"
   },
   "panel": {
     "selectedUnit": "Vybraná jednotka",
@@ -135,6 +137,7 @@
     "effWeak": "SLABÉ",
     "effOk": "OK",
     "likelyKill": "PRAVDEPODOBNÝ ZÁSAH",
+    "lineOfFireBlocked": "Terén blokuje priamu paľbu",
     "noWeaponCanHit": "Žiadna zbraň nedosiahne na tento cieľ",
     "combatLog": "Bojový záznam",
     "tacticalLinkReady": "TAKTICKÉ SPOJENIE PRIPRAVENÉ",
@@ -143,6 +146,7 @@
   },
   "fireControl": {
     "blockedByRange": "Mimo dosahu",
+    "blockedByTerrain": "Palebná línia blokovaná",
     "need2Ap": "Treba 2 AP",
     "hostileContact": "Nepriateľský kontakt",
     "hex": "Pole",

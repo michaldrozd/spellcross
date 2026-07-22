@@ -129,6 +129,7 @@ export interface BattlefieldMap {
 }
 
 export type UnitStance = 'ready' | 'suppressed' | 'routed' | 'destroyed';
+export type WeaponFireMode = 'direct' | 'indirect';
 
 export interface UnitStats {
   maxHealth: number;
@@ -137,6 +138,8 @@ export interface UnitStats {
   weaponRanges: Record<string, number>;
   weaponPower: Record<string, number>;
   weaponAccuracy: Record<string, number>;
+  // Weapons are direct by default. Only launchers that can use a friendly spotter need an entry.
+  weaponFireModes?: Record<string, WeaponFireMode>;
   // Optional per-weapon target restrictions (e.g., AA vs air only)
   weaponTargets?: Record<string, Array<UnitDefinition['type']>>;
   armor: number;

@@ -5,6 +5,7 @@ import {
   calculateHitChance,
   CampaignError,
   canAffordAttack,
+  canWeaponReachCoordinate,
   canWeaponTarget,
   convertStrategicToMoney,
   convertStrategicToResearch,
@@ -20,6 +21,7 @@ import {
   getEnemyActionBudget,
   getEnemyDecisionBudget,
   getEnemyDifficultyTier,
+  hasWeaponLineOfFire,
   isoDistance as axialDistance,
   isoNeighbors,
   isoWithinRange,
@@ -41,6 +43,7 @@ import {
   startResearch,
   TurnProcessor,
   typeEffectiveness,
+  weaponFireMode,
   weaponDamageRole,
   calculateStrengthModifier,
   nextExperienceLevelThreshold,
@@ -362,11 +365,7 @@ function firingSound(attacker: UnitInstance, defender: UnitInstance, weaponId: s
 }
 // Indirect fire (mortars, howitzers, rocket batteries) lobs its shell in a high ballistic arc rather
 // than a flat tracer. Direct-fire tank shells stay flat even though they're also 'explosion' type.
-function isIndirectFire(attacker: UnitInstance, weaponId: string, effectType: AttackEffect['type']) {
-  if (effectType !== 'explosion') return false;
-  const tag = `${attacker.definitionId} ${weaponId}`.toLowerCase();
-  return attacker.unitType === 'artillery' || /mortar|howitzer|rocket|mlrs|catapult|ballista|arc/.test(tag);
-}
+const isIndirectFire = (attacker: UnitInstance, weaponId: string) => weaponFireMode(attacker, weaponId) === 'indirect';
 // Timbre of the struck target: armour clangs, flesh thuds, the demonic invaders ring dissonantly.
 function impactMaterialFor(unit: UnitInstance): 'metal' | 'flesh' | 'undead' {
   if (unit.unitType === 'vehicle' || unit.unitType === 'artillery') return 'metal';
@@ -382,15 +381,12 @@ function impactPanFor(unit: UnitInstance, map: BattlefieldMap): number {
 function bestWeapon(attacker: UnitInstance, defender: UnitInstance, map: BattlefieldMap, weather?: TacticalBattleState['weather']): { weapon: string; hit: number } | null {
   let choice: { weapon: string; hit: number } | null = null;
   let bestScore = 0;
-  const distance = axialDistance(attacker.coordinate, defender.coordinate);
   for (const weaponId of Object.keys(attacker.stats.weaponRanges)) {
-    // calculateAttackRange matches the engine's check — raw weaponRanges misses the elevation
-    // bonus, which showed hill shots at bonus range as BLOCKED.
-    if (distance > calculateAttackRange(attacker, weaponId, map)) {
-      continue;
-    }
     // Check if weapon can target this unit type
     if (!canWeaponTarget(attacker, weaponId, defender)) {
+      continue;
+    }
+    if (!canWeaponReachCoordinate(attacker, weaponId, defender.coordinate, map)) {
       continue;
     }
     const hit = calculateHitChance({ attacker, defender, weaponId, map, weather });
@@ -526,6 +522,12 @@ const BattleView: React.FC<{
   })();
   const previewEnemy = targetedEnemy ?? hoveredEnemy;
   const targetWeaponPreview = selectedUnit && previewEnemy ? bestWeapon(selectedUnit, previewEnemy, battle.state.map, battle.state.weather) : null;
+  const targetLineOfFireBlocked = Boolean(selectedUnit && previewEnemy && !targetWeaponPreview &&
+    Object.keys(selectedUnit.stats.weaponRanges).some((weaponId) =>
+      canWeaponTarget(selectedUnit, weaponId, previewEnemy) &&
+      axialDistance(selectedUnit.coordinate, previewEnemy.coordinate) <= calculateAttackRange(selectedUnit, weaponId, battle.state.map) &&
+      !hasWeaponLineOfFire(selectedUnit, weaponId, previewEnemy.coordinate, battle.state.map)
+    ));
   // Show the REAL expected damage (armor + cover + wound modifiers), not raw weapon power — otherwise the
   // reticle's -N and KILL tag lie about the single most important tactical read in the game.
   const previewDamage = previewEnemy && targetWeaponPreview && selectedUnit
@@ -660,18 +662,25 @@ const BattleView: React.FC<{
     }, totalDuration + 50); // small buffer
     return () => clearTimeout(timer);
   }, [movingUnit]);
-  const globalRangeTiles = useMemo(() => {
-    if (!showRanges || !selectedUnit) return new Set<string>();
-    const acc = new Set<string>();
+  const globalRangeOverlay = useMemo(() => {
+    const tiles = new Set<string>();
+    const legal = new Set<string>();
+    const blocked = new Set<string>();
+    if (!showRanges || !selectedUnit) return { tiles, blocked };
     for (const weapon of Object.keys(selectedUnit.stats.weaponRanges)) {
       // isoWithinRange + calculateAttackRange mirror the engine's Chebyshev range check (incl.
       // elevation bonus) — the old hexWithinRange drew a hex-metric ring the engine never uses.
       const range = calculateAttackRange(selectedUnit, weapon, map);
       for (const coord of isoWithinRange(selectedUnit.coordinate, range)) {
-        acc.add(`${coord.q},${coord.r}`);
+        if (coord.q < 0 || coord.r < 0 || coord.q >= map.width || coord.r >= map.height) continue;
+        const key = `${coord.q},${coord.r}`;
+        tiles.add(key);
+        if (hasWeaponLineOfFire(selectedUnit, weapon, coord, map)) legal.add(key);
+        else blocked.add(key);
       }
     }
-    return acc;
+    for (const key of legal) blocked.delete(key);
+    return { tiles, blocked };
     // Unit instances are mutated in place by the turn processor, so identity alone cannot invalidate
     // this memo after movement or a range upgrade. Keep the mutable fields explicit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -681,10 +690,15 @@ const BattleView: React.FC<{
     selectedUnit?.coordinate.q,
     selectedUnit?.coordinate.r,
     selectedUnit?.stats.weaponRanges,
+    selectedUnit?.stats.weaponFireModes,
     map
   ]);
+  const globalRangeTiles = globalRangeOverlay.tiles;
+  const blockedRangeTiles = globalRangeOverlay.blocked;
   const globalRangeTilesRef = useRef(globalRangeTiles);
   globalRangeTilesRef.current = globalRangeTiles;
+  const blockedRangeTilesRef = useRef(blockedRangeTiles);
+  blockedRangeTilesRef.current = blockedRangeTiles;
   const battleControlContextRef = useRef<{
     battle: NonNullable<CampaignState['activeBattle']>;
     map: BattlefieldMap;
@@ -881,16 +895,18 @@ const BattleView: React.FC<{
         persist();
         return res.success;
       },
-      attackUnitWith: (attackerId: string, defenderId: string) => {
+      attackUnitWith: (attackerId: string, defenderId: string, requestedWeaponId?: string) => {
         const attacker = battle.state.sides.alliance.units.get(attackerId);
         if (!attacker) return { success: false, error: `Unit ${attackerId} not found` };
         const defender = battle.state.sides.otherSide.units.get(defenderId);
         if (!defender) return { success: false, error: `Unit ${defenderId} not found` };
-        const weapon = Object.keys(attacker.stats.weaponRanges).sort((a, b) => {
-          const rangeDiff = (attacker.stats.weaponRanges[b] ?? 0) - (attacker.stats.weaponRanges[a] ?? 0);
-          if (rangeDiff !== 0) return rangeDiff;
-          return (attacker.stats.weaponPower[b] ?? 0) - (attacker.stats.weaponPower[a] ?? 0);
-        })[0];
+        const weapon = requestedWeaponId && requestedWeaponId in attacker.stats.weaponRanges
+          ? requestedWeaponId
+          : Object.keys(attacker.stats.weaponRanges).sort((a, b) => {
+              const rangeDiff = (attacker.stats.weaponRanges[b] ?? 0) - (attacker.stats.weaponRanges[a] ?? 0);
+              if (rangeDiff !== 0) return rangeDiff;
+              return (attacker.stats.weaponPower[b] ?? 0) - (attacker.stats.weaponPower[a] ?? 0);
+            })[0];
         if (!weapon) return { success: false, error: 'No weapon available' };
         const proc = new TurnProcessor(battle.state, { random: () => 0 });
         const res = proc.attackUnit({ attackerId, defenderId, weaponId: weapon });
@@ -957,8 +973,26 @@ const BattleView: React.FC<{
           if (unit) {
             unit.coordinate = { q, r };
             unit.embarkedOn = undefined;
+            updateAllFactionsVision(battle.state);
             return true;
           }
+        }
+        return false;
+      },
+      placeVisionBlocker: (q: number, r: number) => {
+        const tile = getTile({ q, r });
+        if (!tile) return false;
+        tile.blocksVision = true;
+        tile.cover = Math.max(3, tile.cover);
+        updateAllFactionsVision(battle.state);
+        return true;
+      },
+      setWeaponFireMode: (unitId: string, weaponId: string, mode: 'direct' | 'indirect') => {
+        for (const side of Object.values(battle.state.sides)) {
+          const unit = side.units.get(unitId);
+          if (!unit || !(weaponId in unit.stats.weaponRanges)) continue;
+          unit.stats.weaponFireModes = { ...unit.stats.weaponFireModes, [weaponId]: mode };
+          return true;
         }
         return false;
       },
@@ -1056,6 +1090,7 @@ const BattleView: React.FC<{
         plannedDestination: plannedDestinationRef.current
       }),
       rangeOverlayTiles: () => Array.from(globalRangeTilesRef.current).sort(),
+      blockedRangeOverlayTiles: () => Array.from(blockedRangeTilesRef.current).sort(),
       ammoFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!first) return null;
@@ -1386,7 +1421,7 @@ const BattleView: React.FC<{
   ) => {
     const to = atCoord ?? defender.coordinate;
     const effectType = combatEffectTypeForWeapon(attacker.definitionId, weaponId);
-    const arc = isIndirectFire(attacker, weaponId, effectType);
+    const arc = isIndirectFire(attacker, weaponId);
     const timing = combatEffectTiming(effectType, arc);
     const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
     const noticeTitle = outcome.hit ? t('battle:notice.hitTitle') : t('battle:notice.missTitle');
@@ -2072,6 +2107,7 @@ const BattleView: React.FC<{
             height={viewport.height}
             cameraMode="follow"
             rangeOverlayCoords={showRanges ? globalRangeTiles : undefined}
+            blockedRangeOverlayCoords={showRanges ? blockedRangeTiles : undefined}
             objectiveCoords={battle.scenario.objectives.map((objective) => objective.target).filter((coord): coord is HexCoordinate => Boolean(coord))}
             startZoneCoords={deployMode ? battle.startTiles : undefined}
             attackEffects={attackEffects}
@@ -2162,6 +2198,10 @@ const BattleView: React.FC<{
           <div className="battle-mode-badge">
             <span>{t('battle:rangeOverlay.label')}</span>
             <strong>{localizedUnitName(selectedUnit.definitionId, selectedDefinition?.name ?? selectedUnit.definitionId)}</strong>
+            <small className="range-overlay-key">
+              <i className="available" /><span>{t('battle:rangeOverlay.available')}</span>
+              <i className="blocked" /><span>{t('battle:rangeOverlay.blockedByTerrain')}</span>
+            </small>
           </div>
         ) : null}
         <div className="battle-top-bar">
@@ -2369,7 +2409,9 @@ const BattleView: React.FC<{
                 const weapon = attacker ? bestWeapon(attacker, targetedEnemy, battle.state.map, battle.state.weather) : null;
                 const canAttackNow = Boolean(attacker && weapon && canAffordAttack(attacker));
                 const attackBlockReason = !weapon
-                  ? t('battle:fireControl.blockedByRange')
+                  ? targetLineOfFireBlocked
+                    ? t('battle:fireControl.blockedByTerrain')
+                    : t('battle:fireControl.blockedByRange')
                   : attacker && !canAffordAttack(attacker)
                     ? attacker.currentAmmo !== Infinity && attacker.currentAmmo <= 0 ? t('errors:noAmmo') : t('battle:fireControl.need2Ap')
                     : '';
@@ -2458,7 +2500,9 @@ const BattleView: React.FC<{
                     {previewLethal ? <span className="badge badge-kill">{t('battle:panel.likelyKill')}</span> : null}
                   </>
                 ) : (
-                  <p className="muted">{t('battle:panel.noWeaponCanHit')}</p>
+                  <p className="muted">{targetLineOfFireBlocked
+                    ? t('battle:panel.lineOfFireBlocked')
+                    : t('battle:panel.noWeaponCanHit')}</p>
                 )}
               </div>
             </div>

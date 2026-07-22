@@ -31,6 +31,7 @@ import {
   UNIT_SHEET_DIRECTIONS,
   UNIT_SHEET_FRAME_SIZE,
   battlefieldDirectionalSprite,
+  blockedRangeOverlayStyle,
   canMovingUnitFadeCanopy,
   directionalSpriteGroundOffset,
   featheredOcclusionAlpha,
@@ -268,6 +269,7 @@ export interface BattlefieldStageProps {
   cameraMode?: 'fit' | 'follow';
   showAttackOverlay?: boolean;
   rangeOverlayCoords?: Set<string>;
+  blockedRangeOverlayCoords?: Set<string>;
   objectiveCoords?: HexCoordinate[];
   startZoneCoords?: HexCoordinate[];
   attackEffects?: AttackEffect[];
@@ -1455,6 +1457,7 @@ export function BattlefieldStage({
   cameraMode = 'fit',
   showAttackOverlay,
   rangeOverlayCoords,
+  blockedRangeOverlayCoords,
   objectiveCoords = [],
   startZoneCoords = [],
   attackEffects = [],
@@ -3745,6 +3748,7 @@ export function BattlefieldStage({
       const geom = ISO_MODE ? topGeomFor(q, r) : null;
       const elev = map.tiles[idx].elevation ?? 0;
       const avgHeight = ISO_MODE && geom ? geom.avgHeight : elev;
+      const isBlocked = blockedRangeOverlayCoords?.has(key) === true;
 
       elements.push(
         <Graphics
@@ -3753,27 +3757,40 @@ export function BattlefieldStage({
           y={p.y - avgHeight * ELEV_Y_OFFSET}
           draw={(g) => {
             g.clear();
-            const style = rangeOverlayStyle(externalTexturesAreColored);
+            const style = isBlocked
+              ? blockedRangeOverlayStyle(externalTexturesAreColored)
+              : rangeOverlayStyle(externalTexturesAreColored);
             if (ISO_MODE && geom) {
               const shape = geom.inset(0.86);
+              const matchesNeighbor = (dq: number, dr: number) => {
+                const neighborKey = `${q + dq},${r + dr}`;
+                return rangeOverlayCoords.has(neighborKey) &&
+                  (blockedRangeOverlayCoords?.has(neighborKey) === true) === isBlocked;
+              };
               g.beginFill(style.fill, style.fillAlpha);
               drawPoly(g as PixiGraphics, shape);
               g.endFill();
               g.lineStyle(2.4, style.shadow, style.shadowAlpha);
               edges.forEach(([aIdx, bIdx], edgeIndex) => {
                 const d = edgeDirs[edgeIndex];
-                if (rangeOverlayCoords.has(`${q + d.dq},${r + d.dr}`)) return;
+                if (matchesNeighbor(d.dq, d.dr)) return;
                 g.moveTo(shape[aIdx].x, shape[aIdx].y);
                 g.lineTo(shape[bIdx].x, shape[bIdx].y);
               });
               g.lineStyle(1.15, style.edge, style.edgeAlpha);
               edges.forEach(([aIdx, bIdx], edgeIndex) => {
                 const d = edgeDirs[edgeIndex];
-                if (rangeOverlayCoords.has(`${q + d.dq},${r + d.dr}`)) return;
+                if (matchesNeighbor(d.dq, d.dr)) return;
                 g.moveTo(shape[aIdx].x, shape[aIdx].y);
                 g.lineTo(shape[bIdx].x, shape[bIdx].y);
               });
-              if ((q * 7 + r * 11) % 3 === 0) {
+              if (isBlocked) {
+                g.lineStyle(0.9, 0xffbd84, 0.52);
+                g.moveTo(shape[3].x * 0.58, shape[3].y * 0.58);
+                g.lineTo(shape[1].x * 0.58, shape[1].y * 0.58);
+                g.moveTo(shape[0].x * 0.42, shape[0].y * 0.42);
+                g.lineTo(shape[2].x * 0.42, shape[2].y * 0.42);
+              } else if ((q * 7 + r * 11) % 3 === 0) {
                 g.lineStyle(0.8, 0xe8e0a1, 0.42);
                 g.moveTo(shape[3].x * 0.36, shape[3].y * 0.36);
                 g.lineTo(shape[1].x * 0.56, shape[1].y * 0.56);
@@ -3806,7 +3823,7 @@ export function BattlefieldStage({
     });
 
     return elements;
-  }, [rangeOverlayCoords, map.width, map.height, map.tiles, visibleTiles, externalTexturesAreColored, topGeomFor]);
+  }, [rangeOverlayCoords, blockedRangeOverlayCoords, map.width, map.height, map.tiles, visibleTiles, externalTexturesAreColored, topGeomFor]);
 
   const attackRangeOverlays = useMemo(() => {
     if (!showAttackOverlay || !selectedUnitId) return null;

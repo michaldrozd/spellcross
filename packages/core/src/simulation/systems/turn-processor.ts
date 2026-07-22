@@ -2,6 +2,7 @@ import {
   canAffordAttack,
   calculateAttackRange,
   calculateHitChance,
+  canWeaponReachCoordinate,
   estimateHitDamage,
   findUnitInState,
   isMedicUnit,
@@ -9,14 +10,15 @@ import {
   resolveAttack,
   spendAttackCost,
   canWeaponTarget,
+  hasWeaponLineOfFire,
   spendAmmo
 } from '../combat/combat-resolver.js';
 import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
 import type { HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { isoDistance } from '../utils/grid-iso.js';
 import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
-import { coordinateKey, getTile, isNeighbor } from '../utils/grid.js';
-import { hasLineOfSight, updateAllFactionsVision, updateFactionVision } from '../visibility/vision.js';
+import { coordinateKey, getTile, isNeighbor, tileIndex } from '../utils/grid.js';
+import { updateAllFactionsVision, updateFactionVision } from '../visibility/vision.js';
 
 export interface TurnContext {
   state: TacticalBattleState;
@@ -103,16 +105,15 @@ export function reactionAttackers(state: TacticalBattleState, mover: UnitInstanc
       // Overwatch banks the AP when it's set, but an empty gun still can't fire a reaction shot.
       if (defender.currentAmmo !== Infinity && defender.currentAmmo <= 0) continue;
       if (!viaOverwatch && !canAffordAttack(defender)) continue;
-      if (!hasLineOfSight(state.map, defender.coordinate, mover.coordinate)) continue;
+      const vision = state.vision[defender.faction];
+      if (vision && !vision.visibleTiles.has(tileIndex(state.map, mover.coordinate))) continue;
 
-      const distance = isoDistance(defender.coordinate, mover.coordinate);
       let bestWeapon: string | null = null;
       let bestHit = 0;
       let bestScore = 0;
       for (const weaponId of Object.keys(defender.stats.weaponRanges)) {
-        const range = calculateAttackRange(defender, weaponId, state.map);
-        if (range <= 0 || distance > range) continue;
         if (!canWeaponTarget(defender, weaponId, mover)) continue;
+        if (!canWeaponReachCoordinate(defender, weaponId, mover.coordinate, state.map)) continue;
         const hitChance = calculateHitChance({ attacker: defender, defender: mover, weaponId, map: state.map, weather: state.weather });
         // pick by expected effective damage (hit × armour/type-aware damage), not raw accuracy
         const score = hitChance * Math.max(1, estimateHitDamage(defender, mover, weaponId, state.map));
@@ -476,6 +477,10 @@ export class TurnProcessor {
       }
     }
 
+    if (!hasWeaponLineOfFire(attacker, input.weaponId, defender.coordinate, this.#state.map)) {
+      return { success: false, error: 'Direct fire blocked', errorKey: 'directFireBlocked' };
+    }
+
     const outcome = resolveAttack({
       attacker,
       defender,
@@ -660,11 +665,15 @@ export class TurnProcessor {
       return { success: false, error: 'Not enough action points to attack', errorKey: 'notEnoughApToAttack' };
     }
 
-    // Range and LoS check against the tile
+    // Range, spotting and line-of-fire checks against the tile
     const distance = isoDistance(attacker.coordinate, input.target);
     const maxRange = calculateAttackRange(attacker, input.weaponId, this.#state.map);
     if (distance > maxRange) return { success: false, error: 'Target out of range', errorKey: 'targetOutOfRange' };
-    if (!hasLineOfSight(this.#state.map, attacker.coordinate, input.target)) {
+    const vision = this.#state.vision[attacker.faction];
+    if (vision && !vision.visibleTiles.has(tileIndex(this.#state.map, input.target))) {
+      return { success: false, error: 'Target not visible', errorKey: 'targetNotVisible' };
+    }
+    if (!hasWeaponLineOfFire(attacker, input.weaponId, input.target, this.#state.map)) {
       return { success: false, error: 'No line of sight to tile', errorKey: 'noLineOfSightTile' };
     }
 

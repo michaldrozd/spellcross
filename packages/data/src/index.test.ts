@@ -20,6 +20,30 @@ describe('data bundle', () => {
       .every((scenario) => Boolean(scenario.map.environment))).toBe(true);
   });
 
+  it('rejects fire modes for weapons a unit does not have', () => {
+    const invalidBundle = structuredClone(starterBundle);
+    invalidBundle.units[0].stats.weaponFireModes = { missing: 'indirect' };
+    expect(() => loadContentBundle(invalidBundle)).toThrow(/Unknown weapon missing/);
+  });
+
+  it('classifies only authored spotter-enabled weapons as indirect fire', () => {
+    const indirectWeapons = validatedStarterBundle.units.flatMap((unit) =>
+      Object.entries(unit.stats.weaponFireModes ?? {})
+        .filter(([, mode]) => mode === 'indirect')
+        .map(([weaponId]) => `${unit.id}:${weaponId}`)
+    ).sort();
+    expect(indirectWeapons).toEqual([
+      'badger-mortar-carrier:mortar',
+      'firefly-105:fragment-shell',
+      'ironroot-colossus:spore-mortar',
+      'mlrs-battery:rockets',
+      'mortar-team:mortar',
+      'spg-m109:howitzer',
+      'tempest-counterbattery:counterbattery-shell',
+      'thunderhead-155:howitzer'
+    ]);
+  });
+
   it('keeps all cross-references resolvable', () => {
     const bundle = validatedStarterBundle;
     const unitIds = new Set(bundle.units.map((u) => u.id));
@@ -62,6 +86,9 @@ describe('data bundle', () => {
       const ranges = Object.keys(unit.stats.weaponRanges).sort();
       expect(Object.keys(unit.stats.weaponPower).sort(), `unit ${unit.id} weaponPower keys`).toEqual(ranges);
       expect(Object.keys(unit.stats.weaponAccuracy).sort(), `unit ${unit.id} weaponAccuracy keys`).toEqual(ranges);
+      for (const weapon of Object.keys(unit.stats.weaponFireModes ?? {})) {
+        expect(ranges, `unit ${unit.id} weaponFireModes ${weapon}`).toContain(weapon);
+      }
       for (const weapon of Object.keys(unit.stats.weaponTargets ?? {})) {
         expect(ranges, `unit ${unit.id} weaponTargets ${weapon}`).toContain(weapon);
       }

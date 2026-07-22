@@ -517,6 +517,17 @@ export function rangeOverlayStyle(externalTexturesAreColored: boolean) {
   } as const;
 }
 
+export function blockedRangeOverlayStyle(externalTexturesAreColored: boolean) {
+  return {
+    fill: 0x8f4134,
+    fillAlpha: externalTexturesAreColored ? 0.33 : 0.36,
+    shadow: 0x140705,
+    shadowAlpha: 0.62,
+    edge: 0xf0a06a,
+    edgeAlpha: 0.94
+  } as const;
+}
+
 export function featheredOcclusionAlpha(distanceFromOccluder: number, feather: number, obscuredAlpha: number) {
   if (feather <= 0) return distanceFromOccluder <= 0 ? obscuredAlpha : 1;
   const progress = Math.min(1, Math.max(0, distanceFromOccluder / feather));
