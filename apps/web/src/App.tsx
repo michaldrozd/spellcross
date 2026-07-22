@@ -9,6 +9,7 @@ import {
   convertStrategicToMoney,
   convertStrategicToResearch,
   createCampaign,
+  createUnitInstance,
   decideNextAIAction,
   endStrategicTurn,
   estimateHitDamage,
@@ -120,7 +121,7 @@ const arrivalDelayForPath = (moving: MovingUnit, coord: HexCoordinate) => {
 };
 const sleep = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 // Man-portable "artillery" that is actually a foot crew (mortar team) — walks, doesn't track.
-const isFootCrew = (definitionId: string) => definitionId.includes('mortar');
+const isFootCrew = (definitionId: string) => definitionId === 'mortar-team';
 // Pick the realistic movement-audio profile for a unit: air = rotor chop, supply trucks = wheeled
 // engine + tyres, self-propelled guns/tanks/APCs = diesel engine + track clatter, foot crews and
 // infantry = footsteps.
@@ -552,6 +553,8 @@ const BattleView: React.FC<{
   }, [plannedPath, selectedUnit, battle.state]);
   const [showRanges, setShowRanges] = useState(false);
   const [attackEffects, setAttackEffects] = useState<AttackEffect[]>([]);
+  const attackEffectsRef = useRef(attackEffects);
+  attackEffectsRef.current = attackEffects;
   const [arrivalEffects, setArrivalEffects] = useState<ArrivalEffect[]>([]);
   // Movement animation state
   const [movingUnit, setMovingUnit] = useState<MovingUnit | null>(null);
@@ -574,6 +577,7 @@ const BattleView: React.FC<{
   // stray click can't move a unit (or hijack activeFaction) mid-CPU-turn now that those turns are async.
   const enemyTurnBusyRef = useRef(false);
   const movingUnitRef = useRef<MovingUnit | null>(movingUnit);
+  const validationScenarioRef = useRef(false);
   const selectedRef = useRef<string | null>(selected);
   const targetedEnemyRef = useRef<UnitInstance | null>(targetedEnemy);
   const plannedDestinationRef = useRef<HexCoordinate | null>(plannedDestination);
@@ -694,12 +698,18 @@ const BattleView: React.FC<{
     resolveOutcome: () => void;
     buildBattleOutcome: (status: 'victory' | 'defeat') => BattleOutcomeData;
     actMove: (unitId: string, target: HexCoordinate, force?: boolean) => boolean;
+    addAttackEffect: (
+      attacker: UnitInstance,
+      defender: UnitInstance,
+      weaponId: string,
+      outcome: { hit: boolean; damage: number; killed: boolean }
+    ) => ReturnType<typeof combatEffectTiming>;
     t: typeof t;
   } | null>(null);
   useEffect(() => {
     const context = battleControlContextRef.current;
     if (!context) return;
-    const { battle, map, persist, resolveOutcome, buildBattleOutcome, actMove, t } = context;
+    const { battle, map, persist, resolveOutcome, buildBattleOutcome, actMove, addAttackEffect, t } = context;
     // Resume a saved in-progress battle straight into play; only a fresh battle opens DEPLOYMENT.
     setDeployMode(!battle.deployed);
     // ensure vision populated immediately so tiles are interactive
@@ -728,6 +738,94 @@ const BattleView: React.FC<{
       return occ;
     };
     const battleControl = {
+      rosterDefinitions: () => bundle.units.map((definition) => ({
+        id: definition.id,
+        faction: definition.faction,
+        type: definition.type,
+        weaponIds: Object.keys(definition.stats.weaponRanges),
+        maxRange: Math.max(0, ...Object.values(definition.stats.weaponRanges)),
+        supply: definition.type === 'support' && definition.stats.ammoCapacity === 0
+      })),
+      loadDefinitions: (definitionIds: string[]) => {
+        validationScenarioRef.current = true;
+        const requestedDefinitions = definitionIds
+          .map((definitionId) => bundle.units.find((definition) => definition.id === definitionId))
+          .filter((definition): definition is (typeof bundle.units)[number] => Boolean(definition));
+        const spawnTiles = map.tiles
+          .map((tile, index) => ({ tile, q: index % map.width, r: Math.floor(index / map.width) }))
+          .filter(({ tile, q, r }) => tile.passable
+            && tile.terrain !== 'water'
+            && tile.terrain !== 'structure'
+            && q > 0 && r > 0 && q < map.width - 1 && r < map.height - 1)
+          .sort((a, b) => (a.q + a.r) - (b.q + b.r));
+        if (spawnTiles.length < requestedDefinitions.length) {
+          return { success: false, loaded: [], missing: definitionIds };
+        }
+
+        battle.state.sides.alliance.units.clear();
+        battle.state.sides.otherSide.units.clear();
+        for (const rosterId of Object.keys(battle.deployment)) delete battle.deployment[rosterId];
+        const loaded: Array<{ id: string; definitionId: string; faction: string; q: number; r: number }> = [];
+        const batchId = Date.now();
+        requestedDefinitions.forEach((definition, index) => {
+          const spawn = spawnTiles[index];
+          const instance = createUnitInstance(
+            definition,
+            definition.faction,
+            { q: spawn.q, r: spawn.r },
+            `qa-${batchId}-${index}-${definition.id}`
+          );
+          battle.state.sides[definition.faction].units.set(instance.id, instance);
+          loaded.push({
+            id: instance.id,
+            definitionId: instance.definitionId,
+            faction: instance.faction,
+            q: instance.coordinate.q,
+            r: instance.coordinate.r
+          });
+        });
+
+        battle.state.activeFaction = 'alliance';
+        battle.state.timeline.length = 0;
+        battle.deployed = true;
+        battle.resolved = undefined;
+        outcomeShownRef.current = false;
+        deployModeRef.current = false;
+        movingUnitRef.current = null;
+        autoTurnAbortRef.current = false;
+        setDeployMode(false);
+        setBattleOutcome(null);
+        setMovingUnit(null);
+        setAttackEffects([]);
+        setArrivalEffects([]);
+        setShowRanges(false);
+        setTargetedEnemy(null);
+        setPendingAttack(null);
+        setPlannedPath(null);
+        setPlannedDestination(null);
+        setInvalidMoveFeedback(null);
+        updateAllFactionsVision(battle.state);
+        const allTiles = new Set(map.tiles.map((_, index) => index));
+        battle.state.vision.alliance.visibleTiles = allTiles;
+        battle.state.vision.alliance.exploredTiles = new Set(allTiles);
+        const selectedId = loaded.find((unit) => unit.faction === 'alliance')?.id ?? null;
+        setSelected(selectedId);
+        setCameraRestoreSignal((signal) => signal + 1);
+        return {
+          success: requestedDefinitions.length === definitionIds.length,
+          loaded,
+          missing: definitionIds.filter((definitionId) => !requestedDefinitions.some((definition) => definition.id === definitionId))
+        };
+      },
+      activeAttackEffects: () => attackEffectsRef.current.map((effect) => ({
+        id: effect.id,
+        targetId: effect.targetId,
+        type: effect.type,
+        arc: effect.arc,
+        hit: effect.hit,
+        killed: effect.killed,
+        startTime: effect.startTime
+      })),
       moveFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         const foe = Array.from(battle.state.sides.otherSide.units.values()).find((u) => u.stance !== 'destroyed');
@@ -783,19 +881,24 @@ const BattleView: React.FC<{
       attackUnitWith: (attackerId: string, defenderId: string) => {
         const attacker = battle.state.sides.alliance.units.get(attackerId);
         if (!attacker) return { success: false, error: `Unit ${attackerId} not found` };
+        const defender = battle.state.sides.otherSide.units.get(defenderId);
+        if (!defender) return { success: false, error: `Unit ${defenderId} not found` };
         const weapon = Object.keys(attacker.stats.weaponRanges).sort((a, b) => {
           const rangeDiff = (attacker.stats.weaponRanges[b] ?? 0) - (attacker.stats.weaponRanges[a] ?? 0);
           if (rangeDiff !== 0) return rangeDiff;
           return (attacker.stats.weaponPower[b] ?? 0) - (attacker.stats.weaponPower[a] ?? 0);
         })[0];
         if (!weapon) return { success: false, error: 'No weapon available' };
-        const proc = new TurnProcessor(battle.state);
+        const proc = new TurnProcessor(battle.state, { random: () => 0 });
         const res = proc.attackUnit({ attackerId, defenderId, weaponId: weapon });
         if (!res.success) {
           setCombatNotices((existing) => [{ id: nextNoticeId(), message: res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:attackFailed') }, ...existing].slice(0, 4));
+        } else {
+          const attackOutcome = visualOutcomeForAttack(res.events as BattleEvent[] | undefined, attackerId, defenderId);
+          addAttackEffect(attacker, defender, weapon, attackOutcome);
         }
         persist();
-        resolveOutcome();
+        if (!validationScenarioRef.current) resolveOutcome();
         return { ...res, weaponId: weapon, actionPoints: attacker.actionPoints };
       },
       setActionPoints: (unitId: string, actionPoints: number) => {
@@ -804,6 +907,16 @@ const BattleView: React.FC<{
           if (unit) {
             unit.actionPoints = actionPoints;
             persist();
+            return true;
+          }
+        }
+        return false;
+      },
+      setHealth: (unitId: string, currentHealth: number) => {
+        for (const side of Object.values(battle.state.sides)) {
+          const unit = side.units.get(unitId);
+          if (unit) {
+            unit.currentHealth = Math.max(1, Math.min(unit.stats.maxHealth, currentHealth));
             return true;
           }
         }
@@ -982,7 +1095,9 @@ const BattleView: React.FC<{
           orientation: u.orientation,
           embarkedOn: u.embarkedOn,
           carrying: u.carrying,
-          cap: u.stats.transportCapacity ?? 0
+          cap: u.stats.transportCapacity ?? 0,
+          supply: isSupplyUnit(u),
+          weapons: Object.keys(u.stats.weaponRanges)
         }));
       },
       enemyUnits: () => {
@@ -990,6 +1105,7 @@ const BattleView: React.FC<{
         return Array.from(battle.state.sides.otherSide.units.values()).map((u) => ({
           id: u.id,
           type: u.unitType,
+          definitionId: u.definitionId,
           coord: u.coordinate,
           orientation: u.orientation,
           ap: u.actionPoints,
@@ -1379,10 +1495,10 @@ const BattleView: React.FC<{
     setPlannedDestination(null);
     setInvalidMoveFeedback(null);
     persist();
-    resolveOutcome();
+    if (!validationScenarioRef.current) resolveOutcome();
     return true;
   };
-  battleControlContextRef.current = { battle, map, persist, resolveOutcome, buildBattleOutcome, actMove, t };
+  battleControlContextRef.current = { battle, map, persist, resolveOutcome, buildBattleOutcome, actMove, addAttackEffect, t };
   // Glide a unit's sprite along its path after the engine has already committed the move, and return the
   // animation length in ms so a scripted (auto/AI) loop can await it. Mirrors actMove's visual setup —
   // without it, auto-played and enemy moves snap the sprite straight to the destination (teleport).

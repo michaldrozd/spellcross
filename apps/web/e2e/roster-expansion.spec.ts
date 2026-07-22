@@ -21,6 +21,9 @@ test('the full Alliance roster and fire-support research are available from HQ',
     .toContainText('Mobile Fire Support');
   await expect(page.locator('img[src$="/assets/generated/thunderhead_155.png"]')).toBeVisible();
 
+  await page.getByRole('button', { name: /^Hero$/i }).click();
+  await expect(page.locator('.recruit-btn').filter({ hasText: 'Captain John Alexander' })).toBeVisible();
+
   await page.getByRole('button', { name: /Research/i }).click();
   for (const topicName of [
     'Mobile Fire Support',

@@ -510,7 +510,7 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
   if (definitionId.includes('ironroot-colossus')) return tile * 0.72;
   if (definitionId.includes('slime-harvester')) return tile * 0.55;
   if (definitionId.includes('gate-conjurer')) return tile * 0.6;
-  if (definitionId.includes('mortar')) return tile * 0.52; // foot crew, not a towed gun
+  if (definitionId === 'mortar-team') return tile * 0.52; // foot crew, not a towed gun
   if (definitionId.includes('orc')) return tile * 0.6; // hulking orcs read larger than human infantry
   if (definitionId.includes('lich')) return tile * 0.56; // crowned lich lord stands taller than a robed caster
   if (definitionId.includes('hell-rider')) return tile * 0.62; // mounted hell cavalry
@@ -552,6 +552,20 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
 
 export function isSupportVehicleDefinition(unitType: string, definitionId: string) {
   return unitType === 'support' && (definitionId.includes('truck') || definitionId.includes('radar'));
+}
+
+export function canMovingUnitFadeCanopy(
+  moverFaction: string | undefined,
+  viewerFaction: string,
+  coordinate: { q: number; r: number },
+  mapWidth: number,
+  visibleTiles: ReadonlySet<number>
+) {
+  if (!moverFaction) return false;
+  if (moverFaction === viewerFaction) return true;
+  const q = Math.round(coordinate.q);
+  const r = Math.round(coordinate.r);
+  return visibleTiles.has(r * mapWidth + q);
 }
 
 export function unitContactFootprint(tile: number, unitType: string, definitionId: string): UnitVisualFootprint {

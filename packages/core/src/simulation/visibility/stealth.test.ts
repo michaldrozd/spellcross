@@ -15,10 +15,9 @@ const scout = (id: string, faction: 'alliance' | 'otherSide', q: number, r: numb
 });
 
 // viewer at (0,0); target somewhere on a 10x1 strip. tiles[targetQ] can be forest to add concealment.
-function build(targetQ: number, targetOnForest: boolean, viewerVision = 6, spotter = false) {
+function build(targetQ: number, targetOnForest: boolean, viewerVision = 6) {
   const tiles = Array.from({ length: 10 }, (_, i) => (targetOnForest && i === targetQ ? forest : plain));
   const viewerDef = scout('viewer', 'alliance', 0, 0, viewerVision);
-  if (spotter) (viewerDef.definition.stats as any).spotter = true;
   const spec: CreateBattleStateOptions = {
     map: { id: 'm', width: 10, height: 1, tiles: [...tiles] },
     sides: [
@@ -46,10 +45,10 @@ describe('stealth / concealment', () => {
     expect(isUnitDetected(near.state, 'alliance', near.target, near.state.map)).toBe(true);
   });
 
-  it('a spotter sees further, cutting through concealment', () => {
-    const plainViewer = build(5, true, 6, false);
+  it('higher vision cuts through concealment', () => {
+    const plainViewer = build(5, true, 6);
     expect(isUnitDetected(plainViewer.state, 'alliance', plainViewer.target, plainViewer.state.map)).toBe(false);
-    const spotterViewer = build(5, true, 8, false); // higher vision defeats the +2 forest concealment
-    expect(isUnitDetected(spotterViewer.state, 'alliance', spotterViewer.target, spotterViewer.state.map)).toBe(true);
+    const reconViewer = build(5, true, 8);
+    expect(isUnitDetected(reconViewer.state, 'alliance', reconViewer.target, reconViewer.state.map)).toBe(true);
   });
 });

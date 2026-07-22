@@ -29,13 +29,14 @@ export function combatEffectTypeForWeapon(definitionId: string, weaponId: string
   const has = (...keywords: string[]) => keywords.some((keyword) => weapon.includes(keyword));
   const caster = unitId.includes('warlock') || unitId.includes('necromancer') || unitId.includes('lich');
 
-  if ((caster || has('hex', 'curse', 'doom', 'shadow', 'scream', 'shriek', 'psi', 'spectral', 'bolt',
-          'resonance', 'static', 'prism', 'shard', 'void', 'portal', 'silence'))
-      && !has('blade', 'cannon', 'shell', 'rocket', 'missile')) return 'magic';
+  if (has('chain-cannon')) return 'gunshot';
   if (has('fire', 'flame', 'flamer', 'magma', 'breath', 'pyro', 'oil', 'incend')) return 'fire';
   if (has('bow', 'arrow', 'dart', 'crossbow', 'quarrel')) return 'arrow';
   if (has('axe', 'blade', 'sword', 'maul', 'slam', 'fang', 'bite', 'mandible', 'claw', 'cleaver', 'talon',
           'lance', 'spear', 'fist', 'mace', 'hammer', 'gore', 'tusk', 'dive', 'javelin', 'bone', 'razor', 'engulf')) return 'melee';
+  if ((caster || has('hex', 'curse', 'doom', 'shadow', 'scream', 'shriek', 'psi', 'spectral', 'bolt',
+          'resonance', 'static', 'prism', 'shard', 'void', 'portal', 'silence'))
+      && !has('blade', 'cannon', 'shell', 'rocket', 'missile')) return 'magic';
   if (has('shell', 'rocket', 'boulder', 'cannon', 'howitzer', 'mortar', 'siege', 'quake', 'grenade',
           'missile', 'sam', 'flak', 'spit', 'bomb', 'charge') || weapon === 'at' || has('antitank')) return 'explosion';
   if (has('sniper', 'marksman', 'railgun', 'railrifle', 'dmr', 'laser')) return 'sniper';
@@ -64,6 +65,10 @@ const INDIRECT_EXPLOSION_TIMING: CombatEffectTiming = {
 
 export function combatEffectTiming(type: CombatEffectType, indirect = false): CombatEffectTiming {
   return indirect && type === 'explosion' ? INDIRECT_EXPLOSION_TIMING : DIRECT_FIRE_TIMING[type];
+}
+
+export function combatImpactWindowMs(type: CombatEffectType, killed: boolean, baseImpactMs: number) {
+  return killed && type === 'explosion' ? Math.max(baseImpactMs, 1200) : baseImpactMs;
 }
 
 export function activeKillingEffectForTarget<T extends TargetedCombatEffect>(

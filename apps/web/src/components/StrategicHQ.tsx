@@ -85,7 +85,7 @@ function rosterPortrait(definitionId: string, unitType: string) {
   return unitPortrait(unitType, definitionId, true);
 }
 
-const recruitFilters = ['all', 'infantry', 'vehicle', 'artillery', 'air', 'support'] as const;
+const recruitFilters = ['all', 'infantry', 'vehicle', 'artillery', 'air', 'support', 'hero'] as const;
 type RecruitFilter = (typeof recruitFilters)[number];
 
 function researchBranch(topic: ResearchTopic) {

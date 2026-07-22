@@ -107,8 +107,18 @@ describe('data bundle', () => {
     expect(thunderhead.stats.weaponPower.howitzer).toBeGreaterThan(badger.stats.weaponPower.mortar);
     expect(tempest.stats.weaponRanges['counterbattery-shell']).toBeGreaterThan(thunderhead.stats.weaponRanges.howitzer);
     expect(tempest.stats.weaponTargets?.['counterbattery-shell']).toEqual(['vehicle', 'artillery', 'support']);
-    expect(radar.stats.spotter).toBe(true);
+    expect(radar.stats.vision).toBe(12);
+    expect(radar.stats.ammoCapacity).toBeUndefined();
     expect(Object.keys(radar.stats.weaponRanges)).toHaveLength(0);
+  });
+
+  it('reserves zero-capacity support classification for the supply truck', () => {
+    const supplyDefinitions = validatedStarterBundle.units
+      .filter((unit) => unit.type === 'support' && unit.stats.ammoCapacity === 0)
+      .map((unit) => unit.id)
+      .sort();
+
+    expect(supplyDefinitions).toEqual(['supply-truck']);
   });
 
   it('pays out monotonically with difficulty so harder sectors fund the next tier', () => {

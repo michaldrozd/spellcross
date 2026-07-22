@@ -36,7 +36,7 @@ export const rosterExpansionUnits: UnitData[] = [
   {
     id: 'horizon-radar', name: 'Horizon Counterbattery Radar', faction: 'alliance', type: 'support', role: 'recon', cost: 125,
     stats: {
-      maxHealth: 60, mobility: 8, vision: 12, armor: 2, morale: 75, ammoCapacity: 0, spotter: true,
+      maxHealth: 60, mobility: 8, vision: 12, armor: 2, morale: 75,
       weaponRanges: {}, weaponPower: {}, weaponAccuracy: {}
     }
   },
@@ -81,7 +81,7 @@ export const rosterExpansionUnits: UnitData[] = [
   {
     id: 'kestrel-recon-drone', name: 'Kestrel Recon Drone', faction: 'alliance', type: 'air', role: 'recon', cost: 130,
     stats: {
-      maxHealth: 55, mobility: 15, vision: 11, armor: 1, morale: 100, ammoCapacity: 8, spotter: true,
+      maxHealth: 55, mobility: 15, vision: 11, armor: 1, morale: 100, ammoCapacity: 8,
       weaponRanges: { 'laser-designator': 6 }, weaponPower: { 'laser-designator': 7 }, weaponAccuracy: { 'laser-designator': 0.82 }
     }
   },
@@ -103,7 +103,7 @@ export const rosterExpansionUnits: UnitData[] = [
   {
     id: 'gloom-balloon', name: 'Gloom Balloon', faction: 'otherSide', type: 'air', role: 'recon', cost: 0,
     stats: {
-      maxHealth: 80, mobility: 7, vision: 11, armor: 2, morale: 90, spotter: true, fear: 1,
+      maxHealth: 80, mobility: 7, vision: 11, armor: 2, morale: 90, fear: 1,
       weaponRanges: { 'ember-bomb': 3 }, weaponPower: { 'ember-bomb': 16 }, weaponAccuracy: { 'ember-bomb': 0.62 },
       weaponTargets: { 'ember-bomb': ['infantry', 'vehicle', 'artillery', 'support', 'hero'] }
     }
@@ -186,7 +186,7 @@ export const rosterExpansionUnits: UnitData[] = [
   {
     id: 'signal-eater', name: 'The Signal-Eater', faction: 'otherSide', type: 'support', role: 'commander', cost: 0,
     stats: {
-      maxHealth: 160, mobility: 8, vision: 10, armor: 6, morale: 100, stealth: 2, spotter: true, fear: 3,
+      maxHealth: 160, mobility: 8, vision: 10, armor: 6, morale: 100, stealth: 2, fear: 3,
       weaponRanges: { 'static-burst': 8, 'silence-claw': 1 }, weaponPower: { 'static-burst': 28, 'silence-claw': 35 }, weaponAccuracy: { 'static-burst': 0.76, 'silence-claw': 0.86 }
     }
   },

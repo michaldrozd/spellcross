@@ -123,7 +123,6 @@ export interface UnitStatsData {
   ammoCapacity?: number;
   transportCapacity?: number;
   stealth?: number; // stealth rating - harder to detect (used by Hell Riders)
-  spotter?: boolean; // wide-detection recon that can feed shared vision (PSI Corps, radar)
   fear?: number; // supernatural dread: saps morale of nearby mundane enemies (undead, demons, the titan)
   weaponRanges: Record<string, number>;
   weaponPower: Record<string, number>;
@@ -309,7 +308,6 @@ const unitStatsSchema = z.object({
   ammoCapacity: z.number().int().nonnegative().optional(),
   transportCapacity: z.number().int().nonnegative().optional(),
   stealth: z.number().int().nonnegative().optional(),
-  spotter: z.boolean().optional(),
   fear: z.number().int().nonnegative().optional(),
   weaponRanges: z.record(z.string(), z.number().int().nonnegative()),
   weaponPower: z.record(z.string(), z.number().nonnegative()),
@@ -1070,7 +1068,7 @@ export const starterUnits: UnitData[] = [
   {
     id: 'psi-corps', name: 'PSI Corps', faction: 'alliance', type: 'support', role: 'support', cost: 150,
     stats: {
-      maxHealth: 80, mobility: 6, vision: 6, armor: 3, morale: 86, ammoCapacity: 8, spotter: true,
+      maxHealth: 80, mobility: 6, vision: 6, armor: 3, morale: 86, ammoCapacity: 8,
       weaponRanges: { psilance: 6 }, weaponPower: { psilance: 18 }, weaponAccuracy: { psilance: 0.7 }
     }
   },

@@ -14,6 +14,7 @@ import {
   CORPSE_TTL_MS,
   WRECK_SMOKE_ANIMATION_MS,
   activeKillingEffectForTarget,
+  combatImpactWindowMs,
   combatEffectTiming,
   deathMarkerExpired,
   deathMarkerVisible,
@@ -30,6 +31,7 @@ import {
   RASTER_UNIT_VISIBLE_HEIGHTS,
   UNIT_SHEET_DIRECTIONS,
   UNIT_SHEET_FRAME_SIZE,
+  canMovingUnitFadeCanopy,
   directionalSpriteGroundOffset,
   directionalVehicleSprite,
   isSupportVehicleDefinition,
@@ -5888,9 +5890,8 @@ export function BattlefieldStage({
       const shotUy = shotDy / shotLength;
       let targetUnit: UnitInstance | undefined;
       for (const side of Object.values(battleState.sides)) {
-        targetUnit = Array.from(side.units.values()).find((unit) =>
-          unit.coordinate.q === effect.toQ && unit.coordinate.r === effect.toR
-        );
+        const candidate = side.units.get(effect.targetId);
+        targetUnit = candidate && !candidate.embarkedOn ? candidate : undefined;
         if (targetUnit) break;
       }
       const targetDefinitionId = String(targetUnit?.definitionId ?? '').toLowerCase();
@@ -6148,7 +6149,8 @@ export function BattlefieldStage({
             />
           )}
 
-          {elapsed >= timing.impactAtMs && elapsed < timing.impactAtMs + timing.impactMs && (
+          {elapsed >= timing.impactAtMs
+            && elapsed < timing.impactAtMs + combatImpactWindowMs(effect.type, effect.killed, timing.impactMs) && (
             <Graphics
               x={toX}
               y={toY - tileSize * 0.2}
@@ -6474,6 +6476,18 @@ export function BattlefieldStage({
           return sum >= tSum - 4 && sum <= tSum && diff >= tDiff - 1 && diff <= tDiff + 1;
         });
         const movingUnitBehindCanopy = prop.kind === 'tree' && movementOcclusionCoordinate !== null && (() => {
+          const mover = movingUnit?.unitId
+            ? Object.values(battleState.sides)
+                .map((side) => side.units.get(movingUnit.unitId))
+                .find((unit): unit is UnitInstance => Boolean(unit))
+            : undefined;
+          if (!canMovingUnitFadeCanopy(
+            mover?.faction,
+            viewerFaction,
+            movementOcclusionCoordinate,
+            map.width,
+            visibleTiles
+          )) return false;
           const unitPosition = toScreen(movementOcclusionCoordinate);
           const unitGeom = topGeomFor(
             Math.round(movementOcclusionCoordinate.q),
@@ -7217,6 +7231,7 @@ export function BattlefieldStage({
     // units dots (respect fog-of-war: show enemies only if visible to viewer)
     const allUnits = Object.values(battleState.sides).flatMap((side) => Array.from(side.units.values()));
     for (const u of allUnits) {
+      if (u.stance === 'destroyed' || u.embarkedOn) continue;
       const tileIdx = u.coordinate.r * map.width + u.coordinate.q;
       const isFriendly = u.faction === viewerFaction;
       const isVisible = visibleTiles.has(tileIdx);

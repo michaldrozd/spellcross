@@ -1,6 +1,7 @@
+import { validatedStarterBundle } from '@spellcross/data';
 import { describe, expect, it } from 'vitest';
 
-import { createBattleState } from '../game-state.js';
+import { createBattleState, createUnitInstance } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
 import { calculateAttackRange, calculateHitChance, isSupplyUnit, resolveAttack } from './combat-resolver.js';
 
@@ -225,4 +226,13 @@ describe('combat-resolver', () => {
     expect(isSupplyUnit(warlock)).toBe(false);
     expect(isSupplyUnit(supplyTruck)).toBe(true);
   });
-	});
+
+  it('classifies only the intended canonical supply definition', () => {
+    const supplyDefinitionIds = validatedStarterBundle.units
+      .filter((definition) => isSupplyUnit(createUnitInstance(definition, definition.faction, { q: 0, r: 0 })))
+      .map((definition) => definition.id)
+      .sort();
+
+    expect(supplyDefinitionIds).toEqual(['supply-truck']);
+  });
+});

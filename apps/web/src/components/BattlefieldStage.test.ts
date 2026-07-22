@@ -5,11 +5,13 @@ import { describe, expect, it } from 'vitest';
 
 import {
   activeKillingEffectForTarget,
+  combatImpactWindowMs,
   combatEffectTypeForWeapon,
   deathMarkerExpired,
   deathMarkerVisible
 } from './combatVisuals.js';
 import {
+  canMovingUnitFadeCanopy,
   directionalSpriteGroundOffset,
   directionNameForOrientation,
   directionNameForScreenVector,
@@ -100,9 +102,19 @@ describe('roster expansion combat effects', () => {
     ['rift-predator', 'phase-claw', 'melee'],
     ['glass-regent', 'prism-beam', 'magic'],
     ['ash-crown-sovereign', 'crown-fire', 'fire'],
-    ['renegade-cell', 'antitank-charge', 'explosion']
+    ['renegade-cell', 'antitank-charge', 'explosion'],
+    ['signal-eater', 'silence-claw', 'melee'],
+    ['cerberus-gunship', 'chain-cannon', 'gunshot']
   ] as const)('maps %s / %s to %s', (definitionId, weaponId, expected) => {
     expect(combatEffectTypeForWeapon(definitionId, weaponId)).toBe(expected);
+  });
+});
+
+describe('combat effect lifetime', () => {
+  it('keeps lethal explosion debris and flame mounted through their fade', () => {
+    expect(combatImpactWindowMs('explosion', true, 920)).toBe(1200);
+    expect(combatImpactWindowMs('explosion', false, 920)).toBe(920);
+    expect(combatImpactWindowMs('gunshot', true, 460)).toBe(460);
   });
 });
 
@@ -128,6 +140,20 @@ describe('roster expansion visuals', () => {
   it('treats the counterbattery radar as a ground vehicle', () => {
     expect(isSupportVehicleDefinition('support', 'horizon-radar')).toBe(true);
     expect(isSupportVehicleDefinition('support', 'veil-magus')).toBe(false);
+  });
+});
+
+describe('canopy occlusion visibility', () => {
+  const coordinate = { q: 3.4, r: 2.2 };
+  const mapWidth = 10;
+
+  it('does not reveal a hidden enemy move by fading nearby trees', () => {
+    expect(canMovingUnitFadeCanopy('otherSide', 'alliance', coordinate, mapWidth, new Set())).toBe(false);
+  });
+
+  it('fades for friendly movers and enemies on visible tiles', () => {
+    expect(canMovingUnitFadeCanopy('alliance', 'alliance', coordinate, mapWidth, new Set())).toBe(true);
+    expect(canMovingUnitFadeCanopy('otherSide', 'alliance', coordinate, mapWidth, new Set([23]))).toBe(true);
   });
 });
 
