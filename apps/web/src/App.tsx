@@ -1667,6 +1667,7 @@ const BattleView: React.FC<{
       }
     }
     const startCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
+    const startOrientation = unit.orientation ?? 0;
     const timelineBefore = battle.state.timeline.length;
     const moveResult = processor.moveUnit({ unitId, path: path.path });
     if (!moveResult.success) {
@@ -1692,7 +1693,10 @@ const BattleView: React.FC<{
     const stepDuration = isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS;
     const definitionId = unit.definitionId.toLowerCase();
     const usesDirectionalTurns = isVehicleMove && Boolean(battlefieldDirectionalSprite(unitType, definitionId));
-    const preAlignDuration = isVehicleMove ? (usesDirectionalTurns ? 0 : 150) : 0;
+    const firstOrientation = fullPath.length >= 2 ? orientationForStep(fullPath[0], fullPath[1]) : startOrientation;
+    const preAlignDuration = isVehicleMove
+      ? (usesDirectionalTurns && startOrientation !== firstOrientation ? VEHICLE_TURN_DURATION_MS : usesDirectionalTurns ? 0 : 150)
+      : 0;
     let moving: MovingUnit | null = null;
     if (fullPath.length >= 2) {
       moving = {
@@ -1701,7 +1705,8 @@ const BattleView: React.FC<{
         startTime: Date.now(),
         stepDuration,
         preAlignDuration,
-        segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0
+        segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0,
+        initialOrientation: usesDirectionalTurns ? startOrientation : undefined
       };
       // realistic engine/track/footstep audio matched to how long this glide actually takes
       AudioManager.playMovement(moveProfile, movingUnitDuration(moving));
@@ -1725,7 +1730,12 @@ const BattleView: React.FC<{
   // Glide a unit's sprite along its path after the engine has already committed the move, and return the
   // animation length in ms so a scripted (auto/AI) loop can await it. Mirrors actMove's visual setup —
   // without it, auto-played and enemy moves snap the sprite straight to the destination (teleport).
-  const beginMoveAnimation = (unitId: string, startCoord: HexCoordinate, path: HexCoordinate[]): MovingUnit | null => {
+  const beginMoveAnimation = (
+    unitId: string,
+    startCoord: HexCoordinate,
+    startOrientation: number,
+    path: HexCoordinate[]
+  ): MovingUnit | null => {
     const unit = findBattleUnit(unitId);
     if (!unit || path.length === 0) return null;
     const finalCoord = { q: unit.coordinate.q, r: unit.coordinate.r };
@@ -1742,13 +1752,17 @@ const BattleView: React.FC<{
     const isVehicleMove = (unitType === 'vehicle' || unitType === 'artillery' || isTruck) && !isFootCrew(def);
     const moveProfile = movementSoundProfileFor(unitType, def);
     const usesDirectionalTurns = isVehicleMove && Boolean(battlefieldDirectionalSprite(unitType, def));
+    const firstOrientation = orientationForStep(fullPath[0], fullPath[1]);
     const moving: MovingUnit = {
       unitId,
       path: fullPath,
       startTime: Date.now(),
       stepDuration: isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS,
-      preAlignDuration: isVehicleMove ? (usesDirectionalTurns ? 0 : 150) : 0,
-      segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0
+      preAlignDuration: isVehicleMove
+        ? (usesDirectionalTurns && startOrientation !== firstOrientation ? VEHICLE_TURN_DURATION_MS : usesDirectionalTurns ? 0 : 150)
+        : 0,
+      segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0,
+      initialOrientation: usesDirectionalTurns ? startOrientation : undefined
     };
     AudioManager.playMovement(moveProfile, movingUnitDuration(moving)); // realistic engine/track/footstep for the whole glide
     movingUnitRef.current = moving;
@@ -2062,6 +2076,7 @@ const BattleView: React.FC<{
           // skip just this unit so the remaining units still act this turn.
           const mover = findBattleUnit(action.unitId);
           const startCoord = mover ? { q: mover.coordinate.q, r: mover.coordinate.r } : null;
+          const startOrientation = mover?.orientation ?? 0;
           const tlBefore = battle.state.timeline.length;
           const moveRes = aiProcessor.moveUnit(action);
           if (!moveRes.success) { failedUnitIds.add(action.unitId); continue; }
@@ -2073,7 +2088,7 @@ const BattleView: React.FC<{
           const drewReaction = battle.state.timeline.slice(tlBefore).some((e) => e.kind === 'unit:attacked' && e.defenderId === action.unitId);
           let mMoving: MovingUnit | null = null;
           if (mover && startCoord && (destVisible || drewReaction)) {
-            mMoving = beginMoveAnimation(action.unitId, startCoord, action.path);
+            mMoving = beginMoveAnimation(action.unitId, startCoord, startOrientation, action.path);
           }
           playReactionVfx(action.unitId, mMoving, tlBefore);
           if (mMoving) { const dur = movingUnitDuration(mMoving); if (dur > 0) await sleep(dur + 90); }
@@ -2249,6 +2264,7 @@ const BattleView: React.FC<{
       if (action.type === 'move') {
         const mover = findBattleUnit(action.unitId);
         const startCoord = mover ? { q: mover.coordinate.q, r: mover.coordinate.r } : null;
+        const startOrientation = mover?.orientation ?? 0;
         const dest = action.path[action.path.length - 1];
         const seen = visitedTiles.get(action.unitId) ?? new Set<string>();
         if (dest && seen.has(tileKey(dest))) { failedUnitIds.add(action.unitId); continue; } // would revisit → cycle
@@ -2261,7 +2277,7 @@ const BattleView: React.FC<{
         setSelected(action.unitId);
         let mMoving: MovingUnit | null = null;
         if (startCoord) {
-          mMoving = beginMoveAnimation(action.unitId, startCoord, action.path);
+          mMoving = beginMoveAnimation(action.unitId, startCoord, startOrientation, action.path);
         }
         playReactionVfx(action.unitId, mMoving, tlBefore); // enemy overwatch fire on our auto-move
         if (mMoving) { const dur = movingUnitDuration(mMoving); if (dur > 0) await sleep(dur + 90); }

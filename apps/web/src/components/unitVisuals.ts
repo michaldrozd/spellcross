@@ -373,6 +373,7 @@ export type VisualMovement = {
   stepDuration: number;
   preAlignDuration?: number;
   segmentTurnDuration?: number;
+  initialOrientation?: number;
 };
 
 export type MovementFrame = {
@@ -386,6 +387,7 @@ export type MovementFrame = {
   isFirstSegment: boolean;
   isLastSegment: boolean;
   isTurnPhase: boolean;
+  isInitialTurnPhase: boolean;
   turnProgress: number;
   isMoving: boolean;
 };
@@ -413,12 +415,18 @@ export function resolveMovementFrame(moving: VisualMovement, now: number): Movem
   const totalSteps = moving.path.length - 1;
   const stepDuration = Math.max(1, moving.stepDuration);
   const segmentTurnDuration = Math.max(0, moving.segmentTurnDuration ?? 0);
+  const firstOrientation = orientationForVisualStep(moving.path[0], moving.path[1]);
+  const isInitialTurnPhase = rawElapsed < preAlignDuration
+    && moving.initialOrientation !== undefined
+    && moving.initialOrientation !== firstOrientation;
   let remainingElapsed = elapsed;
   let currentStep = 0;
   let movementPhase = 0;
   let stepProgress = rawElapsed < preAlignDuration ? 0 : 1;
-  let isTurnPhase = false;
-  let turnProgress = 0;
+  let isTurnPhase = isInitialTurnPhase;
+  let turnProgress = isInitialTurnPhase
+    ? Math.min(Math.max(rawElapsed / preAlignDuration, 0), 1)
+    : 0;
 
   for (let stepIndex = 0; stepIndex < totalSteps; stepIndex += 1) {
     currentStep = stepIndex;
@@ -456,7 +464,7 @@ export function resolveMovementFrame(moving: VisualMovement, now: number): Movem
         ? stepProgress * (2 - stepProgress)
         : stepProgress;
   const displayCoord = isTurnPhase
-    ? { ...toCoord }
+    ? { ...(isInitialTurnPhase ? fromCoord : toCoord) }
     : {
         q: fromCoord.q + (toCoord.q - fromCoord.q) * easedProgress,
         r: fromCoord.r + (toCoord.r - fromCoord.r) * easedProgress
@@ -473,6 +481,7 @@ export function resolveMovementFrame(moving: VisualMovement, now: number): Movem
     isFirstSegment,
     isLastSegment,
     isTurnPhase,
+    isInitialTurnPhase,
     turnProgress,
     isMoving: rawElapsed >= preAlignDuration && !isTurnPhase && !(isLastSegment && stepProgress >= 1)
   };
@@ -512,8 +521,8 @@ export const vehicleTurnCrossfade = (progress: number) => {
   if (clamped === 1) return { outgoingAlpha: 0, incomingAlpha: 1 };
   const eased = smoothClamped(clamped);
   return {
-    outgoingAlpha: Math.cos(eased * Math.PI * 0.5),
-    incomingAlpha: Math.sin(eased * Math.PI * 0.5)
+    outgoingAlpha: Math.pow(Math.cos(eased * Math.PI * 0.5), 0.4),
+    incomingAlpha: Math.pow(Math.sin(eased * Math.PI * 0.5), 0.4)
   };
 };
 
@@ -532,8 +541,9 @@ export const vehicleTurnScaleX = (progress: number) =>
 export const vehicleTurnScaleY = (progress: number) =>
   1 + Math.sin(Math.min(1, Math.max(0, progress)) * Math.PI) * 0.012;
 
-export const vehicleMotionEnvelope = (frame: Pick<MovementFrame, 'isFirstSegment' | 'isLastSegment' | 'isMoving' | 'isTurnPhase' | 'stepProgress'>) => {
-  if (frame.isTurnPhase) return 0.38;
+export const vehicleMotionEnvelope = (frame: Pick<MovementFrame, 'isFirstSegment' | 'isLastSegment' | 'isMoving' | 'isTurnPhase' | 'isInitialTurnPhase' | 'stepProgress' | 'turnProgress'>) => {
+  if (frame.isInitialTurnPhase) return Math.sin(frame.turnProgress * Math.PI) * 0.38;
+  if (frame.isTurnPhase) return 1 - Math.sin(frame.turnProgress * Math.PI) * 0.62;
   if (!frame.isMoving) return 0;
 
   const rampWindow = 0.24;

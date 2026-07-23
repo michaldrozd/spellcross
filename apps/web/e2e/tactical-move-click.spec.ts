@@ -191,7 +191,7 @@ test('vehicle movement finishes facing its last travelled step', async ({ page }
   expect(after?.orientation).toBe(setup!.expectedOrientation);
 });
 
-test('vehicle movement exposes animation state immediately after the move order', async ({ page }) => {
+test('vehicle movement exposes its initial turn before leaving the start tile', async ({ page }) => {
   test.setTimeout(90_000);
   await startBattle(page);
 
@@ -214,8 +214,35 @@ test('vehicle movement exposes animation state immediately after the move order'
     ctrl.snapUnit(vehicle.id, 3, 3);
     ctrl.forceAllianceTurn();
     ctrl.selectUnit(vehicle.id);
-    const path = ctrl.pathForUnit(vehicle.id, 5, 2);
-    return path?.success ? { vehicleId: vehicle.id, from: { q: 3, r: 3 }, to: { q: 5, r: 2 } } : null;
+    const orientationFor = (from: any, to: any) => {
+      const dq = Math.sign(to.q - from.q);
+      const dr = Math.sign(to.r - from.r);
+      if (dq > 0 && dr === 0) return 0;
+      if (dq > 0 && dr < 0) return 1;
+      if (dq === 0 && dr < 0) return 2;
+      if (dq < 0 && dr === 0) return 3;
+      if (dq < 0 && dr > 0) return 4;
+      if (dq === 0 && dr > 0) return 5;
+      if (dq > 0 && dr > 0) return 6;
+      return 7;
+    };
+    const start = { q: 3, r: 3 };
+    for (let r = 1; r <= 6; r += 1) {
+      for (let q = 1; q <= 7; q += 1) {
+        const path = ctrl.pathForUnit(vehicle.id, q, r);
+        if (!path?.success || path.path.length < 2) continue;
+        const firstOrientation = orientationFor(start, path.path[0]);
+        if (firstOrientation === vehicle.orientation) continue;
+        return {
+          vehicleId: vehicle.id,
+          from: start,
+          to: path.path[path.path.length - 1],
+          initialOrientation: vehicle.orientation,
+          firstOrientation
+        };
+      }
+    }
+    return null;
   });
   expect(setup).toBeTruthy();
 
@@ -230,8 +257,12 @@ test('vehicle movement exposes animation state immediately after the move order'
   expect(immediate.started).toBeTruthy();
   expect(immediate.animationState).toMatchObject({
     unitId: setup!.vehicleId,
-    path: expect.arrayContaining([setup!.from, setup!.to])
+    path: expect.arrayContaining([setup!.from, setup!.to]),
+    initialOrientation: setup!.initialOrientation,
+    preAlignDuration: 180,
+    segmentTurnDuration: 180
   });
+  expect(setup!.firstOrientation).not.toBe(setup!.initialOrientation);
 });
 
 test('m113 movement keeps turn-boundary animation time for multi-step paths', async ({ page }) => {

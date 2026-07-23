@@ -220,6 +220,35 @@ describe('resolveMovementFrame', () => {
     expect(frame).toMatchObject({
       displayCoord: { q: 2, r: 2 },
       isMoving: false,
+      isInitialTurnPhase: false,
+      stepProgress: 0
+    });
+  });
+
+  it('turns a directional vehicle from its standing orientation before it moves', () => {
+    const movement = {
+      path: [{ q: 2, r: 2 }, { q: 3, r: 2 }],
+      startTime: 1000,
+      stepDuration: 400,
+      preAlignDuration: 180,
+      segmentTurnDuration: 180,
+      initialOrientation: 3
+    };
+    const midpoint = resolveMovementFrame(movement, 1090);
+    const firstMovingFrame = resolveMovementFrame(movement, 1180);
+
+    expect(midpoint).toMatchObject({
+      displayCoord: { q: 2, r: 2 },
+      isMoving: false,
+      isTurnPhase: true,
+      isInitialTurnPhase: true,
+      turnProgress: 0.5
+    });
+    expect(firstMovingFrame).toMatchObject({
+      displayCoord: { q: 2, r: 2 },
+      isMoving: true,
+      isTurnPhase: false,
+      isInitialTurnPhase: false,
       stepProgress: 0
     });
   });
@@ -516,15 +545,16 @@ describe('vehicleSheetDirectionNameForOrientation', () => {
 });
 
 describe('vehicleTurnCrossfade', () => {
-  it('keeps the vehicle opaque while easing between directional poses', () => {
+  it('keeps the vehicle solid while easing between directional poses', () => {
     expect(vehicleTurnCrossfade(-1)).toEqual({ outgoingAlpha: 1, incomingAlpha: 0 });
-    expect(vehicleTurnCrossfade(0.5).outgoingAlpha).toBeCloseTo(Math.SQRT1_2);
-    expect(vehicleTurnCrossfade(0.5).incomingAlpha).toBeCloseTo(Math.SQRT1_2);
+    expect(vehicleTurnCrossfade(0.5).outgoingAlpha).toBeCloseTo(Math.pow(Math.SQRT1_2, 0.4));
+    expect(vehicleTurnCrossfade(0.5).incomingAlpha).toBeCloseTo(Math.pow(Math.SQRT1_2, 0.4));
     expect(vehicleTurnCrossfade(2)).toEqual({ outgoingAlpha: 0, incomingAlpha: 1 });
 
     for (const progress of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
       const blend = vehicleTurnCrossfade(progress);
-      expect(blend.outgoingAlpha ** 2 + blend.incomingAlpha ** 2).toBeCloseTo(1);
+      const compositedAlpha = blend.incomingAlpha + blend.outgoingAlpha * (1 - blend.incomingAlpha);
+      expect(compositedAlpha).toBeGreaterThanOrEqual(0.97);
     }
   });
 
@@ -547,7 +577,9 @@ describe('vehicleMotionEnvelope', () => {
     isLastSegment: false,
     isMoving: true,
     isTurnPhase: false,
-    stepProgress: 0
+    isInitialTurnPhase: false,
+    stepProgress: 0,
+    turnProgress: 0
   };
 
   it('eases dust and running gear into and out of motion', () => {
@@ -569,8 +601,21 @@ describe('vehicleMotionEnvelope', () => {
     })).toBe(0);
   });
 
-  it('keeps a restrained pivot envelope while the vehicle turns in place', () => {
-    expect(vehicleMotionEnvelope({ ...frame, isMoving: false, isTurnPhase: true })).toBe(0.38);
+  it('eases running gear through initial and mid-path pivots', () => {
+    const initialTurn = {
+      ...frame,
+      isMoving: false,
+      isTurnPhase: true,
+      isInitialTurnPhase: true
+    };
+    expect(vehicleMotionEnvelope(initialTurn)).toBe(0);
+    expect(vehicleMotionEnvelope({ ...initialTurn, turnProgress: 0.5 })).toBeCloseTo(0.38);
+    expect(vehicleMotionEnvelope({ ...initialTurn, turnProgress: 1 })).toBeCloseTo(0);
+
+    const midPathTurn = { ...initialTurn, isInitialTurnPhase: false };
+    expect(vehicleMotionEnvelope(midPathTurn)).toBe(1);
+    expect(vehicleMotionEnvelope({ ...midPathTurn, turnProgress: 0.5 })).toBeCloseTo(0.38);
+    expect(vehicleMotionEnvelope({ ...midPathTurn, turnProgress: 1 })).toBeCloseTo(1);
   });
 });
 
@@ -591,7 +636,7 @@ describe('directional tank ground contact', () => {
     for (const directionIndex of [0, 4]) {
       for (const bottom of [...idleBottoms[directionIndex], ...walkBottoms[directionIndex]]) {
         const spriteBottomY = (bottom - anchorY) * scale + groundBias;
-        expect(Math.max(0, markerY - spriteBottomY)).toBeLessThanOrEqual(2);
+        expect(Math.abs(markerY - spriteBottomY)).toBeLessThanOrEqual(2);
       }
     }
   });

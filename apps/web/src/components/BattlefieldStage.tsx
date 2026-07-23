@@ -237,6 +237,7 @@ export interface MovingUnit {
   stepDuration: number;
   preAlignDuration?: number;
   segmentTurnDuration?: number;
+  initialOrientation?: number;
 }
 
 export interface InvalidMoveFeedback {
@@ -507,6 +508,11 @@ function mixScreenVectors(a: { x: number; y: number }, b: { x: number; y: number
   return { x: x / len, y: y / len };
 }
 
+const directionalUnitSheetPath = (spriteName: string, state: 'idle' | 'walk') => {
+  const assetVersion = DIRECTIONAL_UNIT_ASSET_VERSION[spriteName];
+  return `/assets/generated/${spriteName}_${state}_sheet.png${assetVersion ? `?v=${assetVersion}` : ''}`;
+};
+
 const unitSheetTexture = (
   cache: Map<string, Texture>,
   spriteName: string,
@@ -514,8 +520,7 @@ const unitSheetTexture = (
   direction: string,
   frame: number
 ) => {
-  const assetVersion = DIRECTIONAL_UNIT_ASSET_VERSION[spriteName];
-  const sheetPath = `/assets/generated/${spriteName}_${state}_sheet.png${assetVersion ? `?v=${assetVersion}` : ''}`;
+  const sheetPath = directionalUnitSheetPath(spriteName, state);
   const frameSize = DIRECTIONAL_UNIT_FRAME_SIZES[spriteName] ?? { width: UNIT_SHEET_FRAME_SIZE, height: UNIT_SHEET_FRAME_SIZE };
   const directionIndex = Math.max(0, UNIT_SHEET_DIRECTIONS.indexOf(direction));
   const frameIndex = state === 'walk' ? Math.max(0, Math.min(3, frame)) : 0;
@@ -4759,6 +4764,7 @@ export function BattlefieldStage({
         let movementPhase = 0;
         let movingThisUnit = false;
         let turningThisUnit = false;
+        let initialTurnThisUnit = false;
         let vehicleTurnFromOrientation: number | null = null;
         let vehicleTurnToOrientation: number | null = null;
         let vehicleTurnProgress = 0;
@@ -4781,6 +4787,7 @@ export function BattlefieldStage({
             easedProgress: frameProgress,
             fromCoord,
             isMoving,
+            isInitialTurnPhase,
             isTurnPhase,
             movementPhase: framePhase,
             stepProgress,
@@ -4791,6 +4798,7 @@ export function BattlefieldStage({
           easedProgress = frameProgress;
           movingThisUnit = isMoving;
           turningThisUnit = isTurnPhase;
+          initialTurnThisUnit = isInitialTurnPhase;
           movementPhase = framePhase;
           displayCoord = animatedCoord;
           vehicleMotionIntensity = isGroundVehicle ? vehicleMotionEnvelope(activeMovementFrame) : 0;
@@ -4805,20 +4813,29 @@ export function BattlefieldStage({
             ? toHeight
             : fromHeight + (toHeight - fromHeight) * easedProgress;
 
-          const currentOrientation = segmentOrientation(fromCoord, toCoord);
-          const nextOrientation = currentStep + 2 < movementPath.length
-            ? segmentOrientation(toCoord, movementPath[currentStep + 2])
-            : currentOrientation;
+          const segmentHeading = segmentOrientation(fromCoord, toCoord);
+          const currentOrientation = isInitialTurnPhase
+            ? (movingUnit.initialOrientation ?? segmentHeading)
+            : segmentHeading;
+          const nextOrientation = isInitialTurnPhase
+            ? segmentHeading
+            : currentStep + 2 < movementPath.length
+              ? segmentOrientation(toCoord, movementPath[currentStep + 2])
+              : currentOrientation;
           animatedOrientation = isTurnPhase && turnProgress >= 0.5 ? nextOrientation : currentOrientation;
-          moveScreenVector = screenVectorBetween(fromCoord, toCoord);
-          if (isGroundVehicle && isTurnPhase && currentStep + 2 < movementPath.length) {
-            const nextVector = screenVectorBetween(toCoord, movementPath[currentStep + 2]);
+          moveScreenVector = isInitialTurnPhase
+            ? orientationScreenVector(currentOrientation)
+            : screenVectorBetween(fromCoord, toCoord);
+          if (isGroundVehicle && isTurnPhase && (isInitialTurnPhase || currentStep + 2 < movementPath.length)) {
+            const nextVector = isInitialTurnPhase
+              ? orientationScreenVector(nextOrientation)
+              : screenVectorBetween(toCoord, movementPath[currentStep + 2]);
             const smoothTurn = turnProgress * turnProgress * (3 - 2 * turnProgress);
             const cross = moveScreenVector.x * nextVector.y - moveScreenVector.y * nextVector.x;
             vehicleTurnFromOrientation = currentOrientation;
             vehicleTurnToOrientation = nextOrientation;
             vehicleTurnProgress = turnProgress;
-            vehicleTurnDirection = Math.sign(cross);
+            vehicleTurnDirection = Math.sign(cross) || 1;
             moveScreenVector = mixScreenVectors(moveScreenVector, nextVector, smoothTurn);
           }
           const turnBlendWindow = 0.64;
@@ -5220,6 +5237,7 @@ export function BattlefieldStage({
                           const wheelY = contactY + contactVector.y * along * 0.2 + perpY * side;
                           const wheelRx = footprint.rx * 0.075;
                           const wheelRy = Math.max(0.62, footprint.ry * 0.13);
+                          g.lineStyle();
                           g.beginFill(0x060705, isSelected ? 0.58 : 0.5);
                           g.drawEllipse(wheelX, wheelY, wheelRx, wheelRy);
                           g.endFill();
@@ -5368,7 +5386,9 @@ export function BattlefieldStage({
                         ? readableFootMovementDirection
                         : directionNameForOrientation(animatedOrientation));
               const usesDirectionalMotion = Boolean(directionalSprite && (isFootUnit || isVehicleUnit));
-              const sheetState = (movementTransitionActive || turningThisUnit) && usesDirectionalMotion ? 'walk' : 'idle';
+              const sheetState = !initialTurnThisUnit && (movementTransitionActive || turningThisUnit) && usesDirectionalMotion
+                ? 'walk'
+                : 'idle';
               const textureSheetState = directionalSprite === 'apc_directional' ? 'idle' : sheetState;
               const animatesVehicleFrames = isVehicleUnit && directionalSprite !== 'apc_directional';
               const sheetFrame = textureSheetState === 'walk' && (!isVehicleUnit || animatesVehicleFrames)
@@ -5382,6 +5402,10 @@ export function BattlefieldStage({
                 desiredH = unitVisualHeight(tileSize, unitType, defId, directionalSprite);
                 anchorY = DIRECTIONAL_UNIT_ANCHOR_Y[directionalSprite] ?? 0.9;
                 canMirrorForFacing = false;
+                const walkSheetPath = directionalUnitSheetPath(directionalSprite, 'walk');
+                if (!unitTextureCache.has(walkSheetPath)) {
+                  unitTextureCache.set(walkSheetPath, crispTexture(Texture.from(walkSheetPath)));
+                }
                 const standaloneIdlePath = directionalSprite === 'light_infantry'
                   ? lightInfantryIdlePath(spriteDirection)
                   : null;

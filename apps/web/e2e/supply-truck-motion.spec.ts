@@ -69,9 +69,11 @@ test('supply truck uses directional motion and a full-length wheeled sound cue',
   expect(setup.route?.path.length).toBeGreaterThanOrEqual(7);
   expect(setup.route?.turns).toBeGreaterThan(0);
 
-  const walkSheet = page.waitForResponse((response) => (
-    response.url().includes('/assets/generated/supply_truck_directional_walk_sheet.png') && response.ok()
-  ));
+  await expect.poll(() => page.evaluate(() => (
+    performance.getEntriesByType('resource').some((entry) => (
+      entry.name.includes('/assets/generated/supply_truck_directional_walk_sheet.png')
+    ))
+  ))).toBe(true);
   const started = await page.evaluate(({ truckId, target }) => {
     const control = (window as any).__battleControl;
     const accepted = control.animateUnitTo(truckId, target.q, target.r);
@@ -88,7 +90,6 @@ test('supply truck uses directional motion and a full-length wheeled sound cue',
   expect(started.audio.profile).toBe('wheel');
   expect(started.audio.requestedDurationMs).toBeGreaterThan(2_600);
   expect(started.audio.scheduledDurationSeconds).toBeCloseTo(started.audio.requestedDurationMs / 1000, 3);
-  await walkSheet;
   await expect.poll(
     () => page.evaluate(() => (window as any).__battleControl.animationState()),
     { timeout: 15_000 }
