@@ -24,6 +24,7 @@ import {
   battlefieldDirectionalSprite,
   blockedRangeOverlayStyle,
   canMovingUnitFadeCanopy,
+  deathMarkerDetailVisible,
   deathMarkerSpriteTransform,
   deathMarkerVisualClass,
   quantizeMovementOcclusionCoordinate,
@@ -352,10 +353,9 @@ describe('resolveMovementFrame', () => {
 });
 
 describe('leavesMechanicalWreck', () => {
-  it('only leaves hulls for explicitly mechanical definitions', () => {
+  it('only leaves persistent wrecks for explicitly authored machines and structures', () => {
     for (const definitionId of [
       'arachnoid',
-      'arrow-tower',
       'breorn-titan',
       'death-knight',
       'dire-wolves',
@@ -368,6 +368,8 @@ describe('leavesMechanicalWreck', () => {
     ]) {
       expect(leavesMechanicalWreck('vehicle', definitionId)).toBe(false);
     }
+    expect(leavesMechanicalWreck('air', 'winged-fiend')).toBe(false);
+    expect(leavesMechanicalWreck('air', 'harpy-swarm')).toBe(false);
 
     expect(leavesMechanicalWreck('vehicle', 'demon-engine')).toBe(true);
     expect(leavesMechanicalWreck('vehicle', 'leopard-2')).toBe(true);
@@ -375,6 +377,9 @@ describe('leavesMechanicalWreck', () => {
     expect(leavesMechanicalWreck('support', 'supply-truck')).toBe(true);
     expect(leavesMechanicalWreck('artillery', 'thunderhead-155')).toBe(true);
     expect(leavesMechanicalWreck('vehicle', 'dread-fortress')).toBe(true);
+    expect(leavesMechanicalWreck('artillery', 'arrow-tower')).toBe(true);
+    expect(leavesMechanicalWreck('air', 'attack-helo')).toBe(true);
+    expect(leavesMechanicalWreck('air', 'kestrel-recon-drone')).toBe(true);
   });
 });
 
@@ -417,17 +422,46 @@ describe('death marker lifecycle', () => {
 });
 
 describe('authored death-marker classes', () => {
-  it('keeps rifle, creature, artillery, tracked, and wheeled remains distinct', () => {
+  it('keeps procedural hull details hidden until the killing effect finishes', () => {
+    expect(deathMarkerDetailVisible(true, false)).toBe(false);
+    expect(deathMarkerDetailVisible(false, false)).toBe(true);
+    expect(deathMarkerDetailVisible(true, true)).toBe(true);
+  });
+
+  it('keeps firearm, melee, creature, vehicle, aircraft, and structure remains distinct', () => {
     expect(deathMarkerVisualClass('infantry', 'light-infantry')).toBe('rifle');
+    expect(deathMarkerVisualClass('infantry', 'heavy-infantry')).toBe('rifle');
+    expect(deathMarkerVisualClass('infantry', 'exo-troopers')).toBe('rifle');
+    expect(deathMarkerVisualClass('artillery', 'mortar-team')).toBe('rifle');
+    expect(deathMarkerVisualClass('infantry', 'skeleton-horde')).toBe('melee');
+    expect(deathMarkerVisualClass('infantry', 'dark-elf-archers')).toBe('melee');
+    expect(deathMarkerVisualClass('support', 'necromancer')).toBe('melee');
     expect(deathMarkerVisualClass('vehicle', 'ogre-brute')).toBe('heavy');
     expect(deathMarkerVisualClass('vehicle', 'dire-wolves')).toBe('creature');
     expect(deathMarkerVisualClass('artillery', 'spg-m109')).toBe('artillery');
+    expect(deathMarkerVisualClass('artillery', 'firefly-105')).toBe('wheeled');
     expect(deathMarkerVisualClass('vehicle', 'leopard-2')).toBe('tracked');
     expect(deathMarkerVisualClass('support', 'supply-truck')).toBe('wheeled');
+    expect(deathMarkerVisualClass('air', 'attack-helo')).toBe('air');
+    expect(deathMarkerVisualClass('air', 'cerberus-gunship')).toBe('air');
+    expect(deathMarkerVisualClass('air', 'kestrel-recon-drone')).toBe('air');
+    expect(deathMarkerVisualClass('air', 'gloom-balloon')).toBe('air');
+    expect(deathMarkerVisualClass('air', 'winged-fiend')).toBe('creature');
+    expect(deathMarkerVisualClass('artillery', 'arrow-tower')).toBe('structure');
   });
 
   it('assigns each class a recognizably different flattened silhouette', () => {
-    const classes = ['rifle', 'heavy', 'creature', 'artillery', 'tracked', 'wheeled'] as const;
+    const classes = [
+      'rifle',
+      'melee',
+      'heavy',
+      'creature',
+      'artillery',
+      'tracked',
+      'wheeled',
+      'air',
+      'structure'
+    ] as const;
     const profiles = classes.map((visualClass) => deathMarkerSpriteTransform(visualClass));
     const signatures = profiles.map((profile) => (
       `${profile.scaleX}:${profile.scaleY}:${profile.rotation}:${profile.y}`

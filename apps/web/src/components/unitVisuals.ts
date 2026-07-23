@@ -699,7 +699,9 @@ export function battlefieldDirectionalSprite(unitType: string, definitionId: str
 const MECHANICAL_WRECK_DEFINITION_IDS = new Set([
   'avenger-aa',
   'aegis-assault-tank',
+  'arrow-tower',
   'badger-mortar-carrier',
+  'bone-ballista',
   'bradley-ifv',
   'demon-engine',
   'dread-fortress',
@@ -725,11 +727,28 @@ const MECHANICAL_WRECK_DEFINITION_IDS = new Set([
   'wardog-fire-support'
 ]);
 
+const AIR_WRECK_DEFINITION_IDS = new Set([
+  'attack-helo',
+  'cerberus-gunship',
+  'gloom-balloon',
+  'kestrel-recon-drone'
+]);
+
 export function leavesMechanicalWreck(_unitType: string | undefined, definitionId: string) {
-  return MECHANICAL_WRECK_DEFINITION_IDS.has(definitionId.toLowerCase());
+  const id = definitionId.toLowerCase();
+  return MECHANICAL_WRECK_DEFINITION_IDS.has(id) || AIR_WRECK_DEFINITION_IDS.has(id);
 }
 
-export type DeathMarkerVisualClass = 'rifle' | 'heavy' | 'creature' | 'artillery' | 'tracked' | 'wheeled';
+export type DeathMarkerVisualClass =
+  | 'rifle'
+  | 'melee'
+  | 'heavy'
+  | 'creature'
+  | 'artillery'
+  | 'tracked'
+  | 'wheeled'
+  | 'air'
+  | 'structure';
 
 const WHEELED_WRECK_IDS = new Set([
   'avenger-aa',
@@ -739,21 +758,70 @@ const WHEELED_WRECK_IDS = new Set([
   'supply-truck'
 ]);
 
+const AIR_WRECK_IDS = new Set([
+  'attack-helo',
+  'cerberus-gunship',
+  'gloom-balloon',
+  'kestrel-recon-drone'
+]);
+
+const STRUCTURE_WRECK_IDS = new Set([
+  'arrow-tower',
+  'bone-ballista',
+  'dread-fortress'
+]);
+
+const RIFLE_FOOT_IDS = new Set([
+  'antitank-orc',
+  'breach-engineers',
+  'commando-team',
+  'exo-troopers',
+  'field-medic',
+  'flamethrower-squad',
+  'heavy-infantry',
+  'john-alexander',
+  'light-infantry',
+  'mortar-team',
+  'orc-warband',
+  'rangers',
+  'renegade-cell',
+  'sniper-team',
+  'valkyrie-mobile-infantry',
+  'war-orc'
+]);
+
+const CREATURE_FOOT_IDS = new Set([
+  'ghoul-pack',
+  'rift-predator',
+  'signal-eater'
+]);
+
 export function deathMarkerVisualClass(unitType: string | undefined, definitionId: string): DeathMarkerVisualClass {
   const id = definitionId.toLowerCase();
-  if (unitType === 'artillery'
-    || ['artillery', 'howitzer', 'mortar', 'mlrs', 'counterbattery', 'thunderhead', 'resonance-cannon', 'ballista']
-      .some((keyword) => id.includes(keyword))) {
+  if (AIR_WRECK_IDS.has(id)) return 'air';
+  if (STRUCTURE_WRECK_IDS.has(id)) return 'structure';
+  if (WHEELED_WRECK_IDS.has(id) || id.includes('truck')) return 'wheeled';
+  if (leavesMechanicalWreck(unitType, id)
+    && (unitType === 'artillery'
+      || ['artillery', 'howitzer', 'mortar', 'mlrs', 'counterbattery', 'thunderhead', 'resonance-cannon']
+        .some((keyword) => id.includes(keyword)))) {
     return 'artillery';
   }
-  if (WHEELED_WRECK_IDS.has(id) || id.includes('truck')) return 'wheeled';
   if (leavesMechanicalWreck(unitType, id)) return 'tracked';
+  if (RIFLE_FOOT_IDS.has(id)) return 'rifle';
+  if (CREATURE_FOOT_IDS.has(id)) return 'creature';
   if (['heavy', 'golem', 'ogre', 'titan', 'colossus', 'brute', 'death-knight', 'war-orc', 'ka-orc']
     .some((keyword) => id.includes(keyword))) {
     return 'heavy';
   }
-  if (unitType === 'infantry' || unitType === 'hero' || unitType === 'support') return 'rifle';
+  if (unitType === 'infantry' || unitType === 'hero' || unitType === 'support' || unitType === 'artillery') {
+    return 'melee';
+  }
   return 'creature';
+}
+
+export function deathMarkerDetailVisible(hitInFlight: boolean, hasCorpseTexture: boolean) {
+  return !hitInFlight || hasCorpseTexture;
 }
 
 export type DeathMarkerSpriteTransform = {
@@ -767,6 +835,8 @@ export function deathMarkerSpriteTransform(visualClass: DeathMarkerVisualClass):
   switch (visualClass) {
     case 'rifle':
       return { scaleX: 1.08, scaleY: 0.54, rotation: 0.38, y: 0.06 };
+    case 'melee':
+      return { scaleX: 1.12, scaleY: 0.58, rotation: -0.12, y: 0.062 };
     case 'heavy':
       return { scaleX: 1.18, scaleY: 0.64, rotation: -0.24, y: 0.065 };
     case 'creature':
@@ -777,6 +847,10 @@ export function deathMarkerSpriteTransform(visualClass: DeathMarkerVisualClass):
       return { scaleX: 1.18, scaleY: 0.64, rotation: -0.06, y: 0.07 };
     case 'tracked':
       return { scaleX: 1.24, scaleY: 0.72, rotation: 0.08, y: 0.07 };
+    case 'air':
+      return { scaleX: 1.28, scaleY: 0.58, rotation: 0.2, y: 0.08 };
+    case 'structure':
+      return { scaleX: 1.2, scaleY: 0.62, rotation: -0.08, y: 0.075 };
   }
 }
 

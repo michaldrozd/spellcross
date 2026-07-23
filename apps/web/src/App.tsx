@@ -969,6 +969,31 @@ const BattleView: React.FC<{
         if (!validationScenarioRef.current) resolveOutcome();
         return { ...res, weaponId: weapon, actionPoints: attacker.actionPoints };
       },
+      attackEnemyUnitWith: (attackerId: string, defenderId: string, requestedWeaponId?: string) => {
+        const attacker = battle.state.sides.otherSide.units.get(attackerId);
+        if (!attacker) return { success: false, error: `Unit ${attackerId} not found` };
+        const defender = battle.state.sides.alliance.units.get(defenderId);
+        if (!defender) return { success: false, error: `Unit ${defenderId} not found` };
+        const weapon = requestedWeaponId && requestedWeaponId in attacker.stats.weaponRanges
+          ? requestedWeaponId
+          : Object.keys(attacker.stats.weaponRanges).sort((a, b) => {
+              const rangeDiff = (attacker.stats.weaponRanges[b] ?? 0) - (attacker.stats.weaponRanges[a] ?? 0);
+              if (rangeDiff !== 0) return rangeDiff;
+              return (attacker.stats.weaponPower[b] ?? 0) - (attacker.stats.weaponPower[a] ?? 0);
+            })[0];
+        if (!weapon) return { success: false, error: 'No weapon available' };
+        const activeFaction = battle.state.activeFaction;
+        battle.state.activeFaction = 'otherSide';
+        const proc = new TurnProcessor(battle.state, { random: () => 0 });
+        const res = proc.attackUnit({ attackerId, defenderId, weaponId: weapon });
+        battle.state.activeFaction = activeFaction;
+        if (res.success) {
+          const attackOutcome = visualOutcomeForAttack(res.events as BattleEvent[] | undefined, attackerId, defenderId);
+          addAttackEffect(attacker, defender, weapon, attackOutcome);
+        }
+        persist();
+        return { ...res, weaponId: weapon, actionPoints: attacker.actionPoints };
+      },
       setActionPoints: (unitId: string, actionPoints: number) => {
         for (const side of Object.values(battle.state.sides)) {
           const unit = side.units.get(unitId);
