@@ -49,18 +49,22 @@ import {
 const APC_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 
 describe('terrain and fog presentation', () => {
-  it('keeps remembered buildings solid, muted, and independent of live occluders', () => {
+  it('keeps remembered buildings solid and muted while preserving visible-unit occlusion', () => {
     const rememberedBehindUnit = buildingVisibilityPresentation(false, 0.2);
     const rememberedAlone = buildingVisibilityPresentation(false, 1);
     const rgb = [
-      (rememberedBehindUnit.spriteTint >> 16) & 0xff,
-      (rememberedBehindUnit.spriteTint >> 8) & 0xff,
-      rememberedBehindUnit.spriteTint & 0xff
+      (rememberedAlone.spriteTint >> 16) & 0xff,
+      (rememberedAlone.spriteTint >> 8) & 0xff,
+      rememberedAlone.spriteTint & 0xff
     ];
 
-    expect(rememberedBehindUnit).toEqual(rememberedAlone);
-    expect(rememberedBehindUnit.containerAlpha * rememberedBehindUnit.spriteAlpha).toBeGreaterThanOrEqual(0.9);
+    expect(rememberedAlone.containerAlpha * rememberedAlone.spriteAlpha).toBeGreaterThanOrEqual(0.9);
     expect(Math.max(...rgb) - Math.min(...rgb)).toBeLessThanOrEqual(16);
+    expect(rememberedBehindUnit).toMatchObject({
+      containerAlpha: 0.2,
+      spriteAlpha: rememberedAlone.spriteAlpha,
+      spriteTint: rememberedAlone.spriteTint
+    });
   });
 
   it('keeps visible-building occlusion behavior unchanged', () => {

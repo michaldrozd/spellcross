@@ -426,7 +426,7 @@ export const buildingVisibilityPresentation = (
     };
   }
   return {
-    containerAlpha: 0.94,
+    containerAlpha: Math.min(0.94, clamp(occlusionAlpha, 0, 1)),
     spriteAlpha: 0.98,
     spriteTint: 0x748079,
     shadowStrength: 0.72
@@ -1783,6 +1783,10 @@ export function BattlefieldStage({
     texture.baseTexture.update?.();
     return texture;
   }, []);
+  const rememberedBuildingProfile = useMemo(
+    () => buildingVisibilityPresentation(false, 1),
+    []
+  );
   useEffect(() => {
     return () => {
       try { terrainMacroTexture.destroy(true); } catch { /* already gone */ }
@@ -7623,8 +7627,11 @@ export function BattlefieldStage({
       <div
         data-testid="battlefield-render-profile"
         style={{ display: 'none' }}
-        data-fow-memory="solid-muted"
-        data-terrain-detail="macro-seeded"
+        data-fow-memory-alpha={rememberedBuildingProfile.containerAlpha}
+        data-fow-memory-tint={rememberedBuildingProfile.spriteTint.toString(16).padStart(6, '0')}
+        data-terrain-detail-texture={terrainMacroTexture.baseTexture.valid
+          ? `${terrainMacroTexture.width}x${terrainMacroTexture.height}`
+          : 'unavailable'}
       />
 
 
