@@ -15,7 +15,7 @@ test('terrain and fog presentation stays active across battlefield families', as
     const renderProfile = page.getByTestId('battlefield-render-profile');
     const memoryAlphaValue = await renderProfile.getAttribute('data-fow-memory-alpha');
     const memoryTintValue = await renderProfile.getAttribute('data-fow-memory-tint');
-    expect(memoryAlphaValue).toMatch(/^\d(?:\.\d+)?$/);
+    expect(memoryAlphaValue).toBe('1');
     expect(memoryTintValue).toMatch(/^[0-9a-f]{6}$/);
     const memoryAlpha = Number(memoryAlphaValue);
     const memoryTint = Number.parseInt(memoryTintValue!, 16);
@@ -30,6 +30,10 @@ test('terrain and fog presentation stays active across battlefield families', as
     expect(Math.max(...memoryTintChannels)).toBeLessThanOrEqual(160);
     expect(Math.max(...memoryTintChannels) - Math.min(...memoryTintChannels)).toBeLessThanOrEqual(16);
     await expect(renderProfile).toHaveAttribute('data-terrain-detail-texture', '256x256');
+    await expect(renderProfile).toHaveAttribute('data-contact-shadow-layers', '3');
+    const gridAlpha = Number(await renderProfile.getAttribute('data-terrain-grid-alpha'));
+    expect(gridAlpha).toBeGreaterThan(0);
+    expect(gridAlpha).toBeLessThan(0.03);
     await expect(page.locator('.battlefield-stage-host canvas')).toBeVisible();
   }
 

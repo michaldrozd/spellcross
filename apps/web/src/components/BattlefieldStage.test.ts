@@ -4,10 +4,14 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  TERRAIN_GRID_ALPHA,
   buildingVisibilityPresentation,
+  softShadowLayers,
   smoothTerrainNoise,
+  terrainDetailDensity,
   terrainDetailFamily,
-  terrainMacroPattern
+  terrainMacroPattern,
+  worldTextureMatrix
 } from './BattlefieldStage.js';
 import {
   activeKillingEffectForTarget,
@@ -66,7 +70,11 @@ describe('terrain and fog presentation', () => {
       rememberedAlone.spriteTint & 0xff
     ];
 
-    expect(rememberedAlone.containerAlpha * rememberedAlone.spriteAlpha).toBeGreaterThanOrEqual(0.9);
+    expect(rememberedAlone).toMatchObject({
+      containerAlpha: 1,
+      spriteAlpha: 1,
+      shadowStrength: 0.72
+    });
     expect(Math.max(...rgb) - Math.min(...rgb)).toBeLessThanOrEqual(16);
     expect(rememberedBehindUnit).toMatchObject({
       containerAlpha: 0.2,
@@ -109,6 +117,42 @@ describe('terrain and fog presentation', () => {
     expect(repeated).toEqual(samples);
     expect(Math.max(...samples) - Math.min(...samples)).toBeGreaterThan(0.5);
     expect(terrainMacroPattern(0.23, 0.67)).toBeCloseTo(terrainMacroPattern(1.23, 1.67), 10);
+  });
+
+  it('maps shared tile edges to the same world texture coordinate', () => {
+    const leftUvs = worldTextureMatrix(100, 50, 3.2).invert().apply({ x: 20, y: 10 });
+    const rightUvs = worldTextureMatrix(140, 50, 3.2).invert().apply({ x: -20, y: 10 });
+
+    expect(leftUvs.x).toBeCloseTo(37.5, 10);
+    expect(leftUvs.y).toBeCloseTo(18.75, 10);
+    expect(rightUvs.x).toBeCloseTo(leftUvs.x, 10);
+    expect(rightUvs.y).toBeCloseTo(leftUvs.y, 10);
+  });
+
+  it('varies detail density in broad deterministic regions instead of per-tile checker steps', () => {
+    for (const terrain of ['plain', 'urban', 'water']) {
+      const samples = Array.from({ length: 24 }, (_, q) => terrainDetailDensity(q, 9, terrain));
+      const repeated = Array.from({ length: 24 }, (_, q) => terrainDetailDensity(q, 9, terrain));
+      const largestNeighborStep = Math.max(
+        ...samples.slice(1).map((sample, index) => Math.abs(sample - samples[index]))
+      );
+
+      expect(repeated).toEqual(samples);
+      expect(Math.min(...samples)).toBeGreaterThanOrEqual(0.24);
+      expect(Math.max(...samples)).toBeLessThanOrEqual(1.08);
+      expect(Math.max(...samples) - Math.min(...samples)).toBeGreaterThan(0.2);
+      expect(largestNeighborStep).toBeLessThan(0.24);
+    }
+  });
+
+  it('softens contact shadows without increasing their alpha budget', () => {
+    const layers = softShadowLayers(0.24);
+
+    expect(layers).toHaveLength(3);
+    expect(layers.reduce((sum, layer) => sum + layer.alpha, 0)).toBeCloseTo(0.24, 10);
+    expect(layers.map((layer) => layer.scaleX)).toEqual([1.24, 1.04, 0.82]);
+    expect(layers[0].alpha).toBeLessThan(layers[2].alpha);
+    expect(TERRAIN_GRID_ALPHA).toBeLessThan(0.03);
   });
 });
 
