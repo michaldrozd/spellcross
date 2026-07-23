@@ -20,7 +20,35 @@ export type TargetedCombatEffect = {
   killed: boolean;
 };
 
+export type FirearmVisualProfile = {
+  sheathWidth: number;
+  coreWidth: number;
+  highlightWidth: number;
+  headRadius: number;
+  tailFraction: number;
+};
+
+export function firearmVisualProfile(type: 'gunshot' | 'sniper'): FirearmVisualProfile {
+  if (type === 'sniper') {
+    return {
+      sheathWidth: 2.2,
+      coreWidth: 1.1,
+      highlightWidth: 0.55,
+      headRadius: 1.5,
+      tailFraction: 0.22
+    };
+  }
+  return {
+    sheathWidth: 1.7,
+    coreWidth: 0.82,
+    highlightWidth: 0.38,
+    headRadius: 1.18,
+    tailFraction: 0.1
+  };
+}
+
 export const CORPSE_TTL_MS = 20_000;
+export const CORPSE_FULL_OPACITY_MS = 8_000;
 export const WRECK_SMOKE_ANIMATION_MS = 24_000;
 
 export function combatEffectTypeForWeapon(definitionId: string, weaponId: string): CombatEffectType {
@@ -107,4 +135,10 @@ export function deathMarkerVisible(
 
 export function deathMarkerExpired(createdAt: number, now: number, mechanicalWreck: boolean) {
   return !mechanicalWreck && now - createdAt >= CORPSE_TTL_MS;
+}
+
+export function deathMarkerFade(elapsedMs: number, mechanicalWreck: boolean) {
+  if (mechanicalWreck) return 1;
+  const fadeDuration = CORPSE_TTL_MS - CORPSE_FULL_OPACITY_MS;
+  return Math.max(0, Math.min(1, (CORPSE_TTL_MS - elapsedMs) / fadeDuration));
 }

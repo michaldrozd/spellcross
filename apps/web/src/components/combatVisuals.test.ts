@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { combatEffectForShot, combatEffectTiming, combatEffectTypeForWeapon } from './combatVisuals.js';
+import {
+  combatEffectForShot,
+  combatEffectTiming,
+  combatEffectTypeForWeapon,
+  deathMarkerFade,
+  firearmVisualProfile
+} from './combatVisuals.js';
 
 describe('combatEffectTypeForWeapon', () => {
   it('keeps specific weapon keywords ahead of broad fallback terms for suppressive shots', () => {
@@ -56,5 +62,29 @@ describe('combatEffectTiming', () => {
       const timing = combatEffectTiming(type);
       expect(timing.totalMs - timing.impactAtMs).toBeGreaterThanOrEqual(2200);
     }
+  });
+});
+
+describe('firearmVisualProfile', () => {
+  it('keeps rifle tracers fine while preserving the single-shot sniper language', () => {
+    const rifle = firearmVisualProfile('gunshot');
+    const sniper = firearmVisualProfile('sniper');
+
+    expect(rifle.sheathWidth).toBeLessThanOrEqual(1.8);
+    expect(rifle.coreWidth).toBeLessThanOrEqual(0.9);
+    expect(rifle.headRadius).toBeLessThanOrEqual(1.4);
+    expect(sniper.sheathWidth).toBeGreaterThan(rifle.sheathWidth);
+    expect(sniper.coreWidth).toBeGreaterThan(rifle.coreWidth);
+    expect(sniper.tailFraction).toBeGreaterThan(rifle.tailFraction);
+  });
+});
+
+describe('deathMarkerFade', () => {
+  it('holds organic silhouettes at full opacity before a smooth fade and keeps wrecks persistent', () => {
+    expect(deathMarkerFade(0, false)).toBe(1);
+    expect(deathMarkerFade(8_000, false)).toBe(1);
+    expect(deathMarkerFade(14_000, false)).toBe(0.5);
+    expect(deathMarkerFade(20_000, false)).toBe(0);
+    expect(deathMarkerFade(40_000, true)).toBe(1);
   });
 });

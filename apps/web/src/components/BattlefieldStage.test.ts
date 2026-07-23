@@ -24,12 +24,15 @@ import {
   battlefieldDirectionalSprite,
   blockedRangeOverlayStyle,
   canMovingUnitFadeCanopy,
+  deathMarkerSpriteTransform,
+  deathMarkerVisualClass,
   quantizeMovementOcclusionCoordinate,
   directionalSpriteGroundOffset,
   directionNameForOrientation,
   directionNameForScreenVector,
   featheredOcclusionAlpha,
   isSupportVehicleDefinition,
+  infantryGroundMotion,
   leavesMechanicalWreck,
   rasterUnitOverride,
   rasterVehiclePose,
@@ -410,6 +413,44 @@ describe('death marker lifecycle', () => {
   it('keeps mechanical wrecks after the organic corpse TTL', () => {
     expect(deathMarkerExpired(1000, 22_000, false)).toBe(true);
     expect(deathMarkerExpired(1000, 22_000, true)).toBe(false);
+  });
+});
+
+describe('authored death-marker classes', () => {
+  it('keeps rifle, creature, artillery, tracked, and wheeled remains distinct', () => {
+    expect(deathMarkerVisualClass('infantry', 'light-infantry')).toBe('rifle');
+    expect(deathMarkerVisualClass('vehicle', 'ogre-brute')).toBe('heavy');
+    expect(deathMarkerVisualClass('vehicle', 'dire-wolves')).toBe('creature');
+    expect(deathMarkerVisualClass('artillery', 'spg-m109')).toBe('artillery');
+    expect(deathMarkerVisualClass('vehicle', 'leopard-2')).toBe('tracked');
+    expect(deathMarkerVisualClass('support', 'supply-truck')).toBe('wheeled');
+  });
+
+  it('assigns each class a recognizably different flattened silhouette', () => {
+    const classes = ['rifle', 'heavy', 'creature', 'artillery', 'tracked', 'wheeled'] as const;
+    const profiles = classes.map((visualClass) => deathMarkerSpriteTransform(visualClass));
+    const signatures = profiles.map((profile) => (
+      `${profile.scaleX}:${profile.scaleY}:${profile.rotation}:${profile.y}`
+    ));
+
+    expect(new Set(signatures).size).toBe(classes.length);
+    expect(deathMarkerSpriteTransform('rifle').scaleY).toBeLessThan(deathMarkerSpriteTransform('tracked').scaleY);
+    expect(deathMarkerSpriteTransform('artillery').scaleX).toBeGreaterThan(deathMarkerSpriteTransform('wheeled').scaleX);
+  });
+});
+
+describe('infantry ground motion', () => {
+  it('plants alternating feet without lifting the sprite more than 1.5 pixels', () => {
+    const positiveStep = infantryGroundMotion(1, true);
+    const negativeStep = infantryGroundMotion(-1, true);
+    const fallbackStep = infantryGroundMotion(1, false);
+
+    expect(positiveStep.plantedSide).toBe(1);
+    expect(negativeStep.plantedSide).toBe(-1);
+    expect(positiveStep.plantStrength).toBe(1);
+    expect(Math.abs(positiveStep.spriteBobY)).toBeLessThanOrEqual(1.5);
+    expect(Math.abs(fallbackStep.spriteBobY)).toBeLessThanOrEqual(1.5);
+    expect(positiveStep.spriteSwayX).toBe(-negativeStep.spriteSwayX);
   });
 });
 

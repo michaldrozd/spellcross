@@ -729,6 +729,75 @@ export function leavesMechanicalWreck(_unitType: string | undefined, definitionI
   return MECHANICAL_WRECK_DEFINITION_IDS.has(definitionId.toLowerCase());
 }
 
+export type DeathMarkerVisualClass = 'rifle' | 'heavy' | 'creature' | 'artillery' | 'tracked' | 'wheeled';
+
+const WHEELED_WRECK_IDS = new Set([
+  'avenger-aa',
+  'firefly-105',
+  'horizon-radar',
+  'humvee-scout',
+  'supply-truck'
+]);
+
+export function deathMarkerVisualClass(unitType: string | undefined, definitionId: string): DeathMarkerVisualClass {
+  const id = definitionId.toLowerCase();
+  if (unitType === 'artillery'
+    || ['artillery', 'howitzer', 'mortar', 'mlrs', 'counterbattery', 'thunderhead', 'resonance-cannon', 'ballista']
+      .some((keyword) => id.includes(keyword))) {
+    return 'artillery';
+  }
+  if (WHEELED_WRECK_IDS.has(id) || id.includes('truck')) return 'wheeled';
+  if (leavesMechanicalWreck(unitType, id)) return 'tracked';
+  if (['heavy', 'golem', 'ogre', 'titan', 'colossus', 'brute', 'death-knight', 'war-orc', 'ka-orc']
+    .some((keyword) => id.includes(keyword))) {
+    return 'heavy';
+  }
+  if (unitType === 'infantry' || unitType === 'hero' || unitType === 'support') return 'rifle';
+  return 'creature';
+}
+
+export type DeathMarkerSpriteTransform = {
+  scaleX: number;
+  scaleY: number;
+  rotation: number;
+  y: number;
+};
+
+export function deathMarkerSpriteTransform(visualClass: DeathMarkerVisualClass): DeathMarkerSpriteTransform {
+  switch (visualClass) {
+    case 'rifle':
+      return { scaleX: 1.08, scaleY: 0.54, rotation: 0.38, y: 0.06 };
+    case 'heavy':
+      return { scaleX: 1.18, scaleY: 0.64, rotation: -0.24, y: 0.065 };
+    case 'creature':
+      return { scaleX: 1.22, scaleY: 0.66, rotation: 0.16, y: 0.065 };
+    case 'artillery':
+      return { scaleX: 1.3, scaleY: 0.6, rotation: 0.1, y: 0.075 };
+    case 'wheeled':
+      return { scaleX: 1.18, scaleY: 0.64, rotation: -0.06, y: 0.07 };
+    case 'tracked':
+      return { scaleX: 1.24, scaleY: 0.72, rotation: 0.08, y: 0.07 };
+  }
+}
+
+export type InfantryGroundMotion = {
+  spriteBobY: number;
+  spriteSwayX: number;
+  plantedSide: -1 | 1;
+  plantStrength: number;
+};
+
+export function infantryGroundMotion(stepWave: number, directionalSprite: boolean): InfantryGroundMotion {
+  const wave = Math.max(-1, Math.min(1, stepWave));
+  const plantStrength = Math.abs(wave);
+  return {
+    spriteBobY: -plantStrength * (directionalSprite ? 1.2 : 1.5),
+    spriteSwayX: wave * (directionalSprite ? 1.35 : 1.1),
+    plantedSide: wave >= 0 ? 1 : -1,
+    plantStrength
+  };
+}
+
 export function unitPointerArea(tile: number, unitType: string, definitionId: string, selected = false): UnitPointerArea {
   if (unitType === 'vehicle' || isSupportVehicleDefinition(unitType, definitionId)) {
     return selected
