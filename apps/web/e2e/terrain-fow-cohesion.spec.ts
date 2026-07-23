@@ -30,6 +30,7 @@ test('terrain and fog presentation stays active across battlefield families', as
     expect(Math.max(...memoryTintChannels)).toBeLessThanOrEqual(160);
     expect(Math.max(...memoryTintChannels) - Math.min(...memoryTintChannels)).toBeLessThanOrEqual(16);
     await expect(renderProfile).toHaveAttribute('data-terrain-detail-texture', '256x256');
+    await expect(renderProfile).toHaveAttribute('data-terrain-wash-visibility-radius', '4');
     await expect(renderProfile).toHaveAttribute('data-contact-shadow-layers', '3');
     const gridAlpha = Number(await renderProfile.getAttribute('data-terrain-grid-alpha'));
     expect(gridAlpha).toBeGreaterThan(0);

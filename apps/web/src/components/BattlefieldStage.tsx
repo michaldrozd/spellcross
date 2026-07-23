@@ -433,6 +433,10 @@ export const worldTextureMatrix = (worldX: number, worldY: number, worldUnitsPer
   return matrix;
 };
 
+export const terrainTextureWorldUnitsPerTexel = (terrain: string) => (
+  terrain === 'structure' ? 2.8 : 0.92
+);
+
 export const terrainDetailDensity = (q: number, r: number, terrain: string) => {
   const familySalt = terrainDetailFamily(terrain) === 'vegetation'
     ? 761
@@ -445,6 +449,7 @@ export const terrainDetailDensity = (q: number, r: number, terrain: string) => {
 };
 
 export const TERRAIN_GRID_ALPHA = 0.022;
+export const TERRAIN_WASH_VISIBILITY_RADIUS = 4;
 
 export type SoftShadowLayer = {
   scaleX: number;
@@ -2828,7 +2833,7 @@ export function BattlefieldStage({
       if (coloredTex) {
         // Map the large painted texture continuously in WORLD space so the ground reads as one
         // cohesive painted surface (REPEAT wrap tiles it seamlessly).
-        const k = 0.92;
+        const k = terrainTextureWorldUnitsPerTexel(fillTerrain);
         const gx = pos.x;
         const gy = pos.y - avgHeight * ELEV_Y_OFFSET;
         texMatrix = worldTextureMatrix(gx, gy, k);
@@ -3505,8 +3510,8 @@ export function BattlefieldStage({
               if (!visibleTiles.has(index)) continue;
               const family = terrainDetailFamily(map.tiles[index].terrain);
               const neighbors: Array<{ q: number; r: number }> = [];
-              for (let dr = -2; dr <= 2; dr += 1) {
-                for (let dq = -2; dq <= 2; dq += 1) {
+              for (let dr = -TERRAIN_WASH_VISIBILITY_RADIUS; dr <= TERRAIN_WASH_VISIBILITY_RADIUS; dr += 1) {
+                for (let dq = -TERRAIN_WASH_VISIBILITY_RADIUS; dq <= TERRAIN_WASH_VISIBILITY_RADIUS; dq += 1) {
                   neighbors.push({ q: q + dq, r: r + dr });
                 }
               }
@@ -8064,6 +8069,7 @@ export function BattlefieldStage({
           ? `${terrainMacroTexture.width}x${terrainMacroTexture.height}`
           : 'unavailable'}
         data-terrain-grid-alpha={TERRAIN_GRID_ALPHA}
+        data-terrain-wash-visibility-radius={TERRAIN_WASH_VISIBILITY_RADIUS}
         data-contact-shadow-layers={softShadowLayers(1).length}
       />
 

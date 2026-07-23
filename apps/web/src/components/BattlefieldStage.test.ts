@@ -5,12 +5,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   TERRAIN_GRID_ALPHA,
+  TERRAIN_WASH_VISIBILITY_RADIUS,
   buildingVisibilityPresentation,
   softShadowLayers,
   smoothTerrainNoise,
   terrainDetailDensity,
   terrainDetailFamily,
   terrainMacroPattern,
+  terrainTextureWorldUnitsPerTexel,
   worldTextureMatrix
 } from './BattlefieldStage.js';
 import {
@@ -127,6 +129,16 @@ describe('terrain and fog presentation', () => {
     expect(leftUvs.y).toBeCloseTo(18.75, 10);
     expect(rightUvs.x).toBeCloseTo(leftUvs.x, 10);
     expect(rightUvs.y).toBeCloseTo(leftUvs.y, 10);
+  });
+
+  it('keeps broad terrain washes inside a fully visible neighborhood', () => {
+    expect(TERRAIN_WASH_VISIBILITY_RADIUS).toBeGreaterThanOrEqual(4);
+  });
+
+  it('keeps the compact structure texture in the same broad repeat class', () => {
+    expect(128 * terrainTextureWorldUnitsPerTexel('structure') / 56).toBeGreaterThanOrEqual(6);
+    expect(64 * terrainTextureWorldUnitsPerTexel('structure') / 28).toBeGreaterThanOrEqual(6);
+    expect(terrainTextureWorldUnitsPerTexel('plain')).toBe(0.92);
   });
 
   it('varies detail density in broad deterministic regions instead of per-tile checker steps', () => {
