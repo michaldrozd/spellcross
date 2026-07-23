@@ -14,6 +14,8 @@ export type TargetedCombatEffect = {
   id: string;
   attackerId?: string;
   targetId: string;
+  timelineStartIndex?: number;
+  timelineEndIndex?: number;
   startTime: number;
   type: CombatEffectType;
   arc?: boolean;
@@ -129,17 +131,31 @@ export function combatImpactWindowMs(type: CombatEffectType, killed: boolean, ba
 export function combatTimelineEventVisible(
   event: CombatTimelinePresentationEvent,
   attackEffects: readonly TargetedCombatEffect[],
-  now: number
+  now: number,
+  eventIndex?: number
 ) {
   return !attackEffects.some((effect) => {
     if (!effect.attackerId) return false;
     const impactAt = effect.startTime + combatEffectTiming(effect.type, effect.arc).impactAtMs;
     if (now >= impactAt) return false;
+    if (
+      eventIndex !== undefined
+      && effect.timelineStartIndex !== undefined
+      && (
+        eventIndex < effect.timelineStartIndex
+        || eventIndex >= (effect.timelineEndIndex ?? effect.timelineStartIndex + 1)
+      )
+    ) {
+      return false;
+    }
     if (event.kind === 'unit:attacked') {
       return event.attackerId === effect.attackerId && event.defenderId === effect.targetId;
     }
     if (event.kind === 'unit:defeated') {
-      return effect.killed && event.unitId === effect.targetId && event.by === effect.attackerId;
+      return effect.killed && event.by === effect.attackerId;
+    }
+    if (event.kind === 'unit:level') {
+      return event.unitId === effect.attackerId;
     }
     return false;
   });

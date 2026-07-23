@@ -231,6 +231,8 @@ export interface AttackEffect {
   id: string;
   attackerId: string;
   targetId: string;
+  timelineStartIndex?: number;
+  timelineEndIndex?: number;
   fromQ: number;
   fromR: number;
   toQ: number;

@@ -76,6 +76,60 @@ test('spotters enable indirect fire while terrain still blocks direct fire', asy
   ))).toBe(true);
 });
 
+test('an indirect transport kill reveals the carrier and passenger only after impact', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await startBattle(page, 'sector-paris');
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+
+  const setup = await page.evaluate(() => {
+    const control = (window as any).__battleControl;
+    const loaded = control.loadDefinitions(['m113', 'light-infantry', 'ironroot-colossus']);
+    const carrier = loaded.loaded.find((unit: any) => unit.definitionId === 'm113');
+    const passenger = loaded.loaded.find((unit: any) => unit.definitionId === 'light-infantry');
+    const attacker = loaded.loaded.find((unit: any) => unit.definitionId === 'ironroot-colossus');
+    if (!carrier || !passenger || !attacker) return null;
+
+    control.snapUnit(carrier.id, 10, 8);
+    control.snapUnit(passenger.id, 10, 9);
+    control.snapUnit(attacker.id, 8, 8);
+    control.forceAllianceTurn();
+    control.setActionPoints(attacker.id, 99);
+    control.setHealth(carrier.id, 1);
+    control.revealAll();
+    const embark = control.embark(carrier.id, passenger.id);
+    const qaWindow = window as any;
+    qaWindow.__realDateNow = Date.now;
+    qaWindow.__impactOrderNow = Date.now();
+    Date.now = () => qaWindow.__impactOrderNow;
+    const attack = control.attackEnemyUnitWith(attacker.id, carrier.id, 'spore-mortar');
+    return {
+      embark,
+      attack
+    };
+  });
+
+  expect(setup).toMatchObject({
+    embark: { success: true },
+    attack: { success: true, weaponId: 'spore-mortar' }
+  });
+
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__battleControl.activeAttackEffects().at(-1)
+  ))).toMatchObject({ arc: true, killed: true });
+  const beforeImpactLog = await page.locator('.log-entries').innerText();
+  expect(beforeImpactLog).not.toContain('Destroyed: M113 IFV');
+  expect(beforeImpactLog).not.toContain('Destroyed: Light Infantry');
+
+  await page.evaluate(() => {
+    (window as any).__impactOrderNow += 800;
+  });
+  await expect(page.locator('.log-entries')).toContainText('Destroyed: M113 IFV');
+  await expect(page.locator('.log-entries')).toContainText('Destroyed: Light Infantry');
+  await page.evaluate(() => {
+    Date.now = (window as any).__realDateNow;
+  });
+});
+
 test('demolishing a blocker immediately opens direct fire and the range overlay', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await startBattle(page, 'sector-paris');

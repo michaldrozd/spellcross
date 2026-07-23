@@ -122,6 +122,8 @@ describe('combat timeline presentation', () => {
     id: 'rifle-shot',
     attackerId: 'squad-1',
     targetId: 'enemy-1',
+    timelineStartIndex: 20,
+    timelineEndIndex: 25,
     startTime: 1000,
     type: 'gunshot' as const,
     killed: true
@@ -146,27 +148,59 @@ describe('combat timeline presentation', () => {
   it('reveals direct-fire results exactly when the visible shot arrives', () => {
     const impactAt = 1000 + combatEffectTiming('gunshot').impactAtMs;
 
-    expect(combatTimelineEventVisible(hitEvent, [directEffect], impactAt - 1)).toBe(false);
-    expect(combatTimelineEventVisible(defeatEvent, [directEffect], impactAt - 1)).toBe(false);
-    expect(combatTimelineEventVisible(hitEvent, [directEffect], impactAt)).toBe(true);
-    expect(combatTimelineEventVisible(defeatEvent, [directEffect], impactAt)).toBe(true);
+    expect(combatTimelineEventVisible(hitEvent, [directEffect], impactAt - 1, 20)).toBe(false);
+    expect(combatTimelineEventVisible(defeatEvent, [directEffect], impactAt - 1, 21)).toBe(false);
+    expect(combatTimelineEventVisible(hitEvent, [directEffect], impactAt, 20)).toBe(true);
+    expect(combatTimelineEventVisible(defeatEvent, [directEffect], impactAt, 21)).toBe(true);
   });
 
   it('keeps indirect-fire results hidden for the full shell flight', () => {
     const impactAt = 1000 + combatEffectTiming('explosion', true).impactAtMs;
 
-    expect(combatTimelineEventVisible(hitEvent, [indirectEffect], impactAt - 1)).toBe(false);
-    expect(combatTimelineEventVisible(defeatEvent, [indirectEffect], impactAt - 1)).toBe(false);
-    expect(combatTimelineEventVisible(hitEvent, [indirectEffect], impactAt)).toBe(true);
+    expect(combatTimelineEventVisible(hitEvent, [indirectEffect], impactAt - 1, 20)).toBe(false);
+    expect(combatTimelineEventVisible(defeatEvent, [indirectEffect], impactAt - 1, 21)).toBe(false);
+    expect(combatTimelineEventVisible(hitEvent, [indirectEffect], impactAt, 20)).toBe(true);
+  });
+
+  it('holds correlated passenger defeats and attacker promotions until impact', () => {
+    const beforeImpact = 1000 + combatEffectTiming('explosion', true).impactAtMs - 1;
+
+    expect(combatTimelineEventVisible(
+      { kind: 'unit:defeated', unitId: 'passenger-1', by: 'squad-1' },
+      [indirectEffect],
+      beforeImpact,
+      23
+    )).toBe(false);
+    expect(combatTimelineEventVisible(
+      { kind: 'unit:level', unitId: 'squad-1' },
+      [indirectEffect],
+      beforeImpact,
+      24
+    )).toBe(false);
+  });
+
+  it('does not re-hide an older result when the same pair fires again', () => {
+    const secondShot = {
+      ...indirectEffect,
+      id: 'second-howitzer-shot',
+      timelineStartIndex: 30,
+      timelineEndIndex: 35,
+      startTime: 2000
+    };
+    const firstImpact = 1000 + combatEffectTiming('explosion', true).impactAtMs;
+
+    expect(combatTimelineEventVisible(hitEvent, [indirectEffect, secondShot], firstImpact, 20)).toBe(true);
+    expect(combatTimelineEventVisible(hitEvent, [indirectEffect, secondShot], 2001, 30)).toBe(false);
   });
 
   it('does not delay unrelated timeline entries', () => {
     expect(combatTimelineEventVisible(
       { ...hitEvent, defenderId: 'enemy-2' },
       [indirectEffect],
-      1001
+      1001,
+      20
     )).toBe(true);
-    expect(combatTimelineEventVisible({ kind: 'round:started' }, [indirectEffect], 1001)).toBe(true);
+    expect(combatTimelineEventVisible({ kind: 'round:started' }, [indirectEffect], 1001, 19)).toBe(true);
   });
 });
 

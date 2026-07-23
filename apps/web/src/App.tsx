@@ -889,6 +889,8 @@ const BattleView: React.FC<{
         id: effect.id,
         attackerId: effect.attackerId,
         targetId: effect.targetId,
+        timelineStartIndex: effect.timelineStartIndex,
+        timelineEndIndex: effect.timelineEndIndex,
         type: effect.type,
         arc: effect.arc,
         hit: effect.hit,
@@ -1520,7 +1522,9 @@ const BattleView: React.FC<{
   // invisible and a reaction kill never reads as "the enemy died for no reason".
   const playReactionVfx = (moverId: string, moving: MovingUnit | null, timelineBefore: number) => {
     let shots = 0;
-    for (const ev of battle.state.timeline.slice(timelineBefore)) {
+    const reactionEvents = battle.state.timeline.slice(timelineBefore);
+    for (let eventOffset = 0; eventOffset < reactionEvents.length; eventOffset += 1) {
+      const ev = reactionEvents[eventOffset];
       if (ev.kind !== 'unit:attacked' || ev.defenderId !== moverId) continue;
       const shooter = findBattleUnit(ev.attackerId);
       const target = findBattleUnit(ev.defenderId);
@@ -1536,7 +1540,7 @@ const BattleView: React.FC<{
         moraleDamage: ev.moraleDamage ?? 0,
         killed,
         attackMode: ev.attackMode ?? 'normal'
-      }, delay, reactAt);
+      }, delay, reactAt, timelineBefore + eventOffset);
       aiSfxTimeoutsRef.current.push(window.setTimeout(() => {
         AudioManager.play(sfx);
         if (ev.hit !== false) window.setTimeout(() => AudioManager.play(killed ? 'death' : 'hit', { intensity: Math.min(1, (ev.damage ?? 0) / 25), material: impactMaterialFor(target), pan: impactPanFor(target, battle.state.map) }), timing.impactAtMs);
@@ -1621,7 +1625,8 @@ const BattleView: React.FC<{
     weaponId: string,
     outcome: { hit: boolean; damage: number; moraleDamage: number; killed: boolean; attackMode: 'normal' | 'suppressive' },
     delay = 0,
-    atCoord?: { q: number; r: number }
+    atCoord?: { q: number; r: number },
+    attackEventIndex?: number
   ) => {
     const to = atCoord ?? defender.coordinate;
     const presentation = combatEffectForShot(attacker.definitionId, weaponId, outcome.attackMode);
@@ -1644,10 +1649,36 @@ const BattleView: React.FC<{
       () => showPhaseNotice(noticeTitle, noticeDetail, noticeTone),
       delay + timing.impactAtMs
     );
+    let timelineStartIndex = attackEventIndex;
+    if (timelineStartIndex === undefined) {
+      for (let index = battle.state.timeline.length - 1; index >= 0; index -= 1) {
+        const event = battle.state.timeline[index];
+        if (
+          event.kind === 'unit:attacked'
+          && event.attackerId === attacker.id
+          && event.defenderId === defender.id
+        ) {
+          timelineStartIndex = index;
+          break;
+        }
+      }
+    }
+    let timelineEndIndex: number | undefined;
+    if (timelineStartIndex !== undefined) {
+      timelineEndIndex = battle.state.timeline.length;
+      for (let index = timelineStartIndex + 1; index < battle.state.timeline.length; index += 1) {
+        if (battle.state.timeline[index]?.kind === 'unit:attacked') {
+          timelineEndIndex = index;
+          break;
+        }
+      }
+    }
     setAttackEffects(prev => [...prev, {
       id: `${attacker.id}-${defender.id}-${nextEffectId()}`,
       attackerId: attacker.id,
       targetId: defender.id,
+      timelineStartIndex,
+      timelineEndIndex,
       fromQ: attacker.coordinate.q,
       fromR: attacker.coordinate.r,
       toQ: to.q,
@@ -2406,9 +2437,9 @@ const BattleView: React.FC<{
     setAutoTurnPhase(null);
   };
   const battleLogNow = Date.now();
-  const visibleBattleLogEvents = battle.state.timeline.filter((event) =>
+  const visibleBattleLogEvents = battle.state.timeline.filter((event, eventIndex) =>
     event.kind !== 'unit:xp'
-    && combatTimelineEventVisible(event, attackEffects, battleLogNow)
+    && combatTimelineEventVisible(event, attackEffects, battleLogNow, eventIndex)
   );
   return (
     <div className="battle-screen">
