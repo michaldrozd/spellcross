@@ -86,7 +86,7 @@ test('supply truck uses directional motion and a full-length wheeled sound cue',
 
   expect(started.accepted).toBe(true);
   expect(started.animation.path).toHaveLength(setup.route!.path.length + 1);
-  expect(started.animation.segmentTurnDuration).toBe(180);
+  expect(started.animation.segmentTurnDuration).toBe(320);
   expect(started.audio.profile).toBe('wheel');
   expect(started.audio.requestedDurationMs).toBeGreaterThan(2_600);
   expect(started.audio.scheduledDurationSeconds).toBeCloseTo(started.audio.requestedDurationMs / 1000, 3);

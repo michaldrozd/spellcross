@@ -53,7 +53,9 @@ import {
   unitContactFootprint,
   unitPointerArea,
   unitVisualHeight,
+  vehicleDustEnvelope,
   vehicleMotionEnvelope,
+  vehicleRunningGearKind,
   vehicleSheetDirectionNameForOrientation,
   vehicleSheetDirectionNameForScreenVector,
   vehicleTurnCrossfade,
@@ -72,6 +74,8 @@ settings.ROUND_PIXELS = true;
 
 const webglContextNames = ['webgl2', 'webgl', 'experimental-webgl'] as const;
 const EMPTY_TILE_SET = new Set<number>();
+const VEHICLE_SIDE_OFFSETS = [-1, 1] as const;
+const WHEELED_AXLE_POSITIONS = [-0.43, -0.13, 0.42] as const;
 
 const hasWebGLRenderer = () => {
   if (typeof document === 'undefined') return true;
@@ -5167,6 +5171,7 @@ export function BattlefieldStage({
         let vehicleTurnProgress = 0;
         let vehicleTurnDirection = 0;
         let vehicleMotionIntensity = 0;
+        let vehicleDustIntensity = 0;
         let moveScreenVector = orientationScreenVector(animatedOrientation);
         let movingBaseHeight: number | undefined;
         let easedProgress = 0;
@@ -5174,6 +5179,7 @@ export function BattlefieldStage({
         const definitionId = unit.definitionId.toLowerCase();
         const isSupportVehicle = isSupportVehicleDefinition(unitType, definitionId);
         const isGroundVehicle = unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicle;
+        const runningGearKind = vehicleRunningGearKind(unitType, definitionId);
         const unitDirectionalSprite = battlefieldDirectionalSprite(unitType, definitionId);
 
         if (movingUnit && movingUnit.unitId === unit.id && activeMovementFrame) {
@@ -5199,6 +5205,7 @@ export function BattlefieldStage({
           movementPhase = framePhase;
           displayCoord = animatedCoord;
           vehicleMotionIntensity = isGroundVehicle ? vehicleMotionEnvelope(activeMovementFrame) : 0;
+          vehicleDustIntensity = isGroundVehicle ? vehicleDustEnvelope(activeMovementFrame) : 0;
 
           const fromIdx = fromCoord.r * map.width + fromCoord.q;
           const toIdx = toCoord.r * map.width + toCoord.q;
@@ -5253,6 +5260,7 @@ export function BattlefieldStage({
           ? Math.max(0, now - movingUnit.startTime - (movingUnit.preAlignDuration ?? 0)) / 360
           : movementPhase;
         const locomotionPhase = isGroundVehicle ? movementPhase : stridePhase;
+        const vehicleGearPhase = (((locomotionPhase * 2.8 + (turningThisUnit ? vehicleTurnProgress * 1.6 : 0)) % 1) + 1) % 1;
         const stepWave = movingThisUnit ? Math.sin(locomotionPhase * Math.PI * 2) : 0;
         const fastWave = movingThisUnit ? Math.sin(locomotionPhase * Math.PI * 4) : 0;
         const strideLift = Math.abs(stepWave);
@@ -5549,16 +5557,8 @@ export function BattlefieldStage({
                     const baseAlpha = isSelected || isTarget ? (isFriendly ? 0.18 : 0.26) : (isFriendly ? 0.20 : 0.26);
                     const baseRx = isGroundVehicle ? footprint.rx * 0.48 : footprint.rx * 1.14;
                     const baseRy = isGroundVehicle ? footprint.ry * 0.4 : footprint.ry * (1.22 - strideLift * 0.08);
-                    const isTrackedContact = definitionId.includes('m113')
-                      || definitionId.includes('apc')
-                      || definitionId.includes('ifv')
-                      || definitionId.includes('tank')
-                      || definitionId.includes('leopard')
-                      || definitionId.includes('abrams')
-                      || definitionId.includes('artillery')
-                      || definitionId.includes('howitzer')
-                      || definitionId.includes('mlrs');
-                    const isWheeledContact = unitType === 'support' && definitionId.includes('truck');
+                    const isTrackedContact = runningGearKind === 'tracked';
+                    const isWheeledContact = runningGearKind === 'wheeled';
                     const shadowAlpha = isGroundVehicle ? (movingThisUnit || turningThisUnit ? 0.16 : 0.19) : footprint.alpha;
                     const shadowRx = isGroundVehicle ? footprint.rx * 0.44 : footprint.rx;
                     const shadowRy = isGroundVehicle ? footprint.ry * 0.36 : footprint.ry;
@@ -5590,10 +5590,10 @@ export function BattlefieldStage({
                       const contactY = unitDirectionalSprite === 'tank_directional'
                         ? footprint.y - tileSize * 0.055
                         : footprint.y - tileSize * 0.002;
-                      for (const sideOffset of [-1, 1]) {
+                      for (const sideOffset of VEHICLE_SIDE_OFFSETS) {
                         const ox = perpX * trackGap * sideOffset;
                         const oy = perpY * trackGap * sideOffset;
-                        g.lineStyle(2.15, 0x030503, isSelected ? 0.58 : 0.5);
+                        g.lineStyle(2.45, 0x030503, isSelected ? 0.72 : 0.64);
                         g.moveTo(ox - contactVector.x * trackHalf, contactY + oy - contactVector.y * trackHalf * 0.11);
                         g.lineTo(ox + contactVector.x * trackHalf, contactY + oy + contactVector.y * trackHalf * 0.11);
                       }
@@ -5601,17 +5601,17 @@ export function BattlefieldStage({
                         g.lineStyle();
                         const rearX = -contactVector.x * footprint.rx * 0.58;
                         const rearY = footprint.y - contactVector.y * footprint.ry * 0.42;
-                        const dustPulse = vehicleMotionIntensity * (0.66 + 0.16 * Math.abs(fastWave));
-                        for (let dustIndex = 0; dustIndex < 3; dustIndex += 1) {
-                          const dustAge = (((movementPhase * 0.62) % 1 + 1) % 1 + dustIndex / 3) % 1;
-                          const dustAlpha = (1 - dustAge) * 0.075 * dustPulse;
+                        const dustPulse = vehicleDustIntensity * (0.82 + 0.18 * Math.abs(fastWave));
+                        for (let dustIndex = 0; dustIndex < 4; dustIndex += 1) {
+                          const dustAge = (vehicleGearPhase + dustIndex / 4) % 1;
+                          const dustAlpha = (1 - dustAge) * 0.17 * dustPulse;
                           const side = dustIndex % 2 === 0 ? -1 : 1;
-                          g.beginFill(dustIndex === 0 ? 0xe0d1a7 : 0xcdbf99, dustAlpha);
+                          g.beginFill(dustIndex === 0 ? 0xb7a77f : 0x8e8164, dustAlpha * 0.78);
                           g.drawEllipse(
-                            rearX - contactVector.x * footprint.rx * (0.3 + dustAge * 0.58) + perpX * side * footprint.ry * (0.14 + dustAge * 0.22),
-                            rearY - contactVector.y * footprint.ry * (0.16 + dustAge * 0.32) + perpY * side * footprint.ry * 0.15 - dustAge * tileSize * 0.028,
-                            footprint.rx * (0.075 + dustAge * 0.12),
-                            footprint.ry * (0.05 + dustAge * 0.065)
+                            rearX - contactVector.x * footprint.rx * (0.22 + dustAge * 0.72) + perpX * side * footprint.ry * (0.12 + dustAge * 0.3),
+                            rearY - contactVector.y * footprint.ry * (0.12 + dustAge * 0.4) + perpY * side * footprint.ry * 0.16 - dustAge * tileSize * 0.035,
+                            footprint.rx * (0.095 + dustAge * 0.16),
+                            Math.max(0.9, footprint.ry * (0.065 + dustAge * 0.09))
                           );
                           g.endFill();
                         }
@@ -5626,24 +5626,24 @@ export function BattlefieldStage({
                       const perpY = contactVector.x;
                       const wheelGap = footprint.ry * 0.78;
                       const contactY = footprint.y + tileSize * 0.004;
-                      const wheelRotation = locomotionPhase * Math.PI * 4;
-                      for (const axlePosition of [-0.43, -0.13, 0.42]) {
-                        for (const sideOffset of [-1, 1]) {
+                      const wheelRotation = vehicleGearPhase * Math.PI * 2;
+                      for (const axlePosition of WHEELED_AXLE_POSITIONS) {
+                        for (const sideOffset of VEHICLE_SIDE_OFFSETS) {
                           const along = footprint.rx * axlePosition;
                           const side = wheelGap * sideOffset;
                           const wheelX = contactVector.x * along + perpX * side;
                           const wheelY = contactY + contactVector.y * along * 0.2 + perpY * side;
-                          const wheelRx = footprint.rx * 0.075;
-                          const wheelRy = Math.max(0.62, footprint.ry * 0.13);
+                          const wheelRx = footprint.rx * 0.09;
+                          const wheelRy = Math.max(0.74, footprint.ry * 0.16);
                           g.lineStyle();
-                          g.beginFill(0x060705, isSelected ? 0.58 : 0.5);
+                          g.beginFill(0x050604, isSelected ? 0.7 : 0.62);
                           g.drawEllipse(wheelX, wheelY, wheelRx, wheelRy);
                           g.endFill();
-                          g.lineStyle(0.55, 0x57584b, 0.5);
+                          g.lineStyle(0.8, 0x666858, 0.72);
                           g.drawEllipse(wheelX, wheelY, wheelRx * 0.66, wheelRy * 0.66);
                           if (movingThisUnit || turningThisUnit) {
                             const spokeAngle = wheelRotation + axlePosition * Math.PI;
-                            g.lineStyle(0.55, 0xa29a72, 0.2 + vehicleMotionIntensity * 0.28);
+                            g.lineStyle(0.95, 0xc0b68a, 0.46 + vehicleMotionIntensity * 0.38);
                             g.moveTo(
                               wheelX - Math.cos(spokeAngle) * wheelRx * 0.72,
                               wheelY - Math.sin(spokeAngle) * wheelRy * 0.72
@@ -5659,16 +5659,16 @@ export function BattlefieldStage({
                         g.lineStyle();
                         const rearX = -contactVector.x * footprint.rx * 0.64;
                         const rearY = footprint.y - contactVector.y * footprint.ry * 0.46;
-                        const dustPulse = vehicleMotionIntensity * (0.62 + 0.16 * Math.abs(fastWave));
-                        for (let dustIndex = 0; dustIndex < 3; dustIndex += 1) {
-                          const dustAge = (((movementPhase * 0.62) % 1 + 1) % 1 + dustIndex / 3) % 1;
+                        const dustPulse = vehicleDustIntensity * (0.8 + 0.2 * Math.abs(fastWave));
+                        for (let dustIndex = 0; dustIndex < 4; dustIndex += 1) {
+                          const dustAge = (vehicleGearPhase + dustIndex / 4) % 1;
                           const side = dustIndex % 2 === 0 ? -1 : 1;
-                          g.beginFill(dustIndex === 0 ? 0xe0d1a7 : 0xcdbf99, (1 - dustAge) * 0.07 * dustPulse);
+                          g.beginFill(dustIndex === 0 ? 0xb7a77f : 0x8e8164, (1 - dustAge) * 0.125 * dustPulse);
                           g.drawEllipse(
-                            rearX - contactVector.x * footprint.rx * (0.28 + dustAge * 0.62) + perpX * side * footprint.ry * (0.12 + dustAge * 0.2),
-                            rearY - contactVector.y * footprint.ry * (0.14 + dustAge * 0.34) + perpY * side * footprint.ry * 0.14 - dustAge * tileSize * 0.026,
-                            footprint.rx * (0.07 + dustAge * 0.11),
-                            footprint.ry * (0.045 + dustAge * 0.06)
+                            rearX - contactVector.x * footprint.rx * (0.22 + dustAge * 0.74) + perpX * side * footprint.ry * (0.1 + dustAge * 0.28),
+                            rearY - contactVector.y * footprint.ry * (0.1 + dustAge * 0.42) + perpY * side * footprint.ry * 0.14 - dustAge * tileSize * 0.034,
+                            footprint.rx * (0.09 + dustAge * 0.15),
+                            Math.max(0.9, footprint.ry * (0.06 + dustAge * 0.085))
                           );
                           g.endFill();
                         }
@@ -5728,7 +5728,7 @@ export function BattlefieldStage({
                       g.drawEllipse(rearX - moveScreenVector.x * footprint.rx * 0.34, rearY - moveScreenVector.y * footprint.ry * 0.18, footprint.rx * 0.27, footprint.ry * 0.15);
                       g.drawEllipse(rearX - moveScreenVector.x * footprint.rx * 0.62 + perpX * footprint.ry * 0.3, rearY - moveScreenVector.y * footprint.ry * 0.34 + perpY * footprint.ry * 0.3, footprint.rx * 0.19, footprint.ry * 0.11);
                       g.endFill();
-                      for (const sideOffset of [-1, 1]) {
+                      for (const sideOffset of VEHICLE_SIDE_OFFSETS) {
                         const ox = perpX * trackGap * sideOffset;
                         const oy = perpY * trackGap * sideOffset;
                         g.lineStyle(2.2, 0x050706, 0.46);
@@ -6098,7 +6098,7 @@ export function BattlefieldStage({
                   ) : null}
                   {isVehicleUnit
                     && (movingThisUnit || turningThisUnit)
-                    && directionalSprite === 'm113_apc' ? (
+                    && runningGearKind ? (
                     <Graphics
                       zIndex={1.04}
                       draw={(g) => {
@@ -6107,22 +6107,56 @@ export function BattlefieldStage({
                         const forwardY = moveScreenVector.y;
                         const sideX = -forwardY;
                         const sideY = forwardX;
-                        const gearPhase = (((locomotionPhase * 3 + (turningThisUnit ? vehicleTurnProgress * 1.4 : 0)) % 1) + 1) % 1;
-                        const trackLength = tileSize * 0.13;
-                        const trackGap = tileSize * 0.055;
-                        const trackY = groundOffsetY - tileSize * 0.08;
-                        for (let sideIndex = -1; sideIndex <= 1; sideIndex += 2) {
-                          const offsetX = sideX * trackGap * sideIndex;
-                          const offsetY = sideY * trackGap * sideIndex * 0.34;
-                          for (let treadIndex = 0; treadIndex < 5; treadIndex += 1) {
-                            const amount = ((treadIndex + gearPhase) % 5) / 4;
-                            const along = -trackLength + amount * trackLength * 2;
-                            const treadX = offsetX + forwardX * along;
-                            const treadY = trackY + offsetY + forwardY * along * 0.34;
-                            const treadHalf = Math.max(1, tileSize * 0.018);
-                            g.lineStyle(0.75, 0x77775f, 0.24 + vehicleMotionIntensity * 0.3);
-                            g.moveTo(treadX - sideX * treadHalf, treadY - sideY * treadHalf * 0.38);
-                            g.lineTo(treadX + sideX * treadHalf, treadY + sideY * treadHalf * 0.38);
+                        if (runningGearKind === 'tracked') {
+                          const trackLength = tileSize * (directionalSprite === 'tank_directional' ? 0.155 : 0.14);
+                          const trackGap = tileSize * 0.06;
+                          const trackY = groundOffsetY - tileSize * (directionalSprite === 'tank_directional' ? 0.068 : 0.078);
+                          for (let sideIndex = -1; sideIndex <= 1; sideIndex += 2) {
+                            const offsetX = sideX * trackGap * sideIndex;
+                            const offsetY = sideY * trackGap * sideIndex * 0.34;
+                            for (let treadIndex = 0; treadIndex < 7; treadIndex += 1) {
+                              const amount = ((treadIndex + vehicleGearPhase) % 7) / 6;
+                              const along = -trackLength + amount * trackLength * 2;
+                              const treadX = offsetX + forwardX * along;
+                              const treadY = trackY + offsetY + forwardY * along * 0.34;
+                              const treadHalf = Math.max(1.15, tileSize * 0.021);
+                              g.lineStyle(
+                                1.05,
+                                treadIndex % 2 === 0
+                                  ? (isFriendly ? 0xa8a17c : 0x9a755f)
+                                  : (isFriendly ? 0x817f63 : 0x765b4f),
+                                0.42 + vehicleMotionIntensity * 0.28
+                              );
+                              g.moveTo(treadX - sideX * treadHalf, treadY - sideY * treadHalf * 0.38);
+                              g.lineTo(treadX + sideX * treadHalf, treadY + sideY * treadHalf * 0.38);
+                            }
+                          }
+                        } else {
+                          const wheelFootprintRx = tileSize * (unitType === 'artillery' ? 0.3 : 0.31);
+                          const wheelFootprintRy = tileSize * (unitType === 'artillery' ? 0.075 : 0.082);
+                          const contactY = tileSize * (unitType === 'artillery' ? 0.064 : 0.039);
+                          const wheelGap = wheelFootprintRy * 0.78;
+                          const wheelAngle = vehicleGearPhase * Math.PI * 2;
+                          for (const axlePosition of WHEELED_AXLE_POSITIONS) {
+                            for (let sideIndex = -1; sideIndex <= 1; sideIndex += 2) {
+                              const wheelX = forwardX * wheelFootprintRx * axlePosition + sideX * wheelGap * sideIndex;
+                              const wheelY = contactY + forwardY * wheelFootprintRx * axlePosition * 0.2 + sideY * wheelGap * sideIndex;
+                              const radiusX = wheelFootprintRx * 0.065;
+                              const radiusY = Math.max(0.7, wheelFootprintRy * 0.13);
+                              const spokeAngle = wheelAngle + axlePosition * Math.PI;
+                              g.lineStyle(1.05, 0xd0c294, 0.54 + vehicleMotionIntensity * 0.34);
+                              g.moveTo(
+                                wheelX - Math.cos(spokeAngle) * radiusX,
+                                wheelY - Math.sin(spokeAngle) * radiusY
+                              );
+                              g.lineTo(
+                                wheelX + Math.cos(spokeAngle) * radiusX,
+                                wheelY + Math.sin(spokeAngle) * radiusY
+                              );
+                              g.beginFill(0x292a22, 0.76);
+                              g.drawCircle(wheelX, wheelY, 0.7);
+                              g.endFill();
+                            }
                           }
                         }
                       }}

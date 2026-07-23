@@ -41,7 +41,10 @@ import {
   resolveMovementFrame,
   unitContactFootprint,
   unitVisualHeight,
+  VEHICLE_TURN_DURATION_MS,
+  vehicleDustEnvelope,
   vehicleMotionEnvelope,
+  vehicleRunningGearKind,
   vehicleSheetDirectionNameForOrientation,
   vehicleSheetDirectionNameForScreenVector,
   vehicleTurnCrossfade,
@@ -296,12 +299,12 @@ describe('resolveMovementFrame', () => {
       path: [{ q: 2, r: 2 }, { q: 3, r: 2 }],
       startTime: 1000,
       stepDuration: 400,
-      preAlignDuration: 180,
-      segmentTurnDuration: 180,
+      preAlignDuration: VEHICLE_TURN_DURATION_MS,
+      segmentTurnDuration: VEHICLE_TURN_DURATION_MS,
       initialOrientation: 3
     };
-    const midpoint = resolveMovementFrame(movement, 1090);
-    const firstMovingFrame = resolveMovementFrame(movement, 1180);
+    const midpoint = resolveMovementFrame(movement, 1000 + VEHICLE_TURN_DURATION_MS / 2);
+    const firstMovingFrame = resolveMovementFrame(movement, 1000 + VEHICLE_TURN_DURATION_MS);
 
     expect(midpoint).toMatchObject({
       displayCoord: { q: 2, r: 2 },
@@ -746,13 +749,53 @@ describe('vehicleMotionEnvelope', () => {
       isInitialTurnPhase: true
     };
     expect(vehicleMotionEnvelope(initialTurn)).toBe(0);
-    expect(vehicleMotionEnvelope({ ...initialTurn, turnProgress: 0.5 })).toBeCloseTo(0.38);
+    expect(vehicleMotionEnvelope({ ...initialTurn, turnProgress: 0.5 })).toBeCloseTo(0.68);
     expect(vehicleMotionEnvelope({ ...initialTurn, turnProgress: 1 })).toBeCloseTo(0);
 
     const midPathTurn = { ...initialTurn, isInitialTurnPhase: false };
     expect(vehicleMotionEnvelope(midPathTurn)).toBe(1);
-    expect(vehicleMotionEnvelope({ ...midPathTurn, turnProgress: 0.5 })).toBeCloseTo(0.38);
+    expect(vehicleMotionEnvelope({ ...midPathTurn, turnProgress: 0.5 })).toBeCloseTo(0.72);
     expect(vehicleMotionEnvelope({ ...midPathTurn, turnProgress: 1 })).toBeCloseTo(1);
+  });
+});
+
+describe('vehicle secondary motion', () => {
+  const movingFrame = {
+    isFirstSegment: true,
+    isLastSegment: false,
+    isMoving: true,
+    isTurnPhase: false,
+    isInitialTurnPhase: false,
+    stepProgress: 0,
+    turnProgress: 0
+  };
+
+  it('gives acceleration, braking, and corner pivots readable dust pulses', () => {
+    expect(vehicleDustEnvelope(movingFrame)).toBe(0);
+    expect(vehicleDustEnvelope({ ...movingFrame, stepProgress: 0.16 })).toBeGreaterThan(0.9);
+    expect(vehicleDustEnvelope({
+      ...movingFrame,
+      isFirstSegment: false,
+      isLastSegment: true,
+      stepProgress: 0.84
+    })).toBeGreaterThan(0.9);
+    expect(vehicleDustEnvelope({
+      ...movingFrame,
+      isMoving: false,
+      isTurnPhase: true,
+      stepProgress: 1,
+      turnProgress: 0.5
+    })).toBeGreaterThan(0.45);
+  });
+
+  it('classifies visible running gear without putting wheels on static crews or structures', () => {
+    expect(vehicleRunningGearKind('vehicle', 'm113')).toBe('tracked');
+    expect(vehicleRunningGearKind('vehicle', 'leopard-2')).toBe('tracked');
+    expect(vehicleRunningGearKind('support', 'supply-truck')).toBe('wheeled');
+    expect(vehicleRunningGearKind('support', 'horizon-radar')).toBe('wheeled');
+    expect(vehicleRunningGearKind('artillery', 'firefly-105')).toBe('wheeled');
+    expect(vehicleRunningGearKind('artillery', 'mortar-team')).toBeNull();
+    expect(vehicleRunningGearKind('artillery', 'arrow-tower')).toBeNull();
   });
 });
 

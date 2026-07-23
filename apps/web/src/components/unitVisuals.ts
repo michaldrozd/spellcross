@@ -392,6 +392,8 @@ export type MovementFrame = {
   isMoving: boolean;
 };
 
+export const VEHICLE_TURN_DURATION_MS = 320;
+
 const orientationForVisualStep = (from: VisualCoordinate, to: VisualCoordinate) => {
   const dq = Math.sign(to.q - from.q);
   const dr = Math.sign(to.r - from.r);
@@ -542,14 +544,30 @@ export const vehicleTurnScaleY = (progress: number) =>
   1 + Math.sin(Math.min(1, Math.max(0, progress)) * Math.PI) * 0.012;
 
 export const vehicleMotionEnvelope = (frame: Pick<MovementFrame, 'isFirstSegment' | 'isLastSegment' | 'isMoving' | 'isTurnPhase' | 'isInitialTurnPhase' | 'stepProgress' | 'turnProgress'>) => {
-  if (frame.isInitialTurnPhase) return Math.sin(frame.turnProgress * Math.PI) * 0.38;
-  if (frame.isTurnPhase) return 1 - Math.sin(frame.turnProgress * Math.PI) * 0.62;
+  if (frame.isInitialTurnPhase) return Math.sin(frame.turnProgress * Math.PI) * 0.68;
+  if (frame.isTurnPhase) return 1 - Math.sin(frame.turnProgress * Math.PI) * 0.28;
   if (!frame.isMoving) return 0;
 
   const rampWindow = 0.24;
   const acceleration = frame.isFirstSegment ? smoothClamped(frame.stepProgress / rampWindow) : 1;
   const braking = frame.isLastSegment ? smoothClamped((1 - frame.stepProgress) / rampWindow) : 1;
   return Math.min(acceleration, braking);
+};
+
+export const vehicleDustEnvelope = (frame: Pick<MovementFrame, 'isFirstSegment' | 'isLastSegment' | 'isMoving' | 'isTurnPhase' | 'isInitialTurnPhase' | 'stepProgress' | 'turnProgress'>) => {
+  if (frame.isInitialTurnPhase) return Math.sin(frame.turnProgress * Math.PI) * 0.32;
+  if (frame.isTurnPhase) return 0.34 + Math.sin(frame.turnProgress * Math.PI) * 0.18;
+  if (!frame.isMoving) return 0;
+
+  const motion = vehicleMotionEnvelope(frame);
+  const burstWindow = 0.32;
+  const startBurst = frame.isFirstSegment && frame.stepProgress < burstWindow
+    ? Math.sin((frame.stepProgress / burstWindow) * Math.PI)
+    : 0;
+  const stopBurst = frame.isLastSegment && frame.stepProgress > 1 - burstWindow
+    ? Math.sin(((frame.stepProgress - (1 - burstWindow)) / burstWindow) * Math.PI)
+    : 0;
+  return Math.min(1, motion * 0.56 + Math.max(startBurst, stopBurst) * 0.62);
 };
 
 export function rangeOverlayStyle(externalTexturesAreColored: boolean) {
@@ -770,6 +788,16 @@ const STRUCTURE_WRECK_IDS = new Set([
   'bone-ballista',
   'dread-fortress'
 ]);
+
+export type VehicleRunningGearKind = 'tracked' | 'wheeled';
+
+export function vehicleRunningGearKind(unitType: string, definitionId: string): VehicleRunningGearKind | null {
+  const id = definitionId;
+  if (STRUCTURE_WRECK_IDS.has(id) || id === 'mortar-team') return null;
+  if (WHEELED_WRECK_IDS.has(id) || id.includes('truck')) return 'wheeled';
+  if (unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicleDefinition(unitType, id)) return 'tracked';
+  return null;
+}
 
 const RIFLE_FOOT_IDS = new Set([
   'antitank-orc',

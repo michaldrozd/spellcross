@@ -259,8 +259,8 @@ test('vehicle movement exposes its initial turn before leaving the start tile', 
     unitId: setup!.vehicleId,
     path: expect.arrayContaining([setup!.from, setup!.to]),
     initialOrientation: setup!.initialOrientation,
-    preAlignDuration: 180,
-    segmentTurnDuration: 180
+    preAlignDuration: 320,
+    segmentTurnDuration: 320
   });
   expect(setup!.firstOrientation).not.toBe(setup!.initialOrientation);
 });
@@ -356,7 +356,7 @@ test('m113 movement keeps turn-boundary animation time for multi-step paths', as
   expect(timing.started).toBeTruthy();
   expect(timing.state).toMatchObject({
     unitId: setup!.vehicleId,
-    segmentTurnDuration: 180
+    segmentTurnDuration: 320
   });
   expect(timing.actualTurnCount).toBeGreaterThan(0);
   expect(timing.survivedFirstTurn).toBeTruthy();

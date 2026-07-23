@@ -73,7 +73,7 @@ import { PostureActions } from './components/PostureActions.js';
 import { StrategicHQ } from './components/StrategicHQ.js';
 import { SupplyButton } from './components/SupplyButton.js';
 import { ToastContainer, showToast } from './components/Toast.js';
-import { battlefieldDirectionalSprite, unitPortrait } from './components/unitVisuals.js';
+import { VEHICLE_TURN_DURATION_MS, battlefieldDirectionalSprite, unitPortrait } from './components/unitVisuals.js';
 import i18n from './i18n/index.js';
 import { localizeOperationDossier } from './operationDossiers.js';
 import { AudioManager, movementSoundProfileFor, narrativeSoundTypeForOutcome } from './services/AudioManager.js';
@@ -91,7 +91,6 @@ const CAMPAIGN_SCHEMA_KEY = 'spellcross:campaign-schema';
 const CAMPAIGN_SCHEMA_VERSION = '2026-07-20-operation-cycle';
 const FOOT_STEP_DURATION_MS = 240;
 const VEHICLE_STEP_DURATION_MS = 420;
-const VEHICLE_TURN_DURATION_MS = 180;
 const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
 const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
 const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
