@@ -12,6 +12,7 @@ export type CombatEffectTiming = {
 
 export type TargetedCombatEffect = {
   id: string;
+  attackerId?: string;
   targetId: string;
   startTime: number;
   type: CombatEffectType;
@@ -20,12 +21,21 @@ export type TargetedCombatEffect = {
   killed: boolean;
 };
 
+export type CombatTimelinePresentationEvent = {
+  kind: string;
+  attackerId?: string;
+  defenderId?: string;
+  unitId?: string;
+  by?: string;
+};
+
 export type FirearmVisualProfile = {
   sheathWidth: number;
   coreWidth: number;
   highlightWidth: number;
   headRadius: number;
   tailFraction: number;
+  muzzleFlashMs: number;
 };
 
 export function firearmVisualProfile(type: 'gunshot' | 'sniper'): FirearmVisualProfile {
@@ -35,7 +45,8 @@ export function firearmVisualProfile(type: 'gunshot' | 'sniper'): FirearmVisualP
       coreWidth: 1.1,
       highlightWidth: 0.55,
       headRadius: 1.5,
-      tailFraction: 0.22
+      tailFraction: 0.22,
+      muzzleFlashMs: 90
     };
   }
   return {
@@ -43,13 +54,18 @@ export function firearmVisualProfile(type: 'gunshot' | 'sniper'): FirearmVisualP
     coreWidth: 0.82,
     highlightWidth: 0.38,
     headRadius: 1.18,
-    tailFraction: 0.1
+    tailFraction: 0.1,
+    muzzleFlashMs: 72
   };
 }
 
 export const CORPSE_TTL_MS = 20_000;
 export const CORPSE_FULL_OPACITY_MS = 8_000;
 export const WRECK_SMOKE_ANIMATION_MS = 24_000;
+export const DEATH_REACTION_HOLD_MS = 360;
+export const DEATH_REACTION_FADE_MS = 120;
+export const DEATH_REACTION_TOTAL_MS = DEATH_REACTION_HOLD_MS + DEATH_REACTION_FADE_MS;
+export const ARTILLERY_TRAIL_FRACTION = 0.28;
 
 export function combatEffectTypeForWeapon(definitionId: string, weaponId: string): CombatEffectType {
   const unitId = definitionId.toLowerCase();
@@ -110,6 +126,25 @@ export function combatImpactWindowMs(type: CombatEffectType, killed: boolean, ba
   return killed && type === 'explosion' ? Math.max(baseImpactMs, 1200) : baseImpactMs;
 }
 
+export function combatTimelineEventVisible(
+  event: CombatTimelinePresentationEvent,
+  attackEffects: readonly TargetedCombatEffect[],
+  now: number
+) {
+  return !attackEffects.some((effect) => {
+    if (!effect.attackerId) return false;
+    const impactAt = effect.startTime + combatEffectTiming(effect.type, effect.arc).impactAtMs;
+    if (now >= impactAt) return false;
+    if (event.kind === 'unit:attacked') {
+      return event.attackerId === effect.attackerId && event.defenderId === effect.targetId;
+    }
+    if (event.kind === 'unit:defeated') {
+      return effect.killed && event.unitId === effect.targetId && event.by === effect.attackerId;
+    }
+    return false;
+  });
+}
+
 export function activeKillingEffectForTarget<T extends TargetedCombatEffect>(
   attackEffects: readonly T[],
   targetId: string,
@@ -129,8 +164,17 @@ export function deathMarkerVisible(
 ) {
   if (!effect) return true;
   const timing = combatEffectTiming(effect.type, effect.arc);
-  if (now - effect.startTime < timing.impactAtMs) return false;
-  return mechanicalWreck;
+  const elapsedAfterImpact = now - effect.startTime - timing.impactAtMs;
+  if (elapsedAfterImpact < 0) return false;
+  return mechanicalWreck || elapsedAfterImpact >= DEATH_REACTION_TOTAL_MS;
+}
+
+export function deathReactionAlpha(elapsedAfterImpactMs: number) {
+  if (elapsedAfterImpactMs <= DEATH_REACTION_HOLD_MS) return 1;
+  if (elapsedAfterImpactMs >= DEATH_REACTION_TOTAL_MS) return 0;
+  const fade = (elapsedAfterImpactMs - DEATH_REACTION_HOLD_MS) / DEATH_REACTION_FADE_MS;
+  const easedFade = fade * fade * (3 - 2 * fade);
+  return 1 - easedFade;
 }
 
 export function deathMarkerExpired(createdAt: number, now: number, mechanicalWreck: boolean) {

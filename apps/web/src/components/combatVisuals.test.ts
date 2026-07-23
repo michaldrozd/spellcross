@@ -1,10 +1,16 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  ARTILLERY_TRAIL_FRACTION,
+  DEATH_REACTION_HOLD_MS,
+  DEATH_REACTION_TOTAL_MS,
   combatEffectForShot,
   combatEffectTiming,
+  combatTimelineEventVisible,
   combatEffectTypeForWeapon,
   deathMarkerFade,
+  deathMarkerVisible,
+  deathReactionAlpha,
   firearmVisualProfile
 } from './combatVisuals.js';
 
@@ -51,10 +57,12 @@ describe('combatEffectTiming', () => {
   it('gives indirect shells a longer readable arc', () => {
     const direct = combatEffectTiming('explosion');
     const indirect = combatEffectTiming('explosion', true);
+    const visibleTrailFramesAt60Fps = indirect.projectileMs * ARTILLERY_TRAIL_FRACTION / (1000 / 60);
 
     expect(indirect.projectileMs).toBeGreaterThan(direct.projectileMs);
     expect(indirect.impactAtMs).toBe(indirect.projectileMs);
     expect(indirect.totalMs).toBeGreaterThan(direct.totalMs);
+    expect(visibleTrailFramesAt60Fps).toBeGreaterThanOrEqual(8);
   });
 
   it('keeps a destroyed unit visible through a readable death reaction', () => {
@@ -73,9 +81,92 @@ describe('firearmVisualProfile', () => {
     expect(rifle.sheathWidth).toBeLessThanOrEqual(1.8);
     expect(rifle.coreWidth).toBeLessThanOrEqual(0.9);
     expect(rifle.headRadius).toBeLessThanOrEqual(1.4);
+    expect(rifle.muzzleFlashMs / (1000 / 60)).toBeGreaterThanOrEqual(4);
     expect(sniper.sheathWidth).toBeGreaterThan(rifle.sheathWidth);
     expect(sniper.coreWidth).toBeGreaterThan(rifle.coreWidth);
     expect(sniper.tailFraction).toBeGreaterThan(rifle.tailFraction);
+    expect(sniper.muzzleFlashMs).toBeGreaterThan(rifle.muzzleFlashMs);
+  });
+});
+
+describe('death reaction transition', () => {
+  const killingShot = {
+    id: 'shot-1',
+    targetId: 'squad-1',
+    startTime: 1000,
+    type: 'gunshot' as const,
+    killed: true
+  };
+
+  it('holds a readable hit reaction, then cuts cleanly to an organic corpse', () => {
+    const impactAt = 1000 + combatEffectTiming('gunshot').impactAtMs;
+
+    expect(deathReactionAlpha(0)).toBe(1);
+    expect(deathReactionAlpha(DEATH_REACTION_HOLD_MS)).toBe(1);
+    expect(deathReactionAlpha(DEATH_REACTION_TOTAL_MS - 1)).toBeGreaterThan(0);
+    expect(deathReactionAlpha(DEATH_REACTION_TOTAL_MS)).toBe(0);
+    expect(deathMarkerVisible(killingShot, false, impactAt + DEATH_REACTION_TOTAL_MS - 1)).toBe(false);
+    expect(deathMarkerVisible(killingShot, false, impactAt + DEATH_REACTION_TOTAL_MS)).toBe(true);
+  });
+
+  it('still reveals a mechanical wreck at impact', () => {
+    const impactAt = 1000 + combatEffectTiming('gunshot').impactAtMs;
+
+    expect(deathMarkerVisible(killingShot, true, impactAt - 1)).toBe(false);
+    expect(deathMarkerVisible(killingShot, true, impactAt)).toBe(true);
+  });
+});
+
+describe('combat timeline presentation', () => {
+  const directEffect = {
+    id: 'rifle-shot',
+    attackerId: 'squad-1',
+    targetId: 'enemy-1',
+    startTime: 1000,
+    type: 'gunshot' as const,
+    killed: true
+  };
+  const indirectEffect = {
+    ...directEffect,
+    id: 'howitzer-shot',
+    type: 'explosion' as const,
+    arc: true
+  };
+  const hitEvent = {
+    kind: 'unit:attacked',
+    attackerId: 'squad-1',
+    defenderId: 'enemy-1'
+  };
+  const defeatEvent = {
+    kind: 'unit:defeated',
+    unitId: 'enemy-1',
+    by: 'squad-1'
+  };
+
+  it('reveals direct-fire results exactly when the visible shot arrives', () => {
+    const impactAt = 1000 + combatEffectTiming('gunshot').impactAtMs;
+
+    expect(combatTimelineEventVisible(hitEvent, [directEffect], impactAt - 1)).toBe(false);
+    expect(combatTimelineEventVisible(defeatEvent, [directEffect], impactAt - 1)).toBe(false);
+    expect(combatTimelineEventVisible(hitEvent, [directEffect], impactAt)).toBe(true);
+    expect(combatTimelineEventVisible(defeatEvent, [directEffect], impactAt)).toBe(true);
+  });
+
+  it('keeps indirect-fire results hidden for the full shell flight', () => {
+    const impactAt = 1000 + combatEffectTiming('explosion', true).impactAtMs;
+
+    expect(combatTimelineEventVisible(hitEvent, [indirectEffect], impactAt - 1)).toBe(false);
+    expect(combatTimelineEventVisible(defeatEvent, [indirectEffect], impactAt - 1)).toBe(false);
+    expect(combatTimelineEventVisible(hitEvent, [indirectEffect], impactAt)).toBe(true);
+  });
+
+  it('does not delay unrelated timeline entries', () => {
+    expect(combatTimelineEventVisible(
+      { ...hitEvent, defenderId: 'enemy-2' },
+      [indirectEffect],
+      1001
+    )).toBe(true);
+    expect(combatTimelineEventVisible({ kind: 'round:started' }, [indirectEffect], 1001)).toBe(true);
   });
 });
 

@@ -11,7 +11,9 @@ import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'rea
 import { useTranslation } from 'react-i18next';
 
 import {
+  ARTILLERY_TRAIL_FRACTION,
   CORPSE_TTL_MS,
+  DEATH_REACTION_HOLD_MS,
   WRECK_SMOKE_ANIMATION_MS,
   activeKillingEffectForTarget,
   combatImpactWindowMs,
@@ -19,6 +21,7 @@ import {
   deathMarkerFade,
   deathMarkerExpired,
   deathMarkerVisible,
+  deathReactionAlpha,
   firearmVisualProfile,
   type CombatEffectType
 } from './combatVisuals.js';
@@ -226,6 +229,7 @@ const terrainPalette: Record<string, number> = {
 
 export interface AttackEffect {
   id: string;
+  attackerId: string;
   targetId: string;
   fromQ: number;
   fromR: number;
@@ -4518,7 +4522,11 @@ export function BattlefieldStage({
         : m.killingEffectId
           ? undefined
           : activeKillingEffectForTarget(attackEffects, m.id, now);
-      const hitInFlight = Boolean(activeKillingEffect);
+      const hitInFlight = Boolean(activeKillingEffect && deathReactionAlpha(
+        now
+          - activeKillingEffect.startTime
+          - combatEffectTiming(activeKillingEffect.type, activeKillingEffect.arc).impactAtMs
+      ) > 0);
       // Mechanical wrecks appear at impact. Organic corpses wait until the live death animation ends,
       // and future-dated reaction shots keep both marker types hidden while the victim is still moving.
       if (!deathMarkerVisible(activeKillingEffect, mechanicalWreck, now)) return;
@@ -4718,9 +4726,12 @@ export function BattlefieldStage({
                 g.beginFill(0x6b2d22, 0.62 * fade);
                 g.drawEllipse(-tileSize * 0.02, tileSize * 0.045, tileSize * 0.23, tileSize * 0.065);
                 g.endFill();
+                g.lineStyle(1.25, 0xd1a17d, 0.48 * fade);
+                g.drawEllipse(-tileSize * 0.02, tileSize * 0.045, tileSize * 0.23, tileSize * 0.065);
+                g.lineStyle();
                 if (!corpseTexture) {
                   const isRifleMarker = markerVisualClass === 'rifle';
-                  g.beginFill(isRifleMarker ? 0x4a4035 : 0x44352f, 0.9 * fade);
+                  g.beginFill(isRifleMarker ? 0x51463a : 0x4b3b34, 0.94 * fade);
                   g.drawEllipse(0, tileSize * 0.015, tileSize * (isRifleMarker ? 0.16 : 0.21), tileSize * 0.055);
                   g.endFill();
                   g.beginFill(0x2c211c, 0.92 * fade);
@@ -4753,8 +4764,8 @@ export function BattlefieldStage({
               }}
               y={tileSize * markerTransform.y}
               rotation={markerTransform.rotation}
-              alpha={mechanicalWreck ? 0.9 : 0.94}
-              tint={mechanicalWreck ? 0x777268 : 0xc7a18b}
+              alpha={mechanicalWreck ? 0.9 : 0.98}
+              tint={mechanicalWreck ? 0x777268 : 0xd1ae96}
               zIndex={1}
             />
           ) : null}
@@ -4765,7 +4776,7 @@ export function BattlefieldStage({
               if (!deathMarkerDetailVisible(hitInFlight, Boolean(corpseTexture))) return;
               const dark = 0x211d17;
               const edge = mechanicalWreck ? 0xa49a82 : 0xc49a78;
-              const edgeAlpha = (mechanicalWreck ? 0.7 : 0.76) * fade;
+              const edgeAlpha = (mechanicalWreck ? 0.7 : 0.88) * fade;
               if (markerVisualClass === 'rifle') {
                 g.lineStyle(2.2, dark, 0.92 * fade);
                 g.moveTo(-tileSize * 0.23, -tileSize * 0.075);
@@ -5401,7 +5412,13 @@ export function BattlefieldStage({
         const killingEffect = isDestroyed
           ? activeKillingEffectForTarget(attackEffects, unit.id, now)
           : undefined;
-        const dyingShown = isDestroyed && !isEmbarked && Boolean(killingEffect);
+        const killingReactionElapsed = killingEffect
+          ? now - killingEffect.startTime - combatEffectTiming(killingEffect.type, killingEffect.arc).impactAtMs
+          : 0;
+        const dyingShown = isDestroyed
+          && !isEmbarked
+          && Boolean(killingEffect)
+          && deathReactionAlpha(killingReactionElapsed) > 0;
         if ((isDestroyed && !movingThisUnit && !dyingShown) || isEmbarked) {
           return [];
         }
@@ -5943,37 +5960,28 @@ export function BattlefieldStage({
               const squashY = (isFootUnit ? 1 - stepWave * 0.02 : 1) * (cowed ? 0.9 : 1) * (1 - hitSquash * 0.20 * squashAmt);
               const scaleX = (facingLeft ? -baseScale : baseScale) * squashX * turnScaleX;
               const scaleY = baseScale * squashY * turnScaleY;
-              // Death animation clock: one normalized 0→1 ramp over 2.1s from the killing blow, driving a
-              // per-archetype death — infantry topple & sink, undead/demons dissolve & drift up, vehicles
-              // get the wreck/fireball (handled by the marker system). Reduced-motion keeps only the fade.
-              const deathStart = (incomingHit ?? recentHitTarget)?.startTime;
-              const deathImpactAt = (incomingHit ?? recentHitTarget)
-                ? combatEffectTiming((incomingHit ?? recentHitTarget)!.type, (incomingHit ?? recentHitTarget)!.arc).impactAtMs
-                : 0;
-              const deathMs = dyingShown && deathStart ? now - deathStart - deathImpactAt : 0;
-              const dProg = clamp01(deathMs / 2100);
+              // The live sprite holds a short hit reaction before the authored corpse or wreck takes over.
+              // Infantry topple, undead/demons lift, and vehicles hand off to the wreck marker. Reduced
+              // motion keeps the hold and cut without the transform.
+              const deathMs = dyingShown ? killingReactionElapsed : 0;
+              const dProg = clamp01(deathMs / DEATH_REACTION_HOLD_MS);
               const dEase = prefersReducedMotion ? 0 : easeOutCubic(dProg);
               const isUndeadDemon = isGhoulPack
                 || definitionId.includes('demon') || definitionId.includes('imp') || definitionId.includes('specter')
                 || definitionId.includes('wraith') || definitionId.includes('angel') || definitionId.includes('drake')
                 || definitionId.includes('fiend') || definitionId.includes('warlock') || definitionId.includes('lich')
                 || definitionId.includes('skeleton') || definitionId.includes('harpy') || definitionId.includes('salamander');
-              const dyingFoot = dyingShown && isFootUnit && !isUndeadDemon;
-              const dyingSpook = dyingShown && isUndeadDemon;
+              const deathReacting = dyingShown && deathMs >= 0;
+              const dyingFoot = deathReacting && isFootUnit && !isUndeadDemon;
+              const dyingSpook = deathReacting && isUndeadDemon;
               // infantry: topple away from the shot, sink, vertical-squash
               const toppleSign = -Math.sign(incomingDir.x || 1);
               const deathRotation = dyingFoot ? toppleSign * dEase * 0.85 : 0;
               const deathSinkY = dyingFoot ? dEase * tileSize * 0.18 : (dyingSpook ? -dEase * tileSize * 0.22 : 0);
               const deathScaleY = dyingFoot ? (1 - dEase * 0.32) : 1;
               const deathScaleX = dyingSpook ? (1 - dEase * 0.25) : 1;
-              const deathAlphaMul = !dyingShown
-                ? 1
-                : dyingSpook
-                  ? 0.24 + 0.76 * (1 - easeOutCubic(clamp01(Math.max(0, deathMs - 480) / 1750)))
-                  : dyingFoot
-                    ? 0.5 + 0.5 * (1 - dEase)
-                    : 0.55;
-              const deathTint = !dyingShown ? null
+              const deathAlphaMul = deathReacting ? deathReactionAlpha(deathMs) : 1;
+              const deathTint = !deathReacting ? null
                 : dyingSpook ? mixColor(0x6b5a52, definitionId.includes('skeleton') || isGhoulPack ? 0x6f7d6a : 0x9a3326, dEase)
                 : dyingFoot ? mixColor(0x6b5a52, 0x4a3a34, dEase)
                 : 0x6b5a52;
@@ -6529,7 +6537,9 @@ export function BattlefieldStage({
       let gunFlicker = 0;
       for (let k = 0; k < BURST_ROUNDS; k++) {
         const a = elapsed - k * BURST_GAP;
-        if (a >= 0 && a <= 42) gunFlicker = Math.max(gunFlicker, 1 - a / 42);
+        if (a >= 0 && a <= firearmProfile!.muzzleFlashMs) {
+          gunFlicker = Math.max(gunFlicker, 1 - a / firearmProfile!.muzzleFlashMs);
+        }
       }
 
       const zIndex = 20000 + Math.round(Math.max(fromY, toY));
@@ -6639,13 +6649,13 @@ export function BattlefieldStage({
                     const hy = fromY + dyb * t - tileSize * 0.15 + pyb * jit;
                     const lx = fromX + dxb * tail + pxb * jit;
                     const ly = fromY + dyb * tail - tileSize * 0.15 + pyb * jit;
-                    g.lineStyle(firearmProfile!.sheathWidth, 0x15110a, 0.64); g.moveTo(lx, ly); g.lineTo(hx, hy);
-                    g.lineStyle(firearmProfile!.coreWidth, 0xb8843f, 0.86); g.moveTo(lx, ly); g.lineTo(hx, hy);
-                    g.lineStyle(firearmProfile!.highlightWidth, 0xe8d0a0, 0.92); g.moveTo(lx, ly); g.lineTo(hx, hy);
-                    g.beginFill(0xca9548, 0.68);
+                    g.lineStyle(firearmProfile!.sheathWidth, 0x080603, 0.82); g.moveTo(lx, ly); g.lineTo(hx, hy);
+                    g.lineStyle(firearmProfile!.coreWidth, 0xc18739, 0.96); g.moveTo(lx, ly); g.lineTo(hx, hy);
+                    g.lineStyle(firearmProfile!.highlightWidth, 0xffedc4, 1); g.moveTo(lx, ly); g.lineTo(hx, hy);
+                    g.beginFill(0xe0a542, 0.82);
                     g.drawCircle(hx, hy, firearmProfile!.headRadius);
                     g.endFill();
-                    g.beginFill(0xffe6b3, 0.88);
+                    g.beginFill(0xfff0ce, 0.98);
                     g.drawCircle(hx, hy, firearmProfile!.headRadius * 0.38);
                     g.endFill();
                   }
@@ -6655,24 +6665,63 @@ export function BattlefieldStage({
                 // stays roughly flat. arcAt() returns the extra upward lift for a given flight fraction.
                 const arcHeight = effect.arc ? tileSize * (1.6 + Math.hypot(toX - fromX, toY - fromY) / (tileSize * 9)) : 0;
                 const arcAt = (frac: number) => arcHeight * Math.sin(Math.max(0, Math.min(1, frac)) * Math.PI);
-                const trailStart = Math.max(0, travel - (effect.arc ? 0.16 : 0.24));
+                const trailStart = Math.max(0, travel - (effect.arc ? ARTILLERY_TRAIL_FRACTION : 0.24));
                 const sx = fromX + (toX - fromX) * trailStart;
                 const sy = fromY + (toY - fromY) * trailStart - tileSize * 0.15 - arcAt(trailStart);
                 const tx = projX;
                 const ty = projY - tileSize * 0.15 - arcAt(travel);
                 if (effect.arc) {
-                  // smooth curved trail: sample the parabola between trailStart and travel
-                  const seg = 6;
-                  g.lineStyle(3.5, 0x15110a, 0.55);
-                  for (let s = 0; s <= seg; s++) {
-                    const f = trailStart + (travel - trailStart) * (s / seg);
+                  const trailSegments = 8;
+                  g.lineStyle(5, 0x11100d, 0.62);
+                  for (let s = 0; s <= trailSegments; s++) {
+                    const f = trailStart + (travel - trailStart) * (s / trailSegments);
                     const x = fromX + (toX - fromX) * f;
                     const y = fromY + (toY - fromY) * f - tileSize * 0.15 - arcAt(f);
                     if (s === 0) g.moveTo(x, y); else g.lineTo(x, y);
                   }
-                  g.beginFill(0x2a2118, 0.95); g.drawCircle(tx, ty, 3.4); g.endFill();
-                  g.beginFill(0xffcf5d, 0.95); g.drawCircle(tx, ty, 2.2); g.endFill();
-                  g.beginFill(0xf0d4a1, 0.95); g.drawCircle(tx, ty, 1); g.endFill();
+                  g.lineStyle(2.2, 0xb6b19f, 0.72);
+                  for (let s = 0; s <= trailSegments; s++) {
+                    const f = trailStart + (travel - trailStart) * (s / trailSegments);
+                    const x = fromX + (toX - fromX) * f;
+                    const y = fromY + (toY - fromY) * f - tileSize * 0.15 - arcAt(f);
+                    if (s === 0) g.moveTo(x, y); else g.lineTo(x, y);
+                  }
+                  for (let puffIndex = 1; puffIndex <= 5; puffIndex++) {
+                    const f = travel - ARTILLERY_TRAIL_FRACTION * puffIndex / 6;
+                    if (f <= 0) continue;
+                    const puffAge = puffIndex / 6;
+                    const jitter = Math.sin(effect.startTime * 0.001 + puffIndex * 2.17);
+                    const smokeX = fromX + (toX - fromX) * f + jitter * tileSize * 0.018 * puffAge;
+                    const smokeY = fromY + (toY - fromY) * f - tileSize * 0.15 - arcAt(f);
+                    const smokeRadius = tileSize * (0.025 + puffAge * 0.035);
+                    g.beginFill(0x12110e, 0.34 * (1 - puffAge * 0.55));
+                    g.drawEllipse(smokeX, smokeY, smokeRadius * 1.25, smokeRadius);
+                    g.endFill();
+                    g.beginFill(0x9b9a91, 0.5 * (1 - puffAge * 0.62));
+                    g.drawEllipse(smokeX, smokeY, smokeRadius, smokeRadius * 0.74);
+                    g.endFill();
+                  }
+                  const tangentX = toX - fromX;
+                  const tangentY = toY - fromY - arcHeight * Math.PI * Math.cos(travel * Math.PI);
+                  const tangentLength = Math.max(1, Math.hypot(tangentX, tangentY));
+                  const shellUx = tangentX / tangentLength;
+                  const shellUy = tangentY / tangentLength;
+                  const shellPx = -shellUy;
+                  const shellPy = shellUx;
+                  const shellHalfLength = 5.8;
+                  const shellHalfWidth = 3.1;
+                  g.lineStyle(1.4, 0x090806, 0.96);
+                  g.beginFill(0x3b3429, 1);
+                  g.moveTo(tx + shellUx * shellHalfLength, ty + shellUy * shellHalfLength);
+                  g.lineTo(tx + shellPx * shellHalfWidth, ty + shellPy * shellHalfWidth);
+                  g.lineTo(tx - shellUx * shellHalfLength, ty - shellUy * shellHalfLength);
+                  g.lineTo(tx - shellPx * shellHalfWidth, ty - shellPy * shellHalfWidth);
+                  g.closePath();
+                  g.endFill();
+                  g.lineStyle();
+                  g.beginFill(0xe6be63, 0.96);
+                  g.drawEllipse(tx + shellUx * 1.2, ty + shellUy * 1.2, 2.1, 1.4);
+                  g.endFill();
                 } else {
                 g.lineStyle(effect.type === 'explosion' ? 5.2 : 3.5, 0x15110a, 0.88);
                 g.moveTo(sx, sy); g.lineTo(tx, ty);

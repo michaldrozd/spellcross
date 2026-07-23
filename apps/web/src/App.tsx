@@ -63,7 +63,12 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
 import type { ArrivalEffect, AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
-import { combatEffectForShot, combatEffectTiming, combatEffectTypeForWeapon } from './components/combatVisuals.js';
+import {
+  combatEffectForShot,
+  combatEffectTiming,
+  combatEffectTypeForWeapon,
+  combatTimelineEventVisible
+} from './components/combatVisuals.js';
 import { HealButton } from './components/HealButton.js';
 import { MainMenu } from './components/MainMenu.js';
 import type { SaveSlot } from './components/MainMenu.js';
@@ -882,6 +887,7 @@ const BattleView: React.FC<{
       },
       activeAttackEffects: () => attackEffectsRef.current.map((effect) => ({
         id: effect.id,
+        attackerId: effect.attackerId,
         targetId: effect.targetId,
         type: effect.type,
         arc: effect.arc,
@@ -1634,9 +1640,13 @@ const BattleView: React.FC<{
       : outcome.hit
         ? t('battle:notice.hitDetail', { defender: unitDisplayName(defender.id, battle.state), damage: outcome.damage })
         : t('battle:notice.missDetail', { attacker: unitDisplayName(attacker.id, battle.state), defender: unitDisplayName(defender.id, battle.state) });
-    window.setTimeout(() => showPhaseNotice(noticeTitle, noticeDetail, noticeTone), delay);
+    window.setTimeout(
+      () => showPhaseNotice(noticeTitle, noticeDetail, noticeTone),
+      delay + timing.impactAtMs
+    );
     setAttackEffects(prev => [...prev, {
       id: `${attacker.id}-${defender.id}-${nextEffectId()}`,
+      attackerId: attacker.id,
       targetId: defender.id,
       fromQ: attacker.coordinate.q,
       fromR: attacker.coordinate.r,
@@ -2395,6 +2405,11 @@ const BattleView: React.FC<{
     }
     setAutoTurnPhase(null);
   };
+  const battleLogNow = Date.now();
+  const visibleBattleLogEvents = battle.state.timeline.filter((event) =>
+    event.kind !== 'unit:xp'
+    && combatTimelineEventVisible(event, attackEffects, battleLogNow)
+  );
   return (
     <div className="battle-screen">
       <div className="battle-map-layer">
@@ -2885,21 +2900,24 @@ const BattleView: React.FC<{
           <div className="battle-log-panel">
             <h3>{t('battle:panel.combatLog')}</h3>
             <div className="log-entries">
-              {combatNotices.length > 0 || battle.state.timeline.length > 0 ? (
+              {combatNotices.length > 0 || visibleBattleLogEvents.length > 0 ? (
                 <>
                   {combatNotices.map((notice) => (
                     <div key={`notice-${notice.id}`} className="log-line log-line-alert">{notice.message}</div>
                   ))}
-                  {battle.state.timeline.filter((e) => e.kind !== 'unit:xp').slice(-5 + combatNotices.length).reverse().map((e, idx) => {
-                    const logTone = e.kind === 'unit:attacked'
-                      ? e.hit ? ' log-line-hit' : ' log-line-miss'
-                      : e.kind === 'unit:defeated'
-                        ? ' log-line-kill'
-                        : '';
-                    return (
-                      <div key={idx} className={`log-line${logTone}`}>{formatBattleEvent(e, battle.state)}</div>
-                    );
-                  })}
+                  {visibleBattleLogEvents
+                    .slice(-5 + combatNotices.length)
+                    .reverse()
+                    .map((e, idx) => {
+                      const logTone = e.kind === 'unit:attacked'
+                        ? e.hit ? ' log-line-hit' : ' log-line-miss'
+                        : e.kind === 'unit:defeated'
+                          ? ' log-line-kill'
+                          : '';
+                      return (
+                        <div key={idx} className={`log-line${logTone}`}>{formatBattleEvent(e, battle.state)}</div>
+                      );
+                    })}
                 </>
               ) : (
                 <>

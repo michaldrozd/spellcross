@@ -427,7 +427,7 @@ describe('death marker lifecycle', () => {
 });
 
 describe('authored death-marker classes', () => {
-  it('keeps procedural hull details hidden until the killing effect finishes', () => {
+  it('keeps procedural hull details hidden during the live hit reaction', () => {
     expect(deathMarkerDetailVisible(true, false)).toBe(false);
     expect(deathMarkerDetailVisible(false, false)).toBe(true);
     expect(deathMarkerDetailVisible(true, true)).toBe(true);
