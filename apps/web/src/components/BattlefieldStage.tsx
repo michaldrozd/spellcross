@@ -374,6 +374,65 @@ const tileNoise = (q: number, r: number, salt: number) => {
   const value = Math.sin(q * 127.1 + r * 311.7 + salt * 74.7) * 43758.5453;
   return value - Math.floor(value);
 };
+
+export const smoothTerrainNoise = (q: number, r: number, salt: number, scale = 4) => {
+  const safeScale = Math.max(1, scale);
+  const gridQ = q / safeScale;
+  const gridR = r / safeScale;
+  const q0 = Math.floor(gridQ);
+  const r0 = Math.floor(gridR);
+  const tq = gridQ - q0;
+  const tr = gridR - r0;
+  const ease = (amount: number) => amount * amount * (3 - 2 * amount);
+  const blend = (from: number, to: number, amount: number) => from + (to - from) * amount;
+  const north = blend(tileNoise(q0, r0, salt), tileNoise(q0 + 1, r0, salt), ease(tq));
+  const south = blend(tileNoise(q0, r0 + 1, salt), tileNoise(q0 + 1, r0 + 1, salt), ease(tq));
+  return blend(north, south, ease(tr));
+};
+
+export type TerrainDetailFamily = 'vegetation' | 'built' | 'wet';
+
+export const terrainDetailFamily = (terrain: string): TerrainDetailFamily => {
+  if (terrain === 'water' || terrain === 'swamp') return 'wet';
+  if (terrain === 'road' || terrain === 'urban' || terrain === 'structure') return 'built';
+  return 'vegetation';
+};
+
+export const terrainMacroPattern = (x: number, y: number) => {
+  const tau = Math.PI * 2;
+  const broad = Math.sin(tau * (x * 2 + y)) + Math.cos(tau * (x - y * 2));
+  const medium = Math.sin(tau * (x * 5 - y * 3)) * 0.48;
+  const fine = Math.cos(tau * (x * 9 + y * 7)) * 0.18;
+  return Math.max(0, Math.min(1, 0.5 + broad * 0.18 + medium * 0.13 + fine * 0.08));
+};
+
+export type BuildingVisibilityPresentation = {
+  containerAlpha: number;
+  spriteAlpha: number;
+  spriteTint: number;
+  shadowStrength: number;
+};
+
+export const buildingVisibilityPresentation = (
+  visible: boolean,
+  occlusionAlpha: number
+): BuildingVisibilityPresentation => {
+  if (visible) {
+    return {
+      containerAlpha: clamp(occlusionAlpha, 0, 1),
+      spriteAlpha: 1,
+      spriteTint: 0xf2ead8,
+      shadowStrength: 1
+    };
+  }
+  return {
+    containerAlpha: 0.94,
+    spriteAlpha: 0.98,
+    spriteTint: 0x748079,
+    shadowStrength: 0.72
+  };
+};
+
 const snapCameraScale = (value: number) => {
   if (!Number.isFinite(value) || value <= 0) return 1;
   return Math.max(0.5, Math.round(value * 4) / 4);
@@ -1704,6 +1763,31 @@ export function BattlefieldStage({
   }, []);
 
   const terrainTextures = useMemo(getProceduralTerrainTextures, []);
+  const terrainMacroTexture = useMemo(() => {
+    const texture = makeCanvasTexture((ctx, width, height) => {
+      const pixels = ctx.createImageData(width, height);
+      for (let y = 0; y < height; y += 1) {
+        for (let x = 0; x < width; x += 1) {
+          const pattern = terrainMacroPattern(x / width, y / height);
+          const alpha = Math.round(Math.max(0, (pattern - 0.38) / 0.62) ** 1.35 * 255);
+          const offset = (y * width + x) * 4;
+          pixels.data[offset] = 255;
+          pixels.data[offset + 1] = 255;
+          pixels.data[offset + 2] = 255;
+          pixels.data[offset + 3] = alpha;
+        }
+      }
+      ctx.putImageData(pixels, 0, 0);
+    }, 256, 256);
+    texture.baseTexture.wrapMode = WRAP_MODES.REPEAT;
+    texture.baseTexture.update?.();
+    return texture;
+  }, []);
+  useEffect(() => {
+    return () => {
+      try { terrainMacroTexture.destroy(true); } catch { /* already gone */ }
+    };
+  }, [terrainMacroTexture]);
   // Optional external texture override (drop PNGs in /public/textures/terrain or a spritesheet in /public/textures/textures_black.png)
   const [externalTerrainTextures, setExternalTerrainTextures] = useState<Record<string, Texture> | null>(null);
   const [externalTexturesAreColored, setExternalTexturesAreColored] = useState<boolean>(false);
@@ -2656,7 +2740,7 @@ export function BattlefieldStage({
       const isExplored = exploredTiles.has(index);
       const fillTerrain = tile.terrain === 'road' ? 'plain' : tile.terrain === 'water' ? 'swamp' : tile.terrain;
       let baseColor = terrainPalette[fillTerrain] ?? terrainPalette.plain;
-      const colorNoise = tileNoise(q, r, 911) - 0.5;
+      const colorNoise = smoothTerrainNoise(q, r, 911, 4.2) - 0.5;
       if (tile.terrain !== 'water') {
         // gentle per-tile variation: too much turns the ground into a low-poly patchwork of
         // hard-edged diamonds, so keep the step between neighbours subtle.
@@ -2697,6 +2781,10 @@ export function BattlefieldStage({
       } else {
         texMatrix.translate((q * 13 + r * 7) % 64, (q * 5 + r * 11) % 64);
       }
+      const macroTextureMatrix = new Matrix();
+      const macroScale = 1.25;
+      macroTextureMatrix.scale(1 / macroScale, 1 / macroScale);
+      macroTextureMatrix.translate(pos.x / macroScale, (pos.y - avgHeight * ELEV_Y_OFFSET) / macroScale);
       const center = {
         x: (cornerPoints.NW.x + cornerPoints.NE.x + cornerPoints.SE.x + cornerPoints.SW.x) / 4,
         y: (cornerPoints.NW.y + cornerPoints.NE.y + cornerPoints.SE.y + cornerPoints.SW.y) / 4
@@ -2916,6 +3004,28 @@ export function BattlefieldStage({
                 // ellipses are what made the water read as faceted low-poly diamonds, so they're gone.
                 g.beginFill(darkenColor(waterColor, 0.3), isVisible ? 0.2 : 0.12);
                 g.drawEllipse(center.x, center.y, 15, 6.8);
+                g.endFill();
+              }
+
+              const detailFamily = terrainDetailFamily(tile.terrain);
+              const macroTint = detailFamily === 'wet'
+                ? 0x678f8b
+                : detailFamily === 'built'
+                  ? 0x554938
+                  : 0x425a34;
+              const macroAlpha = detailFamily === 'wet' ? 0.1 : detailFamily === 'built' ? 0.085 : 0.09;
+              for (const tri of tris) {
+                const [a, b, c] = tri;
+                g.beginTextureFill({
+                  texture: terrainMacroTexture,
+                  matrix: macroTextureMatrix,
+                  alpha: macroAlpha * (isVisible ? 1 : 0.32),
+                  color: isVisible ? macroTint : memoryColor(macroTint)
+                });
+                g.moveTo(cornerPoints[a].x, cornerPoints[a].y);
+                g.lineTo(cornerPoints[b].x, cornerPoints[b].y);
+                g.lineTo(cornerPoints[c].x, cornerPoints[c].y);
+                g.closePath();
                 g.endFill();
               }
 
@@ -3237,6 +3347,7 @@ export function BattlefieldStage({
     onSelectTile,
     onSelectUnit,
     snappedCorners,
+    terrainMacroTexture,
     terrainTextures,
     visibleTiles
   ]);
@@ -3403,19 +3514,47 @@ export function BattlefieldStage({
               g.lineStyle();
             }
             if (tile.terrain === 'plain' || tile.terrain === 'forest' || tile.terrain === 'hill' || tile.terrain === 'swamp') {
-              const clusters = tile.terrain === 'forest' ? 7 : 5;
+              const clusters = tile.terrain === 'forest' ? 8 : 6;
               for (let i = 0; i < clusters; i++) {
                 const salt = 260 + i * 17;
                 const ox = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.58;
                 const oy = (tileNoise(q, r, salt + 1) - 0.5) * ISO_TILE_H * 0.58;
-                const blade = 2 + tileNoise(q, r, salt + 2) * 3;
+                const blade = 3 + tileNoise(q, r, salt + 2) * 4;
                 const color = tile.terrain === 'forest'
                   ? (tileNoise(q, r, salt + 3) > 0.5 ? 0x102610 : 0x2f4c22)
                   : (tileNoise(q, r, salt + 3) > 0.5 ? 0x273820 : 0x4f6134);
-                g.lineStyle(1, color, fog * 0.24);
+                g.lineStyle(1.15, color, fog * 0.32);
                 g.moveTo(cx + ox - blade, cy + oy + 1);
                 g.lineTo(cx + ox + blade, cy + oy - 1);
                 g.lineStyle();
+              }
+              if (tileNoise(q, r, 351) > 0.6) {
+                const ox = (tileNoise(q, r, 352) - 0.5) * ISO_TILE_W * 0.5;
+                const oy = (tileNoise(q, r, 353) - 0.5) * ISO_TILE_H * 0.46;
+                const tuftColor = tile.terrain === 'swamp' ? 0x526548 : tile.terrain === 'hill' ? 0x6a6939 : 0x3d572c;
+                g.lineStyle(1.1, 0x10170d, fog * 0.3);
+                g.moveTo(cx + ox - 4, cy + oy + 2);
+                g.lineTo(cx + ox + 4, cy + oy + 2);
+                g.lineStyle(1.2, tuftColor, fog * 0.5);
+                g.moveTo(cx + ox - 3, cy + oy + 1);
+                g.lineTo(cx + ox - 1, cy + oy - 4);
+                g.moveTo(cx + ox, cy + oy + 1);
+                g.lineTo(cx + ox + 1, cy + oy - 5);
+                g.moveTo(cx + ox + 3, cy + oy + 1);
+                g.lineTo(cx + ox + 5, cy + oy - 3);
+                g.lineStyle();
+              }
+              if (tileNoise(q, r, 361) > 0.86) {
+                const ox = (tileNoise(q, r, 362) - 0.5) * ISO_TILE_W * 0.5;
+                const oy = (tileNoise(q, r, 363) - 0.5) * ISO_TILE_H * 0.48;
+                const stone = tile.terrain === 'hill' ? 0x726e52 : 0x4e5540;
+                g.beginFill(0x11140e, fog * 0.22);
+                g.drawEllipse(cx + ox + 1, cy + oy + 1.3, 3.4, 1.5);
+                g.endFill();
+                g.beginFill(stone, fog * 0.46);
+                g.drawEllipse(cx + ox, cy + oy, 2.6, 1.3);
+                g.drawEllipse(cx + ox + 2.8, cy + oy + 0.8, 1.4, 0.8);
+                g.endFill();
               }
             }
             if (tile.terrain !== 'water') {
@@ -3460,6 +3599,17 @@ export function BattlefieldStage({
                 g.lineTo(cx + ox + len * 0.42, cy + oy + 3 + skew);
                 g.lineStyle();
               }
+              if (tileNoise(q, r, 575) > 0.58) {
+                const ox = (tileNoise(q, r, 576) - 0.5) * ISO_TILE_W * 0.42;
+                const oy = (tileNoise(q, r, 577) - 0.5) * ISO_TILE_H * 0.38;
+                g.beginFill(0x17130f, fog * 0.34);
+                g.drawEllipse(cx + ox, cy + oy, 5 + tileNoise(q, r, 578) * 3, 1.6 + tileNoise(q, r, 579) * 1.2);
+                g.endFill();
+                g.lineStyle(0.9, 0x9b8665, fog * 0.28);
+                g.moveTo(cx + ox - 3, cy + oy - 1);
+                g.lineTo(cx + ox + 2, cy + oy);
+                g.lineStyle();
+              }
             }
             if (tile.terrain === 'water') {
               for (let i = 0; i < 3; i++) {
@@ -3467,10 +3617,10 @@ export function BattlefieldStage({
                 const len = ISO_TILE_W * (0.22 + tileNoise(q, r, salt + 2) * 0.22);
                 const ox = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.42;
                 const oy = (tileNoise(q, r, salt + 1) - 0.5) * ISO_TILE_H * 0.42;
-                g.lineStyle(1, 0x8fc0c5, fog * (0.14 + tileNoise(q, r, salt + 3) * 0.14));
+                g.lineStyle(1.15, 0x8fc0c5, fog * (0.2 + tileNoise(q, r, salt + 3) * 0.16));
                 g.moveTo(cx + ox - len / 2, cy + oy);
                 g.lineTo(cx + ox + len / 2, cy + oy - 1);
-                g.lineStyle(2, 0x0b2938, fog * 0.16);
+                g.lineStyle(2.1, 0x0b2938, fog * 0.2);
                 g.moveTo(cx + ox - len / 3, cy + oy + 4);
                 g.lineTo(cx + ox + len / 3, cy + oy + 3);
                 g.lineStyle();
@@ -6848,7 +6998,8 @@ export function BattlefieldStage({
           );
           return Math.min(alpha, unitAlpha);
         }, 1);
-        const fogAlpha = (isVisible ? 1 : 0.62) * buildingAlpha;
+        const visibilityPresentation = buildingVisibilityPresentation(isVisible, buildingAlpha);
+        const fogAlpha = visibilityPresentation.containerAlpha;
         const fogShade = isVisible ? 0 : 0.06;
 
         if (painted) {
@@ -6867,7 +7018,7 @@ export function BattlefieldStage({
                   // Soft ground shadow cast toward the lower-right (light comes from the upper-left), drawn
                   // as an offset ellipse rather than a centred copy of the square base — otherwise the hard
                   // footprint-shaped patch reads as a slab/platform and the building looks like it floats.
-                  const a0 = isVisible ? 1 : 0.5;
+                  const a0 = visibilityPresentation.shadowStrength;
                   g.beginFill(0x070907, 0.12 * a0);
                   g.drawEllipse(cxc + bw * 0.16, cyc + bh * 0.18, bw * 0.58, bh * 0.64);
                   g.endFill();
@@ -6880,8 +7031,8 @@ export function BattlefieldStage({
                 texture={texture}
                 anchor={{ x: 0.5, y: 0.97 }}
                 scale={spriteScale}
-                tint={isVisible ? 0xf2ead8 : 0xbfc1b4}
-                alpha={isVisible ? 1 : 0.72}
+                tint={visibilityPresentation.spriteTint}
+                alpha={visibilityPresentation.spriteAlpha}
               />
             </Container>
           );
@@ -7468,6 +7619,12 @@ export function BattlefieldStage({
       <div data-testid="map-metrics" style={{ display: 'none' }}
            data-map-width={map.width}
            data-map-height={map.height}
+      />
+      <div
+        data-testid="battlefield-render-profile"
+        style={{ display: 'none' }}
+        data-fow-memory="solid-muted"
+        data-terrain-detail="macro-seeded"
       />
 
 

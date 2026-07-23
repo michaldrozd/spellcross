@@ -4,6 +4,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  buildingVisibilityPresentation,
+  smoothTerrainNoise,
+  terrainDetailFamily,
+  terrainMacroPattern
+} from './BattlefieldStage.js';
+import {
   activeKillingEffectForTarget,
   combatImpactWindowMs,
   combatEffectTypeForWeapon,
@@ -41,6 +47,58 @@ import {
 } from './unitVisuals.js';
 
 const APC_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
+
+describe('terrain and fog presentation', () => {
+  it('keeps remembered buildings solid, muted, and independent of live occluders', () => {
+    const rememberedBehindUnit = buildingVisibilityPresentation(false, 0.2);
+    const rememberedAlone = buildingVisibilityPresentation(false, 1);
+    const rgb = [
+      (rememberedBehindUnit.spriteTint >> 16) & 0xff,
+      (rememberedBehindUnit.spriteTint >> 8) & 0xff,
+      rememberedBehindUnit.spriteTint & 0xff
+    ];
+
+    expect(rememberedBehindUnit).toEqual(rememberedAlone);
+    expect(rememberedBehindUnit.containerAlpha * rememberedBehindUnit.spriteAlpha).toBeGreaterThanOrEqual(0.9);
+    expect(Math.max(...rgb) - Math.min(...rgb)).toBeLessThanOrEqual(16);
+  });
+
+  it('keeps visible-building occlusion behavior unchanged', () => {
+    expect(buildingVisibilityPresentation(true, 0.2)).toMatchObject({
+      containerAlpha: 0.2,
+      spriteAlpha: 1,
+      spriteTint: 0xf2ead8
+    });
+    expect(buildingVisibilityPresentation(true, 1).containerAlpha).toBe(1);
+  });
+
+  it('uses deterministic, smoothly varying terrain grades', () => {
+    const samples = Array.from({ length: 16 }, (_, index) => smoothTerrainNoise(index, 7, 911, 4.2));
+    const repeated = Array.from({ length: 16 }, (_, index) => smoothTerrainNoise(index, 7, 911, 4.2));
+    const largestNeighborStep = Math.max(...samples.slice(1).map((sample, index) => Math.abs(sample - samples[index])));
+
+    expect(repeated).toEqual(samples);
+    expect(largestNeighborStep).toBeLessThan(0.3);
+    expect(samples.every((sample) => sample >= 0 && sample <= 1)).toBe(true);
+  });
+
+  it('authors a deterministic, seamless macro pattern for all three terrain families', () => {
+    expect(terrainDetailFamily('plain')).toBe('vegetation');
+    expect(terrainDetailFamily('road')).toBe('built');
+    expect(terrainDetailFamily('water')).toBe('wet');
+
+    const samples = Array.from({ length: 16 * 16 }, (_, index) => (
+      terrainMacroPattern((index % 16) / 16, Math.floor(index / 16) / 16)
+    ));
+    const repeated = Array.from({ length: 16 * 16 }, (_, index) => (
+      terrainMacroPattern((index % 16) / 16, Math.floor(index / 16) / 16)
+    ));
+
+    expect(repeated).toEqual(samples);
+    expect(Math.max(...samples) - Math.min(...samples)).toBeGreaterThan(0.5);
+    expect(terrainMacroPattern(0.23, 0.67)).toBeCloseTo(terrainMacroPattern(1.23, 1.67), 10);
+  });
+});
 
 function measureCellBottoms(sheet: Awaited<ReturnType<typeof loadImage>>, rows: number) {
   const canvas = createCanvas(128, 128);
