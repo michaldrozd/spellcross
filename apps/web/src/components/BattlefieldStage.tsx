@@ -54,6 +54,7 @@ import {
   unitPointerArea,
   unitVisualHeight,
   vehicleDustEnvelope,
+  vehicleGearPhase,
   vehicleMotionEnvelope,
   vehicleRunningGearKind,
   vehicleSheetDirectionNameForOrientation,
@@ -5260,7 +5261,10 @@ export function BattlefieldStage({
           ? Math.max(0, now - movingUnit.startTime - (movingUnit.preAlignDuration ?? 0)) / 360
           : movementPhase;
         const locomotionPhase = isGroundVehicle ? movementPhase : stridePhase;
-        const vehicleGearPhase = (((locomotionPhase * 2.8 + (turningThisUnit ? vehicleTurnProgress * 1.6 : 0)) % 1) + 1) % 1;
+        const runningGearPhase = vehicleGearPhase(
+          locomotionPhase,
+          turningThisUnit ? vehicleTurnProgress : 0
+        );
         const stepWave = movingThisUnit ? Math.sin(locomotionPhase * Math.PI * 2) : 0;
         const fastWave = movingThisUnit ? Math.sin(locomotionPhase * Math.PI * 4) : 0;
         const strideLift = Math.abs(stepWave);
@@ -5603,7 +5607,7 @@ export function BattlefieldStage({
                         const rearY = footprint.y - contactVector.y * footprint.ry * 0.42;
                         const dustPulse = vehicleDustIntensity * (0.82 + 0.18 * Math.abs(fastWave));
                         for (let dustIndex = 0; dustIndex < 4; dustIndex += 1) {
-                          const dustAge = (vehicleGearPhase + dustIndex / 4) % 1;
+                          const dustAge = (runningGearPhase + dustIndex / 4) % 1;
                           const dustAlpha = (1 - dustAge) * 0.17 * dustPulse;
                           const side = dustIndex % 2 === 0 ? -1 : 1;
                           g.beginFill(dustIndex === 0 ? 0xb7a77f : 0x8e8164, dustAlpha * 0.78);
@@ -5626,7 +5630,7 @@ export function BattlefieldStage({
                       const perpY = contactVector.x;
                       const wheelGap = footprint.ry * 0.78;
                       const contactY = footprint.y + tileSize * 0.004;
-                      const wheelRotation = vehicleGearPhase * Math.PI * 2;
+                      const wheelRotation = runningGearPhase * Math.PI * 2;
                       for (const axlePosition of WHEELED_AXLE_POSITIONS) {
                         for (const sideOffset of VEHICLE_SIDE_OFFSETS) {
                           const along = footprint.rx * axlePosition;
@@ -5661,7 +5665,7 @@ export function BattlefieldStage({
                         const rearY = footprint.y - contactVector.y * footprint.ry * 0.46;
                         const dustPulse = vehicleDustIntensity * (0.8 + 0.2 * Math.abs(fastWave));
                         for (let dustIndex = 0; dustIndex < 4; dustIndex += 1) {
-                          const dustAge = (vehicleGearPhase + dustIndex / 4) % 1;
+                          const dustAge = (runningGearPhase + dustIndex / 4) % 1;
                           const side = dustIndex % 2 === 0 ? -1 : 1;
                           g.beginFill(dustIndex === 0 ? 0xb7a77f : 0x8e8164, (1 - dustAge) * 0.125 * dustPulse);
                           g.drawEllipse(
@@ -5711,45 +5715,6 @@ export function BattlefieldStage({
                         g.moveTo(stepX - moveScreenVector.x * tileSize * 0.05, stepY);
                         g.lineTo(stepX + moveScreenVector.x * tileSize * 0.02, stepY);
                         g.lineStyle();
-                      }
-                    }
-                    if (isGroundVehicle && (isVisible || readableInFog) && (movingThisUnit || turningThisUnit) && !isTrackedContact && !isWheeledContact) {
-                      const perpX = -moveScreenVector.y;
-                      const perpY = moveScreenVector.x;
-                      const trackHalf = footprint.rx * 0.64;
-                      const trackGap = footprint.ry * 0.95;
-                      const trackPhase = (((movementPhase * 2.4) % 1) + 1) % 1;
-                      const rearX = -moveScreenVector.x * footprint.rx * 0.58;
-                      const rearY = footprint.y - moveScreenVector.y * footprint.ry * 0.5;
-                      g.beginFill(0xb2a47d, 0.1 * vehicleMotionIntensity);
-                      g.drawEllipse(rearX, rearY, footprint.rx * 0.58, footprint.ry * 0.25);
-                      g.endFill();
-                      g.beginFill(0xc2b386, 0.09 * vehicleMotionIntensity);
-                      g.drawEllipse(rearX - moveScreenVector.x * footprint.rx * 0.34, rearY - moveScreenVector.y * footprint.ry * 0.18, footprint.rx * 0.27, footprint.ry * 0.15);
-                      g.drawEllipse(rearX - moveScreenVector.x * footprint.rx * 0.62 + perpX * footprint.ry * 0.3, rearY - moveScreenVector.y * footprint.ry * 0.34 + perpY * footprint.ry * 0.3, footprint.rx * 0.19, footprint.ry * 0.11);
-                      g.endFill();
-                      for (const sideOffset of VEHICLE_SIDE_OFFSETS) {
-                        const ox = perpX * trackGap * sideOffset;
-                        const oy = perpY * trackGap * sideOffset;
-                        g.lineStyle(2.2, 0x050706, 0.46);
-                        g.moveTo(ox - moveScreenVector.x * trackHalf, footprint.y + oy - moveScreenVector.y * trackHalf * 0.13);
-                        g.lineTo(ox + moveScreenVector.x * trackHalf, footprint.y + oy + moveScreenVector.y * trackHalf * 0.13);
-                        g.lineStyle(0.95, isFriendly ? 0x5d6048 : 0x6f3b32, 0.38);
-                        g.moveTo(ox - moveScreenVector.x * trackHalf * 0.62, footprint.y + oy - moveScreenVector.y * trackHalf * 0.08);
-                        g.lineTo(ox + moveScreenVector.x * trackHalf * 0.62, footprint.y + oy + moveScreenVector.y * trackHalf * 0.08);
-                        for (let dashIndex = 0; dashIndex < 6; dashIndex += 1) {
-                          const amount = ((dashIndex + trackPhase) % 6) / 5;
-                          const along = -trackHalf * 0.62 + amount * trackHalf * 1.24;
-                          const cx = ox + moveScreenVector.x * along;
-                          const cy = footprint.y + oy + moveScreenVector.y * along * 0.13;
-                          const dashHalf = footprint.ry * 0.15;
-                          g.lineStyle(0.9, 0x090a06, 0.34);
-                          g.moveTo(cx - perpX * dashHalf, cy - perpY * dashHalf);
-                          g.lineTo(cx + perpX * dashHalf, cy + perpY * dashHalf);
-                          g.lineStyle(0.5, isFriendly ? 0x4d5540 : 0x5c332c, 0.18);
-                          g.moveTo(cx - perpX * dashHalf * 0.62, cy - perpY * dashHalf * 0.62 - 0.4);
-                          g.lineTo(cx + perpX * dashHalf * 0.62, cy + perpY * dashHalf * 0.62 - 0.4);
-                        }
                       }
                     }
                 } else {
@@ -6115,7 +6080,7 @@ export function BattlefieldStage({
                             const offsetX = sideX * trackGap * sideIndex;
                             const offsetY = sideY * trackGap * sideIndex * 0.34;
                             for (let treadIndex = 0; treadIndex < 7; treadIndex += 1) {
-                              const amount = ((treadIndex + vehicleGearPhase) % 7) / 6;
+                              const amount = ((treadIndex + runningGearPhase) % 7) / 6;
                               const along = -trackLength + amount * trackLength * 2;
                               const treadX = offsetX + forwardX * along;
                               const treadY = trackY + offsetY + forwardY * along * 0.34;
@@ -6125,7 +6090,7 @@ export function BattlefieldStage({
                                 treadIndex % 2 === 0
                                   ? (isFriendly ? 0xa8a17c : 0x9a755f)
                                   : (isFriendly ? 0x817f63 : 0x765b4f),
-                                0.42 + vehicleMotionIntensity * 0.28
+                                (0.42 + vehicleMotionIntensity * 0.28) * vehicleMotionIntensity
                               );
                               g.moveTo(treadX - sideX * treadHalf, treadY - sideY * treadHalf * 0.38);
                               g.lineTo(treadX + sideX * treadHalf, treadY + sideY * treadHalf * 0.38);
@@ -6136,7 +6101,7 @@ export function BattlefieldStage({
                           const wheelFootprintRy = tileSize * (unitType === 'artillery' ? 0.075 : 0.082);
                           const contactY = tileSize * (unitType === 'artillery' ? 0.064 : 0.039);
                           const wheelGap = wheelFootprintRy * 0.78;
-                          const wheelAngle = vehicleGearPhase * Math.PI * 2;
+                          const wheelAngle = runningGearPhase * Math.PI * 2;
                           for (const axlePosition of WHEELED_AXLE_POSITIONS) {
                             for (let sideIndex = -1; sideIndex <= 1; sideIndex += 2) {
                               const wheelX = forwardX * wheelFootprintRx * axlePosition + sideX * wheelGap * sideIndex;
@@ -6144,7 +6109,11 @@ export function BattlefieldStage({
                               const radiusX = wheelFootprintRx * 0.065;
                               const radiusY = Math.max(0.7, wheelFootprintRy * 0.13);
                               const spokeAngle = wheelAngle + axlePosition * Math.PI;
-                              g.lineStyle(1.05, 0xd0c294, 0.54 + vehicleMotionIntensity * 0.34);
+                              g.lineStyle(
+                                1.05,
+                                0xd0c294,
+                                (0.54 + vehicleMotionIntensity * 0.34) * vehicleMotionIntensity
+                              );
                               g.moveTo(
                                 wheelX - Math.cos(spokeAngle) * radiusX,
                                 wheelY - Math.sin(spokeAngle) * radiusY
@@ -6153,7 +6122,7 @@ export function BattlefieldStage({
                                 wheelX + Math.cos(spokeAngle) * radiusX,
                                 wheelY + Math.sin(spokeAngle) * radiusY
                               );
-                              g.beginFill(0x292a22, 0.76);
+                              g.beginFill(0x292a22, 0.76 * vehicleMotionIntensity);
                               g.drawCircle(wheelX, wheelY, 0.7);
                               g.endFill();
                             }

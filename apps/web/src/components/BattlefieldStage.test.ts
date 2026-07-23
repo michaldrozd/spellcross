@@ -43,6 +43,7 @@ import {
   unitVisualHeight,
   VEHICLE_TURN_DURATION_MS,
   vehicleDustEnvelope,
+  vehicleGearPhase,
   vehicleMotionEnvelope,
   vehicleRunningGearKind,
   vehicleSheetDirectionNameForOrientation,
@@ -295,6 +296,7 @@ describe('resolveMovementFrame', () => {
   });
 
   it('turns a directional vehicle from its standing orientation before it moves', () => {
+    expect(VEHICLE_TURN_DURATION_MS).toBe(320);
     const movement = {
       path: [{ q: 2, r: 2 }, { q: 3, r: 2 }],
       startTime: 1000,
@@ -779,21 +781,43 @@ describe('vehicle secondary motion', () => {
       isLastSegment: true,
       stepProgress: 0.84
     })).toBeGreaterThan(0.9);
+    const pivotStart = vehicleDustEnvelope({
+      ...movingFrame,
+      isMoving: false,
+      isTurnPhase: true,
+      stepProgress: 1,
+      turnProgress: 0
+    });
+    expect(pivotStart).toBeCloseTo(0.56);
     expect(vehicleDustEnvelope({
       ...movingFrame,
       isMoving: false,
       isTurnPhase: true,
       stepProgress: 1,
       turnProgress: 0.5
-    })).toBeGreaterThan(0.45);
+    })).toBeGreaterThan(pivotStart);
+    expect(vehicleDustEnvelope({
+      ...movingFrame,
+      isMoving: false,
+      isTurnPhase: true,
+      stepProgress: 1,
+      turnProgress: 1
+    })).toBeCloseTo(pivotStart);
   });
 
-  it('classifies visible running gear without putting wheels on static crews or structures', () => {
+  it('keeps wheel and tread phase continuous across a pivot', () => {
+    expect(vehicleGearPhase(1, 0)).toBeCloseTo(vehicleGearPhase(1, 1));
+  });
+
+  it('classifies visible running gear without putting it on creatures, static crews, or structures', () => {
     expect(vehicleRunningGearKind('vehicle', 'm113')).toBe('tracked');
     expect(vehicleRunningGearKind('vehicle', 'leopard-2')).toBe('tracked');
     expect(vehicleRunningGearKind('support', 'supply-truck')).toBe('wheeled');
     expect(vehicleRunningGearKind('support', 'horizon-radar')).toBe('wheeled');
     expect(vehicleRunningGearKind('artillery', 'firefly-105')).toBe('wheeled');
+    expect(vehicleRunningGearKind('vehicle', 'ash-mammoth')).toBeNull();
+    expect(vehicleRunningGearKind('vehicle', 'dire-wolves')).toBeNull();
+    expect(vehicleRunningGearKind('vehicle', 'wolf-rider')).toBeNull();
     expect(vehicleRunningGearKind('artillery', 'mortar-team')).toBeNull();
     expect(vehicleRunningGearKind('artillery', 'arrow-tower')).toBeNull();
   });

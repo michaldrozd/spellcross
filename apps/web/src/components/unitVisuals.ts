@@ -556,7 +556,7 @@ export const vehicleMotionEnvelope = (frame: Pick<MovementFrame, 'isFirstSegment
 
 export const vehicleDustEnvelope = (frame: Pick<MovementFrame, 'isFirstSegment' | 'isLastSegment' | 'isMoving' | 'isTurnPhase' | 'isInitialTurnPhase' | 'stepProgress' | 'turnProgress'>) => {
   if (frame.isInitialTurnPhase) return Math.sin(frame.turnProgress * Math.PI) * 0.32;
-  if (frame.isTurnPhase) return 0.34 + Math.sin(frame.turnProgress * Math.PI) * 0.18;
+  if (frame.isTurnPhase) return 0.56 + Math.sin(frame.turnProgress * Math.PI) * 0.14;
   if (!frame.isMoving) return 0;
 
   const motion = vehicleMotionEnvelope(frame);
@@ -569,6 +569,9 @@ export const vehicleDustEnvelope = (frame: Pick<MovementFrame, 'isFirstSegment' 
     : 0;
   return Math.min(1, motion * 0.56 + Math.max(startBurst, stopBurst) * 0.62);
 };
+
+export const vehicleGearPhase = (movementPhase: number, turnProgress: number) =>
+  (((movementPhase * 2.8 + turnProgress * 2) % 1) + 1) % 1;
 
 export function rangeOverlayStyle(externalTexturesAreColored: boolean) {
   return {
@@ -792,8 +795,8 @@ const STRUCTURE_WRECK_IDS = new Set([
 export type VehicleRunningGearKind = 'tracked' | 'wheeled';
 
 export function vehicleRunningGearKind(unitType: string, definitionId: string): VehicleRunningGearKind | null {
-  const id = definitionId;
-  if (STRUCTURE_WRECK_IDS.has(id) || id === 'mortar-team') return null;
+  const id = definitionId.toLowerCase();
+  if (!leavesMechanicalWreck(unitType, id) || STRUCTURE_WRECK_IDS.has(id)) return null;
   if (WHEELED_WRECK_IDS.has(id) || id.includes('truck')) return 'wheeled';
   if (unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicleDefinition(unitType, id)) return 'tracked';
   return null;

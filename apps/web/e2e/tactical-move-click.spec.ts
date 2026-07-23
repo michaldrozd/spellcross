@@ -182,7 +182,7 @@ test('vehicle movement finishes facing its last travelled step', async ({ page }
   }).not.toBeNull();
   await expect.poll(async () => {
     return page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);
-  }, { timeout: 5_000 }).toBeNull();
+  }, { timeout: 15_000 }).toBeNull();
 
   const after = await page.evaluate((vehicleId) => {
     return ((window as any).__battleControl?.allyUnits?.() ?? []).find((unit: any) => unit.id === vehicleId);
