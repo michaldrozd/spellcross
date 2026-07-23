@@ -11,6 +11,9 @@ import {
   deathMarkerVisible
 } from './combatVisuals.js';
 import {
+  DIRECTIONAL_UNIT_ANCHOR_Y,
+  DIRECTIONAL_UNIT_GROUND_BIAS,
+  DIRECTIONAL_UNIT_SOURCE_HEIGHTS,
   DIRECTIONAL_UNIT_SPRITES,
   battlefieldDirectionalSprite,
   blockedRangeOverlayStyle,
@@ -26,10 +29,15 @@ import {
   rasterVehiclePose,
   rangeOverlayStyle,
   resolveMovementFrame,
+  unitContactFootprint,
   unitVisualHeight,
+  vehicleMotionEnvelope,
   vehicleSheetDirectionNameForOrientation,
   vehicleSheetDirectionNameForScreenVector,
-  vehicleTurnCrossfade
+  vehicleTurnCrossfade,
+  vehicleTurnRotation,
+  vehicleTurnScaleX,
+  vehicleTurnScaleY
 } from './unitVisuals.js';
 
 const APC_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
@@ -508,14 +516,83 @@ describe('vehicleSheetDirectionNameForOrientation', () => {
 });
 
 describe('vehicleTurnCrossfade', () => {
-  it('preserves opacity while easing between directional poses', () => {
+  it('keeps the vehicle opaque while easing between directional poses', () => {
     expect(vehicleTurnCrossfade(-1)).toEqual({ outgoingAlpha: 1, incomingAlpha: 0 });
-    expect(vehicleTurnCrossfade(0.5)).toEqual({ outgoingAlpha: 0.5, incomingAlpha: 0.5 });
+    expect(vehicleTurnCrossfade(0.5).outgoingAlpha).toBeCloseTo(Math.SQRT1_2);
+    expect(vehicleTurnCrossfade(0.5).incomingAlpha).toBeCloseTo(Math.SQRT1_2);
     expect(vehicleTurnCrossfade(2)).toEqual({ outgoingAlpha: 0, incomingAlpha: 1 });
 
     for (const progress of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
       const blend = vehicleTurnCrossfade(progress);
-      expect(blend.outgoingAlpha + blend.incomingAlpha).toBeCloseTo(1);
+      expect(blend.outgoingAlpha ** 2 + blend.incomingAlpha ** 2).toBeCloseTo(1);
+    }
+  });
+
+  it('turns both poses toward the blend instead of swapping them in place', () => {
+    expect(vehicleTurnRotation(0, 1, false)).toBe(0);
+    expect(vehicleTurnRotation(0, 1, true)).toBe(-0.055);
+    const outgoingMidpoint = vehicleTurnRotation(0.5, 1, false);
+    expect(outgoingMidpoint).toBeCloseTo(0.0275);
+    expect(vehicleTurnRotation(0.5, 1, true)).toBeCloseTo(-0.0275);
+    expect(vehicleTurnScaleX(0.5)).toBeLessThan(1);
+    expect(vehicleTurnScaleY(0.5)).toBeGreaterThan(1);
+    expect(vehicleTurnRotation(1, 1, true)).toBeCloseTo(0);
+    expect(vehicleTurnRotation(0.5, -1, false)).toBeCloseTo(-outgoingMidpoint);
+  });
+});
+
+describe('vehicleMotionEnvelope', () => {
+  const frame = {
+    isFirstSegment: true,
+    isLastSegment: false,
+    isMoving: true,
+    isTurnPhase: false,
+    stepProgress: 0
+  };
+
+  it('eases dust and running gear into and out of motion', () => {
+    expect(vehicleMotionEnvelope(frame)).toBe(0);
+    expect(vehicleMotionEnvelope({ ...frame, stepProgress: 0.12 })).toBeCloseTo(0.5);
+    expect(vehicleMotionEnvelope({ ...frame, stepProgress: 0.24 })).toBe(1);
+    expect(vehicleMotionEnvelope({
+      ...frame,
+      isFirstSegment: false,
+      isLastSegment: true,
+      stepProgress: 0.88
+    })).toBeCloseTo(0.5);
+    expect(vehicleMotionEnvelope({
+      ...frame,
+      isFirstSegment: false,
+      isLastSegment: true,
+      stepProgress: 1,
+      isMoving: false
+    })).toBe(0);
+  });
+
+  it('keeps a restrained pivot envelope while the vehicle turns in place', () => {
+    expect(vehicleMotionEnvelope({ ...frame, isMoving: false, isTurnPhase: true })).toBe(0.38);
+  });
+});
+
+describe('directional tank ground contact', () => {
+  it('keeps both front-facing Leopard poses within two pixels of the ground marker', async () => {
+    const tileSize = 56;
+    const spriteName = 'tank_directional';
+    const idleSheet = await loadImage(path.resolve('public/assets/generated/tank_directional_idle_sheet.png'));
+    const walkSheet = await loadImage(path.resolve('public/assets/generated/tank_directional_walk_sheet.png'));
+    const idleBottoms = measureCellBottoms(idleSheet, 1);
+    const walkBottoms = measureCellBottoms(walkSheet, 4);
+    const scale = unitVisualHeight(tileSize, 'vehicle', 'leopard-2', spriteName)
+      / DIRECTIONAL_UNIT_SOURCE_HEIGHTS[spriteName];
+    const anchorY = DIRECTIONAL_UNIT_ANCHOR_Y[spriteName] * 128;
+    const groundBias = DIRECTIONAL_UNIT_GROUND_BIAS[spriteName];
+    const markerY = unitContactFootprint(tileSize, 'vehicle', 'leopard-2').y;
+
+    for (const directionIndex of [0, 4]) {
+      for (const bottom of [...idleBottoms[directionIndex], ...walkBottoms[directionIndex]]) {
+        const spriteBottomY = (bottom - anchorY) * scale + groundBias;
+        expect(Math.max(0, markerY - spriteBottomY)).toBeLessThanOrEqual(2);
+      }
     }
   });
 });

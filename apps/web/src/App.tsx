@@ -91,6 +91,7 @@ const CAMPAIGN_SCHEMA_KEY = 'spellcross:campaign-schema';
 const CAMPAIGN_SCHEMA_VERSION = '2026-07-20-operation-cycle';
 const FOOT_STEP_DURATION_MS = 240;
 const VEHICLE_STEP_DURATION_MS = 420;
+const VEHICLE_TURN_DURATION_MS = 180;
 const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
 const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
 const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
@@ -1690,7 +1691,7 @@ const BattleView: React.FC<{
     const fullPath = [startCoord, ...actualPath];
     const stepDuration = isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS;
     const definitionId = unit.definitionId.toLowerCase();
-    const usesDirectionalTurns = definitionId.includes('m113') || definitionId === 'supply-truck';
+    const usesDirectionalTurns = isVehicleMove && Boolean(battlefieldDirectionalSprite(unitType, definitionId));
     const preAlignDuration = isVehicleMove ? (usesDirectionalTurns ? 0 : 150) : 0;
     let moving: MovingUnit | null = null;
     if (fullPath.length >= 2) {
@@ -1700,7 +1701,7 @@ const BattleView: React.FC<{
         startTime: Date.now(),
         stepDuration,
         preAlignDuration,
-        segmentTurnDuration: usesDirectionalTurns ? 90 : 0
+        segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0
       };
       // realistic engine/track/footstep audio matched to how long this glide actually takes
       AudioManager.playMovement(moveProfile, movingUnitDuration(moving));
@@ -1740,14 +1741,14 @@ const BattleView: React.FC<{
     const isTruck = unitType === 'support' && def.includes('truck');
     const isVehicleMove = (unitType === 'vehicle' || unitType === 'artillery' || isTruck) && !isFootCrew(def);
     const moveProfile = movementSoundProfileFor(unitType, def);
-    const usesDirectionalTurns = def.includes('m113') || def === 'supply-truck';
+    const usesDirectionalTurns = isVehicleMove && Boolean(battlefieldDirectionalSprite(unitType, def));
     const moving: MovingUnit = {
       unitId,
       path: fullPath,
       startTime: Date.now(),
       stepDuration: isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS,
       preAlignDuration: isVehicleMove ? (usesDirectionalTurns ? 0 : 150) : 0,
-      segmentTurnDuration: usesDirectionalTurns ? 90 : 0
+      segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0
     };
     AudioManager.playMovement(moveProfile, movingUnitDuration(moving)); // realistic engine/track/footstep for the whole glide
     movingUnitRef.current = moving;

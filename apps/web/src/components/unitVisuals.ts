@@ -44,6 +44,11 @@ const VEHICLE_SHEET_DIRECTION_SUBSTITUTES: Record<string, Record<string, string>
   }
 };
 
+const smoothClamped = (value: number) => {
+  const clamped = Math.min(1, Math.max(0, value));
+  return clamped * clamped * (3 - 2 * clamped);
+};
+
 export const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 export const UNIT_SHEET_FRAME_SIZE = 128;
 
@@ -355,7 +360,8 @@ const DIRECTIONAL_UNIT_ALPHA_BOTTOMS: Record<string, Record<string, number>> = {
 const DIRECTIONAL_UNIT_DIRECTION_LIFT: Record<string, Record<string, number>> = {};
 
 export const DIRECTIONAL_UNIT_GROUND_BIAS: Record<string, number> = {
-  m113_apc: 7
+  m113_apc: 7,
+  tank_directional: 1.4
 };
 
 export type UnitVisualFootprint = { rx: number; ry: number; alpha: number; y: number };
@@ -502,8 +508,38 @@ export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y:
 
 export const vehicleTurnCrossfade = (progress: number) => {
   const clamped = Math.min(1, Math.max(0, progress));
-  const incomingAlpha = clamped * clamped * (3 - 2 * clamped);
-  return { outgoingAlpha: 1 - incomingAlpha, incomingAlpha };
+  if (clamped === 0) return { outgoingAlpha: 1, incomingAlpha: 0 };
+  if (clamped === 1) return { outgoingAlpha: 0, incomingAlpha: 1 };
+  const eased = smoothClamped(clamped);
+  return {
+    outgoingAlpha: Math.cos(eased * Math.PI * 0.5),
+    incomingAlpha: Math.sin(eased * Math.PI * 0.5)
+  };
+};
+
+export const vehicleTurnRotation = (progress: number, direction: number, incoming: boolean) => {
+  const clamped = Math.min(1, Math.max(0, progress));
+  const eased = smoothClamped(clamped);
+  const signedDirection = Math.sign(direction);
+  return incoming
+    ? -signedDirection * (1 - eased) * 0.055
+    : signedDirection * eased * 0.055;
+};
+
+export const vehicleTurnScaleX = (progress: number) =>
+  1 - Math.sin(Math.min(1, Math.max(0, progress)) * Math.PI) * 0.018;
+
+export const vehicleTurnScaleY = (progress: number) =>
+  1 + Math.sin(Math.min(1, Math.max(0, progress)) * Math.PI) * 0.012;
+
+export const vehicleMotionEnvelope = (frame: Pick<MovementFrame, 'isFirstSegment' | 'isLastSegment' | 'isMoving' | 'isTurnPhase' | 'stepProgress'>) => {
+  if (frame.isTurnPhase) return 0.38;
+  if (!frame.isMoving) return 0;
+
+  const rampWindow = 0.24;
+  const acceleration = frame.isFirstSegment ? smoothClamped(frame.stepProgress / rampWindow) : 1;
+  const braking = frame.isLastSegment ? smoothClamped((1 - frame.stepProgress) / rampWindow) : 1;
+  return Math.min(acceleration, braking);
 };
 
 export function rangeOverlayStyle(externalTexturesAreColored: boolean) {

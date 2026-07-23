@@ -325,7 +325,7 @@ test('m113 movement keeps turn-boundary animation time for multi-step paths', as
   expect(timing.started).toBeTruthy();
   expect(timing.state).toMatchObject({
     unitId: setup!.vehicleId,
-    segmentTurnDuration: 90
+    segmentTurnDuration: 180
   });
   expect(timing.actualTurnCount).toBeGreaterThan(0);
   expect(timing.survivedFirstTurn).toBeTruthy();

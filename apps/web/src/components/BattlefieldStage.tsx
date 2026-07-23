@@ -47,9 +47,13 @@ import {
   unitContactFootprint,
   unitPointerArea,
   unitVisualHeight,
+  vehicleMotionEnvelope,
   vehicleSheetDirectionNameForOrientation,
   vehicleSheetDirectionNameForScreenVector,
   vehicleTurnCrossfade,
+  vehicleTurnRotation,
+  vehicleTurnScaleX,
+  vehicleTurnScaleY,
   type UnitPointerArea
 } from './unitVisuals.js';
 const basename = (p: string) => {
@@ -4758,7 +4762,8 @@ export function BattlefieldStage({
         let vehicleTurnFromOrientation: number | null = null;
         let vehicleTurnToOrientation: number | null = null;
         let vehicleTurnProgress = 0;
-        let vehicleTurnLean = 0;
+        let vehicleTurnDirection = 0;
+        let vehicleMotionIntensity = 0;
         let moveScreenVector = orientationScreenVector(animatedOrientation);
         let movingBaseHeight: number | undefined;
         let easedProgress = 0;
@@ -4766,6 +4771,7 @@ export function BattlefieldStage({
         const definitionId = unit.definitionId.toLowerCase();
         const isSupportVehicle = isSupportVehicleDefinition(unitType, definitionId);
         const isGroundVehicle = unitType === 'vehicle' || unitType === 'artillery' || isSupportVehicle;
+        const unitDirectionalSprite = battlefieldDirectionalSprite(unitType, definitionId);
 
         if (movingUnit && movingUnit.unitId === unit.id && activeMovementFrame) {
           const movementPath = movingUnit.path;
@@ -4787,6 +4793,7 @@ export function BattlefieldStage({
           turningThisUnit = isTurnPhase;
           movementPhase = framePhase;
           displayCoord = animatedCoord;
+          vehicleMotionIntensity = isGroundVehicle ? vehicleMotionEnvelope(activeMovementFrame) : 0;
 
           const fromIdx = fromCoord.r * map.width + fromCoord.q;
           const toIdx = toCoord.r * map.width + toCoord.q;
@@ -4811,8 +4818,8 @@ export function BattlefieldStage({
             vehicleTurnFromOrientation = currentOrientation;
             vehicleTurnToOrientation = nextOrientation;
             vehicleTurnProgress = turnProgress;
+            vehicleTurnDirection = Math.sign(cross);
             moveScreenVector = mixScreenVectors(moveScreenVector, nextVector, smoothTurn);
-            vehicleTurnLean = Math.sign(cross) * Math.sin(turnProgress * Math.PI) * 0.055;
           }
           const turnBlendWindow = 0.64;
           if (!isGroundVehicle && stepProgress > 1 - turnBlendWindow && currentStep + 2 < movementPath.length) {
@@ -5125,13 +5132,21 @@ export function BattlefieldStage({
                 if (ISO_MODE) {
 	                  const footprint = unitContactFootprint(tileSize, unitType, definitionId);
                     const baseAlpha = isSelected || isTarget ? (isFriendly ? 0.18 : 0.26) : (isFriendly ? 0.20 : 0.26);
-                    const baseRx = isGroundVehicle ? footprint.rx * 0.74 : footprint.rx * 1.14;
-                    const baseRy = isGroundVehicle ? footprint.ry * 0.56 : footprint.ry * (1.22 - strideLift * 0.08);
-                    const isTrackedContact = definitionId.includes('m113') || definitionId.includes('apc') || definitionId.includes('ifv');
+                    const baseRx = isGroundVehicle ? footprint.rx * 0.48 : footprint.rx * 1.14;
+                    const baseRy = isGroundVehicle ? footprint.ry * 0.4 : footprint.ry * (1.22 - strideLift * 0.08);
+                    const isTrackedContact = definitionId.includes('m113')
+                      || definitionId.includes('apc')
+                      || definitionId.includes('ifv')
+                      || definitionId.includes('tank')
+                      || definitionId.includes('leopard')
+                      || definitionId.includes('abrams')
+                      || definitionId.includes('artillery')
+                      || definitionId.includes('howitzer')
+                      || definitionId.includes('mlrs');
                     const isWheeledContact = unitType === 'support' && definitionId.includes('truck');
-                    const shadowAlpha = isGroundVehicle ? (isTrackedContact ? 0 : (movingThisUnit ? 0.07 : 0.10)) : footprint.alpha;
-                    const shadowRx = isGroundVehicle ? footprint.rx * (isTrackedContact ? 0.34 : 0.55) : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * (isTrackedContact ? 0.1 : 0.24) : footprint.ry;
+                    const shadowAlpha = isGroundVehicle ? (movingThisUnit || turningThisUnit ? 0.16 : 0.19) : footprint.alpha;
+                    const shadowRx = isGroundVehicle ? footprint.rx * 0.44 : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * 0.36 : footprint.ry;
                     const showFactionBase = isVisible || readableInFog;
 	                  if (showFactionBase) {
 	                    // Ground vehicles get the team disc too (their large silhouette dilutes it, so 0.7x);
@@ -5146,7 +5161,7 @@ export function BattlefieldStage({
                   }
 	                    if (shadowAlpha > 0) {
 		                    g.beginFill(isGroundVehicle ? 0x020403 : 0x000000, isVisible ? shadowAlpha : shadowAlpha * 0.55);
-		                    g.drawEllipse(1, footprint.y + (isGroundVehicle && !isTrackedContact ? tileSize * 0.012 : 0), shadowRx, shadowRy);
+		                    g.drawEllipse(1, footprint.y, shadowRx, shadowRy);
 		                    g.endFill();
 	                    }
                     if (isTrackedContact && (isVisible || readableInFog)) {
@@ -5155,41 +5170,33 @@ export function BattlefieldStage({
                         : orientationScreenVector(animatedOrientation);
                       const perpX = -contactVector.y;
                       const perpY = contactVector.x;
-                      const trackHalf = footprint.rx * 0.4;
+                      const trackHalf = footprint.rx * 0.48;
                       const trackGap = footprint.ry * 0.74;
-                      const contactY = footprint.y - tileSize * 0.006;
+                      const contactY = unitDirectionalSprite === 'tank_directional'
+                        ? footprint.y - tileSize * 0.055
+                        : footprint.y - tileSize * 0.002;
                       for (const sideOffset of [-1, 1]) {
                         const ox = perpX * trackGap * sideOffset;
                         const oy = perpY * trackGap * sideOffset;
-                        g.lineStyle(1.35, 0x050704, isSelected ? 0.46 : 0.4);
-                        g.moveTo(ox - contactVector.x * trackHalf, contactY + oy - contactVector.y * trackHalf * 0.2);
-                        g.lineTo(ox + contactVector.x * trackHalf, contactY + oy + contactVector.y * trackHalf * 0.2);
+                        g.lineStyle(2.15, 0x030503, isSelected ? 0.58 : 0.5);
+                        g.moveTo(ox - contactVector.x * trackHalf, contactY + oy - contactVector.y * trackHalf * 0.11);
+                        g.lineTo(ox + contactVector.x * trackHalf, contactY + oy + contactVector.y * trackHalf * 0.11);
                       }
                       if (movingThisUnit || turningThisUnit) {
+                        g.lineStyle();
                         const rearX = -contactVector.x * footprint.rx * 0.58;
                         const rearY = footprint.y - contactVector.y * footprint.ry * 0.42;
-                        const dustPulse = turningThisUnit ? 0.82 : 0.72 + 0.28 * Math.abs(fastWave);
-                        g.beginFill(0x332f24, 0.48 * dustPulse);
-                        g.drawEllipse(rearX, rearY, footprint.rx * 0.52, footprint.ry * 0.23);
-                        g.endFill();
-                        g.beginFill(0x8a7b57, 0.34 * dustPulse);
-                        g.drawEllipse(
-                          rearX - contactVector.x * footprint.rx * 0.32 + perpX * footprint.ry * 0.32,
-                          rearY - contactVector.y * footprint.ry * 0.2 + perpY * footprint.ry * 0.32,
-                          footprint.rx * 0.25,
-                          footprint.ry * 0.14
-                        );
-                        g.endFill();
+                        const dustPulse = vehicleMotionIntensity * (0.66 + 0.16 * Math.abs(fastWave));
                         for (let dustIndex = 0; dustIndex < 3; dustIndex += 1) {
-                          const dustAge = (((movementPhase % 1) + 1) % 1 + dustIndex / 3) % 1;
-                          const dustAlpha = (1 - dustAge) * 0.3 * dustPulse;
+                          const dustAge = (((movementPhase * 0.62) % 1 + 1) % 1 + dustIndex / 3) % 1;
+                          const dustAlpha = (1 - dustAge) * 0.075 * dustPulse;
                           const side = dustIndex % 2 === 0 ? -1 : 1;
-                          g.beginFill(dustIndex === 0 ? 0x8a7b57 : 0x4b4433, dustAlpha);
+                          g.beginFill(dustIndex === 0 ? 0xe0d1a7 : 0xcdbf99, dustAlpha);
                           g.drawEllipse(
-                            rearX - contactVector.x * footprint.rx * (0.34 + dustAge * 0.72) + perpX * side * footprint.ry * (0.18 + dustAge * 0.32),
-                            rearY - contactVector.y * footprint.ry * (0.18 + dustAge * 0.38) + perpY * side * footprint.ry * 0.2 - dustAge * tileSize * 0.035,
-                            footprint.rx * (0.13 + dustAge * 0.22),
-                            footprint.ry * (0.08 + dustAge * 0.1)
+                            rearX - contactVector.x * footprint.rx * (0.3 + dustAge * 0.58) + perpX * side * footprint.ry * (0.14 + dustAge * 0.22),
+                            rearY - contactVector.y * footprint.ry * (0.16 + dustAge * 0.32) + perpY * side * footprint.ry * 0.15 - dustAge * tileSize * 0.028,
+                            footprint.rx * (0.075 + dustAge * 0.12),
+                            footprint.ry * (0.05 + dustAge * 0.065)
                           );
                           g.endFill();
                         }
@@ -5204,44 +5211,48 @@ export function BattlefieldStage({
                       const perpY = contactVector.x;
                       const wheelGap = footprint.ry * 0.78;
                       const contactY = footprint.y + tileSize * 0.004;
+                      const wheelRotation = locomotionPhase * Math.PI * 4;
                       for (const axlePosition of [-0.43, -0.13, 0.42]) {
                         for (const sideOffset of [-1, 1]) {
                           const along = footprint.rx * axlePosition;
                           const side = wheelGap * sideOffset;
-                          g.beginFill(0x060705, isSelected ? 0.5 : 0.42);
-                          g.drawEllipse(
-                            contactVector.x * along + perpX * side,
-                            contactY + contactVector.y * along * 0.26 + perpY * side,
-                            footprint.rx * 0.08,
-                            footprint.ry * 0.12
-                          );
+                          const wheelX = contactVector.x * along + perpX * side;
+                          const wheelY = contactY + contactVector.y * along * 0.2 + perpY * side;
+                          const wheelRx = footprint.rx * 0.075;
+                          const wheelRy = Math.max(0.62, footprint.ry * 0.13);
+                          g.beginFill(0x060705, isSelected ? 0.58 : 0.5);
+                          g.drawEllipse(wheelX, wheelY, wheelRx, wheelRy);
                           g.endFill();
+                          g.lineStyle(0.55, 0x57584b, 0.5);
+                          g.drawEllipse(wheelX, wheelY, wheelRx * 0.66, wheelRy * 0.66);
+                          if (movingThisUnit || turningThisUnit) {
+                            const spokeAngle = wheelRotation + axlePosition * Math.PI;
+                            g.lineStyle(0.55, 0xa29a72, 0.2 + vehicleMotionIntensity * 0.28);
+                            g.moveTo(
+                              wheelX - Math.cos(spokeAngle) * wheelRx * 0.72,
+                              wheelY - Math.sin(spokeAngle) * wheelRy * 0.72
+                            );
+                            g.lineTo(
+                              wheelX + Math.cos(spokeAngle) * wheelRx * 0.72,
+                              wheelY + Math.sin(spokeAngle) * wheelRy * 0.72
+                            );
+                          }
                         }
                       }
                       if (movingThisUnit || turningThisUnit) {
+                        g.lineStyle();
                         const rearX = -contactVector.x * footprint.rx * 0.64;
                         const rearY = footprint.y - contactVector.y * footprint.ry * 0.46;
-                        const dustPulse = turningThisUnit ? 0.78 : 0.68 + 0.3 * Math.abs(fastWave);
-                        g.beginFill(0x332f24, 0.44 * dustPulse);
-                        g.drawEllipse(rearX, rearY, footprint.rx * 0.46, footprint.ry * 0.21);
-                        g.endFill();
-                        g.beginFill(0x8a7b57, 0.31 * dustPulse);
-                        g.drawEllipse(
-                          rearX - contactVector.x * footprint.rx * 0.3 + perpX * footprint.ry * 0.26,
-                          rearY - contactVector.y * footprint.ry * 0.18 + perpY * footprint.ry * 0.26,
-                          footprint.rx * 0.21,
-                          footprint.ry * 0.12
-                        );
-                        g.endFill();
+                        const dustPulse = vehicleMotionIntensity * (0.62 + 0.16 * Math.abs(fastWave));
                         for (let dustIndex = 0; dustIndex < 3; dustIndex += 1) {
-                          const dustAge = (((movementPhase % 1) + 1) % 1 + dustIndex / 3) % 1;
+                          const dustAge = (((movementPhase * 0.62) % 1 + 1) % 1 + dustIndex / 3) % 1;
                           const side = dustIndex % 2 === 0 ? -1 : 1;
-                          g.beginFill(dustIndex === 0 ? 0x8a7b57 : 0x4b4433, (1 - dustAge) * 0.27 * dustPulse);
+                          g.beginFill(dustIndex === 0 ? 0xe0d1a7 : 0xcdbf99, (1 - dustAge) * 0.07 * dustPulse);
                           g.drawEllipse(
-                            rearX - contactVector.x * footprint.rx * (0.3 + dustAge * 0.78) + perpX * side * footprint.ry * (0.15 + dustAge * 0.28),
-                            rearY - contactVector.y * footprint.ry * (0.16 + dustAge * 0.42) + perpY * side * footprint.ry * 0.18 - dustAge * tileSize * 0.03,
-                            footprint.rx * (0.11 + dustAge * 0.2),
-                            footprint.ry * (0.07 + dustAge * 0.1)
+                            rearX - contactVector.x * footprint.rx * (0.28 + dustAge * 0.62) + perpX * side * footprint.ry * (0.12 + dustAge * 0.2),
+                            rearY - contactVector.y * footprint.ry * (0.14 + dustAge * 0.34) + perpY * side * footprint.ry * 0.14 - dustAge * tileSize * 0.026,
+                            footprint.rx * (0.07 + dustAge * 0.11),
+                            footprint.ry * (0.045 + dustAge * 0.06)
                           );
                           g.endFill();
                         }
@@ -5273,15 +5284,15 @@ export function BattlefieldStage({
                     if (isGroundVehicle && (isVisible || readableInFog) && (movingThisUnit || turningThisUnit) && !isTrackedContact && !isWheeledContact) {
                       const perpX = -moveScreenVector.y;
                       const perpY = moveScreenVector.x;
-                      const trackHalf = footprint.rx * 0.76;
+                      const trackHalf = footprint.rx * 0.64;
                       const trackGap = footprint.ry * 0.95;
-                      const trackPhase = ((movementPhase % 1) + 1) % 1;
+                      const trackPhase = (((movementPhase * 2.4) % 1) + 1) % 1;
                       const rearX = -moveScreenVector.x * footprint.rx * 0.58;
                       const rearY = footprint.y - moveScreenVector.y * footprint.ry * 0.5;
-                      g.beginFill(0x2d2a20, turningThisUnit ? 0.44 : 0.38);
+                      g.beginFill(0xb2a47d, 0.1 * vehicleMotionIntensity);
                       g.drawEllipse(rearX, rearY, footprint.rx * 0.58, footprint.ry * 0.25);
                       g.endFill();
-                      g.beginFill(0x746849, turningThisUnit ? 0.34 : 0.29);
+                      g.beginFill(0xc2b386, 0.09 * vehicleMotionIntensity);
                       g.drawEllipse(rearX - moveScreenVector.x * footprint.rx * 0.34, rearY - moveScreenVector.y * footprint.ry * 0.18, footprint.rx * 0.27, footprint.ry * 0.15);
                       g.drawEllipse(rearX - moveScreenVector.x * footprint.rx * 0.62 + perpX * footprint.ry * 0.3, rearY - moveScreenVector.y * footprint.ry * 0.34 + perpY * footprint.ry * 0.3, footprint.rx * 0.19, footprint.ry * 0.11);
                       g.endFill();
@@ -5289,16 +5300,16 @@ export function BattlefieldStage({
                         const ox = perpX * trackGap * sideOffset;
                         const oy = perpY * trackGap * sideOffset;
                         g.lineStyle(2.2, 0x050706, 0.46);
-                        g.moveTo(ox - moveScreenVector.x * trackHalf, footprint.y + oy - moveScreenVector.y * trackHalf * 0.32);
-                        g.lineTo(ox + moveScreenVector.x * trackHalf, footprint.y + oy + moveScreenVector.y * trackHalf * 0.32);
+                        g.moveTo(ox - moveScreenVector.x * trackHalf, footprint.y + oy - moveScreenVector.y * trackHalf * 0.13);
+                        g.lineTo(ox + moveScreenVector.x * trackHalf, footprint.y + oy + moveScreenVector.y * trackHalf * 0.13);
                         g.lineStyle(0.95, isFriendly ? 0x5d6048 : 0x6f3b32, 0.38);
-                        g.moveTo(ox - moveScreenVector.x * trackHalf * 0.62, footprint.y + oy - moveScreenVector.y * trackHalf * 0.2);
-                        g.lineTo(ox + moveScreenVector.x * trackHalf * 0.62, footprint.y + oy + moveScreenVector.y * trackHalf * 0.2);
+                        g.moveTo(ox - moveScreenVector.x * trackHalf * 0.62, footprint.y + oy - moveScreenVector.y * trackHalf * 0.08);
+                        g.lineTo(ox + moveScreenVector.x * trackHalf * 0.62, footprint.y + oy + moveScreenVector.y * trackHalf * 0.08);
                         for (let dashIndex = 0; dashIndex < 6; dashIndex += 1) {
                           const amount = ((dashIndex + trackPhase) % 6) / 5;
                           const along = -trackHalf * 0.62 + amount * trackHalf * 1.24;
                           const cx = ox + moveScreenVector.x * along;
-                          const cy = footprint.y + oy + moveScreenVector.y * along * 0.32;
+                          const cy = footprint.y + oy + moveScreenVector.y * along * 0.13;
                           const dashHalf = footprint.ry * 0.15;
                           g.lineStyle(0.9, 0x090a06, 0.34);
                           g.moveTo(cx - perpX * dashHalf, cy - perpY * dashHalf);
@@ -5327,7 +5338,7 @@ export function BattlefieldStage({
               const rasterOverridePath = rasterUnitOverride(defId);
               // Unique static art wins over generic vehicle sheets. Definitions with a dedicated
               // directional set, such as the supply truck, opt back into the motion renderer.
-              const directionalSprite = battlefieldDirectionalSprite(unitType, defId);
+              const directionalSprite = unitDirectionalSprite;
               const isFootUnit = unitType === 'infantry' || (unitType === 'support' && !isSupportVehicle) || unitType === 'hero';
               const isVehicleUnit = isGroundVehicle;
               const footMovementDirection = directionNameForScreenVector(moveScreenVector);
@@ -5492,12 +5503,20 @@ export function BattlefieldStage({
               const turnCrossfade = incomingTurnTexture
                 ? vehicleTurnCrossfade(vehicleTurnProgress)
                 : { outgoingAlpha: 1, incomingAlpha: 0 };
+              const outgoingTurnRotation = incomingTurnTexture
+                ? vehicleTurnRotation(vehicleTurnProgress, vehicleTurnDirection, false)
+                : 0;
+              const incomingTurnRotation = incomingTurnTexture
+                ? vehicleTurnRotation(vehicleTurnProgress, vehicleTurnDirection, true)
+                : 0;
+              const turnScaleX = incomingTurnTexture ? vehicleTurnScaleX(vehicleTurnProgress) : 1;
+              const turnScaleY = incomingTurnTexture ? vehicleTurnScaleY(vehicleTurnProgress) : 1;
               const vehiclePose = isVehicleUnit && canMirrorForFacing ? rasterVehiclePose(moveScreenVector) : null;
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
               // Vehicles carry weight: a road shake + suspension dip while moving (driven by fastWave,
               // which is only non-zero in motion — so idle vehicles sit still rather than statically skewed).
-              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? 0.42 : 0;
-              const vehicleRumbleY = isVehicleUnit ? Math.abs(fastWave) * 0.38 : 0;
+              const vehicleTrackJitter = isVehicleUnit && movingThisUnit ? 0.42 * vehicleMotionIntensity : 0;
+              const vehicleRumbleY = isVehicleUnit ? Math.abs(fastWave) * 0.38 * vehicleMotionIntensity : 0;
               // Suppressed/routed posture: a small downward duck, a foot-unit shudder, and (when routed)
               // a lean away from the threat — so a pinned squad reads at a glance without a label.
               const suppressed = unit.stance === 'suppressed';
@@ -5509,15 +5528,18 @@ export function BattlefieldStage({
               const spriteCombatY = hitOffsetY + shotOffsetY + (cowed && isFootUnit ? Math.sin(now / 60) * 0.6 : 0);
               const locomotionRotation = isFootUnit && movingThisUnit
                 ? -moveScreenVector.x * stepWave * 0.038
-                : isVehicleUnit && movingThisUnit ? fastWave * 0.004 : vehicleTurnLean;
+                : isVehicleUnit && movingThisUnit ? fastWave * 0.004 * vehicleMotionIntensity : 0;
               const spriteRotation = (vehiclePose ? vehiclePose.rotation : 0) + locomotionRotation + (routed ? -Math.sign(moveScreenVector.x || 1) * 0.12 : 0);
+              const outgoingSpriteRotation = spriteRotation + outgoingTurnRotation;
+              const incomingSpriteRotation = spriteRotation + incomingTurnRotation;
               // Volume-preserving impact squash: the struck unit compresses vertically / bulges wide at
               // the moment of contact and springs back as the hit pulse decays. Vehicles jello half as much.
               const hitSquash = incomingHit ? Math.sin(Math.min(1, hitElapsed / 180) * Math.PI) * hitPulse : 0;
               const squashAmt = (unitType === 'vehicle' || unitType === 'artillery') ? 0.5 : 1;
               const squashX = (isFootUnit ? 1 + stepWave * 0.024 : 1) * (cowed ? 1.04 : 1) * (1 + hitSquash * 0.16 * squashAmt);
               const squashY = (isFootUnit ? 1 - stepWave * 0.02 : 1) * (cowed ? 0.9 : 1) * (1 - hitSquash * 0.20 * squashAmt);
-              const scaleX = (facingLeft ? -baseScale : baseScale) * squashX;
+              const scaleX = (facingLeft ? -baseScale : baseScale) * squashX * turnScaleX;
+              const scaleY = baseScale * squashY * turnScaleY;
               // Death animation clock: one normalized 0→1 ramp over 2.1s from the killing blow, driving a
               // per-archetype death — infantry topple & sink, undead/demons dissolve & drift up, vehicles
               // get the wreck/fireball (handled by the marker system). Reduced-motion keeps only the fade.
@@ -5577,12 +5599,12 @@ export function BattlefieldStage({
                     <Sprite
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
-                      scale={{ x: scaleX * silhouetteScale, y: baseScale * squashY * (readableInFog ? 1.05 : 1.02) }}
+                      scale={{ x: scaleX * silhouetteScale, y: scaleY * (readableInFog ? 1.05 : 1.02) }}
                       alpha={silhouetteAlpha * turnCrossfade.outgoingAlpha}
                       tint={silhouetteTint}
                       x={spriteSwayX + (facingLeft ? -0.9 : 0.9)}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + (readableInFog ? 1.4 : 1.1)}
-                      rotation={spriteRotation}
+                      rotation={outgoingSpriteRotation}
                       zIndex={0.8}
                     />
                   ) : null}
@@ -5590,12 +5612,12 @@ export function BattlefieldStage({
                     <Sprite
                       texture={incomingTurnTexture}
                       anchor={{ x: 0.5, y: anchorY }}
-                      scale={{ x: scaleX * silhouetteScale, y: baseScale * squashY * (readableInFog ? 1.05 : 1.02) }}
+                      scale={{ x: scaleX * silhouetteScale, y: scaleY * (readableInFog ? 1.05 : 1.02) }}
                       alpha={silhouetteAlpha * turnCrossfade.incomingAlpha}
                       tint={silhouetteTint}
                       x={spriteSwayX + (facingLeft ? -0.9 : 0.9)}
                       y={spriteBaseY + incomingTurnGroundOffsetY + spriteBobY + spriteCombatY + (readableInFog ? 1.4 : 1.1)}
-                      rotation={spriteRotation}
+                      rotation={incomingSpriteRotation}
                       zIndex={0.81}
                     />
                   ) : null}
@@ -5603,49 +5625,81 @@ export function BattlefieldStage({
                     <Sprite
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
-                      scale={{ x: scaleX * 1.01, y: baseScale * squashY * 1.01 }}
+                      scale={{ x: scaleX * 1.01, y: scaleY * 1.01 }}
                       alpha={0.11}
                       tint={0xe5dbc4}
                       x={spriteSwayX + (facingLeft ? 0.45 : -0.45)}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY - 0.9}
-                      rotation={spriteRotation}
+                      rotation={outgoingSpriteRotation}
                       zIndex={0.9}
                     />
                   ) : null}
                   <Sprite
                     texture={texture}
                     anchor={{ x: 0.5, y: anchorY }}
-                    scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
+                    scale={{ x: scaleX * deathScaleX, y: scaleY * deathScaleY }}
                     alpha={unitSpriteAlpha * turnCrossfade.outgoingAlpha}
                     tint={unitSpriteTint}
                     x={spriteSwayX}
                     y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
-                    rotation={spriteRotation + deathRotation}
+                    rotation={outgoingSpriteRotation + deathRotation}
                     zIndex={1}
                   />
                   {incomingTurnTexture ? (
                     <Sprite
                       texture={incomingTurnTexture}
                       anchor={{ x: 0.5, y: anchorY }}
-                      scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
+                      scale={{ x: scaleX * deathScaleX, y: scaleY * deathScaleY }}
                       alpha={unitSpriteAlpha * turnCrossfade.incomingAlpha}
                       tint={unitSpriteTint}
                       x={spriteSwayX}
                       y={spriteBaseY + incomingTurnGroundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
-                      rotation={spriteRotation + deathRotation}
+                      rotation={incomingSpriteRotation + deathRotation}
                       zIndex={1.01}
+                    />
+                  ) : null}
+                  {isVehicleUnit
+                    && (movingThisUnit || turningThisUnit)
+                    && directionalSprite === 'm113_apc' ? (
+                    <Graphics
+                      zIndex={1.04}
+                      draw={(g) => {
+                        g.clear();
+                        const forwardX = moveScreenVector.x;
+                        const forwardY = moveScreenVector.y;
+                        const sideX = -forwardY;
+                        const sideY = forwardX;
+                        const gearPhase = (((locomotionPhase * 3 + (turningThisUnit ? vehicleTurnProgress * 1.4 : 0)) % 1) + 1) % 1;
+                        const trackLength = tileSize * 0.13;
+                        const trackGap = tileSize * 0.055;
+                        const trackY = groundOffsetY - tileSize * 0.08;
+                        for (let sideIndex = -1; sideIndex <= 1; sideIndex += 2) {
+                          const offsetX = sideX * trackGap * sideIndex;
+                          const offsetY = sideY * trackGap * sideIndex * 0.34;
+                          for (let treadIndex = 0; treadIndex < 5; treadIndex += 1) {
+                            const amount = ((treadIndex + gearPhase) % 5) / 4;
+                            const along = -trackLength + amount * trackLength * 2;
+                            const treadX = offsetX + forwardX * along;
+                            const treadY = trackY + offsetY + forwardY * along * 0.34;
+                            const treadHalf = Math.max(1, tileSize * 0.018);
+                            g.lineStyle(0.75, 0x77775f, 0.24 + vehicleMotionIntensity * 0.3);
+                            g.moveTo(treadX - sideX * treadHalf, treadY - sideY * treadHalf * 0.38);
+                            g.lineTo(treadX + sideX * treadHalf, treadY + sideY * treadHalf * 0.38);
+                          }
+                        }
+                      }}
                     />
                   ) : null}
                   {settlingTexture ? (
                     <Sprite
                       texture={settlingTexture}
                       anchor={{ x: 0.5, y: anchorY }}
-                      scale={{ x: scaleX * deathScaleX, y: baseScale * squashY * deathScaleY }}
+                      scale={{ x: scaleX * deathScaleX, y: scaleY * deathScaleY }}
                       alpha={deathAlphaMul}
                       tint={spriteTint}
                       x={spriteSwayX}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY + deathSinkY}
-                      rotation={spriteRotation + deathRotation}
+                      rotation={outgoingSpriteRotation + deathRotation}
                       zIndex={readableInFog ? 1.12 : 0.98}
                     />
                   ) : null}
@@ -5653,12 +5707,12 @@ export function BattlefieldStage({
                     <Sprite
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
-                      scale={{ x: scaleX * 1.018, y: baseScale * squashY * 1.018 }}
+                      scale={{ x: scaleX * 1.018, y: scaleY * 1.018 }}
                       alpha={0.36 * shotPulse}
                       tint={0xffd46d}
                       x={spriteSwayX}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
-                      rotation={spriteRotation}
+                      rotation={outgoingSpriteRotation}
                       zIndex={1.18}
                     />
                   ) : null}
@@ -5685,12 +5739,12 @@ export function BattlefieldStage({
                     <Sprite
                       texture={texture}
                       anchor={{ x: 0.5, y: anchorY }}
-                      scale={{ x: scaleX * 1.01, y: baseScale * squashY * 1.01 }}
+                      scale={{ x: scaleX * 1.01, y: scaleY * 1.01 }}
                       alpha={Math.min(dyingShown ? 1 : 0.95, 0.38 * hitPulse + (dyingShown ? 0.9 : 0.85) * impactFlash)}
                       tint={incomingHit.type === 'magic' ? 0xc58cff : impactFlash > 0.6 ? 0xf2d8a7 : 0xffe3a1}
                       x={spriteSwayX}
                       y={spriteBaseY + groundOffsetY + spriteBobY + spriteCombatY}
-                      rotation={spriteRotation}
+                      rotation={outgoingSpriteRotation}
                       zIndex={1.2}
                     />
                   ) : null}
