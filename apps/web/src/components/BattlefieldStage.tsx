@@ -448,8 +448,7 @@ const PROCEDURAL_BUILDING_UNDERLAY_ORDER: readonly MapTile['terrain'][] = [
   'road',
   'forest',
   'hill',
-  'swamp',
-  'water'
+  'swamp'
 ];
 
 export const proceduralBuildingUnderlayTerrain = (
@@ -494,7 +493,7 @@ export const proceduralBuildingUnderlayTerrain = (
           const neighborIndex = tileIndex(neighborQ, neighborR);
           if (footprint.has(neighborIndex)) continue;
           const terrain = tiles[neighborIndex]?.terrain;
-          if (!terrain || terrain === 'structure') continue;
+          if (!terrain || terrain === 'structure' || terrain === 'water') continue;
           candidateCounts.set(terrain, (candidateCounts.get(terrain) ?? 0) + 1);
         }
       }
@@ -522,6 +521,10 @@ export const presentationTerrainAt = (
   underlayByTile: ReadonlyMap<number, MapTile['terrain']>,
   index: number
 ) => underlayByTile.get(index) ?? tiles[index]?.terrain ?? 'plain';
+
+export const terrainDestructionRevision = (events: readonly { kind: string }[]) => (
+  events.reduce((revision, event) => revision + (event.kind === 'tile:destroyed' ? 1 : 0), 0)
+);
 
 export const terrainDetailDensity = (q: number, r: number, terrain: string) => {
   const familySalt = terrainDetailFamily(terrain) === 'vegetation'
@@ -2862,10 +2865,15 @@ export function BattlefieldStage({
     );
   }, [battlefieldMood, map.width, map.height]);
 
-  const terrainPresentationRevision = battleState.timeline.length;
+  const terrainPresentationRevision = useMemo(
+    () => terrainDestructionRevision(battleState.timeline),
+    // The timeline is mutated in place; length is the existing notification that new events arrived.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [battleState.timeline, battleState.timeline.length]
+  );
   const procBuildingUnderlay = useMemo(
     () => proceduralBuildingUnderlayTerrain(map.tiles, map.props ?? [], map.width, map.height),
-    // Destruction mutates map.tiles in place; the timeline length is its existing render revision.
+    // Destruction mutates map.tiles in place; the destruction count is its existing render revision.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [map.height, map.props, map.tiles, map.width, terrainPresentationRevision]
   );

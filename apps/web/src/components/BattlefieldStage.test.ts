@@ -11,6 +11,7 @@ import {
   proceduralBuildingUnderlayTerrain,
   softShadowLayers,
   smoothTerrainNoise,
+  terrainDestructionRevision,
   terrainDetailDensity,
   terrainDetailFamily,
   terrainMacroPattern,
@@ -208,6 +209,53 @@ describe('terrain and fog presentation', () => {
 
     expect([...proceduralBuildingUnderlayTerrain(tiles, props, 3, 3)]).toEqual([]);
     expect(tiles[4].terrain).toBe('structure');
+  });
+
+  it('refreshes a demolished footprint without changing the surviving underlay', () => {
+    const tiles: Array<{ terrain: 'plain' | 'structure' }> = Array.from(
+      { length: 25 },
+      () => ({ terrain: 'plain' })
+    );
+    tiles[6] = { terrain: 'structure' };
+    tiles[7] = { terrain: 'structure' };
+    const props = [{
+      id: 'demolition-test',
+      kind: 'proc-building' as const,
+      coordinate: { q: 1, r: 1 },
+      w: 2,
+      h: 1
+    }];
+    const timeline = [{ kind: 'unit:moved' }];
+
+    const beforeRevision = terrainDestructionRevision(timeline);
+    const before = proceduralBuildingUnderlayTerrain(tiles, props, 5, 5);
+    tiles[6].terrain = 'plain';
+    timeline.push({ kind: 'tile:destroyed' });
+    const afterRevision = terrainDestructionRevision(timeline);
+    const after = proceduralBuildingUnderlayTerrain(tiles, props, 5, 5);
+
+    expect(beforeRevision).toBe(0);
+    expect(afterRevision).toBe(1);
+    expect(before.get(6)).toBe('plain');
+    expect(before.get(7)).toBe('plain');
+    expect(after.has(6)).toBe(false);
+    expect(after.get(7)).toBe(before.get(7));
+    expect(tiles[6].terrain).toBe('plain');
+  });
+
+  it('does not infer a water underlay that the building footprint cannot render', () => {
+    const tiles = Array.from({ length: 9 }, () => ({ terrain: 'water' as const }));
+    const props = [{
+      id: 'island-building',
+      kind: 'proc-building' as const,
+      coordinate: { q: 1, r: 1 },
+      w: 1,
+      h: 1
+    }];
+    const structureTiles: Array<{ terrain: 'water' | 'structure' }> = [...tiles];
+    structureTiles[4] = { terrain: 'structure' };
+
+    expect([...proceduralBuildingUnderlayTerrain(structureTiles, props, 3, 3)]).toEqual([]);
   });
 
   it('varies detail density in broad deterministic regions instead of per-tile checker steps', () => {
