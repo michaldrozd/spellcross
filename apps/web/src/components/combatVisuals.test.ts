@@ -8,6 +8,7 @@ import {
   SMALL_ARMS_DEBRIS_LIFETIME_MS,
   combatEffectForShot,
   combatOutcomePresentationReady,
+  combatOutcomeTimelineEndIndex,
   combatEffectTiming,
   combatTimelineEventVisible,
   combatEffectTypeForWeapon,
@@ -224,6 +225,18 @@ describe('combat timeline presentation', () => {
     expect(combatOutcomePresentationReady([
       { ...visibleKillingEffect, timelineEndIndex: 24 }
     ], 25, impactAt - 1)).toBe(true);
+  });
+
+  it('anchors outcome presentation to the last combat event before turn bookkeeping', () => {
+    const timeline = [
+      { kind: 'unit:attacked', attackerId: 'squad-1', defenderId: 'enemy-1' },
+      { kind: 'unit:defeated', unitId: 'enemy-1', by: 'squad-1' },
+      { kind: 'unit:xp', unitId: 'squad-1' },
+      { kind: 'round:started' }
+    ];
+
+    expect(combatOutcomeTimelineEndIndex(timeline)).toBe(2);
+    expect(combatOutcomeTimelineEndIndex([{ kind: 'round:started' }])).toBe(1);
   });
 });
 

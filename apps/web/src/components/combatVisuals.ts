@@ -165,6 +165,18 @@ export function combatTimelineEventVisible(
   });
 }
 
+export function combatOutcomeTimelineEndIndex(
+  timeline: readonly CombatTimelinePresentationEvent[]
+) {
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const event = timeline[index];
+    if (event.kind === 'unit:attacked' || event.kind === 'unit:defeated') {
+      return index + 1;
+    }
+  }
+  return timeline.length;
+}
+
 export function combatOutcomePresentationReady(
   attackEffects: readonly TargetedCombatEffect[],
   outcomeTimelineEndIndex: number,

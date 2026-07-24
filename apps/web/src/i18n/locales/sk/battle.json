@@ -33,6 +33,7 @@
     "enemyTurnDetail": "Nepriateľské jednotky konajú",
     "enemyPhaseTitle": "Nepriateľská fáza",
     "enemyPhaseDetail": "{{unit}} útočí",
+    "enemyPhaseHiddenDetail": "Nepriateľské sily útočia",
     "objectiveActionTitle": "Akcia misie splnená",
     "objectiveActionDetail": "{{action}}"
   },

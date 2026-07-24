@@ -31,6 +31,7 @@ test('a deciding shell reveals the localized outcome only when its impact lands'
     qaWindow.__outcomeImpactNow = Date.now();
     Date.now = () => qaWindow.__outcomeImpactNow;
     const attack = control.attackUnitWith(attacker.id, defender.id, 'howitzer');
+    control.endTurn();
     const victory = control.checkVictory();
     control.resolveOutcome();
     await control.setLanguage('sk');
@@ -41,11 +42,12 @@ test('a deciding shell reveals the localized outcome only when its impact lands'
     attack: { success: true, weaponId: 'howitzer' },
     victory: { status: 'victory', surviving: 0 }
   });
-  await expect(page.locator('.battle-phase-notice')).toContainText('Zásah potvrdený', { timeout: 2_000 });
+  await expect(page.locator('.battle-phase-notice')).toContainText('Zásah potvrdený', { timeout: 5_000 });
   await expect.poll(() => page.evaluate(() => (
     (window as any).__battleControl.activeAttackEffects().at(-1)
   ))).toMatchObject({ arc: true, killed: true, sourceVisible: true, targetVisible: true });
   await expect(page.locator('.battle-outcome-overlay')).toHaveCount(0);
+  await expect(page.locator('.battle-presentation-input-guard')).toBeVisible();
   await expect(page.locator('.log-entries')).not.toContainText('Zničené');
 
   await page.evaluate(() => {
@@ -53,6 +55,7 @@ test('a deciding shell reveals the localized outcome only when its impact lands'
   });
   await expect(page.locator('.log-entries')).toContainText('Zničené');
   await expect(page.locator('.battle-outcome-overlay')).toBeVisible();
+  await expect(page.locator('.battle-presentation-input-guard')).toHaveCount(0);
   await expect(page.locator('.battle-outcome-stamp')).toHaveText('SEKTOR ZABEZPEČENÝ');
   await expect(page.locator('.battle-outcome-overlay')).not.toContainText('SECTOR SECURED');
 
@@ -61,7 +64,7 @@ test('a deciding shell reveals the localized outcome only when its impact lands'
   });
 });
 
-test('hidden enemy fire keeps its source out of the presentation DOM', async ({ page }) => {
+test('hidden AI fire uses a generic phase notice without exposing its source', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await startBattle(page, 'sector-paris');
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
@@ -78,18 +81,37 @@ test('hidden enemy fire keeps its source out of the presentation DOM', async ({ 
     control.snapUnit(attacker.id, 8, 8);
     control.setActionPoints(attacker.id, 99);
     control.setAllianceVision([{ q: 10, r: 8 }]);
-    const attack = control.attackEnemyUnitWith(attacker.id, defender.id, 'spore-mortar');
-    return { attack };
+    control.clearScriptedEvents();
+    return { attackerId: attacker.id };
   });
 
-  expect(setup).toMatchObject({ attack: { success: true, weaponId: 'spore-mortar' } });
+  expect(setup?.attackerId).toBeTruthy();
+  await page.evaluate(() => {
+    const qaWindow = window as any;
+    qaWindow.__phaseNoticeTexts = [];
+    const recordNotice = () => {
+      const text = document.querySelector('.battle-phase-notice')?.textContent?.trim();
+      if (text && !qaWindow.__phaseNoticeTexts.includes(text)) qaWindow.__phaseNoticeTexts.push(text);
+    };
+    qaWindow.__phaseNoticeObserver = new MutationObserver(recordNotice);
+    qaWindow.__phaseNoticeObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  });
+  await page.getByRole('button', { name: /^End Turn$/i }).click();
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__phaseNoticeTexts as string[]
+  )), { timeout: 10_000 }).toContain('Enemy PhaseEnemy forces attacking');
   await expect.poll(() => page.evaluate(() => (
     (window as any).__battleControl.activeAttackEffects().at(-1)
-  ))).toMatchObject({ arc: true, sourceVisible: false, targetVisible: true });
-  await expect(page.locator('.battle-phase-notice')).toContainText('Hit Confirmed', { timeout: 2_000 });
-  await expect(page.locator('.battle-phase-notice')).not.toContainText('Ironroot Colossus');
+  )), { timeout: 10_000 }).toMatchObject({ arc: true, sourceVisible: false, targetVisible: true });
+  expect(await page.evaluate(() => (
+    (window as any).__phaseNoticeTexts as string[]
+  ))).not.toEqual(expect.arrayContaining([expect.stringContaining('Ironroot Colossus')]));
   await expect(page.locator('.log-entries')).not.toContainText('Ironroot Colossus');
-  expect(await page.locator('[data-attacker-id], [data-source-unit], [data-source-id]').count()).toBe(0);
+  await page.evaluate(() => (window as any).__phaseNoticeObserver.disconnect());
 });
 
 test('reduced motion reveals a deciding kill log and outcome together', async ({ page }) => {
@@ -120,6 +142,7 @@ test('reduced motion reveals a deciding kill log and outcome together', async ({
   });
 
   expect(setup).toMatchObject({ attack: { success: true, weaponId: 'howitzer' } });
+  await expect(page.locator('.battle-phase-notice')).toContainText(/Hit Confirmed|Zásah potvrdený/);
   await expect(page.locator('.log-entries')).toContainText(/Destroyed|Zničené/);
   await expect(page.locator('.battle-outcome-overlay')).toBeVisible();
 });

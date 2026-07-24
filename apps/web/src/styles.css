@@ -3665,6 +3665,13 @@ header.app-header {
 }
 
 /* In-battle outcome card — shown on the frozen battlefield before returning to HQ */
+.battle-presentation-input-guard {
+  position: fixed;
+  inset: 0;
+  z-index: 119;
+  cursor: wait;
+}
+
 .battle-outcome-overlay {
   position: fixed;
   inset: 0;

@@ -66,6 +66,7 @@ import type { ArrivalEffect, AttackEffect, MovingUnit } from './components/Battl
 import {
   combatEffectForShot,
   combatOutcomePresentationReady,
+  combatOutcomeTimelineEndIndex,
   combatEffectTiming,
   combatEffectTypeForWeapon,
   combatTimelineEventVisible
@@ -1491,7 +1492,7 @@ const BattleView: React.FC<{
       status,
       scenarioId: battle.scenario.id,
       scenarioName: battle.scenario.name,
-      timelineEndIndex: battle.state.timeline.length,
+      timelineEndIndex: combatOutcomeTimelineEndIndex(battle.state.timeline),
       rounds: battle.state.round,
       enemiesTotal: enemyUnits.length,
       enemiesDestroyed: enemyUnits.filter(isDead).length,
@@ -1666,27 +1667,33 @@ const BattleView: React.FC<{
     const targetVisible = defender.faction === 'alliance'
       || shotVisibleTiles.has(tileIndex(to));
     const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
-    window.setTimeout(
-      () => {
-        if (!targetVisible || (!sourceVisible && !outcome.hit)) return;
-        const noticeTitle = presentation.suppressive
-          ? i18n.t('battle:notice.suppressionTitle')
-          : outcome.hit ? i18n.t('battle:notice.hitTitle') : i18n.t('battle:notice.missTitle');
-        const noticeDetail = presentation.suppressive
-          ? i18n.t('battle:notice.suppressionDetail', {
-              defender: unitDisplayName(defender.id, battle.state),
-              morale: outcome.moraleDamage
-            })
-          : outcome.hit
-            ? i18n.t('battle:notice.hitDetail', { defender: unitDisplayName(defender.id, battle.state), damage: outcome.damage })
-            : i18n.t('battle:notice.missDetail', {
-                attacker: unitDisplayName(attacker.id, battle.state),
-                defender: unitDisplayName(defender.id, battle.state)
-              });
-        showPhaseNotice(noticeTitle, noticeDetail, noticeTone);
-      },
-      delay + timing.impactAtMs
-    );
+    const showImpactNotice = () => {
+      if (!targetVisible || (!sourceVisible && !outcome.hit)) return;
+      const noticeTitle = presentation.suppressive
+        ? i18n.t('battle:notice.suppressionTitle')
+        : outcome.hit ? i18n.t('battle:notice.hitTitle') : i18n.t('battle:notice.missTitle');
+      const noticeDetail = presentation.suppressive
+        ? i18n.t('battle:notice.suppressionDetail', {
+            defender: unitDisplayName(defender.id, battle.state),
+            morale: outcome.moraleDamage
+          })
+        : outcome.hit
+          ? i18n.t('battle:notice.hitDetail', { defender: unitDisplayName(defender.id, battle.state), damage: outcome.damage })
+          : i18n.t('battle:notice.missDetail', {
+              attacker: unitDisplayName(attacker.id, battle.state),
+              defender: unitDisplayName(defender.id, battle.state)
+            });
+      showPhaseNotice(noticeTitle, noticeDetail, noticeTone);
+    };
+    const impactNoticeDelay = document.visibilityState === 'visible'
+      && !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      ? delay + timing.impactAtMs
+      : 0;
+    if (impactNoticeDelay > 0) {
+      window.setTimeout(showImpactNotice, impactNoticeDelay);
+    } else {
+      showImpactNotice();
+    }
     let timelineStartIndex = attackEventIndex;
     if (timelineStartIndex === undefined) {
       for (let index = battle.state.timeline.length - 1; index >= 0; index -= 1) {
@@ -1741,7 +1748,7 @@ const BattleView: React.FC<{
       killed: outcome.killed,
       suppressive: presentation.suppressive
     }]);
-    return timing;
+    return { ...timing, sourceVisible, targetVisible };
   };
   const rejectMove = (coord: HexCoordinate, message = t('battle:reject.moveBlocked')) => {
     AudioManager.play('error');
@@ -2223,7 +2230,13 @@ const BattleView: React.FC<{
             attacksMade += 1;
             if (!phaseUpdated) {
               phaseUpdated = true;
-              showPhaseNotice(t('battle:notice.enemyPhaseTitle'), t('battle:notice.enemyPhaseDetail', { unit: unitDisplayName(action.attackerId, battle.state) }), 'enemy');
+              showPhaseNotice(
+                t('battle:notice.enemyPhaseTitle'),
+                timing.sourceVisible
+                  ? t('battle:notice.enemyPhaseDetail', { unit: unitDisplayName(action.attackerId, battle.state) })
+                  : t('battle:notice.enemyPhaseHiddenDetail'),
+                'enemy'
+              );
             }
             await sleep(enemyKilled ? 140 : enemyHit ? 70 : 0); // let the kill/hit land before moving on
             await sleep(700);
@@ -3100,6 +3113,9 @@ const BattleView: React.FC<{
           </div>
         </div>
       </div>
+      {battleOutcome && !visibleBattleOutcome ? (
+        <div className="battle-presentation-input-guard" aria-hidden="true" />
+      ) : null}
       {visibleBattleOutcome ? (
         <div className={`battle-outcome-overlay ${visibleBattleOutcome.status}`}>
           <div className="battle-outcome-card">

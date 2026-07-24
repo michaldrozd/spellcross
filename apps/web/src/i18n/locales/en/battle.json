@@ -33,6 +33,7 @@
     "enemyTurnDetail": "Hostile units are acting",
     "enemyPhaseTitle": "Enemy Phase",
     "enemyPhaseDetail": "{{unit}} attacking",
+    "enemyPhaseHiddenDetail": "Enemy forces attacking",
     "objectiveActionTitle": "Mission Action Complete",
     "objectiveActionDetail": "{{action}}"
   },
