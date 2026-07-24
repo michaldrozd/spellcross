@@ -224,6 +224,7 @@ export const RASTER_UNIT_ANCHOR_Y: Record<string, number> = {
 // Per-unit raster sprite overrides keyed by a substring of the unit definitionId. Checked after the
 // type-branch fallback so each new unit gets its own art; add a line here per generated sprite.
 const RASTER_UNIT_OVERRIDES: Array<[string, string]> = [
+  ['ogre-brute', '/assets/generated/ogre_brute.png'],
   ['firefly-105', '/assets/generated/firefly_105.png'],
   ['badger-mortar-carrier', '/assets/generated/badger_mortar_carrier.png'],
   ['thunderhead-155', '/assets/generated/thunderhead_155.png'],
@@ -293,9 +294,22 @@ export function rasterUnitOverride(definitionId: string): string | null {
   return null;
 }
 
+const UNIT_PORTRAIT_OVERRIDES: Record<string, string> = {
+  'heavy-infantry': '/assets/generated/heavy_infantry_portrait.png',
+  'light-infantry': '/assets/generated/light_infantry_idle_s.png',
+  rangers: '/assets/generated/rangers_portrait.png'
+};
+
+export const SHARED_UNIT_PORTRAIT_VARIANTS = [
+  ['gepard-aa', 'leopard-2', 'sky-lance'],
+  ['paladin-acs', 'spg-m109']
+] as const;
+
 // A representative static sprite for a unit, for HUD portraits. Hand-authored override wins; otherwise
 // fall back to the same base art the battlefield uses for each unit type, so every unit shows real art.
 export function unitPortrait(unitType: string, definitionId: string, isFriendly: boolean): string {
+  const portraitOverride = UNIT_PORTRAIT_OVERRIDES[definitionId];
+  if (portraitOverride) return portraitOverride;
   const ov = rasterUnitOverride(definitionId);
   if (ov) return ov;
   const id = definitionId.toLowerCase();
