@@ -636,6 +636,7 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
     return tile * 0.58;
   }
   if (unitType === 'vehicle') {
+    if (definitionId === 'ogre-brute') return tile * 0.74;
     if (definitionId.includes('breorn')) return tile * 0.98; // boss titan towers over the field
     if (definitionId.includes('golem')) return tile * 0.8;
     if (definitionId.includes('siege-walker')) return tile * 0.72;

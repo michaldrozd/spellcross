@@ -6,8 +6,12 @@ import { describe, expect, it } from 'vitest';
 import {
   SHARED_UNIT_PORTRAIT_VARIANTS,
   battlefieldDirectionalSprite,
+  deathMarkerVisualClass,
+  leavesMechanicalWreck,
   rasterUnitOverride,
-  unitPortrait
+  unitPortrait,
+  unitVisualHeight,
+  vehicleRunningGearKind
 } from './unitVisuals.js';
 
 const portraitFor = (definitionId: string) => {
@@ -66,5 +70,15 @@ describe('unit portraits', () => {
     expect(rasterUnitOverride('ogre-brute')).toBe('/assets/generated/ogre_brute.png');
     expect(portraitFor('ogre-brute')).toBe('/assets/generated/ogre_brute.png');
     expect(battlefieldDirectionalSprite('vehicle', 'ogre-brute')).toBeUndefined();
+  });
+
+  it('keeps the Ogre larger than infantry without turning it into a machine', () => {
+    const tileSize = 56;
+    expect(unitVisualHeight(tileSize, 'vehicle', 'ogre-brute')).toBe(tileSize * 0.74);
+    expect(unitVisualHeight(tileSize, 'vehicle', 'ogre-brute'))
+      .toBeGreaterThan(unitVisualHeight(tileSize, 'infantry', 'war-orc'));
+    expect(vehicleRunningGearKind('vehicle', 'ogre-brute')).toBeNull();
+    expect(leavesMechanicalWreck('vehicle', 'ogre-brute')).toBe(false);
+    expect(deathMarkerVisualClass('vehicle', 'ogre-brute')).toBe('heavy');
   });
 });
