@@ -65,6 +65,7 @@ import {
   vehicleRunningGearKind,
   vehicleSheetDirectionNameForOrientation,
   vehicleSheetDirectionNameForScreenVector,
+  vehicleTurnSheetBlend,
   vehicleTurnCrossfade,
   vehicleTurnRotation,
   vehicleTurnScaleX,
@@ -714,6 +715,21 @@ function mixScreenVectors(a: { x: number; y: number }, b: { x: number; y: number
   const y = a.y + (b.y - a.y) * amount;
   const len = Math.max(1, Math.hypot(x, y));
   return { x: x / len, y: y / len };
+}
+
+function screenVectorForDirectionName(direction: string) {
+  const diagonal = Math.SQRT1_2;
+  const vectors: Record<string, { x: number; y: number }> = {
+    e: { x: 1, y: 0 },
+    se: { x: diagonal, y: diagonal },
+    s: { x: 0, y: 1 },
+    sw: { x: -diagonal, y: diagonal },
+    w: { x: -1, y: 0 },
+    nw: { x: -diagonal, y: -diagonal },
+    n: { x: 0, y: -1 },
+    ne: { x: diagonal, y: -diagonal }
+  };
+  return vectors[direction] ?? vectors.e;
 }
 
 const directionalUnitSheetPath = (spriteName: string, state: 'idle' | 'walk') => {
@@ -5370,6 +5386,7 @@ export function BattlefieldStage({
         let vehicleTurnToOrientation: number | null = null;
         let vehicleTurnProgress = 0;
         let vehicleTurnDirection = 0;
+        let vehicleTurnBlend: ReturnType<typeof vehicleTurnSheetBlend> | null = null;
         let vehicleMotionIntensity = 0;
         let vehicleDustIntensity = 0;
         let moveScreenVector = orientationScreenVector(animatedOrientation);
@@ -5440,7 +5457,22 @@ export function BattlefieldStage({
             vehicleTurnToOrientation = nextOrientation;
             vehicleTurnProgress = turnProgress;
             vehicleTurnDirection = Math.sign(cross) || 1;
-            moveScreenVector = mixScreenVectors(moveScreenVector, nextVector, smoothTurn);
+            if (unitDirectionalSprite) {
+              vehicleTurnBlend = vehicleTurnSheetBlend(
+                currentOrientation,
+                nextOrientation,
+                unitDirectionalSprite,
+                turnProgress,
+                vehicleTurnDirection
+              );
+              const turnFromVector = screenVectorForDirectionName(vehicleTurnBlend.displayFrom);
+              const turnToVector = screenVectorForDirectionName(vehicleTurnBlend.displayTo);
+              const turnStepProgress = vehicleTurnBlend.progress;
+              const smoothStepTurn = turnStepProgress * turnStepProgress * (3 - 2 * turnStepProgress);
+              moveScreenVector = mixScreenVectors(turnFromVector, turnToVector, smoothStepTurn);
+            } else {
+              moveScreenVector = mixScreenVectors(moveScreenVector, nextVector, smoothTurn);
+            }
           }
           const turnBlendWindow = 0.64;
           if (!isGroundVehicle && stepProgress > 1 - turnBlendWindow && currentStep + 2 < movementPath.length) {
@@ -5473,6 +5505,11 @@ export function BattlefieldStage({
         const displayR = Math.min(map.height - 1, Math.max(0, Math.round(displayCoord.r)));
         const idx = displayR * map.width + displayQ;
         const elev = map.tiles[idx]?.elevation ?? 0;
+        const groundTerrain = map.tiles[idx]?.terrain ?? 'plain';
+        const darkVehicleGround = groundTerrain === 'road'
+          || groundTerrain === 'urban'
+          || groundTerrain === 'structure'
+          || groundTerrain === 'swamp';
         const geom = ISO_MODE ? topGeomFor(displayQ, displayR) : null;
         const baseHeight = movingBaseHeight ?? (ISO_MODE && geom ? geom.avgHeight : elev);
         const isGhoulPack = definitionId.includes('ghoul') || definitionId.includes('zombie') || definitionId.includes('undead');
@@ -5771,16 +5808,21 @@ export function BattlefieldStage({
                     const shadowAlpha = isDestroyed
                       ? 0
                       : isGroundVehicle
-                        ? (movingThisUnit || turningThisUnit ? 0.16 : 0.19)
+                        ? (movingThisUnit || turningThisUnit ? 0.24 : 0.22)
                         : footprint.alpha;
-                    const shadowRx = isGroundVehicle ? footprint.rx * 0.44 : footprint.rx;
-                    const shadowRy = isGroundVehicle ? footprint.ry * 0.36 : footprint.ry;
+                    const shadowRx = isGroundVehicle ? footprint.rx * 0.72 : footprint.rx;
+                    const shadowRy = isGroundVehicle ? footprint.ry * 0.58 : footprint.ry;
                     const showFactionBase = isVisible || readableInFog;
 	                  if (showFactionBase) {
 	                    // Ground vehicles get the team disc too (their large silhouette dilutes it, so 0.7x);
 	                    // this is the main friend/foe read at zoomed-out city scale.
-	                    const discAlpha = (isVisible ? baseAlpha : baseAlpha * 0.55) * (isGroundVehicle ? 0.7 : 1);
-	                    g.beginFill(isFriendly ? 0x1b5771 : 0x861d17, discAlpha);
+	                    const discAlpha = (isVisible ? baseAlpha : baseAlpha * 0.55) * (isGroundVehicle ? 0.62 : 1);
+	                    g.beginFill(
+                        isGroundVehicle
+                          ? (isFriendly ? 0x5d8f97 : 0xae5a48)
+                          : (isFriendly ? 0x1b5771 : 0x861d17),
+                        discAlpha
+                      );
 	                    g.drawEllipse(0, footprint.y, baseRx, baseRy);
 	                    g.endFill();
 	                    g.lineStyle(1, isFriendly ? 0x0c2f3f : 0x4a0f0a, discAlpha * 1.15);
@@ -5809,7 +5851,14 @@ export function BattlefieldStage({
                       for (const sideOffset of VEHICLE_SIDE_OFFSETS) {
                         const ox = perpX * trackGap * sideOffset;
                         const oy = perpY * trackGap * sideOffset;
-                        g.lineStyle(2.45, 0x030503, isSelected ? 0.72 : 0.64);
+                        g.lineStyle(
+                          4.2,
+                          darkVehicleGround ? 0xb8ad89 : 0x1d2419,
+                          darkVehicleGround ? (isSelected ? 0.28 : 0.23) : 0.3
+                        );
+                        g.moveTo(ox - contactVector.x * trackHalf, contactY + oy - contactVector.y * trackHalf * 0.11);
+                        g.lineTo(ox + contactVector.x * trackHalf, contactY + oy + contactVector.y * trackHalf * 0.11);
+                        g.lineStyle(2.25, 0x030503, isSelected ? 0.78 : 0.7);
                         g.moveTo(ox - contactVector.x * trackHalf, contactY + oy - contactVector.y * trackHalf * 0.11);
                         g.lineTo(ox + contactVector.x * trackHalf, contactY + oy + contactVector.y * trackHalf * 0.11);
                       }
@@ -5820,14 +5869,19 @@ export function BattlefieldStage({
                         const dustPulse = vehicleDustIntensity * (0.82 + 0.18 * Math.abs(fastWave));
                         for (let dustIndex = 0; dustIndex < 4; dustIndex += 1) {
                           const dustAge = (runningGearPhase + dustIndex / 4) % 1;
-                          const dustAlpha = (1 - dustAge) * 0.17 * dustPulse;
+                          const dustAlpha = (1 - dustAge) * 0.34 * dustPulse;
                           const side = dustIndex % 2 === 0 ? -1 : 1;
-                          g.beginFill(dustIndex === 0 ? 0xb7a77f : 0x8e8164, dustAlpha * 0.78);
+                          g.beginFill(
+                            darkVehicleGround
+                              ? (dustIndex === 0 ? 0xc4bda3 : 0x99937e)
+                              : (dustIndex === 0 ? 0xb7a77f : 0x8e8164),
+                            dustAlpha * 0.9
+                          );
                           g.drawEllipse(
                             rearX - contactVector.x * footprint.rx * (0.22 + dustAge * 0.72) + perpX * side * footprint.ry * (0.12 + dustAge * 0.3),
                             rearY - contactVector.y * footprint.ry * (0.12 + dustAge * 0.4) + perpY * side * footprint.ry * 0.16 - dustAge * tileSize * 0.035,
-                            footprint.rx * (0.095 + dustAge * 0.16),
-                            Math.max(0.9, footprint.ry * (0.065 + dustAge * 0.09))
+                            footprint.rx * (0.12 + dustAge * 0.19),
+                            Math.max(1.05, footprint.ry * (0.08 + dustAge * 0.11))
                           );
                           g.endFill();
                         }
@@ -5961,10 +6015,13 @@ export function BattlefieldStage({
                 && directionalSprite
                 && vehicleTurnFromOrientation !== null
                 && vehicleTurnToOrientation !== null
-                ? {
-                    from: vehicleSheetDirectionNameForOrientation(vehicleTurnFromOrientation, directionalSprite),
-                    to: vehicleSheetDirectionNameForOrientation(vehicleTurnToOrientation, directionalSprite)
-                  }
+                ? vehicleTurnBlend ?? vehicleTurnSheetBlend(
+                    vehicleTurnFromOrientation,
+                    vehicleTurnToOrientation,
+                    directionalSprite,
+                    vehicleTurnProgress,
+                    vehicleTurnDirection
+                  )
                 : null;
               const spriteDirection = turnDirections?.from
                 ?? (isVehicleUnit && directionalSprite === 'm113_apc'
@@ -6116,16 +6173,20 @@ export function BattlefieldStage({
                 ? directionalSpriteGroundOffset(directionalSprite, textureSheetState, turnDirections.to, baseScale) + (DIRECTIONAL_UNIT_GROUND_BIAS[directionalSprite] ?? 0)
                 : groundOffsetY;
               const turnCrossfade = incomingTurnTexture
-                ? vehicleTurnCrossfade(vehicleTurnProgress)
+                ? vehicleTurnCrossfade(turnDirections?.progress ?? vehicleTurnProgress)
                 : { outgoingAlpha: 1, incomingAlpha: 0 };
               const outgoingTurnRotation = incomingTurnTexture
-                ? vehicleTurnRotation(vehicleTurnProgress, vehicleTurnDirection, false)
+                ? vehicleTurnRotation(turnDirections?.progress ?? vehicleTurnProgress, vehicleTurnDirection, false)
                 : 0;
               const incomingTurnRotation = incomingTurnTexture
-                ? vehicleTurnRotation(vehicleTurnProgress, vehicleTurnDirection, true)
+                ? vehicleTurnRotation(turnDirections?.progress ?? vehicleTurnProgress, vehicleTurnDirection, true)
                 : 0;
-              const turnScaleX = incomingTurnTexture ? vehicleTurnScaleX(vehicleTurnProgress) : 1;
-              const turnScaleY = incomingTurnTexture ? vehicleTurnScaleY(vehicleTurnProgress) : 1;
+              const turnScaleX = incomingTurnTexture
+                ? vehicleTurnScaleX(turnDirections?.progress ?? vehicleTurnProgress)
+                : 1;
+              const turnScaleY = incomingTurnTexture
+                ? vehicleTurnScaleY(turnDirections?.progress ?? vehicleTurnProgress)
+                : 1;
               const vehiclePose = isVehicleUnit && canMirrorForFacing ? rasterVehiclePose(moveScreenVector) : null;
               const facingLeft = vehiclePose ? vehiclePose.mirrored : canMirrorForFacing && animatedOrientation >= 3 && animatedOrientation <= 5;
               // Vehicles carry weight: a road shake + suspension dip while moving (driven by fastWave,
@@ -6180,8 +6241,10 @@ export function BattlefieldStage({
                 : dyingSpook ? mixColor(0x6b5a52, definitionId.includes('skeleton') || isGhoulPack ? 0x6f7d6a : 0x9a3326, dEase)
                 : dyingFoot ? mixColor(0x6b5a52, 0x4a3a34, dEase)
                 : 0x6b5a52;
-              const spriteTint = directionalSprite === 'apc_directional' || directionalSprite === 'm113_apc'
-                ? 0xd7d9b8
+              const spriteTint = directionalSprite === 'm113_apc'
+                ? 0xf1e6b8
+                : directionalSprite === 'apc_directional'
+                  ? 0xe3dfc1
                 : isFriendly
                   ? 0xe9e6d7
                   : isUndeadDemon
@@ -6192,11 +6255,13 @@ export function BattlefieldStage({
               unitVisibleTopY = unitSpriteTopY + spriteContentTopFrac(texture) * desiredH;
               const silhouetteAlpha = readableInFog
                 ? (isGroundVehicle ? 0.5 : 0.62)
+                : isVisible && isGroundVehicle
+                  ? (directionalSprite === 'm113_apc' ? 0.38 : 0.24)
                 : isVisible && isFootUnit
                   ? 0.32
                   : 0;
               const silhouetteTint = 0x050605;
-              const silhouetteScale = readableInFog ? 1.07 : 1.025;
+              const silhouetteScale = readableInFog ? 1.07 : isGroundVehicle ? 1.045 : 1.025;
               const unitSpriteAlpha = (isFriendly ? 1 : isVisible ? 1 : 0.72) * deathAlphaMul;
               const unitSpriteTint = deathTint !== null ? deathTint : suppressed ? 0xb9b2a4 : routed ? 0xc7a39c : spriteTint;
               return (

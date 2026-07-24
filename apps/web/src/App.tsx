@@ -113,7 +113,9 @@ const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
   if (dq < 0 && dr < 0) return 7;
   return 0;
 };
-const movingUnitDuration = (moving: MovingUnit) => {
+type MovingUnitTiming = Pick<MovingUnit, 'path' | 'stepDuration' | 'preAlignDuration' | 'segmentTurnDuration'>;
+
+const movingUnitDuration = (moving: MovingUnitTiming) => {
   const movementDuration = (moving.path.length - 1) * moving.stepDuration;
   const segmentTurnDuration = moving.segmentTurnDuration ?? 0;
   let turnDuration = 0;
@@ -125,6 +127,14 @@ const movingUnitDuration = (moving: MovingUnit) => {
     }
   }
   return (moving.preAlignDuration ?? 0) + movementDuration + turnDuration;
+};
+export const prepareMovingUnit = (
+  movement: Omit<MovingUnit, 'startTime'>,
+  startSound: (durationMs: number) => void,
+  now: () => number = Date.now
+): MovingUnit => {
+  startSound(movingUnitDuration(movement));
+  return { ...movement, startTime: now() };
 };
 // When the glide reaches a given path tile, accounting for directional-vehicle turn pauses so the reaction
 // muzzle/HIT lands exactly as the sprite arrives there rather than a corner-turn too early.
@@ -1820,17 +1830,17 @@ const BattleView: React.FC<{
       : 0;
     let moving: MovingUnit | null = null;
     if (fullPath.length >= 2) {
-      moving = {
-        unitId,
-        path: fullPath,
-        startTime: Date.now(),
-        stepDuration,
-        preAlignDuration,
-        segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0,
-        initialOrientation: usesDirectionalTurns ? startOrientation : undefined
-      };
-      // realistic engine/track/footstep audio matched to how long this glide actually takes
-      AudioManager.playMovement(moveProfile, movingUnitDuration(moving));
+      moving = prepareMovingUnit(
+        {
+          unitId,
+          path: fullPath,
+          stepDuration,
+          preAlignDuration,
+          segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0,
+          initialOrientation: usesDirectionalTurns ? startOrientation : undefined
+        },
+        (durationMs) => AudioManager.playMovement(moveProfile, durationMs)
+      );
       movingUnitRef.current = moving;
       flushSync(() => {
         setMovingUnit(moving);
@@ -1874,18 +1884,19 @@ const BattleView: React.FC<{
     const moveProfile = movementSoundProfileFor(unitType, def);
     const usesDirectionalTurns = isVehicleMove && Boolean(battlefieldDirectionalSprite(unitType, def));
     const firstOrientation = orientationForStep(fullPath[0], fullPath[1]);
-    const moving: MovingUnit = {
-      unitId,
-      path: fullPath,
-      startTime: Date.now(),
-      stepDuration: isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS,
-      preAlignDuration: isVehicleMove
-        ? (usesDirectionalTurns && startOrientation !== firstOrientation ? VEHICLE_TURN_DURATION_MS : usesDirectionalTurns ? 0 : 150)
-        : 0,
-      segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0,
-      initialOrientation: usesDirectionalTurns ? startOrientation : undefined
-    };
-    AudioManager.playMovement(moveProfile, movingUnitDuration(moving)); // realistic engine/track/footstep for the whole glide
+    const moving = prepareMovingUnit(
+      {
+        unitId,
+        path: fullPath,
+        stepDuration: isVehicleMove ? VEHICLE_STEP_DURATION_MS : FOOT_STEP_DURATION_MS,
+        preAlignDuration: isVehicleMove
+          ? (usesDirectionalTurns && startOrientation !== firstOrientation ? VEHICLE_TURN_DURATION_MS : usesDirectionalTurns ? 0 : 150)
+          : 0,
+        segmentTurnDuration: usesDirectionalTurns ? VEHICLE_TURN_DURATION_MS : 0,
+        initialOrientation: usesDirectionalTurns ? startOrientation : undefined
+      },
+      (durationMs) => AudioManager.playMovement(moveProfile, durationMs)
+    );
     movingUnitRef.current = moving;
     flushSync(() => {
       setMovingUnit(moving);

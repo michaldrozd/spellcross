@@ -57,6 +57,7 @@ import {
   vehicleRunningGearKind,
   vehicleSheetDirectionNameForOrientation,
   vehicleSheetDirectionNameForScreenVector,
+  vehicleTurnSheetBlend,
   vehicleTurnCrossfade,
   vehicleTurnRotation,
   vehicleTurnScaleX,
@@ -316,11 +317,12 @@ function measureCellBottoms(sheet: Awaited<ReturnType<typeof loadImage>>, rows: 
 describe('unitVisualHeight', () => {
   it('keeps ground vehicle raster sprites at tactical scale', () => {
     const tile = 56;
+    const m113Height = unitVisualHeight(tile, 'vehicle', 'm113', 'm113_apc');
 
     expect(unitVisualHeight(tile, 'vehicle', 'leopard-2')).toBeLessThan(tile * 0.5);
-    expect(unitVisualHeight(tile, 'vehicle', 'm113')).toBeLessThan(tile * 0.5);
+    expect(m113Height).toBeLessThan(tile * 0.54);
     expect(unitVisualHeight(tile, 'support', 'supply-truck')).toBeLessThan(tile * 0.5);
-    expect(unitVisualHeight(tile, 'vehicle', 'm113')).toBeGreaterThan(tile * 0.44);
+    expect(m113Height).toBeGreaterThan(tile * 0.5);
   });
 
   it('does not tilt raster vehicles into vertical launch poses', () => {
@@ -698,6 +700,81 @@ describe('vehicle movement sheets', () => {
     }
   });
 
+  it('pins all eight M113 and supply-truck poses to unique visual headings', async () => {
+    const screenVectors = [
+      { name: 'n', x: 0, y: -1 },
+      { name: 'ne', x: 1, y: -1 },
+      { name: 'e', x: 1, y: 0 },
+      { name: 'se', x: 1, y: 1 },
+      { name: 's', x: 0, y: 1 },
+      { name: 'sw', x: -1, y: 1 },
+      { name: 'w', x: -1, y: 0 },
+      { name: 'nw', x: -1, y: -1 }
+    ];
+    const vehicles = [
+      { sprite: 'm113_apc', sheet: 'm113_apc_idle_sheet.png' },
+      { sprite: 'supply_truck_directional', sheet: 'supply_truck_directional_idle_sheet.png' }
+    ];
+
+    for (const vehicle of vehicles) {
+      const sheet = await loadImage(path.resolve(process.cwd(), `public/assets/generated/${vehicle.sheet}`));
+      const canvas = createCanvas(128, 128);
+      const ctx = canvas.getContext('2d');
+      const usedColumns = new Set<number>();
+      const frameSignatures = new Set<string>();
+
+      for (const vector of screenVectors) {
+        const sheetDirection = vehicleSheetDirectionNameForScreenVector(vector, vehicle.sprite);
+        const column = APC_SHEET_DIRECTIONS.indexOf(sheetDirection);
+        expect(column, `${vehicle.sprite}:${vector.name}`).toBeGreaterThanOrEqual(0);
+        usedColumns.add(column);
+        ctx.clearRect(0, 0, 128, 128);
+        ctx.drawImage(sheet, column * 128, 0, 128, 128, 0, 0, 128, 128);
+        frameSignatures.add(Buffer.from(ctx.getImageData(0, 0, 128, 128).data).toString('base64'));
+      }
+
+      expect(usedColumns.size, vehicle.sprite).toBe(8);
+      expect(frameSignatures.size, vehicle.sprite).toBe(8);
+    }
+  });
+
+  it('keeps the authored nose marker on the leading side for east and west travel', async () => {
+    const hottestWarmMarkerX = (pixels: Uint8ClampedArray) => {
+      let hottestScore = Number.NEGATIVE_INFINITY;
+      let hottestX = -1;
+      for (let offset = 0; offset < pixels.length; offset += 4) {
+        const [red, green, blue, alpha] = pixels.slice(offset, offset + 4);
+        if (alpha < 128 || red < 65 || red < green * 1.12 || red < blue * 1.18) continue;
+        const score = red * 2 - green - blue;
+        if (score > hottestScore) {
+          hottestScore = score;
+          hottestX = (offset / 4) % 128;
+        }
+      }
+      return hottestX;
+    };
+    const vehicles = [
+      { sprite: 'm113_apc', sheet: 'm113_apc_idle_sheet.png' },
+      { sprite: 'supply_truck_directional', sheet: 'supply_truck_directional_idle_sheet.png' }
+    ];
+
+    for (const vehicle of vehicles) {
+      const sheet = await loadImage(path.resolve(process.cwd(), `public/assets/generated/${vehicle.sheet}`));
+      const canvas = createCanvas(128, 128);
+      const ctx = canvas.getContext('2d');
+      const markerForVector = (x: number) => {
+        const sheetDirection = vehicleSheetDirectionNameForScreenVector({ x, y: 0 }, vehicle.sprite);
+        const column = APC_SHEET_DIRECTIONS.indexOf(sheetDirection);
+        ctx.clearRect(0, 0, 128, 128);
+        ctx.drawImage(sheet, column * 128, 0, 128, 128, 0, 0, 128, 128);
+        return hottestWarmMarkerX(ctx.getImageData(0, 0, 128, 128).data);
+      };
+
+      expect(markerForVector(1), `${vehicle.sprite}:east`).toBeGreaterThan(85);
+      expect(markerForVector(-1), `${vehicle.sprite}:west`).toBeLessThan(43);
+    }
+  });
+
   it('keeps M113 walk frames on a stable ground line', async () => {
     const sheetPath = path.resolve(process.cwd(), 'public/assets/generated/apc_directional_walk_sheet.png');
     const sheet = await loadImage(sheetPath);
@@ -862,14 +939,85 @@ describe('vehicleSheetDirectionNameForOrientation', () => {
 describe('vehicleTurnCrossfade', () => {
   it('keeps the vehicle solid while easing between directional poses', () => {
     expect(vehicleTurnCrossfade(-1)).toEqual({ outgoingAlpha: 1, incomingAlpha: 0 });
-    expect(vehicleTurnCrossfade(0.5).outgoingAlpha).toBeCloseTo(Math.pow(Math.SQRT1_2, 0.4));
-    expect(vehicleTurnCrossfade(0.5).incomingAlpha).toBeCloseTo(Math.pow(Math.SQRT1_2, 0.4));
+    expect(vehicleTurnCrossfade(0.5).outgoingAlpha).toBeCloseTo(Math.pow(Math.SQRT1_2, 0.9));
+    expect(vehicleTurnCrossfade(0.5).incomingAlpha).toBeCloseTo(Math.pow(Math.SQRT1_2, 0.9));
     expect(vehicleTurnCrossfade(2)).toEqual({ outgoingAlpha: 0, incomingAlpha: 1 });
 
     for (const progress of [0, 0.2, 0.4, 0.6, 0.8, 1]) {
       const blend = vehicleTurnCrossfade(progress);
       const compositedAlpha = blend.incomingAlpha + blend.outgoingAlpha * (1 - blend.incomingAlpha);
-      expect(compositedAlpha).toBeGreaterThanOrEqual(0.97);
+      expect(compositedAlpha).toBeGreaterThanOrEqual(0.92);
+    }
+  });
+
+  it('splits wide turns into adjacent 45-degree sheet poses', () => {
+    const clockwise = ['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne'];
+    const samples = Array.from({ length: 65 }, (_, index) => index / 64);
+
+    for (const [fromOrientation, toOrientation, expectedSteps] of [
+      [1, 6, 2],
+      [1, 5, 3],
+      [1, 4, 4]
+    ]) {
+      let previousDominantIndex = clockwise.indexOf(directionNameForOrientation(fromOrientation));
+      for (const progress of samples) {
+        const blend = vehicleTurnSheetBlend(
+          fromOrientation,
+          toOrientation,
+          'supply_truck_directional',
+          progress
+        );
+        const fromIndex = clockwise.indexOf(blend.displayFrom);
+        const toIndex = clockwise.indexOf(blend.displayTo);
+        expect(blend.stepCount).toBe(expectedSteps);
+        expect((toIndex - fromIndex + clockwise.length) % clockwise.length).toBe(1);
+        const dominantIndex = blend.progress < 0.5 ? fromIndex : toIndex;
+        expect((dominantIndex - previousDominantIndex + clockwise.length) % clockwise.length)
+          .toBeLessThanOrEqual(1);
+        previousDominantIndex = dominantIndex;
+      }
+    }
+  });
+
+  it('cuts maximum 90-degree turn error from 45 to 22.5 degrees', () => {
+    let endpointOnlyError = 0;
+    let steppedError = 0;
+
+    for (let sample = 0; sample <= 160; sample += 1) {
+      const progress = sample / 160;
+      const intendedAngle = progress * 90;
+      const endpointAngle = progress < 0.5 ? 0 : 90;
+      endpointOnlyError = Math.max(endpointOnlyError, Math.abs(endpointAngle - intendedAngle));
+
+      const blend = vehicleTurnSheetBlend(1, 6, 'supply_truck_directional', progress);
+      const displayAngles: Record<string, number> = { e: 0, se: 45, s: 90 };
+      const dominantDirection = blend.progress < 0.5 ? blend.displayFrom : blend.displayTo;
+      steppedError = Math.max(
+        steppedError,
+        Math.abs(displayAngles[dominantDirection] - intendedAngle)
+      );
+    }
+
+    expect(endpointOnlyError).toBe(45);
+    expect(steppedError).toBe(22.5);
+  });
+
+  it('does not skip a heading at the 20 fps motion-capture floor', () => {
+    const frameInterval = 1000 / 20;
+    const clockwise = ['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne'];
+    let previousIndex = clockwise.indexOf('e');
+
+    for (let elapsed = 0; elapsed <= VEHICLE_TURN_DURATION_MS; elapsed += frameInterval) {
+      const blend = vehicleTurnSheetBlend(
+        1,
+        4,
+        'm113_apc',
+        elapsed / VEHICLE_TURN_DURATION_MS
+      );
+      const dominantDirection = blend.progress < 0.5 ? blend.displayFrom : blend.displayTo;
+      const index = clockwise.indexOf(dominantDirection);
+      expect((index - previousIndex + clockwise.length) % clockwise.length).toBeLessThanOrEqual(1);
+      previousIndex = index;
     }
   });
 

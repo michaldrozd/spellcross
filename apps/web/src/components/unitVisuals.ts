@@ -295,15 +295,17 @@ export function rasterUnitOverride(definitionId: string): string | null {
 }
 
 const UNIT_PORTRAIT_OVERRIDES: Record<string, string> = {
+  'gepard-aa': '/assets/generated/gepard_aa_portrait.png',
   'heavy-infantry': '/assets/generated/heavy_infantry_portrait.png',
+  'leopard-2': '/assets/generated/leopard_2_portrait.png',
   'light-infantry': '/assets/generated/light_infantry_idle_s.png',
+  'paladin-acs': '/assets/generated/paladin_acs_portrait.png',
+  'sky-lance': '/assets/generated/sky_lance_portrait.png',
+  'spg-m109': '/assets/generated/spg_m109_portrait.png',
   rangers: '/assets/generated/rangers_portrait.png'
 };
 
-export const SHARED_UNIT_PORTRAIT_VARIANTS = [
-  ['gepard-aa', 'leopard-2', 'sky-lance'],
-  ['paladin-acs', 'spg-m109']
-] as const;
+export const SHARED_UNIT_PORTRAIT_VARIANTS: ReadonlyArray<readonly string[]> = [];
 
 // A representative static sprite for a unit, for HUD portraits. Hand-authored override wins; otherwise
 // fall back to the same base art the battlefield uses for each unit type, so every unit shows real art.
@@ -525,10 +527,86 @@ export const directionNameForScreenVector = (vector: { x: number; y: number }) =
   return sectors[((sector % 8) + 8) % 8];
 };
 
-export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y: number }, spriteName: string) => {
-  const direction = directionNameForScreenVector(vector);
+const SCREEN_CLOCKWISE_DIRECTIONS = ['e', 'se', 's', 'sw', 'w', 'nw', 'n', 'ne'] as const;
+
+const vehicleSheetDirectionForDisplayDirection = (direction: string, spriteName: string) => {
   const mapped = VEHICLE_SHEET_DIRECTION_OVERRIDES[spriteName]?.[direction] ?? direction;
   return cleanVehicleSheetDirection(spriteName, mapped);
+};
+
+export const vehicleSheetDirectionNameForScreenVector = (vector: { x: number; y: number }, spriteName: string) => {
+  return vehicleSheetDirectionForDisplayDirection(directionNameForScreenVector(vector), spriteName);
+};
+
+export type VehicleTurnSheetBlend = {
+  from: string;
+  to: string;
+  displayFrom: string;
+  displayTo: string;
+  progress: number;
+  stepCount: number;
+  stepDirection: -1 | 0 | 1;
+};
+
+export const vehicleTurnSheetBlend = (
+  fromOrientation: number,
+  toOrientation: number,
+  spriteName: string,
+  progress: number,
+  preferredDirection = 1
+): VehicleTurnSheetBlend => {
+  const fromDirection = directionNameForOrientation(fromOrientation);
+  const toDirection = directionNameForOrientation(toOrientation);
+  const fromIndex = SCREEN_CLOCKWISE_DIRECTIONS.indexOf(fromDirection as typeof SCREEN_CLOCKWISE_DIRECTIONS[number]);
+  const toIndex = SCREEN_CLOCKWISE_DIRECTIONS.indexOf(toDirection as typeof SCREEN_CLOCKWISE_DIRECTIONS[number]);
+  const clockwiseSteps = (toIndex - fromIndex + SCREEN_CLOCKWISE_DIRECTIONS.length) % SCREEN_CLOCKWISE_DIRECTIONS.length;
+  const counterClockwiseSteps = (fromIndex - toIndex + SCREEN_CLOCKWISE_DIRECTIONS.length) % SCREEN_CLOCKWISE_DIRECTIONS.length;
+  const stepDirection: -1 | 0 | 1 = clockwiseSteps === 0
+    ? 0
+    : clockwiseSteps < counterClockwiseSteps
+      ? 1
+      : counterClockwiseSteps < clockwiseSteps
+        ? -1
+        : preferredDirection >= 0 ? 1 : -1;
+  const stepCount = Math.min(clockwiseSteps, counterClockwiseSteps);
+
+  if (stepCount === 0) {
+    const sheetDirection = vehicleSheetDirectionForDisplayDirection(toDirection, spriteName);
+    return {
+      from: sheetDirection,
+      to: sheetDirection,
+      displayFrom: toDirection,
+      displayTo: toDirection,
+      progress: 0,
+      stepCount,
+      stepDirection
+    };
+  }
+
+  const clampedProgress = Math.min(1, Math.max(0, progress));
+  const scaledProgress = clampedProgress * stepCount;
+  const stepIndex = clampedProgress === 1
+    ? stepCount - 1
+    : Math.min(stepCount - 1, Math.floor(scaledProgress));
+  const stepProgress = clampedProgress === 1 ? 1 : scaledProgress - stepIndex;
+  const displayFrom = SCREEN_CLOCKWISE_DIRECTIONS[
+    (fromIndex + stepDirection * stepIndex + SCREEN_CLOCKWISE_DIRECTIONS.length)
+      % SCREEN_CLOCKWISE_DIRECTIONS.length
+  ];
+  const displayTo = SCREEN_CLOCKWISE_DIRECTIONS[
+    (fromIndex + stepDirection * (stepIndex + 1) + SCREEN_CLOCKWISE_DIRECTIONS.length)
+      % SCREEN_CLOCKWISE_DIRECTIONS.length
+  ];
+
+  return {
+    from: vehicleSheetDirectionForDisplayDirection(displayFrom, spriteName),
+    to: vehicleSheetDirectionForDisplayDirection(displayTo, spriteName),
+    displayFrom,
+    displayTo,
+    progress: stepProgress,
+    stepCount,
+    stepDirection
+  };
 };
 
 export const vehicleTurnCrossfade = (progress: number) => {
@@ -537,8 +615,8 @@ export const vehicleTurnCrossfade = (progress: number) => {
   if (clamped === 1) return { outgoingAlpha: 0, incomingAlpha: 1 };
   const eased = smoothClamped(clamped);
   return {
-    outgoingAlpha: Math.pow(Math.cos(eased * Math.PI * 0.5), 0.4),
-    incomingAlpha: Math.pow(Math.sin(eased * Math.PI * 0.5), 0.4)
+    outgoingAlpha: Math.pow(Math.cos(eased * Math.PI * 0.5), 0.9),
+    incomingAlpha: Math.pow(Math.sin(eased * Math.PI * 0.5), 0.9)
   };
 };
 
@@ -645,7 +723,7 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
     if (definitionId.includes('dire') || definitionId.includes('wolf')) return tile * 0.52;
     if (definitionId.includes('salamander')) return tile * 0.5;
     if (definitionId.includes('demon-engine')) return tile * 0.55;
-    if (directionalSprite === 'm113_apc') return tile * 0.47;
+    if (directionalSprite === 'm113_apc') return tile * 0.52;
     if (directionalSprite === 'apc_directional') return tile * 0.398;
     if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.58;
     if (definitionId.includes('truck') || definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return tile * 0.455;

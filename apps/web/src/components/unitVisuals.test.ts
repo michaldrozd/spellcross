@@ -1,4 +1,5 @@
 import { starterUnits } from '@spellcross/data';
+import { createCanvas, loadImage } from 'canvas';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -40,6 +41,31 @@ describe('unit portraits', () => {
         `${definition.id} resolves to missing ${portrait}`
       ).toBe(true);
     }
+  });
+
+  it('gives every advanced Alliance vehicle its own full-resolution portrait', async () => {
+    const expectedPortraits = {
+      'gepard-aa': '/assets/generated/gepard_aa_portrait.png',
+      'leopard-2': '/assets/generated/leopard_2_portrait.png',
+      'paladin-acs': '/assets/generated/paladin_acs_portrait.png',
+      'sky-lance': '/assets/generated/sky_lance_portrait.png',
+      'spg-m109': '/assets/generated/spg_m109_portrait.png'
+    };
+    const pixelSignatures = new Set<string>();
+    const canvas = createCanvas(256, 256);
+    const ctx = canvas.getContext('2d');
+
+    for (const [definitionId, portrait] of Object.entries(expectedPortraits)) {
+      expect(portraitFor(definitionId)).toBe(portrait);
+      const image = await loadImage(path.resolve(process.cwd(), 'public', portrait.slice(1)));
+      expect(image.width, definitionId).toBe(256);
+      expect(image.height, definitionId).toBe(256);
+      ctx.clearRect(0, 0, 256, 256);
+      ctx.drawImage(image, 0, 0);
+      pixelSignatures.add(Buffer.from(ctx.getImageData(0, 0, 256, 256).data).toString('base64'));
+    }
+
+    expect(pixelSignatures.size).toBe(Object.keys(expectedPortraits).length);
   });
 
   it('rejects new shared portraits outside the explicit vehicle-family debt', () => {
