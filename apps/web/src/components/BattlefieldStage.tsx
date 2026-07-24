@@ -442,6 +442,79 @@ export const terrainTextureWorldUnitsPerTexel = (terrain: string) => (
   terrain === 'structure' ? 2.8 : 0.92
 );
 
+const PROCEDURAL_BUILDING_UNDERLAY_ORDER: readonly MapTile['terrain'][] = [
+  'urban',
+  'plain',
+  'road',
+  'forest',
+  'hill',
+  'swamp',
+  'water'
+];
+
+export const proceduralBuildingUnderlayTerrain = (
+  tiles: readonly Pick<MapTile, 'terrain'>[],
+  props: readonly MapProp[],
+  width: number,
+  height: number
+) => {
+  const underlayByTile = new Map<number, MapTile['terrain']>();
+  const inBounds = (q: number, r: number) => q >= 0 && r >= 0 && q < width && r < height;
+  const tileIndex = (q: number, r: number) => r * width + q;
+
+  for (const prop of props) {
+    if (prop.kind !== 'proc-building') continue;
+    const footprint = new Set<number>();
+    if (prop.tiles?.length) {
+      for (const coordinate of prop.tiles) {
+        if (inBounds(coordinate.q, coordinate.r)) footprint.add(tileIndex(coordinate.q, coordinate.r));
+      }
+    } else {
+      const footprintWidth = Math.max(1, prop.w ?? 1);
+      const footprintHeight = Math.max(1, prop.h ?? 1);
+      for (let dq = 0; dq < footprintWidth; dq += 1) {
+        for (let dr = 0; dr < footprintHeight; dr += 1) {
+          const q = prop.coordinate.q + dq;
+          const r = prop.coordinate.r + dr;
+          if (inBounds(q, r)) footprint.add(tileIndex(q, r));
+        }
+      }
+    }
+
+    const candidateCounts = new Map<MapTile['terrain'], number>();
+    for (const index of footprint) {
+      const q = index % width;
+      const r = Math.floor(index / width);
+      for (let dq = -1; dq <= 1; dq += 1) {
+        for (let dr = -1; dr <= 1; dr += 1) {
+          if (dq === 0 && dr === 0) continue;
+          const neighborQ = q + dq;
+          const neighborR = r + dr;
+          if (!inBounds(neighborQ, neighborR)) continue;
+          const neighborIndex = tileIndex(neighborQ, neighborR);
+          if (footprint.has(neighborIndex)) continue;
+          const terrain = tiles[neighborIndex]?.terrain;
+          if (!terrain || terrain === 'structure') continue;
+          candidateCounts.set(terrain, (candidateCounts.get(terrain) ?? 0) + 1);
+        }
+      }
+    }
+
+    const underlay = [...candidateCounts].sort((a, b) => {
+      const countDifference = b[1] - a[1];
+      if (countDifference !== 0) return countDifference;
+      return PROCEDURAL_BUILDING_UNDERLAY_ORDER.indexOf(a[0])
+        - PROCEDURAL_BUILDING_UNDERLAY_ORDER.indexOf(b[0]);
+    })[0]?.[0] ?? 'urban';
+
+    for (const index of footprint) {
+      if (tiles[index]?.terrain === 'structure') underlayByTile.set(index, underlay);
+    }
+  }
+
+  return underlayByTile;
+};
+
 export const terrainDetailDensity = (q: number, r: number, terrain: string) => {
   const familySalt = terrainDetailFamily(terrain) === 'vegetation'
     ? 761
@@ -2781,6 +2854,14 @@ export function BattlefieldStage({
     );
   }, [battlefieldMood, map.width, map.height]);
 
+  const procBuildingUnderlay = useMemo(
+    () => proceduralBuildingUnderlayTerrain(map.tiles, map.props ?? [], map.width, map.height),
+    [map.height, map.props, map.tiles, map.width]
+  );
+  const coveredByProcBuilding = useMemo(
+    () => new Set(procBuildingUnderlay.keys()),
+    [procBuildingUnderlay]
+  );
 
   const tileGraphics = useMemo(() => {
     const EDGE_KEYS: EdgeKey[] = ['N', 'E', 'S', 'W'];
@@ -2808,10 +2889,11 @@ export function BattlefieldStage({
       const tris = topTrianglesFor(corners);
       const isVisible = visibleTiles.has(index);
       const isExplored = exploredTiles.has(index);
-      const fillTerrain = tile.terrain === 'road' ? 'plain' : tile.terrain === 'water' ? 'swamp' : tile.terrain;
+      const visualTerrain = procBuildingUnderlay.get(index) ?? tile.terrain;
+      const fillTerrain = visualTerrain === 'road' ? 'plain' : visualTerrain === 'water' ? 'swamp' : visualTerrain;
       let baseColor = terrainPalette[fillTerrain] ?? terrainPalette.plain;
       const colorNoise = smoothTerrainNoise(q, r, 911, 4.2) - 0.5;
-      if (tile.terrain !== 'water') {
+      if (visualTerrain !== 'water') {
         // gentle per-tile variation: too much turns the ground into a low-poly patchwork of
         // hard-edged diamonds, so keep the step between neighbours subtle.
         baseColor = colorNoise > 0
@@ -3393,6 +3475,7 @@ export function BattlefieldStage({
     map.width,
     onSelectTile,
     onSelectUnit,
+    procBuildingUnderlay,
     snappedCorners,
     terrainMacroTexture,
     terrainTextures,
@@ -3738,35 +3821,6 @@ export function BattlefieldStage({
       />
     );
   }, [exploredTiles, externalTexturesAreColored, map.height, map.tiles, map.width, topGeomFor, visibleTiles]);
-  const coveredByProcBuilding = useMemo(() => {
-    const set = new Set<number>();
-    const W = map.width;
-    const H = map.height;
-    const inb = (q: number, r: number) => q >= 0 && r >= 0 && q < W && r < H;
-    const idx = (q: number, r: number) => r * W + q;
-    for (const prop of map.props ?? []) {
-      if (!prop || prop.kind !== 'proc-building') continue;
-      if (Array.isArray(prop.tiles) && prop.tiles.length) {
-        for (const t of prop.tiles) {
-          if (inb(t.q, t.r)) set.add(idx(t.q, t.r));
-        }
-        continue;
-      }
-      const q0 = prop.coordinate?.q ?? 0;
-      const r0 = prop.coordinate?.r ?? 0;
-      const w = Math.max(1, prop.w ?? 1);
-      const h = Math.max(1, prop.h ?? 1);
-      for (let dq = 0; dq < w; dq++) {
-        for (let dr = 0; dr < h; dr++) {
-          const qq = q0 + dq;
-          const rr = r0 + dr;
-          if (inb(qq, rr)) set.add(idx(qq, rr));
-        }
-      }
-    }
-    return set;
-  }, [map.props, map.width, map.height]);
-
   const terrainMissingTexts = useMemo(() => {
     if (!allowExternalTextures) return null;
     if (!missingTerrainPng || missingTerrainPng.size === 0) return null;

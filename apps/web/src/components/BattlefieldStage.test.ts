@@ -7,6 +7,7 @@ import {
   TERRAIN_GRID_ALPHA,
   TERRAIN_WASH_VISIBILITY_RADIUS,
   buildingVisibilityPresentation,
+  proceduralBuildingUnderlayTerrain,
   softShadowLayers,
   smoothTerrainNoise,
   terrainDetailDensity,
@@ -139,6 +140,34 @@ describe('terrain and fog presentation', () => {
     expect(128 * terrainTextureWorldUnitsPerTexel('structure') / 56).toBeGreaterThanOrEqual(6);
     expect(64 * terrainTextureWorldUnitsPerTexel('structure') / 28).toBeGreaterThanOrEqual(6);
     expect(terrainTextureWorldUnitsPerTexel('plain')).toBe(0.92);
+  });
+
+  it('renders a procedural building footprint with one stable surrounding ground while preserving gameplay terrain', () => {
+    const tiles: Array<{ terrain: 'plain' | 'structure' }> = Array.from(
+      { length: 25 },
+      () => ({ terrain: 'plain' })
+    );
+    tiles[6] = { terrain: 'structure' };
+    tiles[7] = { terrain: 'structure' };
+    tiles[24] = { terrain: 'structure' };
+    const props = [{
+      id: 'test-building',
+      kind: 'proc-building' as const,
+      coordinate: { q: 1, r: 1 },
+      w: 2,
+      h: 1
+    }];
+
+    const first = proceduralBuildingUnderlayTerrain(tiles, props, 5, 5);
+    const repeated = proceduralBuildingUnderlayTerrain(tiles, props, 5, 5);
+
+    expect([...first.entries()]).toEqual([...repeated.entries()]);
+    expect(first.get(6)).toBe('plain');
+    expect(first.get(7)).toBe('plain');
+    expect(first.has(24)).toBe(false);
+    expect(tiles[6].terrain).toBe('structure');
+    expect(tiles[7].terrain).toBe('structure');
+    expect(tiles[24].terrain).toBe('structure');
   });
 
   it('varies detail density in broad deterministic regions instead of per-tile checker steps', () => {
