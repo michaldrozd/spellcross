@@ -505,7 +505,9 @@ export const proceduralBuildingUnderlayTerrain = (
       if (countDifference !== 0) return countDifference;
       return PROCEDURAL_BUILDING_UNDERLAY_ORDER.indexOf(a[0])
         - PROCEDURAL_BUILDING_UNDERLAY_ORDER.indexOf(b[0]);
-    })[0]?.[0] ?? 'urban';
+    })[0]?.[0];
+
+    if (!underlay) continue;
 
     for (const index of footprint) {
       if (tiles[index]?.terrain === 'structure') underlayByTile.set(index, underlay);
@@ -514,6 +516,12 @@ export const proceduralBuildingUnderlayTerrain = (
 
   return underlayByTile;
 };
+
+export const presentationTerrainAt = (
+  tiles: readonly Pick<MapTile, 'terrain'>[],
+  underlayByTile: ReadonlyMap<number, MapTile['terrain']>,
+  index: number
+) => underlayByTile.get(index) ?? tiles[index]?.terrain ?? 'plain';
 
 export const terrainDetailDensity = (q: number, r: number, terrain: string) => {
   const familySalt = terrainDetailFamily(terrain) === 'vegetation'
@@ -2854,9 +2862,12 @@ export function BattlefieldStage({
     );
   }, [battlefieldMood, map.width, map.height]);
 
+  const terrainPresentationRevision = battleState.timeline.length;
   const procBuildingUnderlay = useMemo(
     () => proceduralBuildingUnderlayTerrain(map.tiles, map.props ?? [], map.width, map.height),
-    [map.height, map.props, map.tiles, map.width]
+    // Destruction mutates map.tiles in place; the timeline length is its existing render revision.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [map.height, map.props, map.tiles, map.width, terrainPresentationRevision]
   );
   const coveredByProcBuilding = useMemo(
     () => new Set(procBuildingUnderlay.keys()),
@@ -2873,6 +2884,7 @@ export function BattlefieldStage({
     };
     const idxAt = (qq: number, rr: number) => rr * map.width + qq;
     const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
+    const visualTerrainAt = (index: number) => presentationTerrainAt(map.tiles, procBuildingUnderlay, index);
     return map.tiles.map((tile, index) => {
       const q = index % map.width;
       const r = Math.floor(index / map.width);
@@ -2889,7 +2901,7 @@ export function BattlefieldStage({
       const tris = topTrianglesFor(corners);
       const isVisible = visibleTiles.has(index);
       const isExplored = exploredTiles.has(index);
-      const visualTerrain = procBuildingUnderlay.get(index) ?? tile.terrain;
+      const visualTerrain = visualTerrainAt(index);
       const fillTerrain = visualTerrain === 'road' ? 'plain' : visualTerrain === 'water' ? 'swamp' : visualTerrain;
       let baseColor = terrainPalette[fillTerrain] ?? terrainPalette.plain;
       const colorNoise = smoothTerrainNoise(q, r, 911, 4.2) - 0.5;
@@ -3003,7 +3015,7 @@ export function BattlefieldStage({
                     x: point.x + (center.x - point.x) * amount,
                     y: point.y + (center.y - point.y) * amount
                   });
-                  const neighborTerrain = map.tiles[neighborIndex]?.terrain ?? 'plain';
+                  const neighborTerrain = visualTerrainAt(neighborIndex);
                   const neighborColor = memoryColor(terrainPalette[neighborTerrain] ?? terrainPalette.plain);
                   const featherColor = mixColor(neighborColor, hiddenColor, 0.48);
                   const jitter = tileNoise(q, r, 980 + edgeIndex) * 0.05;
@@ -3155,8 +3167,8 @@ export function BattlefieldStage({
                 g.endFill();
               }
 
-              const detailFamily = terrainDetailFamily(tile.terrain);
-              const detailDensity = terrainDetailDensity(q, r, tile.terrain);
+              const detailFamily = terrainDetailFamily(visualTerrain);
+              const detailDensity = terrainDetailDensity(q, r, visualTerrain);
               const macroTint = detailFamily === 'wet'
                 ? 0x678f8b
                 : detailFamily === 'built'
@@ -3251,27 +3263,27 @@ export function BattlefieldStage({
                   coloredTex ? 1 : 2,
                   Math.round(base * detailDensity * (coloredTex ? 0.24 : 1))
                 );
-                if (tile.terrain === 'plain') {
+                if (visualTerrain === 'plain') {
                   drawPixelBreakup(410, detailCount(14), [darkenColor(baseColor, 0.28), darkenColor(baseColor, 0.16), lightenColor(baseColor, 0.2), 0x334829], 0.26, 5);
-                } else if (tile.terrain === 'forest') {
+                } else if (visualTerrain === 'forest') {
                   drawPixelBreakup(430, detailCount(20), [0x0b180d, 0x153015, 0x2e4a21, 0x4d6c32], 0.36, 5);
-                } else if (tile.terrain === 'hill') {
+                } else if (visualTerrain === 'hill') {
                   drawPixelBreakup(450, detailCount(18), [darkenColor(baseColor, 0.3), 0x7e7c49, 0x454629, 0x97905d], 0.31, 6);
-                } else if (tile.terrain === 'road') {
+                } else if (visualTerrain === 'road') {
                   drawPixelBreakup(470, detailCount(14), [0x342a20, 0x7d6d54, 0x4a3d2f, 0x998a6b], 0.32, 7);
-                } else if (tile.terrain === 'urban' || tile.terrain === 'structure') {
+                } else if (visualTerrain === 'urban' || visualTerrain === 'structure') {
                   drawPixelBreakup(490, detailCount(16), [0x2d2c29, 0x746f65, 0x494640, 0x938c7c], 0.31, 5);
-                } else if (tile.terrain === 'swamp') {
+                } else if (visualTerrain === 'swamp') {
                   drawPixelBreakup(510, detailCount(14), [0x182516, 0x594c30, 0x416138, 0x0e1d12], 0.32, 5);
-                } else if (tile.terrain === 'water') {
+                } else if (visualTerrain === 'water') {
                   drawPixelBreakup(530, detailCount(10), [0x0c2a3a, 0x2f6b7b, 0x78aab0], 0.28, 7);
                 }
                 const scar = tileNoise(q, r, 103);
-                if (scar > 0.7 && tile.terrain !== 'water') {
+                if (scar > 0.7 && visualTerrain !== 'water') {
                   drawSpot(104, 0x17130f, decalAlpha * 1.25, 7 + tileNoise(q, r, 105) * 5, 3.2);
                   drawSpot(106, 0x5f5a4a, decalAlpha * 0.55, 4.5, 1.8);
                 }
-                if (tile.terrain === 'plain' || tile.terrain === 'hill' || tile.terrain === 'swamp') {
+                if (visualTerrain === 'plain' || visualTerrain === 'hill' || visualTerrain === 'swamp') {
                   drawSpot(1, darkenColor(baseColor, 0.32), decalAlpha, 9, 3.5);
                   drawSpot(2, lightenColor(baseColor, 0.13), decalAlpha * 0.8, 11, 2.7);
                   drawSpot(8, darkenColor(baseColor, 0.24), decalAlpha * 0.8, 4.5, 2.2);
@@ -3279,14 +3291,14 @@ export function BattlefieldStage({
                   drawStroke(30, lightenColor(baseColor, 0.13), decalAlpha * 0.95, 11);
                   drawStroke(31, darkenColor(baseColor, 0.28), decalAlpha * 0.75, 15);
                   drawStroke(37, 0x1a2516, decalAlpha * 0.7, 17);
-                } else if (tile.terrain === 'forest') {
+                } else if (visualTerrain === 'forest') {
                   drawSpot(3, 0x0f2310, decalAlpha * 1.65, 10, 5.5);
                   drawSpot(4, 0x3a5c27, decalAlpha * 1.05, 8, 3.3);
                   drawSpot(12, 0x0b1a0d, decalAlpha * 1.35, 6, 4.4);
                   drawStroke(33, 0x172e14, decalAlpha * 1.1, 15);
                   drawStroke(38, 0x314c24, decalAlpha * 0.7, 11);
-                } else if (tile.terrain === 'road' || tile.terrain === 'urban') {
-                  const markBase = tile.terrain === 'road' ? roadColor : baseColor;
+                } else if (visualTerrain === 'road' || visualTerrain === 'urban') {
+                  const markBase = visualTerrain === 'road' ? roadColor : baseColor;
                   g.lineStyle(1, darkenColor(markBase, 0.26), decalAlpha * 0.9);
                   for (let i = 0; i < 3; i++) {
                     const px = (tileNoise(q, r, 50 + i) - 0.5) * ISO_TILE_W * 0.55;
@@ -3299,7 +3311,7 @@ export function BattlefieldStage({
                   drawSpot(14, 0x211a12, decalAlpha * 0.72, 6, 2.8);
                   drawStroke(54, 0x1a1511, decalAlpha * 0.98, 20);
                   drawStroke(55, 0x756954, decalAlpha * 0.52, 13);
-                } else if (tile.terrain === 'water') {
+                } else if (visualTerrain === 'water') {
                   // ripples come from the continuous painted water texture now; the old per-tile
                   // wave strokes just read as digital stripes. Keep only a faint depth darkening.
                   drawSpot(92, 0x0d2f43, 0.12, 12, 3.2);
@@ -3315,7 +3327,7 @@ export function BattlefieldStage({
                 if (!inb(nq, nr)) return;
                 const neighborIdx = idxAt(nq, nr);
                 if (!exploredTiles.has(neighborIdx)) return;
-                const neighborTile = map.tiles[neighborIdx];
+                const neighborVisualTerrain = visualTerrainAt(neighborIdx);
                 const neighborCorners = snappedCorners.getCorners(nq, nr);
                 const neighborHeights: Record<CornerKey, number> = {
                   NW: neighborCorners.hNW,
@@ -3327,7 +3339,7 @@ export function BattlefieldStage({
                 const [oppA, oppB] = EDGE_TO_CORNERS[oppEdge];
                 const neighborHeight = (neighborHeights[oppA] + neighborHeights[oppB]) / 2;
                 const delta = neighborHeight - myEdgeHeight;
-                if (tile.terrain === 'water' || neighborTile.terrain === 'water') {
+                if (visualTerrain === 'water' || neighborVisualTerrain === 'water') {
                   const a = cornerPoints[cornerA];
                   const b = cornerPoints[cornerB];
                   const edgeIndex = EDGE_KEYS.indexOf(edge);
@@ -3339,10 +3351,10 @@ export function BattlefieldStage({
                     x: (a.x + b.x) / 2 + (tileNoise(q, r, 620 + edgeIndex) - 0.5) * 3.4,
                     y: (a.y + b.y) / 2 + (tileNoise(q, r, 624 + edgeIndex) - 0.5) * 2.2
                   };
-                  if (tile.terrain !== neighborTile.terrain) {
-                    const landTerrain = tile.terrain === 'water' ? neighborTile.terrain : tile.terrain;
+                  if (visualTerrain !== neighborVisualTerrain) {
+                    const landTerrain = visualTerrain === 'water' ? neighborVisualTerrain : visualTerrain;
                     const landColor = terrainPalette[landTerrain] ?? terrainPalette.plain;
-                    const bankBase = mixColor(landColor, terrainPalette.water, tile.terrain === 'water' ? 0.18 : 0.32);
+                    const bankBase = mixColor(landColor, terrainPalette.water, visualTerrain === 'water' ? 0.18 : 0.32);
                     const depthA = 0.13 + tileNoise(q, r, 630 + edgeIndex) * 0.08;
                     const depthB = 0.13 + tileNoise(q, r, 634 + edgeIndex) * 0.08;
                     const depthM = 0.2 + tileNoise(q, r, 638 + edgeIndex) * 0.09;
@@ -3353,7 +3365,7 @@ export function BattlefieldStage({
                       towardCenter(mid, depthM),
                       towardCenter(a, depthA)
                     ];
-                    g.beginFill(bankBase, tile.terrain === 'water' ? (isVisible ? 0.88 : 0.58) : (isVisible ? 0.62 : 0.36));
+                    g.beginFill(bankBase, visualTerrain === 'water' ? (isVisible ? 0.88 : 0.58) : (isVisible ? 0.62 : 0.36));
                     drawPoly(g as unknown as PixiGraphics, bank);
                     g.endFill();
                     const wet = [
@@ -3367,14 +3379,14 @@ export function BattlefieldStage({
                     drawPoly(g as unknown as PixiGraphics, wet);
                     g.endFill();
                   }
-                  const shoreColor = tile.terrain === neighborTile.terrain ? 0x24485b : 0x8c8a6d;
-                  const shoreAlpha = tile.terrain === neighborTile.terrain ? 0.08 : 0.36;
-                  g.lineStyle(tile.terrain === neighborTile.terrain ? 1 : 2, shoreColor, shoreAlpha);
+                  const shoreColor = visualTerrain === neighborVisualTerrain ? 0x24485b : 0x8c8a6d;
+                  const shoreAlpha = visualTerrain === neighborVisualTerrain ? 0.08 : 0.36;
+                  g.lineStyle(visualTerrain === neighborVisualTerrain ? 1 : 2, shoreColor, shoreAlpha);
                   g.moveTo(a.x, a.y);
                   g.lineTo(mid.x, mid.y);
                   g.lineTo(b.x, b.y);
                   g.lineStyle();
-                } else if (tile.terrain !== neighborTile.terrain) {
+                } else if (visualTerrain !== neighborVisualTerrain) {
                   // Feather land↔land boundaries (grass/road/dirt) so the ground reads as one painted
                   // surface instead of hard-cut low-poly diamonds. Bleed the neighbour's tone a short
                   // way into this tile along the shared edge with a few fading bands.
@@ -3385,7 +3397,7 @@ export function BattlefieldStage({
                     x: p.x + (center.x - p.x) * amt,
                     y: p.y + (center.y - p.y) * amt
                   });
-                  const nColor = terrainPalette[neighborTile.terrain] ?? baseColor;
+                  const nColor = terrainPalette[neighborVisualTerrain] ?? baseColor;
                   const blend = mixColor(baseColor, nColor, 0.62);
                   const bands = [
                     { d: 0.13 + tileNoise(q, r, 700 + edgeIndex) * 0.05, a: isVisible ? 0.5 : 0.32 },
@@ -3402,10 +3414,10 @@ export function BattlefieldStage({
                     pa = ca; pb = cb;
                   }
                 }
-                if (delta > 0 && delta <= 1.05 && tile.terrain !== 'water') {
+                if (delta > 0 && delta <= 1.05 && visualTerrain !== 'water') {
                   const tint = mixColor(
                     baseColor,
-                    terrainPalette[neighborTile.terrain] ?? baseColor,
+                    terrainPalette[neighborVisualTerrain] ?? baseColor,
                     0.45
                   );
                   const alpha = (coloredTex ? (isVisible ? 0.16 : 0.12) : (isVisible ? 0.4 : 0.3)) * Math.min(1, delta);
@@ -3597,7 +3609,9 @@ export function BattlefieldStage({
               const r = Math.min(map.height - 1, blockR + Math.floor(tileNoise(blockQ, blockR, 947) * 4));
               const index = indexAt(q, r);
               if (!visibleTiles.has(index)) continue;
-              const family = terrainDetailFamily(map.tiles[index].terrain);
+              const family = terrainDetailFamily(
+                presentationTerrainAt(map.tiles, procBuildingUnderlay, index)
+              );
               const neighbors: Array<{ q: number; r: number }> = [];
               for (let dr = -TERRAIN_WASH_VISIBILITY_RADIUS; dr <= TERRAIN_WASH_VISIBILITY_RADIUS; dr += 1) {
                 for (let dq = -TERRAIN_WASH_VISIBILITY_RADIUS; dq <= TERRAIN_WASH_VISIBILITY_RADIUS; dq += 1) {
@@ -3607,7 +3621,9 @@ export function BattlefieldStage({
               if (!neighbors.every((coord) => (
                 inBounds(coord.q, coord.r)
                 && visibleTiles.has(indexAt(coord.q, coord.r))
-                && terrainDetailFamily(map.tiles[indexAt(coord.q, coord.r)].terrain) === family
+                && terrainDetailFamily(
+                  presentationTerrainAt(map.tiles, procBuildingUnderlay, indexAt(coord.q, coord.r))
+                ) === family
               ))) {
                 continue;
               }
@@ -3616,7 +3632,11 @@ export function BattlefieldStage({
               const cx = pos.x + geom.center.x + (tileNoise(q, r, 953) - 0.5) * ISO_TILE_W * 0.7;
               const cy = pos.y - geom.avgHeight * ELEV_Y_OFFSET + geom.center.y
                 + (tileNoise(q, r, 967) - 0.5) * ISO_TILE_H * 0.7;
-              const density = terrainDetailDensity(q, r, map.tiles[index].terrain);
+              const density = terrainDetailDensity(
+                q,
+                r,
+                presentationTerrainAt(map.tiles, procBuildingUnderlay, index)
+              );
               const radiusX = ISO_TILE_W * (1.08 + tileNoise(q, r, 971) * 0.86);
               const radiusY = ISO_TILE_H * (1.02 + tileNoise(q, r, 977) * 0.72);
               const color = family === 'wet' ? 0x315c5c : family === 'built' ? 0x40362b : 0x34452a;
@@ -3635,7 +3655,7 @@ export function BattlefieldStage({
           }
           for (let index = 0; index < map.tiles.length; index++) {
             if (!exploredTiles.has(index)) continue;
-            const tile = map.tiles[index];
+            const visualTerrain = presentationTerrainAt(map.tiles, procBuildingUnderlay, index);
             const q = index % map.width;
             const r = Math.floor(index / map.width);
             const visible = visibleTiles.has(index);
@@ -3645,15 +3665,15 @@ export function BattlefieldStage({
             const cy = pos.y - geom.avgHeight * ELEV_Y_OFFSET + geom.center.y;
             const fog = visible ? 1 : 0.45;
             const seed = tileNoise(q, r, 211);
-            const detailDensity = terrainDetailDensity(q, r, tile.terrain);
+            const detailDensity = terrainDetailDensity(q, r, visualTerrain);
             const fineDetailScale = externalTexturesAreColored ? 0.42 : 1;
-            if (tile.terrain !== 'water' && tileNoise(q, r, 205) > 0.08) {
+            if (visualTerrain !== 'water' && tileNoise(q, r, 205) > 0.08) {
               const washColor =
-                tile.terrain === 'road' || tile.terrain === 'urban'
+                visualTerrain === 'road' || visualTerrain === 'urban'
                   ? 0x5b513f
-                  : tile.terrain === 'forest'
+                  : visualTerrain === 'forest'
                     ? 0x24401f
-                    : tile.terrain === 'hill'
+                    : visualTerrain === 'hill'
                       ? 0x6a7041
                       : 0x415536;
               const len = ISO_TILE_W * (0.12 + tileNoise(q, r, 206) * 0.18);
@@ -3665,11 +3685,11 @@ export function BattlefieldStage({
               g.lineTo(cx + ox + len / 2, cy + oy + skew);
               g.lineStyle();
             }
-            if (tile.terrain !== 'water' && seed > 0.18) {
+            if (visualTerrain !== 'water' && seed > 0.18) {
               const color =
-                tile.terrain === 'road' || tile.terrain === 'urban'
+                visualTerrain === 'road' || visualTerrain === 'urban'
                   ? 0x5d503d
-                  : tile.terrain === 'forest'
+                  : visualTerrain === 'forest'
                     ? 0x23411f
                     : 0x394d2d;
               const len = ISO_TILE_W * (0.08 + tileNoise(q, r, 212) * 0.11);
@@ -3681,27 +3701,27 @@ export function BattlefieldStage({
               g.lineTo(cx + ox + len / 2, cy + oy + skew);
               g.lineStyle();
             }
-            if (tile.terrain !== 'water' && tileNoise(q, r, 221) > 0.34) {
+            if (visualTerrain !== 'water' && tileNoise(q, r, 221) > 0.34) {
               const len = ISO_TILE_W * (0.32 + tileNoise(q, r, 222) * 0.35);
               const ox = (tileNoise(q, r, 223) - 0.5) * ISO_TILE_W * 0.5;
               const oy = (tileNoise(q, r, 224) - 0.5) * ISO_TILE_H * 0.5;
               const skew = (tileNoise(q, r, 225) - 0.5) * ISO_TILE_H * 0.28;
-              g.lineStyle(1, tile.terrain === 'road' ? 0x6e604c : 0x25361f, fog * 0.14);
+              g.lineStyle(1, visualTerrain === 'road' ? 0x6e604c : 0x25361f, fog * 0.14);
               g.moveTo(cx + ox - len / 2, cy + oy - skew);
               g.lineTo(cx + ox + len / 2, cy + oy + skew);
               g.lineStyle();
             }
-            if (tile.terrain === 'plain' || tile.terrain === 'forest' || tile.terrain === 'hill' || tile.terrain === 'swamp') {
+            if (visualTerrain === 'plain' || visualTerrain === 'forest' || visualTerrain === 'hill' || visualTerrain === 'swamp') {
               const clusters = Math.max(
                 1,
-                Math.round((tile.terrain === 'forest' ? 8 : 6) * detailDensity * fineDetailScale)
+                Math.round((visualTerrain === 'forest' ? 8 : 6) * detailDensity * fineDetailScale)
               );
               for (let i = 0; i < clusters; i++) {
                 const salt = 260 + i * 17;
                 const ox = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.58;
                 const oy = (tileNoise(q, r, salt + 1) - 0.5) * ISO_TILE_H * 0.58;
                 const blade = 3 + tileNoise(q, r, salt + 2) * 4;
-                const color = tile.terrain === 'forest'
+                const color = visualTerrain === 'forest'
                   ? (tileNoise(q, r, salt + 3) > 0.5 ? 0x102610 : 0x2f4c22)
                   : (tileNoise(q, r, salt + 3) > 0.5 ? 0x273820 : 0x4f6134);
                 g.lineStyle(1.15, color, fog * 0.32);
@@ -3712,7 +3732,7 @@ export function BattlefieldStage({
               if (tileNoise(q, r, 351) > 0.6) {
                 const ox = (tileNoise(q, r, 352) - 0.5) * ISO_TILE_W * 0.5;
                 const oy = (tileNoise(q, r, 353) - 0.5) * ISO_TILE_H * 0.46;
-                const tuftColor = tile.terrain === 'swamp' ? 0x526548 : tile.terrain === 'hill' ? 0x6a6939 : 0x3d572c;
+                const tuftColor = visualTerrain === 'swamp' ? 0x526548 : visualTerrain === 'hill' ? 0x6a6939 : 0x3d572c;
                 g.lineStyle(1.1, 0x10170d, fog * 0.3);
                 g.moveTo(cx + ox - 4, cy + oy + 2);
                 g.lineTo(cx + ox + 4, cy + oy + 2);
@@ -3728,7 +3748,7 @@ export function BattlefieldStage({
               if (tileNoise(q, r, 361) > 0.86) {
                 const ox = (tileNoise(q, r, 362) - 0.5) * ISO_TILE_W * 0.5;
                 const oy = (tileNoise(q, r, 363) - 0.5) * ISO_TILE_H * 0.48;
-                const stone = tile.terrain === 'hill' ? 0x726e52 : 0x4e5540;
+                const stone = visualTerrain === 'hill' ? 0x726e52 : 0x4e5540;
                 g.beginFill(0x11140e, fog * 0.22);
                 g.drawEllipse(cx + ox + 1, cy + oy + 1.3, 3.4, 1.5);
                 g.endFill();
@@ -3738,11 +3758,11 @@ export function BattlefieldStage({
                 g.endFill();
               }
             }
-            if (tile.terrain !== 'water') {
+            if (visualTerrain !== 'water') {
               const flecks = Math.max(
                 2,
                 Math.round(
-                  (tile.terrain === 'urban' || tile.terrain === 'road' || tile.terrain === 'structure' ? 10 : 8)
+                  (visualTerrain === 'urban' || visualTerrain === 'road' || visualTerrain === 'structure' ? 10 : 8)
                   * detailDensity
                   * fineDetailScale
                 )
@@ -3751,10 +3771,10 @@ export function BattlefieldStage({
                 const salt = 390 + i * 23;
                 const ox = (tileNoise(q, r, salt) - 0.5) * ISO_TILE_W * 0.62;
                 const oy = (tileNoise(q, r, salt + 1) - 0.5) * ISO_TILE_H * 0.6;
-                const warm = tile.terrain === 'road' || tile.terrain === 'urban' || tile.terrain === 'structure';
+                const warm = visualTerrain === 'road' || visualTerrain === 'urban' || visualTerrain === 'structure';
                 const fleckColor = warm
                   ? (tileNoise(q, r, salt + 2) > 0.46 ? 0x7b6b53 : 0x211b15)
-                  : tile.terrain === 'forest'
+                  : visualTerrain === 'forest'
                     ? (tileNoise(q, r, salt + 2) > 0.52 ? 0x405b2c : 0x0c180c)
                     : (tileNoise(q, r, salt + 2) > 0.52 ? 0x647142 : 0x182313);
                 const alpha = fog * (0.13 + tileNoise(q, r, salt + 3) * 0.1);
@@ -3772,7 +3792,7 @@ export function BattlefieldStage({
                 }
               }
             }
-            if (tile.terrain === 'road' || tile.terrain === 'urban') {
+            if (visualTerrain === 'road' || visualTerrain === 'urban') {
               const roadMarks = !externalTexturesAreColored && detailDensity > 0.66 ? 2 : 1;
               for (let i = 0; i < roadMarks; i++) {
                 const salt = 520 + i * 19;
@@ -3780,7 +3800,7 @@ export function BattlefieldStage({
                 const oy = (tileNoise(q, r, salt + 1) - 0.5) * ISO_TILE_H * 0.32;
                 const len = ISO_TILE_W * (0.22 + tileNoise(q, r, salt + 2) * 0.2);
                 const skew = (tileNoise(q, r, salt + 3) - 0.5) * ISO_TILE_H * 0.18;
-                g.lineStyle(1, tile.terrain === 'road' ? 0x9a8564 : 0x5e5a4e, fog * 0.26);
+                g.lineStyle(1, visualTerrain === 'road' ? 0x9a8564 : 0x5e5a4e, fog * 0.26);
                 g.moveTo(cx + ox - len * 0.5, cy + oy - skew);
                 g.lineTo(cx + ox + len * 0.5, cy + oy + skew);
                 g.lineStyle(1, 0x15110d, fog * 0.18);
@@ -3800,7 +3820,7 @@ export function BattlefieldStage({
                 g.lineStyle();
               }
             }
-            if (tile.terrain === 'water') {
+            if (visualTerrain === 'water') {
               const ripples = externalTexturesAreColored ? 1 : Math.max(1, Math.round(1 + detailDensity));
               for (let i = 0; i < ripples; i++) {
                 const salt = 230 + i * 17;
@@ -3820,7 +3840,16 @@ export function BattlefieldStage({
         }}
       />
     );
-  }, [exploredTiles, externalTexturesAreColored, map.height, map.tiles, map.width, topGeomFor, visibleTiles]);
+  }, [
+    exploredTiles,
+    externalTexturesAreColored,
+    map.height,
+    map.tiles,
+    map.width,
+    procBuildingUnderlay,
+    topGeomFor,
+    visibleTiles
+  ]);
   const terrainMissingTexts = useMemo(() => {
     if (!allowExternalTextures) return null;
     if (!missingTerrainPng || missingTerrainPng.size === 0) return null;
@@ -4553,7 +4582,7 @@ export function BattlefieldStage({
     const inb = (qq: number, rr: number) => qq >= 0 && rr >= 0 && qq < map.width && rr < map.height;
 
     return map.tiles
-      .map((tile, index) => {
+      .map((_, index) => {
         const q = index % map.width;
         const r = Math.floor(index / map.width);
         const pos = toScreen({ q, r });
@@ -4569,7 +4598,8 @@ export function BattlefieldStage({
           SE: corners.hSE,
           SW: corners.hSW
         };
-        const baseColor = terrainPalette[tile.terrain] ?? terrainPalette.plain;
+        const visualTerrain = presentationTerrainAt(map.tiles, procBuildingUnderlay, index);
+        const baseColor = terrainPalette[visualTerrain] ?? terrainPalette.plain;
 
         return (
           <Graphics
@@ -4625,7 +4655,15 @@ export function BattlefieldStage({
         );
       })
       .filter(Boolean) as JSX.Element[];
-  }, [exploredTiles, map.height, map.tiles, map.width, snappedCorners, visibleTiles]);
+  }, [
+    exploredTiles,
+    map.height,
+    map.tiles,
+    map.width,
+    procBuildingUnderlay,
+    snappedCorners,
+    visibleTiles
+  ]);
 
 
   const propTextureCache = useMemo(() => new Map<string, Texture>(), []);

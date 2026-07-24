@@ -7,6 +7,7 @@ import {
   TERRAIN_GRID_ALPHA,
   TERRAIN_WASH_VISIBILITY_RADIUS,
   buildingVisibilityPresentation,
+  presentationTerrainAt,
   proceduralBuildingUnderlayTerrain,
   softShadowLayers,
   smoothTerrainNoise,
@@ -168,6 +169,45 @@ describe('terrain and fog presentation', () => {
     expect(tiles[6].terrain).toBe('structure');
     expect(tiles[7].terrain).toBe('structure');
     expect(tiles[24].terrain).toBe('structure');
+  });
+
+  it('resolves visual terrain symmetrically while gameplay keeps the real blocked tiles', () => {
+    const tiles = [
+      { terrain: 'structure' as const, passable: false },
+      { terrain: 'structure' as const, passable: false }
+    ];
+    const underlays = new Map<number, 'plain' | 'forest'>([
+      [0, 'plain'],
+      [1, 'forest']
+    ]);
+
+    const forwardEdge = [
+      presentationTerrainAt(tiles, underlays, 0),
+      presentationTerrainAt(tiles, underlays, 1)
+    ];
+    const reverseEdge = [
+      presentationTerrainAt(tiles, underlays, 1),
+      presentationTerrainAt(tiles, underlays, 0)
+    ];
+
+    expect(forwardEdge).toEqual(['plain', 'forest']);
+    expect(reverseEdge).toEqual([...forwardEdge].reverse());
+    expect(tiles[0]).toMatchObject({ terrain: 'structure', passable: false });
+    expect(tiles[1]).toMatchObject({ terrain: 'structure', passable: false });
+  });
+
+  it('leaves all-structure ruins without an invented urban underlay', () => {
+    const tiles = Array.from({ length: 9 }, () => ({ terrain: 'structure' as const }));
+    const props = [{
+      id: 'ruins',
+      kind: 'proc-building' as const,
+      coordinate: { q: 1, r: 1 },
+      w: 1,
+      h: 1
+    }];
+
+    expect([...proceduralBuildingUnderlayTerrain(tiles, props, 3, 3)]).toEqual([]);
+    expect(tiles[4].terrain).toBe('structure');
   });
 
   it('varies detail density in broad deterministic regions instead of per-tile checker steps', () => {
