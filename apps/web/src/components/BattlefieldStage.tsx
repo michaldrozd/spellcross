@@ -14,6 +14,8 @@ import {
   ARTILLERY_TRAIL_FRACTION,
   CORPSE_TTL_MS,
   DEATH_REACTION_HOLD_MS,
+  SMALL_ARMS_DEBRIS_COUNT,
+  SMALL_ARMS_DEBRIS_LIFETIME_MS,
   WRECK_SMOKE_ANIMATION_MS,
   activeKillingEffectForTarget,
   combatImpactWindowMs,
@@ -23,6 +25,7 @@ import {
   deathMarkerVisible,
   deathReactionAlpha,
   firearmVisualProfile,
+  smallArmsDebrisValue,
   type CombatEffectType
 } from './combatVisuals.js';
 import {
@@ -233,6 +236,8 @@ export interface AttackEffect {
   targetId: string;
   timelineStartIndex?: number;
   timelineEndIndex?: number;
+  sourceVisible?: boolean;
+  targetVisible?: boolean;
   fromQ: number;
   fromR: number;
   toQ: number;
@@ -2296,6 +2301,7 @@ export function BattlefieldStage({
   if (!prefersReducedMotion) {
     let shakeTrauma = 0;
     for (const e of attackEffects) {
+      if (e.sourceVisible === false && e.targetVisible === false) continue;
       if (e.hit === false) continue;
       const elapsed = now - e.startTime;
       const timing = combatEffectTiming(e.type, e.arc);
@@ -6573,8 +6579,11 @@ export function BattlefieldStage({
     return attackEffects.map((effect) => {
       const elapsed = now - effect.startTime;
       const timing = combatEffectTiming(effect.type, effect.arc);
+      const sourceVisible = effect.sourceVisible ?? true;
+      const targetVisible = effect.targetVisible ?? true;
       if (elapsed < 0) return null;
       if (elapsed > timing.totalMs) return null;
+      if (!sourceVisible && !targetVisible) return null;
 
       const fromPos = toScreen({ q: effect.fromQ, r: effect.fromR });
       const toPos = toScreen({ q: effect.toQ, r: effect.toR });
@@ -6635,7 +6644,7 @@ export function BattlefieldStage({
 
       return (
         <Container key={effect.id} zIndex={zIndex}>
-          {!isBurst && effect.type !== 'arrow' && effect.type !== 'fire' && elapsed < 620 && (
+          {sourceVisible && !isBurst && effect.type !== 'arrow' && effect.type !== 'fire' && elapsed < 620 && (
             <Graphics
               draw={(g) => {
                 g.clear();
@@ -6669,7 +6678,7 @@ export function BattlefieldStage({
             />
           )}
 
-          {effect.type !== 'melee' && effect.type !== 'arrow' && elapsed < 320 && (
+          {sourceVisible && effect.type !== 'melee' && effect.type !== 'arrow' && elapsed < 320 && (
             <Graphics
               x={fromX + shotUx * tileSize * 0.2}
               y={fromY - tileSize * 0.15 + shotUy * tileSize * 0.08}
@@ -6718,7 +6727,7 @@ export function BattlefieldStage({
             />
           )}
 
-          {(isBurst ? elapsed < timing.projectileMs : travel < 1) && (
+          {sourceVisible && (isBurst ? elapsed < timing.projectileMs : travel < 1) && (
             <Graphics
               draw={(g) => {
                 g.clear();
@@ -6883,7 +6892,7 @@ export function BattlefieldStage({
             />
           )}
 
-          {travel >= 1 && elapsed < timing.projectileMs + 120 && effect.type === 'magic' && (
+          {sourceVisible && travel >= 1 && elapsed < timing.projectileMs + 120 && effect.type === 'magic' && (
             <Graphics
               draw={(g) => {
                 g.clear();
@@ -6905,7 +6914,7 @@ export function BattlefieldStage({
             />
           )}
 
-          {elapsed >= timing.impactAtMs
+          {targetVisible && elapsed >= timing.impactAtMs
             && elapsed < timing.impactAtMs + combatImpactWindowMs(effect.type, effect.killed, timing.impactMs) && (
             <Graphics
               x={toX}
@@ -7140,10 +7149,30 @@ export function BattlefieldStage({
                   g.moveTo(-ux * hitSize * 0.22, -uy * hitSize * 0.22);
                   g.lineTo(ux * hitSize * 0.2, uy * hitSize * 0.2);
                 }
+                if (isBurst && effect.hit) {
+                  const debrisElapsed = elapsed - timing.impactAtMs;
+                  const debrisProgress = clamp01(debrisElapsed / SMALL_ARMS_DEBRIS_LIFETIME_MS);
+                  const debrisAlpha = Math.pow(1 - debrisProgress, 1.35);
+                  const eventIndex = effect.timelineStartIndex ?? 0;
+                  for (let particleIndex = 0; particleIndex < SMALL_ARMS_DEBRIS_COUNT; particleIndex += 1) {
+                    const spread = smallArmsDebrisValue(eventIndex, particleIndex, 0) - 0.5;
+                    const speed = 0.52 + smallArmsDebrisValue(eventIndex, particleIndex, 1) * 0.48;
+                    const lateral = spread * tileSize * 0.32 * debrisProgress * speed;
+                    const forward = tileSize * (0.05 + speed * 0.12) * debrisProgress;
+                    const lift = tileSize * (0.06 + smallArmsDebrisValue(eventIndex, particleIndex, 2) * 0.1)
+                      * Math.sin(debrisProgress * Math.PI);
+                    const particleX = px * lateral + ux * forward;
+                    const particleY = py * lateral * 0.42 + uy * forward - lift;
+                    const radius = 0.75 + smallArmsDebrisValue(eventIndex, particleIndex, 3) * 1.1;
+                    g.beginFill(targetMaterial === 'armor' ? 0xcda968 : 0x8a7250, debrisAlpha * 0.72);
+                    g.drawEllipse(particleX, particleY, radius * 1.35, radius);
+                    g.endFill();
+                  }
+                }
               }}
             />
           )}
-          {elapsed >= timing.impactAtMs + 35
+          {targetVisible && elapsed >= timing.impactAtMs + 35
             && elapsed < timing.impactAtMs + (effect.killed ? 940 : 1120)
             && (() => {
             // Damage number with a punchy pop (overshoot scale), an ease-out leap upward, and a size/

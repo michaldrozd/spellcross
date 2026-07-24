@@ -65,6 +65,7 @@ import { useTranslation } from 'react-i18next';
 import type { ArrivalEffect, AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
 import {
   combatEffectForShot,
+  combatOutcomePresentationReady,
   combatEffectTiming,
   combatEffectTypeForWeapon,
   combatTimelineEventVisible
@@ -466,14 +467,15 @@ function analyzePathThreat(
 }
 type BattleOutcomeData = {
   status: 'victory' | 'defeat';
-  sectorName: string;
-  debrief: string;
+  scenarioId: string;
+  scenarioName: string;
+  timelineEndIndex: number;
   rounds: number;
   enemiesDestroyed: number;
   enemiesTotal: number;
   squadsLost: number;
   squadsSurviving: number;
-  objectives: Array<{ text: string; met: boolean }>;
+  objectives: Array<{ id: string; description: string; met: boolean }>;
   reward?: { money: number; research: number; strategic: number };
 };
 const BattleView: React.FC<{
@@ -594,6 +596,7 @@ const BattleView: React.FC<{
   const [showRanges, setShowRanges] = useState(false);
   const [attackEffects, setAttackEffects] = useState<AttackEffect[]>([]);
   const attackEffectsRef = useRef(attackEffects);
+  const concealedTimelineIndexesRef = useRef(new Set<number>());
   attackEffectsRef.current = attackEffects;
   const [arrivalEffects, setArrivalEffects] = useState<ArrivalEffect[]>([]);
   // Movement animation state
@@ -865,6 +868,7 @@ const BattleView: React.FC<{
         setBattleOutcome(null);
         setMovingUnit(null);
         setAttackEffects([]);
+        concealedTimelineIndexesRef.current.clear();
         setArrivalEffects([]);
         setShowRanges(false);
         setTargetedEnemy(null);
@@ -897,8 +901,25 @@ const BattleView: React.FC<{
         suppressive: effect.suppressive,
         moraleDamage: effect.moraleDamage,
         killed: effect.killed,
+        sourceVisible: effect.sourceVisible,
+        targetVisible: effect.targetVisible,
         startTime: effect.startTime
       })),
+      setAllianceVision: (coordinates: HexCoordinate[]) => {
+        const nextVisibleTiles = new Set(
+          coordinates
+            .filter((coordinate) => Boolean(getTile(coordinate)))
+            .map((coordinate) => coordinate.r * map.width + coordinate.q)
+        );
+        battle.state.vision.alliance.visibleTiles = nextVisibleTiles;
+        battle.state.vision.alliance.exploredTiles = new Set(nextVisibleTiles);
+        setCameraRestoreSignal((signal) => signal + 1);
+        return nextVisibleTiles.size;
+      },
+      setLanguage: async (language: 'en' | 'sk') => {
+        await i18n.changeLanguage(language);
+        return i18n.language;
+      },
       moveFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         const foe = Array.from(battle.state.sides.otherSide.units.values()).find((u) => u.stance !== 'destroyed');
@@ -1210,6 +1231,10 @@ const BattleView: React.FC<{
         persist();
         return true;
       },
+      clearScriptedEvents: () => {
+        battle.scenario.events = [];
+        return true;
+      },
       deploymentRosterIds: () => Object.keys(battle.deployment),
       ammoFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
@@ -1464,15 +1489,17 @@ const BattleView: React.FC<{
     const rosterUnits = allyUnits.filter((u) => deployedTacticalIds.has(u.id));
     return {
       status,
-      sectorName: localizedScenarioName(battle.scenario.id, battle.scenario.name),
-      debrief: status === 'victory' ? operationDossier.victory : operationDossier.defeat,
+      scenarioId: battle.scenario.id,
+      scenarioName: battle.scenario.name,
+      timelineEndIndex: battle.state.timeline.length,
       rounds: battle.state.round,
       enemiesTotal: enemyUnits.length,
       enemiesDestroyed: enemyUnits.filter(isDead).length,
       squadsLost: rosterUnits.filter(isDead).length,
       squadsSurviving: rosterUnits.filter((u) => !isDead(u)).length,
       objectives: (battle.scenario.objectives ?? []).map((o) => ({
-        text: localizedObjectiveText(battle.scenario.id, o.id, o.description),
+        id: o.id,
+        description: o.description,
         met: isObjectiveMet(o, battle)
       })),
       reward: status === 'victory' && territory ? { ...territory.reward } : undefined
@@ -1633,20 +1660,31 @@ const BattleView: React.FC<{
     const effectType = presentation.type;
     const arc = isIndirectFire(attacker, weaponId);
     const timing = combatEffectTiming(effectType, arc);
+    const shotVisibleTiles = battle.state.vision.alliance.visibleTiles;
+    const sourceVisible = attacker.faction === 'alliance'
+      || shotVisibleTiles.has(tileIndex(attacker.coordinate));
+    const targetVisible = defender.faction === 'alliance'
+      || shotVisibleTiles.has(tileIndex(to));
     const noticeTone = attacker.faction === 'alliance' ? 'alliance' : 'enemy';
-    const noticeTitle = presentation.suppressive
-      ? t('battle:notice.suppressionTitle')
-      : outcome.hit ? t('battle:notice.hitTitle') : t('battle:notice.missTitle');
-    const noticeDetail = presentation.suppressive
-      ? t('battle:notice.suppressionDetail', {
-          defender: unitDisplayName(defender.id, battle.state),
-          morale: outcome.moraleDamage
-        })
-      : outcome.hit
-        ? t('battle:notice.hitDetail', { defender: unitDisplayName(defender.id, battle.state), damage: outcome.damage })
-        : t('battle:notice.missDetail', { attacker: unitDisplayName(attacker.id, battle.state), defender: unitDisplayName(defender.id, battle.state) });
     window.setTimeout(
-      () => showPhaseNotice(noticeTitle, noticeDetail, noticeTone),
+      () => {
+        if (!targetVisible || (!sourceVisible && !outcome.hit)) return;
+        const noticeTitle = presentation.suppressive
+          ? i18n.t('battle:notice.suppressionTitle')
+          : outcome.hit ? i18n.t('battle:notice.hitTitle') : i18n.t('battle:notice.missTitle');
+        const noticeDetail = presentation.suppressive
+          ? i18n.t('battle:notice.suppressionDetail', {
+              defender: unitDisplayName(defender.id, battle.state),
+              morale: outcome.moraleDamage
+            })
+          : outcome.hit
+            ? i18n.t('battle:notice.hitDetail', { defender: unitDisplayName(defender.id, battle.state), damage: outcome.damage })
+            : i18n.t('battle:notice.missDetail', {
+                attacker: unitDisplayName(attacker.id, battle.state),
+                defender: unitDisplayName(defender.id, battle.state)
+              });
+        showPhaseNotice(noticeTitle, noticeDetail, noticeTone);
+      },
       delay + timing.impactAtMs
     );
     let timelineStartIndex = attackEventIndex;
@@ -1672,6 +1710,15 @@ const BattleView: React.FC<{
           break;
         }
       }
+      const presentationEndIndex = timelineEndIndex ?? timelineStartIndex + 1;
+      for (let index = timelineStartIndex; index < presentationEndIndex; index += 1) {
+        const event = battle.state.timeline[index];
+        const hidesAttacker = !sourceVisible
+          && (event?.kind === 'unit:attacked' || event?.kind === 'unit:level');
+        const hidesTarget = !targetVisible
+          && (event?.kind === 'unit:attacked' || event?.kind === 'unit:defeated');
+        if (hidesAttacker || hidesTarget) concealedTimelineIndexesRef.current.add(index);
+      }
     }
     setAttackEffects(prev => [...prev, {
       id: `${attacker.id}-${defender.id}-${nextEffectId()}`,
@@ -1679,6 +1726,8 @@ const BattleView: React.FC<{
       targetId: defender.id,
       timelineStartIndex,
       timelineEndIndex,
+      sourceVisible,
+      targetVisible,
       fromQ: attacker.coordinate.q,
       fromR: attacker.coordinate.r,
       toQ: to.q,
@@ -2437,10 +2486,20 @@ const BattleView: React.FC<{
     setAutoTurnPhase(null);
   };
   const battleLogNow = Date.now();
+  const battlePresentationEnabled = document.visibilityState === 'visible'
+    && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const presentationAttackEffects = battlePresentationEnabled ? attackEffects : [];
   const visibleBattleLogEvents = battle.state.timeline.filter((event, eventIndex) =>
     event.kind !== 'unit:xp'
-    && combatTimelineEventVisible(event, attackEffects, battleLogNow, eventIndex)
+    && !concealedTimelineIndexesRef.current.has(eventIndex)
+    && combatTimelineEventVisible(event, presentationAttackEffects, battleLogNow, eventIndex)
   );
+  const visibleBattleOutcome = battleOutcome && combatOutcomePresentationReady(
+    attackEffects,
+    battleOutcome.timelineEndIndex,
+    battleLogNow,
+    battlePresentationEnabled
+  ) ? battleOutcome : null;
   return (
     <div className="battle-screen">
       <div className="battle-map-layer">
@@ -3041,43 +3100,45 @@ const BattleView: React.FC<{
           </div>
         </div>
       </div>
-      {battleOutcome ? (
-        <div className={`battle-outcome-overlay ${battleOutcome.status}`}>
+      {visibleBattleOutcome ? (
+        <div className={`battle-outcome-overlay ${visibleBattleOutcome.status}`}>
           <div className="battle-outcome-card">
             <div className="battle-outcome-stamp">
-              {battleOutcome.status === 'victory' ? t('battle:outcome.sectorSecured') : t('battle:outcome.missionFailed')}
+              {visibleBattleOutcome.status === 'victory' ? t('battle:outcome.sectorSecured') : t('battle:outcome.missionFailed')}
             </div>
-            <p className="battle-outcome-sector">{battleOutcome.sectorName}</p>
+            <p className="battle-outcome-sector">
+              {localizedScenarioName(visibleBattleOutcome.scenarioId, visibleBattleOutcome.scenarioName)}
+            </p>
             <div className="battle-outcome-debrief">
               <span>{t('battle:outcome.debrief')}</span>
-              <p>{battleOutcome.debrief}</p>
+              <p>{visibleBattleOutcome.status === 'victory' ? operationDossier.victory : operationDossier.defeat}</p>
             </div>
-            {battleOutcome.objectives.length ? (
+            {visibleBattleOutcome.objectives.length ? (
               <ul className="battle-outcome-objectives">
-                {battleOutcome.objectives.map((o, i) => (
-                  <li key={i} className={o.met ? 'met' : 'failed'}>
+                {visibleBattleOutcome.objectives.map((o) => (
+                  <li key={o.id} className={o.met ? 'met' : 'failed'}>
                     <span className="obj-mark">{o.met ? '✓' : '✕'}</span>
-                    <span>{o.text}</span>
+                    <span>{localizedObjectiveText(visibleBattleOutcome.scenarioId, o.id, o.description)}</span>
                   </li>
                 ))}
               </ul>
             ) : null}
             <dl className="battle-outcome-stats">
-              <div><dt>{t('battle:outcome.enemiesDestroyed')}</dt><dd>{battleOutcome.enemiesDestroyed}/{battleOutcome.enemiesTotal}</dd></div>
-              <div><dt>{t('battle:outcome.squadsSurviving')}</dt><dd>{battleOutcome.squadsSurviving}</dd></div>
-              <div><dt>{t('battle:outcome.squadsLost')}</dt><dd className={battleOutcome.squadsLost > 0 ? 'loss' : ''}>{battleOutcome.squadsLost}</dd></div>
-              <div><dt>{t('battle:outcome.rounds')}</dt><dd>{battleOutcome.rounds}</dd></div>
+              <div><dt>{t('battle:outcome.enemiesDestroyed')}</dt><dd>{visibleBattleOutcome.enemiesDestroyed}/{visibleBattleOutcome.enemiesTotal}</dd></div>
+              <div><dt>{t('battle:outcome.squadsSurviving')}</dt><dd>{visibleBattleOutcome.squadsSurviving}</dd></div>
+              <div><dt>{t('battle:outcome.squadsLost')}</dt><dd className={visibleBattleOutcome.squadsLost > 0 ? 'loss' : ''}>{visibleBattleOutcome.squadsLost}</dd></div>
+              <div><dt>{t('battle:outcome.rounds')}</dt><dd>{visibleBattleOutcome.rounds}</dd></div>
             </dl>
-            {battleOutcome.reward ? (
+            {visibleBattleOutcome.reward ? (
               <div className="battle-outcome-spoils">
                 <span className="spoils-label">{t('battle:outcome.spoils')}</span>
-                <span className="spoils-item">+{battleOutcome.reward.money} <em>CR</em></span>
-                <span className="spoils-item">+{battleOutcome.reward.research} <em>RP</em></span>
-                <span className="spoils-item">+{battleOutcome.reward.strategic} <em>SP</em></span>
+                <span className="spoils-item">+{visibleBattleOutcome.reward.money} <em>CR</em></span>
+                <span className="spoils-item">+{visibleBattleOutcome.reward.research} <em>RP</em></span>
+                <span className="spoils-item">+{visibleBattleOutcome.reward.strategic} <em>SP</em></span>
               </div>
             ) : null}
             <button className="primary-btn battle-outcome-continue" onClick={confirmBattleOutcome}>
-              {battleOutcome.status === 'victory' ? t('battle:outcome.returnToHq') : t('battle:outcome.regroupAtHq')}
+              {visibleBattleOutcome.status === 'victory' ? t('battle:outcome.returnToHq') : t('battle:outcome.regroupAtHq')}
             </button>
           </div>
         </div>

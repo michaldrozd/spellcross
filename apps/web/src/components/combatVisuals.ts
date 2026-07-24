@@ -16,6 +16,8 @@ export type TargetedCombatEffect = {
   targetId: string;
   timelineStartIndex?: number;
   timelineEndIndex?: number;
+  sourceVisible?: boolean;
+  targetVisible?: boolean;
   startTime: number;
   type: CombatEffectType;
   arc?: boolean;
@@ -68,6 +70,8 @@ export const DEATH_REACTION_HOLD_MS = 360;
 export const DEATH_REACTION_FADE_MS = 120;
 export const DEATH_REACTION_TOTAL_MS = DEATH_REACTION_HOLD_MS + DEATH_REACTION_FADE_MS;
 export const ARTILLERY_TRAIL_FRACTION = 0.28;
+export const SMALL_ARMS_DEBRIS_LIFETIME_MS = 380;
+export const SMALL_ARMS_DEBRIS_COUNT = 7;
 
 export function combatEffectTypeForWeapon(definitionId: string, weaponId: string): CombatEffectType {
   const unitId = definitionId.toLowerCase();
@@ -159,6 +163,37 @@ export function combatTimelineEventVisible(
     }
     return false;
   });
+}
+
+export function combatOutcomePresentationReady(
+  attackEffects: readonly TargetedCombatEffect[],
+  outcomeTimelineEndIndex: number,
+  now: number,
+  presentationEnabled = true
+) {
+  if (!presentationEnabled) return true;
+  const killingEffect = [...attackEffects].reverse().find((effect) => {
+    if (!effect.killed || (effect.sourceVisible === false && effect.targetVisible === false)) return false;
+    if (effect.timelineStartIndex === undefined) return false;
+    const effectEnd = effect.timelineEndIndex ?? effect.timelineStartIndex + 1;
+    return effect.timelineStartIndex < outcomeTimelineEndIndex && effectEnd >= outcomeTimelineEndIndex;
+  });
+  if (!killingEffect) return true;
+  const impactAt = killingEffect.startTime
+    + combatEffectTiming(killingEffect.type, killingEffect.arc).impactAtMs;
+  return now >= impactAt;
+}
+
+export function smallArmsDebrisValue(eventIndex: number, particleIndex: number, salt: number) {
+  let value = (
+    Math.imul(eventIndex + 1, 0x45d9f3b)
+    ^ Math.imul(particleIndex + 11, 0x27d4eb2d)
+    ^ Math.imul(salt + 101, 0x165667b1)
+  ) >>> 0;
+  value ^= value >>> 16;
+  value = Math.imul(value, 0x7feb352d) >>> 0;
+  value ^= value >>> 15;
+  return (value >>> 0) / 0xffffffff;
 }
 
 export function activeKillingEffectForTarget<T extends TargetedCombatEffect>(

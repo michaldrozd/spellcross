@@ -4,14 +4,18 @@ import {
   ARTILLERY_TRAIL_FRACTION,
   DEATH_REACTION_HOLD_MS,
   DEATH_REACTION_TOTAL_MS,
+  SMALL_ARMS_DEBRIS_COUNT,
+  SMALL_ARMS_DEBRIS_LIFETIME_MS,
   combatEffectForShot,
+  combatOutcomePresentationReady,
   combatEffectTiming,
   combatTimelineEventVisible,
   combatEffectTypeForWeapon,
   deathMarkerFade,
   deathMarkerVisible,
   deathReactionAlpha,
-  firearmVisualProfile
+  firearmVisualProfile,
+  smallArmsDebrisValue
 } from './combatVisuals.js';
 
 describe('combatEffectTypeForWeapon', () => {
@@ -201,6 +205,41 @@ describe('combat timeline presentation', () => {
       20
     )).toBe(true);
     expect(combatTimelineEventVisible({ kind: 'round:started' }, [indirectEffect], 1001, 19)).toBe(true);
+  });
+
+  it('reveals the outcome with its killing impact and fails open when no shot is presentable', () => {
+    const impactAt = directEffect.startTime + combatEffectTiming(directEffect.type).impactAtMs;
+    const visibleKillingEffect = {
+      ...directEffect,
+      sourceVisible: true,
+      targetVisible: true
+    };
+
+    expect(combatOutcomePresentationReady([visibleKillingEffect], 25, impactAt - 1)).toBe(false);
+    expect(combatOutcomePresentationReady([visibleKillingEffect], 25, impactAt)).toBe(true);
+    expect(combatOutcomePresentationReady([visibleKillingEffect], 25, impactAt - 1, false)).toBe(true);
+    expect(combatOutcomePresentationReady([
+      { ...visibleKillingEffect, sourceVisible: false, targetVisible: false }
+    ], 25, impactAt - 1)).toBe(true);
+    expect(combatOutcomePresentationReady([
+      { ...visibleKillingEffect, timelineEndIndex: 24 }
+    ], 25, impactAt - 1)).toBe(true);
+  });
+});
+
+describe('small-arms debris', () => {
+  it('is deterministic, bounded and short-lived', () => {
+    const firstPass = Array.from({ length: SMALL_ARMS_DEBRIS_COUNT }, (_, particleIndex) =>
+      smallArmsDebrisValue(42, particleIndex, 3)
+    );
+    const secondPass = Array.from({ length: SMALL_ARMS_DEBRIS_COUNT }, (_, particleIndex) =>
+      smallArmsDebrisValue(42, particleIndex, 3)
+    );
+
+    expect(firstPass).toEqual(secondPass);
+    expect(new Set(firstPass).size).toBe(SMALL_ARMS_DEBRIS_COUNT);
+    expect(firstPass.every((value) => value >= 0 && value <= 1)).toBe(true);
+    expect(SMALL_ARMS_DEBRIS_LIFETIME_MS).toBeLessThanOrEqual(400);
   });
 });
 
