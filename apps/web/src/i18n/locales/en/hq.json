@@ -244,11 +244,88 @@
     "refillHint": "Choose replacement quality; experience retention and cost are shown exactly.",
     "resultPreview": "Returns with {{experience}} XP · {{tier}}",
     "equipment": "EQUIPMENT",
+    "doctrine": "FIELD EQUIPMENT DOCTRINE",
+    "doctrineHint": "One persistent package per category. Every preview shows the stats this unit will actually deploy with.",
+    "doctrineIneligible": "Unique commanders retain their dedicated standard fit.",
+    "categoryIneligible": "This unarmed support platform cannot use offense packages; protection and mobility/support remain available.",
+    "categoryLabel": "Equipment category",
+    "categories": {
+      "offense": "OFFENSE",
+      "protection": "PROTECTION",
+      "mobility": "MOBILITY / SUPPORT"
+    },
+    "fitted": "FITTED",
+    "available": "READY",
+    "requiresResearch": "REQUIRES {{research}}",
+    "install": "INSTALL PACKAGE",
+    "remove": "RETURN TO STANDARD",
+    "standardIssue": "0 CR",
+    "stats": {
+      "armor": "Armor",
+      "morale": "Morale",
+      "mobility": "Mobility",
+      "vision": "Vision",
+      "weaponPower": "Power",
+      "range": "Range",
+      "accuracy": "Accuracy"
+    },
+    "conversion": "PLATFORM CONVERSION",
     "rearm": "REARM UNIT",
     "sameCategoryOnly": "Only unlocked equipment in the same combat category is eligible.",
     "noRearmOptions": "No eligible rearm package is currently available.",
+    "rearmReset": "WARNING: conversion removes {{count}} fitted doctrine package(s) without refund.",
     "quoteNotice": "QUOTES ARE FINAL",
     "quoteHint": "Applying a service order updates the force immediately.",
-    "close": "CLOSE"
+    "close": "CLOSE",
+    "packages": {
+      "helix-sight-bus": {
+        "name": "Helix Sight Bus",
+        "description": "Linked sight heads tighten firing solutions and extend observation, but slow movement through clutter."
+      },
+      "hammerburst-feed": {
+        "name": "Hammerburst Feed",
+        "description": "Aggressive feed timing raises impact energy at the cost of crew confidence under sustained fire."
+      },
+      "vector-range-lattice": {
+        "name": "Vector Range Lattice",
+        "description": "Remote ranging extends every firing envelope while exposed emitters weaken protection."
+      },
+      "siege-governor": {
+        "name": "Siege Governor",
+        "description": "A heavy fire-control governor adds force and precision but burdens rapid repositioning."
+      },
+      "signal-veil": {
+        "name": "Signal Veil",
+        "description": "Sensor-diffusing screens add a defensive layer while narrowing the crew sight picture."
+      },
+      "lattice-plate": {
+        "name": "Lattice Plate",
+        "description": "Interlocked composite plates absorb heavy strikes but add weight to every maneuver."
+      },
+      "impact-cradle": {
+        "name": "Impact Cradle",
+        "description": "Stabilized crew stations preserve nerve under shock while their heavy mounts slow relocation."
+      },
+      "aegis-baffles": {
+        "name": "Aegis Baffles",
+        "description": "Layered ward baffles reinforce armor and morale but narrow the sensor field."
+      },
+      "trailblazer-drive": {
+        "name": "Trailblazer Drive",
+        "description": "Predictive route control speeds every advance while exposing lighter running protection."
+      },
+      "survey-mast": {
+        "name": "Survey Mast",
+        "description": "An elevated survey array expands battlefield vision but its constant chatter strains cohesion."
+      },
+      "relay-harness": {
+        "name": "Relay Harness",
+        "description": "Distributed relays improve route sharing and sighting while their signal load strains cohesion."
+      },
+      "sprint-governor": {
+        "name": "Sprint Governor",
+        "description": "Unlocked drive limits enable rapid redeployment at the cost of vision and firing stability."
+      }
+    }
   }
 }

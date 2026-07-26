@@ -39,6 +39,42 @@ describe('data bundle', () => {
       .every((scenario) => Boolean(scenario.map.environment))).toBe(true);
   });
 
+  it('ships four researched trade-off packages in every equipment category', () => {
+    const researchIds = new Set(starterBundle.research.map((topic) => topic.id));
+    const equipmentIds = new Set(starterBundle.equipment.map((equipment) => equipment.id));
+
+    expect(starterBundle.equipment).toHaveLength(12);
+    expect(equipmentIds.size).toBe(starterBundle.equipment.length);
+    for (const category of ['offense', 'protection', 'mobility'] as const) {
+      expect(starterBundle.equipment.filter((equipment) => equipment.category === category)).toHaveLength(4);
+    }
+    for (const equipment of starterBundle.equipment) {
+      const modifiers = Object.values(equipment.modifiers).filter((modifier) => modifier !== undefined);
+      expect(modifiers.some((modifier) => modifier > 0), `${equipment.id} positive`).toBe(true);
+      expect(modifiers.some((modifier) => modifier < 0), `${equipment.id} downside`).toBe(true);
+      expect(researchIds.has(equipment.requiresResearch), `${equipment.id} research`).toBe(true);
+      expect(equipment.cost).toBeGreaterThan(0);
+    }
+  });
+
+  it('rejects invalid equipment doctrine content', () => {
+    const duplicate = structuredClone(starterBundle);
+    duplicate.equipment[1].id = duplicate.equipment[0].id;
+    expect(() => loadContentBundle(duplicate)).toThrow(/Duplicate equipment package/);
+
+    const unknownResearch = structuredClone(starterBundle);
+    unknownResearch.equipment[0].requiresResearch = 'missing-doctrine';
+    expect(() => loadContentBundle(unknownResearch)).toThrow(/requires unknown research/);
+
+    const noDownside = structuredClone(starterBundle);
+    noDownside.equipment[0].modifiers = { accuracy: 0.04 };
+    expect(() => loadContentBundle(noDownside)).toThrow(/positive and negative trade-off/);
+
+    const shortCategory = structuredClone(starterBundle);
+    shortCategory.equipment = shortCategory.equipment.filter((equipment) => equipment.id !== 'helix-sight-bus');
+    expect(() => loadContentBundle(shortCategory)).toThrow(/must define at least four packages/);
+  });
+
   it('rejects fire modes for weapons a unit does not have', () => {
     const invalidBundle = structuredClone(starterBundle);
     invalidBundle.units[0].stats.weaponFireModes = { missing: 'indirect' };

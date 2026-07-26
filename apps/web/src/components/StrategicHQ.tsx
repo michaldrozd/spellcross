@@ -1,4 +1,5 @@
 import type { CampaignDifficulty, CampaignState } from '@spellcross/core';
+import type { EquipmentCategory } from '@spellcross/data';
 import type { TFunction } from 'i18next';
 import React, { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -45,6 +46,24 @@ interface ArmyUnit {
     cost: number;
     experienceAfter: number;
     tierAfter: string;
+    equipmentResetCount: number;
+  }>;
+  equipmentOptions: Array<{
+    id: string;
+    category: EquipmentCategory;
+    name: string;
+    description: string;
+    cost: number;
+    unlocked: boolean;
+    fitted: boolean;
+    requiredResearch: string;
+    preview: Array<{
+      stat: 'armor' | 'morale' | 'mobility' | 'vision' | 'weaponPower' | 'range' | 'accuracy';
+      before: number;
+      after: number;
+      weaponId?: string;
+      percent?: boolean;
+    }>;
   }>;
   formationId?: string;
   availableOnTurn?: number;
@@ -106,6 +125,7 @@ interface StrategicHQProps {
   onRecruit: (unitId: string, tier: 'rookie' | 'veteran' | 'elite') => void;
   onRefill: (unitId: string, tier: 'rookie' | 'veteran' | 'elite') => void;
   onRearm: (unitId: string, definitionId: string) => void;
+  onSetEquipment: (unitId: string, category: EquipmentCategory, equipmentId?: string) => void;
   onSetFormation: (unitId: string, formationId?: string) => void;
   onDismiss: (unitId: string) => void;
   onResearch: (topicId: string) => void;
@@ -184,6 +204,17 @@ function armySectionKey(unit: ArmyUnit) {
   return 'infantry';
 }
 
+function equipmentWeaponLabel(weaponId: string) {
+  return weaponId
+    .split('-')
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
+}
+
+function equipmentStatValue(value: number, percent?: boolean) {
+  return percent ? `${Math.round(value * 100)}%` : Number.isInteger(value) ? String(value) : value.toFixed(2);
+}
+
 function armySectionLabel(section: string, t: TFunction<'hq'>) {
   switch (section) {
     case 'command':
@@ -258,6 +289,16 @@ function localizedLogParams(params?: Record<string, string | number>) {
   }
   if (typeof params.quality === 'string') {
     resolved.quality = i18n.t(`hq:army.tier.${params.quality}`, { defaultValue: params.quality });
+  }
+  if (typeof params.equipmentId === 'string' && typeof params.equipment === 'string') {
+    resolved.equipment = i18n.t(`hq:service.packages.${params.equipmentId}.name`, {
+      defaultValue: params.equipment
+    });
+  }
+  if (typeof params.category === 'string') {
+    resolved.category = i18n.t(`hq:service.categories.${params.category}`, {
+      defaultValue: params.category
+    });
   }
   return resolved;
 }
@@ -804,7 +845,7 @@ const StrategicMapView: React.FC<{
 export const StrategicHQ: React.FC<StrategicHQProps> = ({
   campaignDifficulty, turn, operationAvailable, warClock, money, research, strategic,
   army, reserves, formations, territories, operationPlans, operationDossiers, researchTopics, currentResearch, pausedResearch, completedResearch,
-  log, onStartBattle, onEndTurn, onRecruit, onRefill, onRearm, onSetFormation, onDismiss,
+  log, onStartBattle, onEndTurn, onRecruit, onRefill, onRearm, onSetEquipment, onSetFormation, onDismiss,
   onResearch, onPauseResearch, onConvertMoney, onConvertResearch, onBack, popups, onDismissPopups, availableUnits
 }) => {
   const { t } = useTranslation(['hq', 'common', 'campaign']);
@@ -814,6 +855,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
   const [planningTerritoryId, setPlanningTerritoryId] = useState<string | null>(null);
   const [selectedDeploymentIds, setSelectedDeploymentIds] = useState<string[]>([]);
   const [serviceUnitId, setServiceUnitId] = useState<string | null>(null);
+  const [equipmentCategory, setEquipmentCategory] = useState<EquipmentCategory>('offense');
   const switchTab = (tab: 'map' | 'army' | 'research') => {
     clearToasts();
     setActiveTab(tab);
@@ -941,6 +983,9 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
     && selectedDeploymentIds.length <= (planningPlan?.capacity ?? 0)
     && (selectedDeploymentIds.length > 0 || Boolean(planningPlan?.canDeployWithoutRoster));
   const serviceUnit = serviceUnitId ? army.find((unit) => unit.id === serviceUnitId) : undefined;
+  const activeEquipmentOptions = serviceUnit?.equipmentOptions.filter(
+    (option) => option.category === equipmentCategory
+  ) ?? [];
   const forceFocusUnit = army.find((unit) => armySectionKey(unit) === 'command')
     ?? army.find((unit) => armySectionKey(unit) === 'vehicles')
     ?? army[0];
@@ -1616,58 +1661,139 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               </div>
               <button className="hq-modal-close" aria-label={t('service.close')} onClick={() => setServiceUnitId(null)}>×</button>
             </header>
-            <div className="service-balance"><span>{t('service.availableFunds')}</span><b>{Math.round(money)} CR</b></div>
-            <section className="service-section">
-              <div className="service-section-heading">
-                <div><span>{t('service.personnel')}</span><h3>{t('service.refillStrength')}</h3></div>
-                <small>{serviceUnit.currentHealth >= serviceUnit.maxHealth ? t('service.fullStrength') : t('service.refillHint')}</small>
-              </div>
-              <div className="service-options">
-                {(['rookie', 'veteran', 'elite'] as const).map((quality) => {
-                  const quote = serviceUnit.refillQuotes[quality];
-                  return (
-                    <button
-                      key={quality}
-                      disabled={serviceUnit.currentHealth >= serviceUnit.maxHealth || money < quote.cost}
-                      onClick={() => onRefill(serviceUnit.id, quality)}
-                    >
-                      <span>{t(`army.tier.${quality}`)}</span>
-                      <b>{quote.cost} CR</b>
-                      <small>{t('service.resultPreview', {
-                        experience: quote.experienceAfter,
-                        tier: t(`army.tier.${quote.tierAfter}`)
-                      })}</small>
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-            <section className="service-section">
-              <div className="service-section-heading">
-                <div><span>{t('service.equipment')}</span><h3>{t('service.rearm')}</h3></div>
-                <small>{t('service.sameCategoryOnly')}</small>
-              </div>
-              {serviceUnit.rearmOptions.length ? (
-                <div className="service-options service-rearm-options">
-                  {serviceUnit.rearmOptions.map((option) => (
-                    <button
-                      key={option.definitionId}
-                      disabled={money < option.cost}
-                      onClick={() => onRearm(serviceUnit.id, option.definitionId)}
-                    >
-                      <span>{option.name}</span>
-                      <b>{option.cost} CR</b>
-                      <small>{t('service.resultPreview', {
-                        experience: option.experienceAfter,
-                        tier: t(`army.tier.${option.tierAfter}`)
-                      })}</small>
-                    </button>
-                  ))}
+            <div className="service-body">
+              <div className="service-balance"><span>{t('service.availableFunds')}</span><b>{Math.round(money)} CR</b></div>
+              <section className="service-section">
+                <div className="service-section-heading">
+                  <div><span>{t('service.personnel')}</span><h3>{t('service.refillStrength')}</h3></div>
+                  <small>{serviceUnit.currentHealth >= serviceUnit.maxHealth ? t('service.fullStrength') : t('service.refillHint')}</small>
                 </div>
-              ) : (
-                <p className="service-empty">{t('service.noRearmOptions')}</p>
-              )}
-            </section>
+                <div className="service-options">
+                  {(['rookie', 'veteran', 'elite'] as const).map((quality) => {
+                    const quote = serviceUnit.refillQuotes[quality];
+                    return (
+                      <button
+                        key={quality}
+                        disabled={serviceUnit.currentHealth >= serviceUnit.maxHealth || money < quote.cost}
+                        onClick={() => onRefill(serviceUnit.id, quality)}
+                      >
+                        <span>{t(`army.tier.${quality}`)}</span>
+                        <b>{quote.cost} CR</b>
+                        <small>{t('service.resultPreview', {
+                          experience: quote.experienceAfter,
+                          tier: t(`army.tier.${quote.tierAfter}`)
+                        })}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+              <section className="service-section equipment-doctrine">
+                <div className="service-section-heading">
+                  <div><span>{t('service.equipment')}</span><h3>{t('service.doctrine')}</h3></div>
+                  <small>{serviceUnit.equipmentOptions.length ? t('service.doctrineHint') : t('service.doctrineIneligible')}</small>
+                </div>
+                {serviceUnit.equipmentOptions.length ? (
+                  <>
+                    <div className="equipment-category-tabs" role="group" aria-label={t('service.categoryLabel')}>
+                      {(['offense', 'protection', 'mobility'] as const).map((category) => (
+                        <button
+                          key={category}
+                          type="button"
+                          aria-pressed={equipmentCategory === category}
+                          onClick={() => setEquipmentCategory(category)}
+                        >
+                          {t(`service.categories.${category}`)}
+                        </button>
+                      ))}
+                    </div>
+                    {activeEquipmentOptions.length > 0 ? (
+                      <div className="equipment-option-grid">
+                        {activeEquipmentOptions.map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            className={`${option.fitted ? 'fitted' : ''} ${!option.unlocked ? 'locked' : ''}`}
+                            disabled={!option.unlocked || (!option.fitted && money < option.cost)}
+                            onClick={() => onSetEquipment(
+                              serviceUnit.id,
+                              option.category,
+                              option.fitted ? undefined : option.id
+                            )}
+                          >
+                            <span className="equipment-option-heading">
+                              <strong>{option.name}</strong>
+                              <em>{option.fitted
+                                ? t('service.fitted')
+                                : option.unlocked
+                                  ? t('service.available')
+                                  : t('service.requiresResearch', { research: option.requiredResearch })}</em>
+                            </span>
+                            <small className="equipment-option-description">{option.description}</small>
+                            {option.preview.length > 0 && (
+                              <span className="equipment-stat-preview">
+                                {option.preview.map((row) => (
+                                  <span key={`${row.stat}:${row.weaponId ?? 'unit'}`}>
+                                    <em>
+                                      {t(`service.stats.${row.stat}`)}
+                                      {row.weaponId ? ` · ${equipmentWeaponLabel(row.weaponId)}` : ''}
+                                    </em>
+                                    <b>
+                                      {equipmentStatValue(row.before, row.percent)}
+                                      {' → '}
+                                      {equipmentStatValue(row.after, row.percent)}
+                                    </b>
+                                  </span>
+                                ))}
+                              </span>
+                            )}
+                            <span className="equipment-option-action">
+                              <b>{option.fitted ? t('service.remove') : t('service.install')}</b>
+                              <em>{option.fitted ? t('service.standardIssue') : `${option.cost} CR`}</em>
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="service-empty">{t('service.categoryIneligible')}</p>
+                    )}
+                  </>
+                ) : (
+                  <p className="service-empty">{t('service.doctrineIneligible')}</p>
+                )}
+              </section>
+              <section className="service-section">
+                <div className="service-section-heading">
+                  <div><span>{t('service.conversion')}</span><h3>{t('service.rearm')}</h3></div>
+                  <small>{t('service.sameCategoryOnly')}</small>
+                </div>
+                {serviceUnit.rearmOptions.length ? (
+                  <div className="service-options service-rearm-options">
+                    {serviceUnit.rearmOptions.map((option) => (
+                      <button
+                        key={option.definitionId}
+                        disabled={money < option.cost}
+                        onClick={() => onRearm(serviceUnit.id, option.definitionId)}
+                      >
+                        <span>{option.name}</span>
+                        <b>{option.cost} CR</b>
+                        <small>{t('service.resultPreview', {
+                          experience: option.experienceAfter,
+                          tier: t(`army.tier.${option.tierAfter}`)
+                        })}</small>
+                        {option.equipmentResetCount > 0 && (
+                          <em className="service-reset-warning">
+                            {t('service.rearmReset', { count: option.equipmentResetCount })}
+                          </em>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="service-empty">{t('service.noRearmOptions')}</p>
+                )}
+              </section>
+            </div>
             <footer className="hq-modal-footer">
               <div><b>{t('service.quoteNotice')}</b><small>{t('service.quoteHint')}</small></div>
               <button className="primary-btn" onClick={() => setServiceUnitId(null)}>{t('service.close')}</button>

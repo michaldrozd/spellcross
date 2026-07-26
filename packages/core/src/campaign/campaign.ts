@@ -1,6 +1,8 @@
 import type {
   CampaignSpec,
   ContentBundle,
+  EquipmentCategory,
+  EquipmentPackage,
   FactionId,
   TacticalEventMessageKey,
   TacticalObjective,
@@ -49,6 +51,7 @@ export interface ArmyUnit {
   nickname?: string;
   currentHealth?: number;
   availableOnTurn?: number;
+  equipment?: Partial<Record<EquipmentCategory, string>>;
 }
 
 export interface Formation {
@@ -284,7 +287,12 @@ export function unitTierForExperience(experience: number): UnitTier {
 const normalizeArmyUnitProgression = (unit: ArmyUnit): ArmyUnit => {
   const storedExperience = Number.isFinite(unit.experience) ? Math.max(0, unit.experience) : 0;
   const experience = Math.max(storedExperience, minimumExperienceForTier(unit.tier));
-  return { ...unit, experience, tier: unitTierForExperience(experience) };
+  return {
+    ...unit,
+    experience,
+    tier: unitTierForExperience(experience),
+    equipment: { ...(unit.equipment ?? {}) }
+  };
 };
 
 const findCampaignSpec = (bundle: ContentBundle, id?: string): CampaignSpec => {
@@ -864,6 +872,7 @@ export interface UnitServiceQuote {
   cost: number;
   experienceAfter: number;
   tierAfter: UnitTier;
+  equipmentResetCount: number;
 }
 
 export type RearmLockReason = 'nonAlliance' | 'uniqueUnit' | 'noAlternative';
@@ -909,7 +918,8 @@ export function projectUnitService(
     return {
       cost: Math.round(definition.cost * 0.35 * tierCostMultiplier(request.quality)),
       experienceAfter,
-      tierAfter: unitTierForExperience(experienceAfter)
+      tierAfter: unitTierForExperience(experienceAfter),
+      equipmentResetCount: 0
     };
   }
   const currentDefinition = findUnitDef(bundle, unit.definitionId);
@@ -927,7 +937,8 @@ export function projectUnitService(
   return {
     cost: Math.round(definition.cost * 0.5),
     experienceAfter,
-    tierAfter: unitTierForExperience(experienceAfter)
+    tierAfter: unitTierForExperience(experienceAfter),
+    equipmentResetCount: Object.keys(unit.equipment ?? {}).length
   };
 }
 
@@ -982,6 +993,7 @@ export function rearmUnit(
   unit.experience = quote.experienceAfter;
   unit.tier = quote.tierAfter;
   unit.currentHealth = newDef.stats.maxHealth;
+  unit.equipment = {};
   recordServiceTierChange(state, bundle, unit, previousTier);
   state.log.push({
     key: 'unitRearmed',
@@ -1025,7 +1037,7 @@ const applyTierAdjustments = (definition: UnitData, tier: UnitTier): UnitDefinit
     ...definition.stats,
     morale: definition.stats.morale + mod.morale,
     weaponAccuracy: Object.fromEntries(
-      Object.entries(definition.stats.weaponAccuracy).map(([k, v]) => [k, Math.min(0.98, v + mod.accuracy)])
+      Object.entries(definition.stats.weaponAccuracy).map(([k, v]) => [k, v + mod.accuracy])
     )
   };
 
@@ -1077,11 +1089,256 @@ const applyResearchBonus = (state: CampaignState, bundle: ContentBundle, unit: U
         ? Object.fromEntries(Object.entries(unit.stats.weaponRanges).map(([k, v]) => [k, v + range]))
         : unit.stats.weaponRanges,
       weaponAccuracy: accuracy
-        ? Object.fromEntries(Object.entries(unit.stats.weaponAccuracy).map(([k, v]) => [k, Math.min(0.98, v + accuracy)]))
+        ? Object.fromEntries(Object.entries(unit.stats.weaponAccuracy).map(([k, v]) => [k, v + accuracy]))
         : unit.stats.weaponAccuracy
     }
   };
 };
+
+const EQUIPMENT_CATEGORIES: EquipmentCategory[] = ['offense', 'protection', 'mobility'];
+
+const isEquipmentEligibleDefinition = (definition: UnitData) => (
+  definition.faction === 'alliance'
+  && definition.type !== 'hero'
+);
+
+const isEquipmentCategoryEligible = (definition: UnitData, category: EquipmentCategory) => (
+  isEquipmentEligibleDefinition(definition)
+  && (category !== 'offense' || Object.keys(definition.stats.weaponPower).length > 0)
+);
+
+export interface UnitEquipmentOption {
+  equipment: EquipmentPackage;
+  unlocked: boolean;
+  fitted: boolean;
+}
+
+export interface UnitEquipmentQuote {
+  category: EquipmentCategory;
+  equipmentId?: string;
+  replacedEquipmentId?: string;
+  cost: number;
+  before: UnitDefinition['stats'];
+  after: UnitDefinition['stats'];
+}
+
+const applyEquipmentPackages = (
+  unit: UnitDefinition,
+  equipment: EquipmentPackage[]
+): UnitDefinition => {
+  if (equipment.length === 0) return unit;
+  const totals = equipment.reduce((sum, candidate) => {
+    for (const [stat, modifier] of Object.entries(candidate.modifiers)) {
+      sum[stat as keyof typeof sum] += modifier ?? 0;
+    }
+    return sum;
+  }, {
+    armor: 0,
+    morale: 0,
+    mobility: 0,
+    vision: 0,
+    weaponPower: 0,
+    range: 0,
+    accuracy: 0
+  });
+  return {
+    ...unit,
+    stats: {
+      ...unit.stats,
+      armor: unit.stats.armor + totals.armor,
+      morale: unit.stats.morale + totals.morale,
+      mobility: unit.stats.mobility + totals.mobility,
+      vision: unit.stats.vision + totals.vision,
+      weaponPower: Object.fromEntries(
+        Object.entries(unit.stats.weaponPower).map(([weaponId, power]) => [
+          weaponId,
+          power + totals.weaponPower
+        ])
+      ),
+      weaponRanges: Object.fromEntries(
+        Object.entries(unit.stats.weaponRanges).map(([weaponId, range]) => [
+          weaponId,
+          range + totals.range
+        ])
+      ),
+      weaponAccuracy: Object.fromEntries(
+        Object.entries(unit.stats.weaponAccuracy).map(([weaponId, accuracy]) => [
+          weaponId,
+          accuracy + totals.accuracy
+        ])
+      )
+    }
+  };
+};
+
+const clampCampaignUnitStats = (unit: UnitDefinition): UnitDefinition => ({
+  ...unit,
+  stats: {
+    ...unit.stats,
+    armor: Math.max(0, unit.stats.armor),
+    morale: Math.max(0, unit.stats.morale),
+    mobility: Math.max(0, unit.stats.mobility),
+    vision: Math.max(1, unit.stats.vision),
+    weaponPower: Object.fromEntries(
+      Object.entries(unit.stats.weaponPower).map(([weaponId, power]) => [weaponId, Math.max(0, power)])
+    ),
+    weaponRanges: Object.fromEntries(
+      Object.entries(unit.stats.weaponRanges).map(([weaponId, range]) => [weaponId, Math.max(1, range)])
+    ),
+    weaponAccuracy: Object.fromEntries(
+      Object.entries(unit.stats.weaponAccuracy).map(([weaponId, accuracy]) => [
+        weaponId,
+        Math.max(0, Math.min(0.98, accuracy))
+      ])
+    )
+  }
+});
+
+const equipmentPackagesForLoadout = (
+  state: CampaignState,
+  bundle: ContentBundle,
+  definition: UnitData,
+  loadout: ArmyUnit['equipment']
+) => EQUIPMENT_CATEGORIES.flatMap((category) => {
+  const equipmentId = loadout?.[category];
+  if (!equipmentId) return [];
+  const equipment = bundle.equipment.find((candidate) => candidate.id === equipmentId);
+  if (
+    !equipment
+    || equipment.category !== category
+    || !isEquipmentCategoryEligible(definition, category)
+    || !equipment.applyTo.includes(definition.type)
+    || !state.research.completed.has(equipment.requiresResearch)
+  ) return [];
+  return [equipment];
+});
+
+const buildEffectiveArmyUnitDefinition = (
+  state: CampaignState,
+  bundle: ContentBundle,
+  roster: ArmyUnit,
+  equipment: ArmyUnit['equipment'] = roster.equipment
+) => {
+  const baseDefinition = findUnitDef(bundle, roster.definitionId);
+  const tierAdjusted = applyTierAdjustments(baseDefinition, roster.tier);
+  const formation = state.formations.find((candidate) => candidate.units.includes(roster.id));
+  const withFormation = applyFormationBonus(tierAdjusted, formation?.bonus);
+  const withResearch = applyResearchBonus(state, bundle, withFormation);
+  const packages = equipmentPackagesForLoadout(state, bundle, baseDefinition, equipment);
+  return clampCampaignUnitStats(applyEquipmentPackages(withResearch, packages));
+};
+
+export function getEffectiveArmyUnitDefinition(
+  state: CampaignState,
+  bundle: ContentBundle,
+  unitId: string
+): UnitDefinition {
+  const unit = state.army.find((candidate) => candidate.id === unitId)
+    ?? state.reserves.find((candidate) => candidate.id === unitId);
+  if (!unit) throw new Error('Unit not found');
+  return buildEffectiveArmyUnitDefinition(state, bundle, unit);
+}
+
+export function getUnitEquipmentOptions(
+  state: CampaignState,
+  bundle: ContentBundle,
+  unitId: string
+): UnitEquipmentOption[] {
+  const unit = state.army.find((candidate) => candidate.id === unitId);
+  if (!unit) return [];
+  const definition = findUnitDef(bundle, unit.definitionId);
+  if (!isEquipmentEligibleDefinition(definition)) return [];
+  return bundle.equipment
+    .filter((equipment) => (
+      isEquipmentCategoryEligible(definition, equipment.category)
+      && equipment.applyTo.includes(definition.type)
+    ))
+    .map((equipment) => ({
+      equipment,
+      unlocked: state.research.completed.has(equipment.requiresResearch),
+      fitted: unit.equipment?.[equipment.category] === equipment.id
+    }));
+}
+
+export function projectUnitEquipment(
+  state: CampaignState,
+  bundle: ContentBundle,
+  unitId: string,
+  category: EquipmentCategory,
+  equipmentId?: string
+): UnitEquipmentQuote {
+  const unit = state.army.find((candidate) => candidate.id === unitId);
+  if (!unit) throw new Error('Unit not found');
+  const definition = findUnitDef(bundle, unit.definitionId);
+  if (!isEquipmentCategoryEligible(definition, category)) {
+    throw new CampaignError('equipmentIneligible', 'Unit is not eligible for equipment doctrine');
+  }
+  const fittedId = unit.equipment?.[category];
+  if (fittedId === equipmentId) {
+    throw new CampaignError('equipmentAlreadyFitted', 'Equipment package is already fitted');
+  }
+
+  const equipment = equipmentId
+    ? bundle.equipment.find((candidate) => candidate.id === equipmentId)
+    : undefined;
+  if (equipmentId && !equipment) throw new CampaignError('equipmentUnknown', 'Equipment package not found');
+  if (equipment && equipment.category !== category) {
+    throw new CampaignError('equipmentCategoryMismatch', 'Equipment package belongs to another category');
+  }
+  if (equipment && !equipment.applyTo.includes(definition.type)) {
+    throw new CampaignError('equipmentIneligible', 'Equipment package is not compatible with this unit');
+  }
+  if (equipment && !state.research.completed.has(equipment.requiresResearch)) {
+    throw new CampaignError('equipmentResearchLocked', 'Equipment package research is not complete');
+  }
+
+  const nextLoadout = { ...(unit.equipment ?? {}) };
+  if (equipment) nextLoadout[category] = equipment.id;
+  else delete nextLoadout[category];
+  return {
+    category,
+    equipmentId: equipment?.id,
+    replacedEquipmentId: fittedId,
+    cost: equipment?.cost ?? 0,
+    before: buildEffectiveArmyUnitDefinition(state, bundle, unit).stats,
+    after: buildEffectiveArmyUnitDefinition(state, bundle, unit, nextLoadout).stats
+  };
+}
+
+export function setUnitEquipment(
+  state: CampaignState,
+  bundle: ContentBundle,
+  unitId: string,
+  category: EquipmentCategory,
+  equipmentId?: string
+): ArmyUnit {
+  const quote = projectUnitEquipment(state, bundle, unitId, category, equipmentId);
+  if (state.resources.money < quote.cost) {
+    throw new CampaignError('notEnoughMoneyEquipment', 'Not enough money to fit equipment');
+  }
+  const unit = state.army.find((candidate) => candidate.id === unitId)!;
+  const definition = findUnitDef(bundle, unit.definitionId);
+  const nextLoadout = { ...(unit.equipment ?? {}) };
+  if (equipmentId) nextLoadout[category] = equipmentId;
+  else delete nextLoadout[category];
+  unit.equipment = nextLoadout;
+  state.resources.money -= quote.cost;
+  const equipment = equipmentId
+    ? bundle.equipment.find((candidate) => candidate.id === equipmentId)
+    : undefined;
+  state.log.push({
+    key: equipment ? 'unitEquipmentFitted' : 'unitEquipmentRemoved',
+    params: {
+      name: definition.name,
+      unitId: definition.id,
+      category,
+      equipment: equipment?.name ?? '',
+      equipmentId: equipment?.id ?? '',
+      cost: quote.cost
+    }
+  });
+  return unit;
+}
 
 export interface OperationDeploymentPlan {
   capacity: number;
@@ -1261,13 +1518,8 @@ const buildArmySide = (
 
   for (let i = 0; i < Math.min(startTiles.length, rosterUnits.length); i++) {
     const roster = rosterUnits[i];
-    const baseDef = findUnitDef(bundle, roster.definitionId);
-    const tierAdjusted = applyTierAdjustments(baseDef, roster.tier);
-    const formation = state.formations.find((f) => f.units.includes(roster.id));
-    const withFormation = applyFormationBonus(tierAdjusted, formation?.bonus);
-    const withResearch = applyResearchBonus(state, bundle, withFormation);
     tacticalUnits.push({
-      definition: withResearch,
+      definition: buildEffectiveArmyUnitDefinition(state, bundle, roster),
       coordinate: startTiles[i],
       rosterId: roster.id,
       experience: roster.experience

@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import { expect, test } from '@playwright/test';
 
 import { startFreshCampaign } from './helpers';
@@ -8,6 +11,29 @@ async function openParisPlanner(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: /Launch Attack/i }).click();
   await expect(page.getByRole('dialog', { name: /Paris Outskirts/i })).toBeVisible();
 }
+
+function localeServiceKeys(language: 'en' | 'sk') {
+  const path = resolve(process.cwd(), `apps/web/src/i18n/locales/${language}/hq.json`);
+  const locale = JSON.parse(readFileSync(path, 'utf8')) as { service: Record<string, unknown> };
+  const flatten = (value: unknown, prefix = ''): string[] => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [prefix];
+    return Object.entries(value)
+      .flatMap(([key, child]) => flatten(child, prefix ? `${prefix}.${key}` : key))
+      .sort();
+  };
+  return flatten(locale.service);
+}
+
+async function openLightInfantryService(page: import('@playwright/test').Page) {
+  await page.getByRole('button', { name: /Army \(/i }).click();
+  const infantryRow = page.locator('.unit-row').filter({ hasText: /Light Infantry/i }).first();
+  await infantryRow.getByRole('button', { name: /Service/i }).click();
+  return page.getByRole('dialog', { name: /Light Infantry/i });
+}
+
+test('equipment doctrine copy has exact English and Slovak key parity', () => {
+  expect(localeServiceKeys('en')).toEqual(localeServiceKeys('sk'));
+});
 
 test('visible operation planner deploys only the confirmed roster and pins the commander', async ({ page }) => {
   await startFreshCampaign(page, 1);
@@ -91,6 +117,72 @@ test('unit service and research switching execute their visible exact previews',
   const research = await page.evaluate(() => (window as any).__campaignControl.research());
   expect(research.active).toEqual({ topicId: 'armor-upfit', remaining: 80 });
   expect(research.paused['esprit-de-corps']).toBe(50);
+});
+
+test('researched equipment installs, survives reload and reaches deployed battle stats', async ({ page }) => {
+  await startFreshCampaign(page, 1);
+  await page.evaluate(() => (window as any).__campaignControl.setMoney(10_000));
+
+  const serviceDialog = await openLightInfantryService(page);
+  await expect(serviceDialog).toContainText('FIELD EQUIPMENT DOCTRINE');
+  const categoryTabs = serviceDialog.locator('.equipment-category-tabs');
+  const offense = categoryTabs.getByRole('button', { name: /^OFFENSE$/i });
+  const protection = categoryTabs.getByRole('button', { name: /^PROTECTION$/i });
+  const mobility = categoryTabs.getByRole('button', { name: /MOBILITY/i });
+  await expect(offense).toHaveAttribute('aria-pressed', 'true');
+  await expect(serviceDialog.locator('.equipment-option-grid > button')).toHaveCount(4);
+
+  const helix = serviceDialog.getByRole('button', { name: /Helix Sight Bus/i });
+  await expect(helix).toContainText(/Mobility.*7 → 6/is);
+  await expect(helix).toContainText(/Vision.*4 → 5/is);
+  await expect(helix).toContainText(/Accuracy.*72% → 76%/is);
+  await helix.click();
+  await expect(serviceDialog.getByRole('button', { name: /Helix Sight Bus/i })).toContainText('FITTED');
+
+  await protection.click();
+  await expect(protection).toHaveAttribute('aria-pressed', 'true');
+  await expect(serviceDialog.locator('.equipment-option-grid > button')).toHaveCount(4);
+  await expect(serviceDialog.getByRole('button', { name: /Signal Veil/i })).toContainText(/Armor.*2 → 3/is);
+  await mobility.click();
+  await expect(serviceDialog.locator('.equipment-option-grid > button')).toHaveCount(4);
+  await expect(serviceDialog.getByRole('button', { name: /Trailblazer Drive/i })).toContainText(/Mobility.*6 → 8/is);
+
+  await expect(serviceDialog.locator('.service-rearm-options').getByRole('button', { name: /Ranger Recon/i }))
+    .toContainText(/removes 1 fitted doctrine package/i);
+  expect(await page.evaluate(() => (
+    (window as any).__campaignControl.army().find((unit: { id: string }) => unit.id === 'lance-1').equipment
+  ))).toEqual({ offense: 'helix-sight-bus' });
+
+  await serviceDialog.locator('.hq-modal-footer').getByRole('button', { name: /^Close$/i }).click();
+  await page.reload();
+  await page.getByRole('button', { name: /Continue/i }).click();
+  const restoredDialog = await openLightInfantryService(page);
+  await expect(restoredDialog.getByRole('button', { name: /Helix Sight Bus/i })).toContainText('FITTED');
+  await restoredDialog.locator('.hq-modal-footer').getByRole('button', { name: /^Close$/i }).click();
+
+  await openParisPlanner(page);
+  await page.getByRole('button', { name: /Confirm Deployment/i }).click();
+  await page.waitForFunction(() => Boolean((window as any).__battleControl));
+  const deployedStats = await page.evaluate(() => (window as any).__battleControl.deployedUnitStats('lance-1'));
+  expect(deployedStats).toMatchObject({
+    mobility: 6,
+    vision: 5,
+    weaponAccuracy: { rifle: 0.76 }
+  });
+});
+
+test('unit conversion visibly resets fitted doctrine packages', async ({ page }) => {
+  await startFreshCampaign(page, 1);
+  await page.evaluate(() => (window as any).__campaignControl.setMoney(10_000));
+  const serviceDialog = await openLightInfantryService(page);
+  await serviceDialog.getByRole('button', { name: /Helix Sight Bus/i }).click();
+
+  const rearm = serviceDialog.locator('.service-rearm-options').getByRole('button', { name: /Ranger Recon/i });
+  await expect(rearm).toContainText(/removes 1 fitted doctrine package/i);
+  await rearm.click();
+  expect(await page.evaluate(() => (
+    (window as any).__campaignControl.army().find((unit: { id: string }) => unit.id === 'lance-1')
+  ))).toMatchObject({ definitionId: 'rangers', equipment: {} });
 });
 
 test('mobile research controls stay contained and pause without overlap', async ({ page }) => {

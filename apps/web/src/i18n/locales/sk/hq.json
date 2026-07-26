@@ -244,11 +244,88 @@
     "refillHint": "Vyber kvalitu náhrad; zachovanie skúseností aj cena sú uvedené presne.",
     "resultPreview": "Návrat s {{experience}} XP · {{tier}}",
     "equipment": "VÝZBROJ",
+    "doctrine": "DOKTRÍNA POĽNEJ VÝBAVY",
+    "doctrineHint": "Jeden trvalý balík v každej kategórii. Náhľad ukazuje presné štatistiky tejto jednotky pri nasadení.",
+    "doctrineIneligible": "Jedineční velitelia si ponechávajú vlastnú štandardnú výbavu.",
+    "categoryIneligible": "Táto neozbrojená podporná platforma nemôže používať útočné balíky; ochrana a mobilita/podpora zostávajú dostupné.",
+    "categoryLabel": "Kategória výbavy",
+    "categories": {
+      "offense": "ÚTOK",
+      "protection": "OCHRANA",
+      "mobility": "MOBILITA / PODPORA"
+    },
+    "fitted": "NASADENÉ",
+    "available": "PRIPRAVENÉ",
+    "requiresResearch": "VYŽADUJE {{research}}",
+    "install": "NASADIŤ BALÍK",
+    "remove": "OBNOVIŤ ŠTANDARD",
+    "standardIssue": "0 CR",
+    "stats": {
+      "armor": "Pancier",
+      "morale": "Morálka",
+      "mobility": "Mobilita",
+      "vision": "Dohľad",
+      "weaponPower": "Sila",
+      "range": "Dosah",
+      "accuracy": "Presnosť"
+    },
+    "conversion": "PRESTAVBA PLATFORMY",
     "rearm": "PREZBROJENIE JEDNOTKY",
     "sameCategoryOnly": "Dostupná je iba odomknutá výzbroj rovnakej bojovej kategórie.",
     "noRearmOptions": "Momentálne nie je dostupný žiadny vhodný balík prezbrojenia.",
+    "rearmReset": "VAROVANIE: prestavba bez náhrady odstráni nasadené doktrínové balíky ({{count}}).",
     "quoteNotice": "CENY SÚ KONEČNÉ",
     "quoteHint": "Servisný rozkaz aktualizuje jednotku okamžite.",
-    "close": "ZAVRIEŤ"
+    "close": "ZAVRIEŤ",
+    "packages": {
+      "helix-sight-bus": {
+        "name": "Špirálová zameriavacia zbernica",
+        "description": "Prepojené zameriavače spresňujú paľbu a rozširujú dohľad, no spomaľujú presun v členitom teréne."
+      },
+      "hammerburst-feed": {
+        "name": "Podávač Úderná salva",
+        "description": "Agresívne časovanie podávania zvyšuje silu zásahu za cenu istoty posádky pod dlhšou paľbou."
+      },
+      "vector-range-lattice": {
+        "name": "Vektorová diaľkomerná mriežka",
+        "description": "Diaľkové meranie predlžuje každý palebný dosah, no odkryté žiariče oslabujú ochranu."
+      },
+      "siege-governor": {
+        "name": "Obmedzovač Oblehanie",
+        "description": "Ťažké riadenie paľby pridáva silu a presnosť, ale zaťažuje rýchle premiestnenie."
+      },
+      "signal-veil": {
+        "name": "Signálny závoj",
+        "description": "Clony rozptyľujúce senzory pridávajú obrannú vrstvu, no zužujú rozhľad posádky."
+      },
+      "lattice-plate": {
+        "name": "Mriežkový pancier",
+        "description": "Prepojené kompozitné pláty pohlcujú ťažké zásahy, ale zaťažujú každý manéver."
+      },
+      "impact-cradle": {
+        "name": "Nárazová kolíska",
+        "description": "Stabilizované stanovištia chránia odhodlanie posádky, no ich ťažké uloženie spomaľuje premiestnenie."
+      },
+      "aegis-baffles": {
+        "name": "Tlmiče Aegis",
+        "description": "Vrstvené ochranné prepážky posilňujú pancier aj morálku, no zužujú senzorové pole."
+      },
+      "trailblazer-drive": {
+        "name": "Pohon Priekopník",
+        "description": "Prediktívne vedenie trasy zrýchľuje postup za cenu ľahšej ochrany pohyblivých častí."
+      },
+      "survey-mast": {
+        "name": "Prieskumný stožiar",
+        "description": "Vyvýšené pole rozširuje dohľad, ale jeho neustála komunikácia zaťažuje súdržnosť."
+      },
+      "relay-harness": {
+        "name": "Reléový postroj",
+        "description": "Rozptýlené relé zlepšujú zdieľanie trás a pozorovanie, no ich signálová záťaž oslabuje súdržnosť."
+      },
+      "sprint-governor": {
+        "name": "Obmedzovač Šprint",
+        "description": "Odomknuté limity pohonu umožňujú rýchly presun za cenu dohľadu a stability paľby."
+      }
+    }
   }
 }

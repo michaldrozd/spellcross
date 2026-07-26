@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 import { cityScenarios, cityScenarioIdByTerritory } from './city-battlefields.js';
+import { starterEquipment } from './equipment-doctrine.js';
 import { operationAudioThemes, starterOperationDossiers, type OperationDossier } from './operation-dossiers.js';
 import { rosterExpansionResearch, rosterExpansionUnits } from './roster-expansion.js';
 
@@ -155,6 +156,29 @@ export interface ResearchTopic {
   // Completing the topic permanently buffs units you already field (not just unlocks new ones).
   statBonus?: { armor?: number; weaponPower?: number; range?: number; accuracy?: number };
   applyTo?: Array<'infantry' | 'vehicle' | 'artillery' | 'air' | 'support' | 'hero'>;
+}
+
+export type EquipmentCategory = 'offense' | 'protection' | 'mobility';
+
+export interface EquipmentModifiers {
+  armor?: number;
+  morale?: number;
+  mobility?: number;
+  vision?: number;
+  weaponPower?: number;
+  range?: number;
+  accuracy?: number;
+}
+
+export interface EquipmentPackage {
+  id: string;
+  name: string;
+  description: string;
+  category: EquipmentCategory;
+  cost: number;
+  requiresResearch: string;
+  applyTo: Array<UnitData['type']>;
+  modifiers: EquipmentModifiers;
 }
 
 export type ObjectiveKind = 'eliminate' | 'reach' | 'protect' | 'hold' | 'interact';
@@ -315,6 +339,7 @@ export interface CampaignSpec {
 export interface ContentBundle {
   units: UnitData[];
   research: ResearchTopic[];
+  equipment: EquipmentPackage[];
   scenarios: TacticalScenario[];
   territories: TerritorySpec[];
   campaigns: CampaignSpec[];
@@ -415,6 +440,27 @@ const researchSchema = z.object({
     })
     .optional(),
   applyTo: z.array(z.enum(['infantry', 'vehicle', 'artillery', 'air', 'support', 'hero'])).optional()
+});
+
+const equipmentModifiersSchema = z.object({
+  armor: z.number().optional(),
+  morale: z.number().optional(),
+  mobility: z.number().optional(),
+  vision: z.number().optional(),
+  weaponPower: z.number().optional(),
+  range: z.number().optional(),
+  accuracy: z.number().optional()
+});
+
+const equipmentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  category: z.enum(['offense', 'protection', 'mobility']),
+  cost: z.number().positive(),
+  requiresResearch: z.string().min(1),
+  applyTo: z.array(z.enum(['infantry', 'vehicle', 'artillery', 'air', 'support', 'hero'])).min(1),
+  modifiers: equipmentModifiersSchema
 });
 
 const scenarioUnitSchema = z.object({
@@ -766,11 +812,48 @@ const operationDossierSchema = z.object({
 const bundleSchema = z.object({
   units: z.array(unitSchema),
   research: z.array(researchSchema),
+  equipment: z.array(equipmentSchema),
   scenarios: z.array(scenarioSchema),
   territories: z.array(territorySchema),
   campaigns: z.array(campaignSchema),
   dossiers: z.array(operationDossierSchema)
 }).superRefine((bundle, ctx) => {
+  const researchIds = new Set(bundle.research.map((topic) => topic.id));
+  const equipmentIds = new Set<string>();
+  bundle.equipment.forEach((equipment, index) => {
+    if (equipmentIds.has(equipment.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate equipment package ${equipment.id}`,
+        path: ['equipment', index, 'id']
+      });
+    }
+    equipmentIds.add(equipment.id);
+    if (!researchIds.has(equipment.requiresResearch)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Equipment package ${equipment.id} requires unknown research ${equipment.requiresResearch}`,
+        path: ['equipment', index, 'requiresResearch']
+      });
+    }
+    const modifiers = Object.values(equipment.modifiers).filter((modifier): modifier is number => modifier != null);
+    if (!modifiers.some((modifier) => modifier > 0) || !modifiers.some((modifier) => modifier < 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Equipment package ${equipment.id} must define a positive and negative trade-off`,
+        path: ['equipment', index, 'modifiers']
+      });
+    }
+  });
+  for (const category of ['offense', 'protection', 'mobility'] as const) {
+    if (bundle.equipment.filter((equipment) => equipment.category === category).length >= 4) continue;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Equipment category ${category} must define at least four packages`,
+      path: ['equipment']
+    });
+  }
+
   const authoredTerritoryIds = new Set(bundle.territories.map((territory) => territory.id));
   const campaignTerritoryIds = new Set(bundle.campaigns.flatMap((campaign) => (
     campaign.territories.map((territory) => territory.id)
@@ -2838,6 +2921,7 @@ export const starterCampaign: CampaignSpec = {
 export const starterBundle: ContentBundle = {
   units: starterUnits,
   research: starterResearch,
+  equipment: starterEquipment,
   scenarios: starterScenarios,
   territories: starterTerritories,
   campaigns: [starterCampaign],

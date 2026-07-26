@@ -21,6 +21,7 @@ import {
   getEnemyActionBudget,
   getEnemyDecisionBudget,
   getEnemyDifficultyTier,
+  getUnitEquipmentOptions,
   getOperationDeploymentPlan,
   getUnitRearmOptions,
   hasWeaponLineOfFire,
@@ -36,6 +37,7 @@ import {
   checkObjectiveAction,
   performObjectiveAction,
   processTacticalEvents,
+  projectUnitEquipment,
   projectUnitService,
   pauseResearch,
   reactionThreats,
@@ -48,6 +50,7 @@ import {
   startBattleForTerritory,
   startResearch,
   setUnitFormation,
+  setUnitEquipment,
   TurnProcessor,
   typeEffectiveness,
   weaponFireMode,
@@ -58,6 +61,7 @@ import {
 } from '@spellcross/core';
 import type { BattleEvent, BattlefieldMap, CampaignDifficulty, CampaignState, HexCoordinate, TacticalBattleState, TriggeredTacticalEvent, UnitInstance } from '@spellcross/core';
 import { validatedStarterBundle } from '@spellcross/data';
+import type { EquipmentModifiers, UnitStatsData } from '@spellcross/data';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
@@ -287,6 +291,51 @@ function localizedResearchName(topicId: string, fallback: string) {
 }
 function localizedResearchDescription(topicId: string, fallback: string) {
   return i18n.t(`research:${topicId}.description`, { defaultValue: fallback });
+}
+function localizedEquipmentName(equipmentId: string, fallback: string) {
+  return i18n.t(`hq:service.packages.${equipmentId}.name`, { defaultValue: fallback });
+}
+function localizedEquipmentDescription(equipmentId: string, fallback: string) {
+  return i18n.t(`hq:service.packages.${equipmentId}.description`, { defaultValue: fallback });
+}
+
+type EquipmentPreviewStat = 'armor' | 'morale' | 'mobility' | 'vision' | 'weaponPower' | 'range' | 'accuracy';
+interface EquipmentPreviewRow {
+  stat: EquipmentPreviewStat;
+  before: number;
+  after: number;
+  weaponId?: string;
+  percent?: boolean;
+}
+
+function equipmentPreviewRows(
+  modifiers: EquipmentModifiers,
+  before: UnitStatsData,
+  after: UnitStatsData
+): EquipmentPreviewRow[] {
+  const rows: EquipmentPreviewRow[] = [];
+  for (const stat of ['armor', 'morale', 'mobility', 'vision'] as const) {
+    if (modifiers[stat] == null) continue;
+    rows.push({ stat, before: before[stat], after: after[stat] });
+  }
+  const weaponStats = [
+    ['weaponPower', 'weaponPower', false],
+    ['range', 'weaponRanges', false],
+    ['accuracy', 'weaponAccuracy', true]
+  ] as const;
+  for (const [stat, statsKey, percent] of weaponStats) {
+    if (modifiers[stat] == null) continue;
+    for (const weaponId of Object.keys(before[statsKey])) {
+      rows.push({
+        stat,
+        weaponId,
+        before: before[statsKey][weaponId],
+        after: after[statsKey][weaponId],
+        percent
+      });
+    }
+  }
+  return rows;
 }
 // Territories synthesized at runtime (raids/counterattacks) carry a nameKey/briefKey into the `campaign`
 // namespace (set in packages/core campaign.ts); static content-bundle territories are looked up by id.
@@ -1305,6 +1354,11 @@ const BattleView: React.FC<{
         return true;
       },
       deploymentRosterIds: () => Object.keys(battle.deployment),
+      deployedUnitStats: (rosterId: string) => {
+        const tacticalId = battle.deployment[rosterId];
+        const unit = tacticalId ? battle.state.sides.alliance.units.get(tacticalId) : undefined;
+        return unit ? structuredClone(unit.stats) : null;
+      },
       ammoFirst: () => {
         const first = Array.from(battle.state.sides.alliance.units.values()).find((u) => u.stance !== 'destroyed' && !u.embarkedOn);
         if (!first) return null;
@@ -3463,7 +3517,8 @@ export function App() {
         definitionId: unit.definitionId,
         health: unit.currentHealth,
         experience: unit.experience,
-        tier: unit.tier
+        tier: unit.tier,
+        equipment: { ...(unit.equipment ?? {}) }
       })),
       formations: () => campaign.formations.map((formation) => ({
         id: formation.id,
@@ -3544,7 +3599,7 @@ export function App() {
       quality,
       isFieldUnit
         ? projectUnitService(campaign, bundle, u.id, { kind: 'refill', quality })
-        : { cost: 0, experienceAfter: u.experience, tierAfter: u.tier }
+        : { cost: 0, experienceAfter: u.experience, tierAfter: u.tier, equipmentResetCount: 0 }
     ])) as Record<'rookie' | 'veteran' | 'elite', ReturnType<typeof projectUnitService>>;
     const rearmOptions = isFieldUnit
       ? getUnitRearmOptions(campaign, bundle, u.id).map((candidate) => {
@@ -3554,7 +3609,34 @@ export function App() {
             name: localizedUnitName(candidate.id, candidate.name),
             cost: quote.cost,
             experienceAfter: quote.experienceAfter,
-            tierAfter: quote.tierAfter
+            tierAfter: quote.tierAfter,
+            equipmentResetCount: quote.equipmentResetCount
+          };
+        })
+      : [];
+    const equipmentOptions = isFieldUnit
+      ? getUnitEquipmentOptions(campaign, bundle, u.id).map((option) => {
+          const quote = option.fitted
+            ? projectUnitEquipment(campaign, bundle, u.id, option.equipment.category)
+            : option.unlocked
+              ? projectUnitEquipment(campaign, bundle, u.id, option.equipment.category, option.equipment.id)
+              : undefined;
+          const prerequisite = bundle.research.find((topic) => topic.id === option.equipment.requiresResearch);
+          return {
+            id: option.equipment.id,
+            category: option.equipment.category,
+            name: localizedEquipmentName(option.equipment.id, option.equipment.name),
+            description: localizedEquipmentDescription(option.equipment.id, option.equipment.description),
+            cost: quote?.cost ?? option.equipment.cost,
+            unlocked: option.unlocked,
+            fitted: option.fitted,
+            requiredResearch: localizedResearchName(
+              option.equipment.requiresResearch,
+              prerequisite?.name ?? option.equipment.requiresResearch
+            ),
+            preview: quote
+              ? equipmentPreviewRows(option.equipment.modifiers, quote.before, quote.after)
+              : []
           };
         })
       : [];
@@ -3570,6 +3652,7 @@ export function App() {
       level: experienceLevelFor(u.experience ?? 0),
       refillQuotes,
       rearmOptions,
+      equipmentOptions,
       formationId: campaign.formations.find((formation) => formation.units.includes(u.id))?.id,
       availableOnTurn: u.availableOnTurn,
     };
@@ -3702,6 +3785,16 @@ export function App() {
             mutate((s) => rearmUnit(s, bundle, id, definitionId));
           } catch (err) {
             const reason = err instanceof CampaignError ? t(`campaign:errors.${err.key}`, err.params) : t('campaign:errors.genericRearmFailed');
+            showToast(reason, 'error');
+          }
+        }}
+        onSetEquipment={(id, category, equipmentId) => {
+          try {
+            mutate((s) => setUnitEquipment(s, bundle, id, category, equipmentId));
+          } catch (err) {
+            const reason = err instanceof CampaignError
+              ? t(`campaign:errors.${err.key}`, err.params)
+              : t('campaign:errors.genericEquipmentFailed');
             showToast(reason, 'error');
           }
         }}
