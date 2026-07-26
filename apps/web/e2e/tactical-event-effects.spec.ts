@@ -161,10 +161,37 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
           return { coordinate, tile: control.tileAt(coordinate.q, coordinate.r) };
         })
       : null;
-    const triggered = await page.evaluate((round) => (
-      (window as any).__battleControl.runScriptedEventsAtRound(round)
-    ), scenario.round);
-    const effect = triggered[0]?.effects.find((candidate: any) => candidate.kind === scenario.kind);
+    let effect;
+    if (scenario.kind === 'transformTerrain') {
+      const prepared = await page.evaluate(() => {
+        const control = (window as any).__battleControl;
+        const objective = control.objectives().find((candidate: any) => candidate.actionKey === 'plantCharges');
+        const specialistId = objective?.eligibleUnitIds?.[0];
+        if (!objective?.target || !specialistId) return false;
+        control.snapUnit(specialistId, objective.target.q, objective.target.r);
+        control.setActionPoints(specialistId, 20);
+        control.selectUnit(specialistId);
+        return true;
+      });
+      expect(prepared).toBe(true);
+      const action = page.getByRole('button', { name: /^Plant charges$/i });
+      await expect(action).toBeEnabled();
+      await action.click();
+      await expect.poll(async () => page.evaluate(() => (
+        (window as any).__battleControl.activeScenarioEventEffects()
+          .some((candidate: any) => candidate.kind === 'transformTerrain')
+      ))).toBe(true);
+      effect = await page.evaluate(() => {
+        const active = (window as any).__battleControl.activeScenarioEventEffects()
+          .find((candidate: any) => candidate.kind === 'transformTerrain');
+        return active ? { ...active, coordinates: [active.coordinate] } : undefined;
+      });
+    } else {
+      const triggered = await page.evaluate((round) => (
+        (window as any).__battleControl.runScriptedEventsAtRound(round)
+      ), scenario.round);
+      effect = triggered[0]?.effects.find((candidate: any) => candidate.kind === scenario.kind);
+    }
     expect(effect?.coordinates.length).toBeGreaterThan(0);
     if (terrainBefore) {
       const terrainAfter = await page.evaluate((coordinate) => (

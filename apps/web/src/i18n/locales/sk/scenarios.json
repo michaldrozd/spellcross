@@ -199,6 +199,7 @@
     "objectives": {
       "sector-lantern-vault-reach": "Dopravte prieskumný tím a jeho mapy do evakuačnej zóny.",
       "sector-lantern-vault-protect": "Udržte prieskumný tím nažive.",
+      "sector-lantern-vault-calibrate-prism": "Kritické: do 7. kola zlaďte prieskumný hranol so živým archívom.",
       "sector-lantern-vault-chart-cache": "Voliteľné: získajte hranolové mapy z novootvoreného archívu."
     }
   },
@@ -224,7 +225,8 @@
     "brief": "Zlomte stráž hrádze, zaistite ochranné veže a zabráňte zrúteniu severnej cesty do mora.",
     "objectives": {
       "sector-sable-causeway-eliminate": "Zničte alebo zažeňte stráž hrádze.",
-      "sector-sable-causeway-reach": "Umiestnite nálože do ovládania ochranných veží."
+      "sector-sable-causeway-reach": "Kritické: do 10. kola umiestnite nálože pomocou tímu na prelamovanie ochrany.",
+      "sector-sable-causeway-protect-wardbreaker": "Udržte tím na prelamovanie ochrany nažive."
     }
   },
   "city-sector-mnemonic-orchard": {
@@ -232,7 +234,9 @@
     "brief": "Zaútočte v noci na ozývajúci sa les, umlčte napodobňovače signálov a udržte koreňové relé.",
     "objectives": {
       "sector-mnemonic-orchard-eliminate": "Umlčte napodobňovače signálov ukryté v sade.",
-      "sector-mnemonic-orchard-hold": "Zaistite koreňové relé na 3 kolá."
+      "sector-mnemonic-orchard-hold": "Zaistite koreňové relé na 3 kolá.",
+      "sector-mnemonic-orchard-ground-lattice": "Kritické: do 9. kola uzemnite koreňovú pamäťovú mriežku pomocou PSI tímu.",
+      "sector-mnemonic-orchard-protect-psi-specialist": "Udržte PSI uzemňovací tím nažive."
     }
   },
   "city-sector-thorn-engine": {

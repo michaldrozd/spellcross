@@ -240,7 +240,12 @@ export type BattleEvent =
       kind: 'objective:completed';
       objectiveId: string;
       unitId: string;
-      actionKey: 'plantCharges' | 'disruptWard' | 'alignEchoBeacon';
+      actionKey:
+        | 'plantCharges'
+        | 'disruptWard'
+        | 'alignEchoBeacon'
+        | 'calibratePrism'
+        | 'groundMemoryLattice';
     }
   | {
       kind: 'unit:moved';

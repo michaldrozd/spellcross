@@ -225,7 +225,14 @@ describe('Per-city battlefields', () => {
       const scenario = scenariosWithEffects.find((candidate) => candidate.id === `city-${territoryId}`);
       const event = scenario?.events?.find((candidate) => candidate.effects?.length);
       expect(event?.effects?.map((effect) => effect.kind)).toEqual(effectKinds);
-      expect(event?.reinforcements.length).toBeGreaterThan(0);
+      if (territoryId === 'sector-sable-causeway') {
+        expect(event).toMatchObject({
+          triggerObjectiveId: 'sector-sable-causeway-reach',
+          reinforcements: []
+        });
+      } else {
+        expect(event?.reinforcements.length).toBeGreaterThan(0);
+      }
       for (const effect of event?.effects ?? []) {
         if (effect.kind === 'revealObjective') {
           expect(effect.objective.optional).toBe(true);
@@ -255,6 +262,49 @@ describe('Per-city battlefields', () => {
           ))).toBe(true);
         }
       }
+    }
+  });
+
+  it('ships three essential deadline interactions with attached key specialists', () => {
+    const expected = {
+      'sector-lantern-vault': {
+        objectiveId: 'sector-lantern-vault-calibrate-prism',
+        specialistId: 'sector-lantern-vault-pilot'
+      },
+      'sector-sable-causeway': {
+        objectiveId: 'sector-sable-causeway-reach',
+        specialistId: 'sector-sable-causeway-wardbreaker'
+      },
+      'sector-mnemonic-orchard': {
+        objectiveId: 'sector-mnemonic-orchard-ground-lattice',
+        specialistId: 'sector-mnemonic-orchard-psi-specialist'
+      }
+    } as const;
+
+    for (const [territoryId, signature] of Object.entries(expected)) {
+      const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
+      const objective = scenario?.objectives.find((candidate) => candidate.id === signature.objectiveId) as
+        | (NonNullable<typeof scenario>['objectives'][number] & {
+            essential?: boolean;
+            deadlineRound?: number;
+          })
+        | undefined;
+      const specialist = scenario?.allianceForces?.find((unit) => unit.id === signature.specialistId);
+
+      expect(objective).toMatchObject({
+        kind: 'interact',
+        essential: true,
+        unitIds: [signature.specialistId]
+      });
+      expect(objective?.deadlineRound).toBeGreaterThan(1);
+      expect(specialist?.isKey).toBe(true);
+      expect(specialist && scenario?.map.tiles[
+        specialist.coordinate.r * scenario.map.width + specialist.coordinate.q
+      ]?.passable).toBe(true);
+      expect(scenario?.objectives).toContainEqual(expect.objectContaining({
+        kind: 'protect',
+        unitIds: [signature.specialistId]
+      }));
     }
   });
 });

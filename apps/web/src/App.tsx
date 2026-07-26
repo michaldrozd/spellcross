@@ -1083,6 +1083,18 @@ const BattleView: React.FC<{
         }
         return false;
       },
+      destroyUnit: (unitId: string) => {
+        for (const side of Object.values(battle.state.sides)) {
+          const unit = side.units.get(unitId);
+          if (!unit) continue;
+          unit.stance = 'destroyed';
+          unit.currentHealth = 0;
+          persist();
+          resolveOutcome();
+          return true;
+        }
+        return false;
+      },
       endTurn: () => {
         const proc = new TurnProcessor(battle.state);
         proc.endTurn();
@@ -1258,10 +1270,22 @@ const BattleView: React.FC<{
         kind: objective.kind,
         target: objective.target,
         optional: Boolean(objective.optional),
+        essential: Boolean(objective.essential),
+        deadlineRound: objective.deadlineRound,
+        unitIds: objective.unitIds,
+        eligibleUnitIds: objective.unitIds?.flatMap((rosterId) => (
+          battle.deployment[rosterId] ? [battle.deployment[rosterId]] : []
+        )),
         actionKey: objective.actionKey,
         actionPoints: objective.actionPoints,
         completed: isObjectiveMet(objective, battle)
       })),
+      objectiveCompletionActor: (objectiveId: string) => {
+        const completion = [...battle.state.timeline].reverse().find((event) => (
+          event.kind === 'objective:completed' && event.objectiveId === objectiveId
+        ));
+        return completion?.kind === 'objective:completed' ? completion.unitId : null;
+      },
       scriptedEvents: () => structuredClone(battle.scenario.events ?? []),
       tileAt: (q: number, r: number) => {
         const tile = getTile({ q, r });
@@ -1370,6 +1394,12 @@ const BattleView: React.FC<{
             coordinates: effect.coordinates
           }))
         }));
+      },
+      setBattleRound: (round: number) => {
+        battle.state.round = Math.max(1, Math.floor(round));
+        persist();
+        resolveOutcome();
+        return battle.state.round;
       },
       selectUnit: (unitId?: string) => {
         const target = unitId
@@ -3405,6 +3435,16 @@ export function App() {
       setMoney: (amount: number) => {
         mutate((state) => { state.resources.money = Math.max(0, amount); });
         return true;
+      },
+      setTerritoryAvailable: (territoryId: string) => {
+        let updated = false;
+        mutate((state) => {
+          const territory = state.territories.find((candidate) => candidate.id === territoryId);
+          if (!territory) return;
+          territory.status = 'available';
+          updated = true;
+        });
+        return updated;
       },
       dismissPopups: () => {
         mutate((state) => {

@@ -158,7 +158,12 @@ export interface ResearchTopic {
 }
 
 export type ObjectiveKind = 'eliminate' | 'reach' | 'protect' | 'hold' | 'interact';
-export type TacticalObjectiveActionKey = 'plantCharges' | 'disruptWard' | 'alignEchoBeacon';
+export type TacticalObjectiveActionKey =
+  | 'plantCharges'
+  | 'disruptWard'
+  | 'alignEchoBeacon'
+  | 'calibratePrism'
+  | 'groundMemoryLattice';
 
 export interface TacticalObjective {
   id: string;
@@ -168,6 +173,8 @@ export interface TacticalObjective {
   turnLimit?: number;
   unitIds?: string[];
   optional?: boolean;
+  essential?: boolean;
+  deadlineRound?: number;
   actionKey?: TacticalObjectiveActionKey;
   actionPoints?: number;
 }
@@ -426,7 +433,15 @@ const tacticalObjectiveSchema = z.object({
   turnLimit: z.number().int().positive().optional(),
   unitIds: z.array(z.string()).min(1).optional(),
   optional: z.boolean().optional(),
-  actionKey: z.enum(['plantCharges', 'disruptWard', 'alignEchoBeacon']).optional(),
+  essential: z.boolean().optional(),
+  deadlineRound: z.number().int().positive().optional(),
+  actionKey: z.enum([
+    'plantCharges',
+    'disruptWard',
+    'alignEchoBeacon',
+    'calibratePrism',
+    'groundMemoryLattice'
+  ]).optional(),
   actionPoints: z.number().int().positive().optional()
 }).superRefine((objective, context) => {
   if (objective.kind === 'interact') {
@@ -439,18 +454,25 @@ const tacticalObjectiveSchema = z.object({
     if (objective.actionPoints == null) {
       context.addIssue({ code: z.ZodIssueCode.custom, message: 'Interact objective requires an AP cost', path: ['actionPoints'] });
     }
-    if (!objective.optional && objective.unitIds?.length) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Required interact objectives cannot restrict eligible units',
-        path: ['unitIds']
-      });
-    }
   } else if (objective.actionKey || objective.actionPoints != null) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Only interact objectives may define mission actions',
       path: ['actionKey']
+    });
+  }
+  if (objective.essential && (objective.kind !== 'interact' || objective.optional)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Essential objectives must be mandatory interactions',
+      path: ['essential']
+    });
+  }
+  if (objective.deadlineRound != null && (objective.kind !== 'interact' || objective.optional)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Objective deadlines require a mandatory interaction',
+      path: ['deadlineRound']
     });
   }
 });
@@ -628,6 +650,25 @@ const scenarioSchema = z.object({
     }
   });
   scenario.objectives.forEach((objective, index) => {
+    if (objective.essential && !objective.unitIds?.length) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Essential objective ${objective.id} requires a specialist`,
+        path: ['objectives', index, 'unitIds']
+      });
+    }
+    if (objective.kind === 'interact' && !objective.optional && objective.unitIds?.length) {
+      for (const unitId of objective.unitIds) {
+        const specialist = scenario.allianceForces?.find((unit) => unit.id === unitId);
+        if (!specialist?.isKey) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Required specialist ${unitId} must be attached as key Alliance support`,
+            path: ['objectives', index, 'unitIds']
+          });
+        }
+      }
+    }
     if (!objective.target) return;
     if (
       objective.target.q < 0

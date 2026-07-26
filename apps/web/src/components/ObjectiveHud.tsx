@@ -1,5 +1,5 @@
 import type { ActiveBattle } from '@spellcross/core';
-import { checkObjectiveAction, isObjectiveMet } from '@spellcross/core';
+import { checkObjectiveAction, isObjectiveDeadlineMissed, isObjectiveMet } from '@spellcross/core';
 import type { TacticalObjective } from '@spellcross/data';
 import type { TFunction } from 'i18next';
 import React from 'react';
@@ -42,7 +42,11 @@ function statusLine(objective: TacticalObjective, battle: ActiveBattle, met: boo
     case 'protect':
       return met ? t('objective.protected') : t('objective.lost');
     case 'interact':
-      return met ? t('objective.completed') : t('objective.pendingAction');
+      if (met) return t('objective.completed');
+      if (isObjectiveDeadlineMissed(objective, battle)) return t('objective.deadlineMissed');
+      return objective.deadlineRound
+        ? t('objective.actionByRound', { limit: objective.deadlineRound })
+        : t('objective.pendingAction');
     default:
       return '';
   }
@@ -59,7 +63,8 @@ export const ObjectiveHud: React.FC<Props> = ({ battle, selectedUnitId, onObject
       <ul>
         {objectives.map((objective) => {
           const met = isObjectiveMet(objective, battle);
-          const failed = objective.kind === 'protect' && !met;
+          const failed = (objective.kind === 'protect' && !met)
+            || isObjectiveDeadlineMissed(objective, battle);
           const actionCheck = objective.kind === 'interact'
             ? checkObjectiveAction(battle, selectedUnitId, objective.id)
             : null;
@@ -70,6 +75,7 @@ export const ObjectiveHud: React.FC<Props> = ({ battle, selectedUnitId, onObject
               <span className="obj-text">
                 {localizedObjectiveText(battle.scenario.id, objective.id, objective.description)}
                 {objective.optional ? <small className="objective-optional">{t('objective.optional')}</small> : null}
+                {objective.essential ? <small className="objective-essential">{t('objective.essential')}</small> : null}
               </span>
               <span className="obj-status">{statusLine(objective, battle, met, t)}</span>
               {objective.kind === 'interact' && actionCheck && !met ? (

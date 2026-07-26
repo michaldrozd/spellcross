@@ -173,10 +173,10 @@
     "chapterTitle": "Prelomenie závoja",
     "codename": "Lampášový trezor",
     "situation": "Prieskumníci z úspešného prechodu našli podzemné observatórium, ktorého prístroje stále mapujú rozbitú oblohu.",
-    "threat": "Kamenní strážcovia prerážajú vonkajšie galérie, kým uviaznutý tím chráni jedinú úplnú hviezdnu mapu.",
-    "command": "Dostaňte sa k prieskumnému tímu, sprevádzajte ho cez prielom v galérii a zachráňte záznamy observatória.",
-    "victory": "Prieskumný tím aj mapy sú v bezpečí. Ich merania menia Líniu zlomu z prázdna na priechodný kraj.",
-    "defeat": "Galérie observatória sa zrútili okolo prieskumného tímu. Ďalší postup sa musí zaobísť bez spoľahlivej orientácie."
+    "threat": "Kamenní strážcovia prerážajú vonkajšie galérie, kým uviaznutý tím bojuje o stabilizáciu zlyhávajúceho hranola.",
+    "command": "Kryte prieskumný tím a nakalibrujte hranol observatória do siedmeho kola, kým sa nezatvorí posledná jasná línia.",
+    "victory": "Hranol je stabilný a prieskumný tím v bezpečí. Jeho merania menia Líniu zlomu z prázdna na priechodný kraj.",
+    "defeat": "Hranol stratil orientáciu skôr, než tím dokončil prácu. Ďalší postup sa musí zaobísť bez spoľahlivej navigácie."
   },
   "sector-hollow-tide": {
     "chapterTitle": "Prelomenie závoja",
@@ -200,8 +200,8 @@
     "chapterTitle": "Skrížené smery",
     "codename": "Čierna hrádza",
     "situation": "Cesta z čierneho kameňa preklenuje severnú prázdnotu a ponúka jediný obrnený prístup k vnútornej Línii zlomu.",
-    "threat": "Strážne veže ohýbajú hrádzu po úsekoch a oddeľujú útočné skupiny nad morom bez svetla.",
-    "command": "Prelomte cestnú stráž, umiestnite nálože do ovládania veží a stabilizujte most pre nasledujúcu kolónu.",
+    "threat": "Strážne veže ohýbajú hrádzu po úsekoch, kým pridelený prierazník komanda hľadá spoj ovládacieho systému.",
+    "command": "Sprevádzajte prideleného prierazníka a umiestnite nálože do desiateho kola, kým sa most nezlomí pod kolónou.",
     "victory": "Strážne veže stíchli a hrádza nesie obrnené jednotky k vnútornej línii bez deformácie.",
     "defeat": "Hrádza sa zlomila skôr, než bolo ovládanie zaistené. Severné formácie uviazli na oddelených úsekoch."
   },
@@ -209,8 +209,8 @@
     "chapterTitle": "Skrížené smery",
     "codename": "Pamäťový sad",
     "situation": "Les priesvitných kmeňov vysiela hlasy a rozkazy skopírované zo všetkých strát Aliancie od prvého kontaktu.",
-    "threat": "Signálne napodobeniny rozdeľujú hliadky a ukrývajú relé, ktoré riadi prepady na celej južnej trase.",
-    "command": "Postupujte v rádiovom tichu, umlčte napodobeniny a udržte koreňové relé, keď sad odpovie.",
+    "threat": "Signálne napodobeniny obkľučujú prideleného PSI špecialistu, ktorý dokáže uzemniť pamäťovú mriežku pod koreňovým relé.",
+    "command": "Kryte špecialistu a uzemnite mriežku do deviateho kola, potom udržte relé, keď sad odpovie.",
     "victory": "Koreňové relé stíchlo. Skopírované hlasy zmizli a južný postup môže opäť veriť vlastným signálom.",
     "defeat": "Sad stále ovláda veliteľské pásmo. Južné jednotky radšej ustupujú, než by nasledovali ďalšiu dokonalú napodobeninu."
   },

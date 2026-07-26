@@ -1089,6 +1089,11 @@ export interface OperationDeploymentPlan {
   requiredUnitIds: string[];
   unavailableRequiredUnitIds: string[];
   specialistUnitIds: string[];
+  missionSupport: Array<{
+    id: string;
+    definitionId: string;
+    specialist: boolean;
+  }>;
   automaticSupportDefinitionIds: string[];
   canDeployWithoutRoster: boolean;
 }
@@ -1126,6 +1131,10 @@ export function getOperationDeploymentPlan(
   const readyIds = new Set(readyArmyUnits(state).map((unit) => unit.id));
   const requiredIds = requiredRosterUnitIds(state, scenario);
   const automaticSupport = automaticSupportDefinitionIds(state);
+  const specialistSupportIds = new Set(scenario.objectives
+    .filter((objective) => !objective.optional && objective.kind === 'interact')
+    .flatMap((objective) => objective.unitIds ?? []));
+  const requiresPlayerRoster = scenario.objectives.some((objective) => objective.essential);
   return {
     capacity: Math.max(0, scenario.startZones.alliance.length - automaticSupport.length),
     availableUnitIds: readyArmyUnits(state).map((unit) => unit.id),
@@ -1135,8 +1144,14 @@ export function getOperationDeploymentPlan(
       .filter((objective) => objective.optional && objective.kind === 'interact')
       .flatMap((objective) => objective.unitIds ?? [])
       .filter((unitId) => state.army.some((unit) => unit.id === unitId)))),
+    missionSupport: (scenario.allianceForces ?? []).map((unit) => ({
+      id: unit.id,
+      definitionId: unit.definitionId,
+      specialist: specialistSupportIds.has(unit.id)
+    })),
     automaticSupportDefinitionIds: automaticSupport,
-    canDeployWithoutRoster: automaticSupport.length > 0 || (scenario.allianceForces?.length ?? 0) > 0
+    canDeployWithoutRoster: !requiresPlayerRoster
+      && (automaticSupport.length > 0 || (scenario.allianceForces?.length ?? 0) > 0)
   };
 }
 
@@ -1233,8 +1248,8 @@ const buildArmySide = (
   if (apc) {
     rosterUnits = [apc, ...rosterUnits.filter((u) => u.id !== apc.id)];
   }
-  // Units named by positional or interaction objectives must never be truncated out of a small start
-  // zone. Required interact objectives cannot restrict a unit, but optional specialist tasks may.
+  // Roster units named by positional or interaction objectives must never be truncated out of a small
+  // start zone. Required specialists authored as scenario support bypass roster capacity entirely.
   const objectiveUnitIds = new Set(scenario.objectives
     .filter((objective) => objective.kind === 'reach' || objective.kind === 'interact')
     .flatMap((objective) => objective.unitIds ?? []));
@@ -1644,7 +1659,8 @@ export type ObjectiveActionErrorKey =
   | 'objectiveActionUnitUnavailable'
   | 'objectiveActionUnitRestricted'
   | 'objectiveActionOutOfRange'
-  | 'objectiveActionNotEnoughAp';
+  | 'objectiveActionNotEnoughAp'
+  | 'objectiveActionDeadlineExpired';
 
 export interface ObjectiveActionResult {
   success: boolean;
@@ -1674,6 +1690,9 @@ export function checkObjectiveAction(
   }
   if ((battle.completedObjectiveIds ?? []).includes(objective.id)) {
     return rejectObjectiveAction('objectiveActionCompleted');
+  }
+  if (objective.deadlineRound != null && battle.state.round > objective.deadlineRound) {
+    return rejectObjectiveAction('objectiveActionDeadlineExpired');
   }
   if (!battle.deployed) return rejectObjectiveAction('objectiveActionDeployment');
   if (!unitId) return rejectObjectiveAction('objectiveActionSelectUnit');
@@ -1760,6 +1779,12 @@ export const isObjectiveMet = (objective: TacticalObjective, battle: ActiveBattl
   }
 };
 
+export const isObjectiveDeadlineMissed = (objective: TacticalObjective, battle: ActiveBattle) => (
+  objective.deadlineRound != null
+  && battle.state.round > objective.deadlineRound
+  && !isObjectiveMet(objective, battle)
+);
+
 // Credits hold objectives for the current round if their tile is occupied by a
 // surviving ally. Idempotent per round: re-evaluating outcome within the same
 // round (e.g. after every player action) never double-counts.
@@ -1798,6 +1823,9 @@ export function evaluateBattleOutcome(battle: ActiveBattle): 'victory' | 'defeat
   const requiredObjectives = battle.scenario.objectives.filter((objective) => !objective.optional);
   const defeatByProtect = requiredObjectives.some((o) => o.kind === 'protect' && !isObjectiveMet(o, battle));
   if (defeatByProtect) return 'defeat';
+  if (requiredObjectives.some((objective) => isObjectiveDeadlineMissed(objective, battle))) {
+    return 'defeat';
+  }
 
   const allMet = requiredObjectives.every((o) => isObjectiveMet(o, battle));
   if (allMet) return 'victory';
@@ -1822,7 +1850,14 @@ export function evaluateBattleOutcome(battle: ActiveBattle): 'victory' | 'defeat
   const survivingEnemies = Array.from(battle.state.sides.otherSide.units.values()).filter(
     (u) => u.stance !== 'destroyed'
   );
-  if (survivingEnemies.length === 0 && pendingHostileReinforcementEvents(battle).length === 0) return 'victory';
+  const essentialIncomplete = requiredObjectives.some(
+    (objective) => objective.essential && !isObjectiveMet(objective, battle)
+  );
+  if (
+    survivingEnemies.length === 0
+    && pendingHostileReinforcementEvents(battle).length === 0
+    && !essentialIncomplete
+  ) return 'victory';
 
   // reach/hold with turn limit missed?
   const turn = battle.state.round;

@@ -63,6 +63,11 @@ interface OperationPlan {
   requiredUnitIds: string[];
   unavailableRequiredUnitIds: string[];
   specialistUnitIds: string[];
+  missionSupport: Array<{
+    id: string;
+    definitionId: string;
+    specialist: boolean;
+  }>;
   automaticSupportDefinitionIds: string[];
   canDeployWithoutRoster: boolean;
 }
@@ -919,6 +924,12 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
         return unit ? [unit] : [];
       })
     : [];
+  const missionSupportUnits = planningPlan
+    ? planningPlan.missionSupport.flatMap((support) => {
+        const unit = availableUnits.find((candidate) => candidate.id === support.definitionId);
+        return unit ? [{ ...support, unit }] : [];
+      })
+    : [];
   const unavailableRequiredUnits = planningPlan
     ? planningPlan.unavailableRequiredUnitIds.flatMap((unitId) => {
         const unit = army.find((candidate) => candidate.id === unitId);
@@ -1494,6 +1505,26 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
               </p>
             ) : null}
             <div className="deployment-roster">
+              {missionSupportUnits.map((support) => (
+                <div key={support.id} className="deployment-unit deployment-support selected required">
+                  <span className={`roster-token roster-token-${support.unit.unitType}`}>
+                    <img src={rosterPortrait(support.definitionId, support.unit.unitType)} alt="" />
+                  </span>
+                  <span className="deployment-unit-copy">
+                    <b>{support.unit.name}</b>
+                    <small>{t(`common:unitType.${support.unit.unitType}`)} · {t('deployment.missionAttached')}</small>
+                    <i>{support.specialist
+                      ? t('deployment.missionSpecialistHint')
+                      : t('deployment.missionSupportHint')}</i>
+                  </span>
+                  <span className="deployment-unit-flags">
+                    <em>{support.specialist
+                      ? t('deployment.missionSpecialist')
+                      : t('deployment.automaticSupport')}</em>
+                    <strong>✓</strong>
+                  </span>
+                </div>
+              ))}
               {automaticSupportUnits.map((unit) => (
                 <div key={unit.id} className="deployment-unit deployment-support selected required">
                   <span className={`roster-token roster-token-${unit.unitType}`}>

@@ -78,5 +78,6 @@
   "objectiveActionUnitUnavailable": "Táto jednotka nemôže vykonať akciu misie",
   "objectiveActionUnitRestricted": "Tento cieľ vyžaduje inú jednotku",
   "objectiveActionOutOfRange": "Presuň sa na cieľ alebo vedľa neho",
-  "objectiveActionNotEnoughAp": "Na akciu misie chýbajú akčné body"
+  "objectiveActionNotEnoughAp": "Na akciu misie chýbajú akčné body",
+  "objectiveActionDeadlineExpired": "Termín akcie misie už uplynul"
 }

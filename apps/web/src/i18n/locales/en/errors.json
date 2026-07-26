@@ -78,5 +78,6 @@
   "objectiveActionUnitUnavailable": "This unit cannot perform mission actions",
   "objectiveActionUnitRestricted": "This objective requires a different unit",
   "objectiveActionOutOfRange": "Move onto or beside the objective",
-  "objectiveActionNotEnoughAp": "Not enough action points for this mission action"
+  "objectiveActionNotEnoughAp": "Not enough action points for this mission action",
+  "objectiveActionDeadlineExpired": "The mission-action deadline has passed"
 }

@@ -494,6 +494,21 @@ interface AuthoredReserveEvent {
   effects: TacticalScenarioEventEffect[];
 }
 
+function specialistStaging(g: Generated, cfg: CityConfig, lane = 0): Coord {
+  const startZone = new Set(g.allianceZone.map((coordinate) => `${coordinate.q},${coordinate.r}`));
+  const target = {
+    q: cfg.width * (0.2 + lane * 0.04),
+    r: cfg.height * (0.7 - lane * 0.05)
+  };
+  return g.reachable
+    .filter((coordinate) => !startZone.has(`${coordinate.q},${coordinate.r}`))
+    .sort((left, right) => {
+      const leftDistance = Math.abs(left.q - target.q) + Math.abs(left.r - target.r);
+      const rightDistance = Math.abs(right.q - target.q) + Math.abs(right.r - target.r);
+      return leftDistance - rightDistance || left.r - right.r || left.q - right.q;
+    })[0] ?? g.allianceZone[0] ?? { q: 1, r: cfg.height - 2 };
+}
+
 function buildMission(cfg: CityConfig, g: Generated, rng: () => number): MissionDefinition {
   const id = cfg.territoryId;
   // objective anchor: a REACHABLE tile deep in enemy territory (top-right region)
@@ -613,6 +628,76 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
       }
       break;
   }
+
+  if (id === 'sector-lantern-vault') {
+    const specialistId = `${id}-pilot`;
+    objs.push({
+      id: `${id}-calibrate-prism`,
+      kind: 'interact',
+      description: 'Calibrate the recovered survey prism against the living archive.',
+      target: hold,
+      unitIds: [specialistId],
+      essential: true,
+      deadlineRound: 7,
+      actionKey: 'calibratePrism',
+      actionPoints: 2
+    });
+  }
+
+  if (id === 'sector-sable-causeway') {
+    const specialistId = `${id}-wardbreaker`;
+    const objective = objs.find((candidate) => candidate.id === `${id}-reach`);
+    if (!objective) throw new Error(`missing sabotage objective for ${id}`);
+    objective.unitIds = [specialistId];
+    objective.essential = true;
+    objective.deadlineRound = 10;
+    allianceForces = [
+      ...(allianceForces ?? []),
+      {
+        id: specialistId,
+        definitionId: 'commando-team',
+        coordinate: specialistStaging(g, cfg),
+        isKey: true
+      }
+    ];
+    objs.push({
+      id: `${id}-protect-wardbreaker`,
+      kind: 'protect',
+      description: 'Keep the wardbreaker team alive.',
+      unitIds: [specialistId]
+    });
+  }
+
+  if (id === 'sector-mnemonic-orchard') {
+    const specialistId = `${id}-psi-specialist`;
+    allianceForces = [
+      ...(allianceForces ?? []),
+      {
+        id: specialistId,
+        definitionId: 'psi-corps',
+        coordinate: specialistStaging(g, cfg, 1),
+        isKey: true
+      }
+    ];
+    objs.push({
+      id: `${id}-ground-lattice`,
+      kind: 'interact',
+      description: 'Ground the root-memory lattice before it fixes the strike force in place.',
+      target: hold,
+      unitIds: [specialistId],
+      essential: true,
+      deadlineRound: 9,
+      actionKey: 'groundMemoryLattice',
+      actionPoints: 3
+    });
+    objs.push({
+      id: `${id}-protect-psi-specialist`,
+      kind: 'protect',
+      description: 'Keep the PSI grounding team alive.',
+      unitIds: [specialistId]
+    });
+  }
+
   return { objectives: objs, allianceForces, weather: cfg.weather };
 }
 
@@ -698,12 +783,6 @@ function authoredReserveEvent(
           optional: true
         }
       }]
-    };
-  }
-  if (cfg.territoryId === 'sector-sable-causeway') {
-    return {
-      messageKey: 'causewayWardBreaks',
-      effects: [terrainOpening(g, target, 3)]
     };
   }
   if (cfg.territoryId === 'sector-mnemonic-orchard') {
@@ -805,6 +884,18 @@ function buildEvents(
     reinforcements,
     effects: authoredReserve?.effects
   };
+  const sabotageEvent: TacticalScenarioEvent | undefined = cfg.territoryId === 'sector-sable-causeway'
+    ? {
+        id: `${cfg.territoryId}-ward-collapse`,
+        triggerObjectiveId: `${cfg.territoryId}-reach`,
+        messageKey: 'causewayWardBreaks',
+        faction: 'alliance',
+        reinforcements: [],
+        effects: [terrainOpening(g, mission.objectives.find((objective) => (
+          objective.id === `${cfg.territoryId}-reach`
+        ))?.target ?? g.reachable[0], 3)]
+      }
+    : undefined;
   const confluenceReward: TacticalScenarioEvent | undefined = cfg.territoryId === 'sector-ashen-confluence'
     ? {
         id: `${cfg.territoryId}-echo-battery`,
@@ -818,7 +909,12 @@ function buildEvents(
         }]
       }
     : undefined;
-  if (!signature) return confluenceReward ? [reserveEvent, confluenceReward] : [reserveEvent];
+  const primaryEvents = [
+    reserveEvent,
+    ...(sabotageEvent ? [sabotageEvent] : []),
+    ...(confluenceReward ? [confluenceReward] : [])
+  ];
+  if (!signature) return primaryEvents;
 
   const signatureReinforcements = signature.reinforcements.map((reinforcement, index) => ({
     id: `${cfg.territoryId}-${reinforcement.id}`,
@@ -834,9 +930,9 @@ function buildEvents(
     faction: 'otherSide',
     reinforcements: signatureReinforcements
   };
-  if (cfg.territoryId !== 'sector-rift') return [reserveEvent, signatureEvent];
+  if (cfg.territoryId !== 'sector-rift') return [...primaryEvents, signatureEvent];
 
-  return [reserveEvent, signatureEvent, {
+  return [...primaryEvents, signatureEvent, {
     id: `${cfg.territoryId}-ward-corridor-reserve`,
     triggerObjectiveId: `${cfg.territoryId}-disrupt-ward`,
     messageKey: 'wardBeaconSecured',

@@ -365,7 +365,7 @@ describe('data bundle', () => {
       actionKey: 'disruptWard',
       actionPoints: 2
     }];
-    expect(() => loadContentBundle(restrictedRequired)).toThrow(/Required interact objectives cannot restrict eligible units/);
+    expect(() => loadContentBundle(restrictedRequired)).toThrow(/must be attached as key Alliance support/);
   });
 
   it('requires valid tactical event triggers and references', () => {
@@ -529,6 +529,66 @@ describe('data bundle', () => {
       }]
     }];
     expect(() => loadContentBundle(outsideTerrain)).toThrow(/is outside the battlefield/);
+  });
+
+  it('accepts only satisfiable essential specialist deadlines', () => {
+    const specialistBundle = () => {
+      const bundle = structuredClone(starterBundle);
+      const scenario = bundle.scenarios[0];
+      const specialistId = 'attached-signal-specialist';
+      scenario.allianceForces = [
+        ...(scenario.allianceForces ?? []),
+        {
+          id: specialistId,
+          definitionId: 'rangers',
+          coordinate: scenario.startZones.alliance[0],
+          isKey: true
+        }
+      ];
+      scenario.objectives.push({
+        id: 'critical-signal-action',
+        kind: 'interact',
+        description: 'Complete the signal calibration.',
+        target: scenario.startZones.alliance[1],
+        unitIds: [specialistId],
+        essential: true,
+        deadlineRound: 4,
+        actionKey: 'calibratePrism',
+        actionPoints: 2
+      });
+      return bundle;
+    };
+
+    expect(() => loadContentBundle(specialistBundle())).not.toThrow();
+
+    const optionalEssential = specialistBundle();
+    optionalEssential.scenarios[0].objectives.at(-1)!.optional = true;
+    expect(() => loadContentBundle(optionalEssential)).toThrow(/Essential objectives must be mandatory interactions/);
+
+    const nonInteractEssential = specialistBundle();
+    const nonInteract = nonInteractEssential.scenarios[0].objectives.at(-1)!;
+    nonInteract.kind = 'hold';
+    nonInteract.actionKey = undefined;
+    nonInteract.actionPoints = undefined;
+    expect(() => loadContentBundle(nonInteractEssential)).toThrow(/Essential objectives must be mandatory interactions/);
+
+    const optionalDeadline = specialistBundle();
+    const optionalTimed = optionalDeadline.scenarios[0].objectives.at(-1)!;
+    optionalTimed.essential = undefined;
+    optionalTimed.optional = true;
+    expect(() => loadContentBundle(optionalDeadline)).toThrow(/Objective deadlines require a mandatory interaction/);
+
+    const unkeyedSupport = specialistBundle();
+    unkeyedSupport.scenarios[0].allianceForces!.at(-1)!.isKey = false;
+    expect(() => loadContentBundle(unkeyedSupport)).toThrow(/must be attached as key Alliance support/);
+
+    const absentSupport = specialistBundle();
+    absentSupport.scenarios[0].allianceForces = [];
+    expect(() => loadContentBundle(absentSupport)).toThrow(/must be attached as key Alliance support/);
+
+    const missingSpecialistId = specialistBundle();
+    missingSpecialistId.scenarios[0].objectives.at(-1)!.unitIds = undefined;
+    expect(() => loadContentBundle(missingSpecialistId)).toThrow(/requires a specialist/);
   });
 
   it('ships bridge demolitions as paid interactions and an optional Rift reserve action', () => {

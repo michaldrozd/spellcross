@@ -199,6 +199,7 @@
     "objectives": {
       "sector-lantern-vault-reach": "Bring the survey team and its charts to the extraction zone.",
       "sector-lantern-vault-protect": "Keep the survey team alive.",
+      "sector-lantern-vault-calibrate-prism": "Critical: calibrate the survey prism against the living archive by round 7.",
       "sector-lantern-vault-chart-cache": "Optional: recover the prism charts from the newly opened archive."
     }
   },
@@ -224,7 +225,8 @@
     "brief": "Break the causeway guard, arm the ward towers, and keep the northern road from folding into the sea.",
     "objectives": {
       "sector-sable-causeway-eliminate": "Destroy or rout the causeway guard.",
-      "sector-sable-causeway-reach": "Plant charges in the ward-tower controls."
+      "sector-sable-causeway-reach": "Critical: use the wardbreaker team to plant charges by round 10.",
+      "sector-sable-causeway-protect-wardbreaker": "Keep the wardbreaker team alive."
     }
   },
   "city-sector-mnemonic-orchard": {
@@ -232,7 +234,9 @@
     "brief": "Raid the echoing forest by night, silence the signal mimics, and hold the root relay through their answer.",
     "objectives": {
       "sector-mnemonic-orchard-eliminate": "Silence the signal mimics hidden in the orchard.",
-      "sector-mnemonic-orchard-hold": "Secure the root relay for 3 rounds."
+      "sector-mnemonic-orchard-hold": "Secure the root relay for 3 rounds.",
+      "sector-mnemonic-orchard-ground-lattice": "Critical: use the PSI team to ground the root-memory lattice by round 9.",
+      "sector-mnemonic-orchard-protect-psi-specialist": "Keep the PSI grounding team alive."
     }
   },
   "city-sector-thorn-engine": {

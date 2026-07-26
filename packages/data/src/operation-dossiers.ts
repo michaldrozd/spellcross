@@ -237,10 +237,10 @@ export const starterOperationDossiers: OperationDossier[] = [
     chapterTitle: 'Veilbreak',
     codename: 'Lantern Vault',
     situation: 'Scouts from the successful crossing found an underground observatory whose instruments still chart the broken sky.',
-    threat: 'Stone sentries are cutting through the outer galleries while a trapped survey team protects the only complete star map.',
-    command: 'Reach the survey team, escort it through the gallery breach, and preserve the observatory records.',
-    victory: 'The survey team and its charts are safe. Their measurements turn the Shatterline from a void into navigable ground.',
-    defeat: 'The observatory galleries collapsed around the survey team. The next advance must proceed without reliable bearings.',
+    threat: 'Stone sentries are cutting through the outer galleries while a trapped survey team races to stabilize a failing prism.',
+    command: 'Cover the survey team and calibrate the observatory prism before round seven closes the last clear sightline.',
+    victory: 'The prism is stable and the survey team is safe. Its measurements turn the Shatterline from a void into navigable ground.',
+    defeat: 'The prism lost alignment before the survey team could finish. The next advance must proceed without reliable bearings.',
     audioTheme: 'night'
   },
   {
@@ -273,8 +273,8 @@ export const starterOperationDossiers: OperationDossier[] = [
     chapterTitle: 'Crossed Bearings',
     codename: 'Sable Causeway',
     situation: 'A road of black stone spans the northern void and offers the only armored approach toward the inner Shatterline.',
-    threat: 'Ward towers are bending the causeway in sections, isolating each assault group above a lightless sea.',
-    command: 'Break the road guard, plant charges in the ward controls, and stabilize the span for the follow-on column.',
+    threat: 'Ward towers are bending the causeway in sections while a commando wardbreaker searches for the control seam.',
+    command: 'Escort the attached wardbreaker and plant the charges by round ten before the span folds beneath the column.',
     victory: 'The ward towers are silent and the causeway is carrying armor toward the inner line without distortion.',
     defeat: 'The causeway folded before the controls were secured. Northern formations are stranded on separated spans.',
     audioTheme: 'siege'
@@ -285,8 +285,8 @@ export const starterOperationDossiers: OperationDossier[] = [
     chapterTitle: 'Crossed Bearings',
     codename: 'Mnemonic Orchard',
     situation: 'A forest of translucent trunks is broadcasting voices and orders copied from every Alliance loss since the first contact.',
-    threat: 'Signal mimics use the recordings to split patrols and conceal a relay that is coordinating ambushes across the southern route.',
-    command: 'Advance under blackout discipline, silence the mimics, and hold the root relay when the orchard answers.',
+    threat: 'Signal mimics are closing on an attached PSI specialist who can ground the memory lattice beneath the root relay.',
+    command: 'Cover the specialist and ground the lattice by round nine, then hold the relay when the orchard answers.',
     victory: 'The root relay is quiet. The copied voices have faded, and the southern advance can trust its own signals again.',
     defeat: 'The orchard still owns the command band. Southern units are withdrawing rather than follow another perfect imitation.',
     audioTheme: 'night'

@@ -5,6 +5,7 @@ import {
   createCampaign,
   evaluateBattleOutcome,
   hydrateCampaignState,
+  performObjectiveAction,
   processTacticalEvents,
   serializeCampaignState,
   startBattleForTerritory,
@@ -297,6 +298,20 @@ describe('tactical scenario effects', () => {
     const event = battle.scenario.events?.find((candidate) => candidate.effects?.length);
     if (!event) throw new Error(`expected authored effects in ${territoryId}`);
     battle.state.round = event.triggerRound ?? 20;
+    if (event.triggerObjectiveId) {
+      const objective = battle.scenario.objectives.find((candidate) => (
+        candidate.id === event.triggerObjectiveId
+      ));
+      const specialistRosterId = objective?.unitIds?.[0];
+      const specialist = specialistRosterId
+        ? battle.state.sides.alliance.units.get(battle.deployment[specialistRosterId])
+        : undefined;
+      if (!objective?.target || !specialist) throw new Error(`expected specialist trigger for ${territoryId}`);
+      battle.state.round = Math.min(battle.state.round, objective.deadlineRound ?? battle.state.round);
+      specialist.coordinate = { ...objective.target };
+      specialist.actionPoints = specialist.maxActionPoints;
+      expect(performObjectiveAction(battle, specialist.id, objective.id).success).toBe(true);
+    }
 
     const triggered = processTacticalEvents(state, bundle);
 

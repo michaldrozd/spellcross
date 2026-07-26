@@ -11,16 +11,23 @@
     "lost": "Stratené",
     "completed": "Splnené",
     "pendingAction": "Vyžaduje akciu",
+    "actionByRound": "Akcia do kola {{limit}}",
+    "deadlineMissed": "Termín zmeškaný",
     "optional": "Bonus",
+    "essential": "Kritické",
     "action": {
       "plantCharges": "Umiestniť nálože",
       "disruptWard": "Narušiť ochranu",
-      "alignEchoBeacon": "Naladiť ozvenový maják"
+      "alignEchoBeacon": "Naladiť ozvenový maják",
+      "calibratePrism": "Kalibrovať hranol",
+      "groundMemoryLattice": "Uzemniť mriežku"
     },
     "actionTooltip": {
       "plantCharges": "Minie uvedené AP na aktiváciu demolačného bodu",
       "disruptWard": "Minie uvedené AP na prelomenie ochrany a otvorenie koridoru pre zálohy",
-      "alignEchoBeacon": "Minie uvedené AP na naladenie majáka a privolanie delostreleckej podpory"
+      "alignEchoBeacon": "Minie uvedené AP na naladenie majáka a privolanie delostreleckej podpory",
+      "calibratePrism": "Prieskumný tím zladí získaný hranol so živým archívom",
+      "groundMemoryLattice": "PSI tím bezpečne vybije koreňovú pamäťovú mriežku"
     }
   },
   "overwatch": {

@@ -11,16 +11,23 @@
     "lost": "Lost",
     "completed": "Completed",
     "pendingAction": "Action required",
+    "actionByRound": "Action required by round {{limit}}",
+    "deadlineMissed": "Deadline missed",
     "optional": "Bonus",
+    "essential": "Critical",
     "action": {
       "plantCharges": "Plant charges",
       "disruptWard": "Disrupt ward",
-      "alignEchoBeacon": "Align echo beacon"
+      "alignEchoBeacon": "Align echo beacon",
+      "calibratePrism": "Calibrate prism",
+      "groundMemoryLattice": "Ground lattice"
     },
     "actionTooltip": {
       "plantCharges": "Spend the listed AP to arm the demolition point",
       "disruptWard": "Spend the listed AP to break the ward and open the reserve corridor",
-      "alignEchoBeacon": "Spend the listed AP to tune the beacon and call in artillery support"
+      "alignEchoBeacon": "Spend the listed AP to tune the beacon and call in artillery support",
+      "calibratePrism": "Use the survey team to align the recovered prism with the living archive",
+      "groundMemoryLattice": "Use the PSI team to discharge the root-memory lattice safely"
     }
   },
   "overwatch": {

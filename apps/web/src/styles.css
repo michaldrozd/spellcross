@@ -3727,6 +3727,19 @@ header.app-header {
   text-transform: uppercase;
 }
 
+.objective-essential {
+  display: inline-block;
+  margin-left: 0.45rem;
+  padding: 0.05rem 0.28rem;
+  border: 1px solid rgba(220, 166, 70, 0.68);
+  background: rgba(101, 59, 18, 0.24);
+  color: #e5b85c;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
 .objective-action {
   min-width: 5.6rem;
   padding: 0.22rem 0.42rem;
