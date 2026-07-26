@@ -3,6 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { cityScenarioIdByTerritory } from './city-battlefields.js';
 import { loadContentBundle, starterBundle, validatedStarterBundle } from './index.js';
 
+const makeOutcomeRouteBundle = () => {
+  const bundle = structuredClone(starterBundle);
+  const campaign = bundle.campaigns[0];
+  const source = campaign.territories.find((territory) => territory.id === 'sector-paris');
+  const victory = campaign.territories.find((territory) => territory.id === 'sector-lyon');
+  const defeat = campaign.territories.find((territory) => territory.id === 'sector-brussels');
+  if (!source || !victory || !defeat) throw new Error('expected route test territories');
+
+  source.requires = undefined;
+  victory.requires = undefined;
+  victory.route = { territoryId: source.id, result: 'victory' };
+  defeat.requires = undefined;
+  defeat.route = { territoryId: source.id, result: 'defeat' };
+  campaign.territories = [source, victory, defeat];
+  return bundle;
+};
+
 describe('data bundle', () => {
   it('validates starter bundle structure', () => {
     const bundle = loadContentBundle(starterBundle);
@@ -69,6 +86,10 @@ describe('data bundle', () => {
       for (const req of territory.requires ?? []) {
         expect(territoryIds, `territory ${territory.id} requires ${req}`).toContain(req);
       }
+      if (territory.route) {
+        expect(territoryIds, `territory ${territory.id} routes from ${territory.route.territoryId}`)
+          .toContain(territory.route.territoryId);
+      }
     }
 
     // a typo'd territoryId in CITY_CONFIGS silently falls back to a legacy shared map
@@ -128,6 +149,31 @@ describe('data bundle', () => {
     const unknown = structuredClone(starterBundle);
     unknown.dossiers[0].territoryId = 'sector-nowhere';
     expect(() => loadContentBundle(unknown)).toThrow(/unknown territory sector-nowhere/);
+  });
+
+  it('accepts paired campaign outcome routes with a completion path for either result', () => {
+    expect(() => loadContentBundle(makeOutcomeRouteBundle())).not.toThrow();
+  });
+
+  it('rejects unknown and self-referencing campaign route sources', () => {
+    const unknown = makeOutcomeRouteBundle();
+    unknown.campaigns[0].territories[1].route!.territoryId = 'sector-nowhere';
+    expect(() => loadContentBundle(unknown)).toThrow(/routes from unknown territory sector-nowhere/);
+
+    const self = makeOutcomeRouteBundle();
+    const routedTerritory = self.campaigns[0].territories[1];
+    routedTerritory.route!.territoryId = routedTerritory.id;
+    expect(() => loadContentBundle(self)).toThrow(/cannot route from itself/);
+  });
+
+  it('rejects one-sided and deadlocked campaign outcome routes', () => {
+    const oneSided = makeOutcomeRouteBundle();
+    oneSided.campaigns[0].territories[2].route = undefined;
+    expect(() => loadContentBundle(oneSided)).toThrow(/must define victory and defeat continuations/);
+
+    const deadlocked = makeOutcomeRouteBundle();
+    deadlocked.campaigns[0].territories[1].requires = ['sector-brussels'];
+    expect(() => loadContentBundle(deadlocked)).toThrow(/cannot complete for route state/);
   });
 
   it('ships at least eighty unique authored unit definitions', () => {

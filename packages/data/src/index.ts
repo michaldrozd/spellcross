@@ -235,6 +235,11 @@ export interface TerritorySpec {
   mapPosition?: { x: number; y: number };
   /** IDs of territories that must be cleared before this one becomes available */
   requires?: string[];
+  /** Battle result that selects this operation from a mutually exclusive campaign route */
+  route?: {
+    territoryId: string;
+    result: 'victory' | 'defeat';
+  };
   /** Region name for grouping on the map */
   region?: string;
   /** Difficulty level 1-5 */
@@ -526,6 +531,10 @@ const territorySchema = z.object({
     y: z.number().min(0).max(100)
   }).optional(),
   requires: z.array(z.string()).optional(),
+  route: z.object({
+    territoryId: z.string(),
+    result: z.enum(['victory', 'defeat'])
+  }).optional(),
   region: z.string().optional(),
   difficulty: z.number().int().min(1).max(5).optional()
 });
@@ -604,6 +613,113 @@ const bundleSchema = z.object({
       message: `Campaign territory ${territoryId} has no operation dossier`,
       path: ['dossiers']
     });
+  });
+
+  bundle.campaigns.forEach((campaign, campaignIndex) => {
+    const territoryIds = new Set(campaign.territories.map((territory) => territory.id));
+    const routeResults = new Map<string, Set<'victory' | 'defeat'>>();
+
+    campaign.territories.forEach((territory, territoryIndex) => {
+      for (const requirementId of territory.requires ?? []) {
+        if (territoryIds.has(requirementId)) continue;
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Campaign territory ${territory.id} requires unknown territory ${requirementId}`,
+          path: ['campaigns', campaignIndex, 'territories', territoryIndex, 'requires']
+        });
+      }
+
+      if (!territory.route) return;
+      if (territory.route.territoryId === territory.id) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Campaign territory ${territory.id} cannot route from itself`,
+          path: ['campaigns', campaignIndex, 'territories', territoryIndex, 'route', 'territoryId']
+        });
+        return;
+      }
+      if (!territoryIds.has(territory.route.territoryId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Campaign territory ${territory.id} routes from unknown territory ${territory.route.territoryId}`,
+          path: ['campaigns', campaignIndex, 'territories', territoryIndex, 'route', 'territoryId']
+        });
+        return;
+      }
+
+      const outcomes = routeResults.get(territory.route.territoryId) ?? new Set();
+      outcomes.add(territory.route.result);
+      routeResults.set(territory.route.territoryId, outcomes);
+    });
+
+    for (const [sourceId, outcomes] of routeResults) {
+      if (outcomes.size === 2) continue;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Campaign route from ${sourceId} must define victory and defeat continuations`,
+        path: ['campaigns', campaignIndex, 'territories']
+      });
+    }
+
+    const routeSourceIds = Array.from(routeResults.keys());
+    const assignmentCount = 2 ** routeSourceIds.length;
+    for (let assignment = 0; assignment < assignmentCount; assignment += 1) {
+      const selectedResults = new Map(routeSourceIds.map((sourceId, sourceIndex) => [
+        sourceId,
+        assignment & (2 ** sourceIndex) ? 'defeat' as const : 'victory' as const
+      ]));
+      const completed = new Set<string>();
+      const bypassed = new Set<string>();
+
+      for (let changed = true; changed;) {
+        changed = false;
+        for (const territory of campaign.territories) {
+          if (completed.has(territory.id) || bypassed.has(territory.id)) continue;
+          const requirements = territory.requires ?? [];
+          if (requirements.some((requirementId) => bypassed.has(requirementId))) {
+            bypassed.add(territory.id);
+            changed = true;
+            continue;
+          }
+          if (!requirements.every((requirementId) => completed.has(requirementId))) continue;
+
+          if (territory.route) {
+            if (bypassed.has(territory.route.territoryId)) {
+              bypassed.add(territory.id);
+              changed = true;
+              continue;
+            }
+            if (!completed.has(territory.route.territoryId)) continue;
+            if (selectedResults.get(territory.route.territoryId) !== territory.route.result) {
+              bypassed.add(territory.id);
+              changed = true;
+              continue;
+            }
+          }
+
+          completed.add(territory.id);
+          changed = true;
+        }
+      }
+
+      const selectedRouteBlocked = campaign.territories.some((territory) => (
+        territory.route
+        && completed.has(territory.route.territoryId)
+        && selectedResults.get(territory.route.territoryId) === territory.route.result
+        && !completed.has(territory.id)
+      ));
+      if (completed.size + bypassed.size === campaign.territories.length && !selectedRouteBlocked) continue;
+
+      const routeState = routeSourceIds
+        .map((sourceId) => `${sourceId}=${selectedResults.get(sourceId)}`)
+        .join(', ');
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Campaign ${campaign.id} cannot complete for route state ${routeState || 'default'}`,
+        path: ['campaigns', campaignIndex, 'territories']
+      });
+      break;
+    }
   });
 });
 

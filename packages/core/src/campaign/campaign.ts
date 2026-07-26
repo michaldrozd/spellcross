@@ -70,7 +70,9 @@ export interface ResearchState {
   };
 }
 
-export type TerritoryStatus = 'locked' | 'available' | 'cleared' | 'failed';
+export type CampaignOperationResult = 'victory' | 'defeat';
+
+export type TerritoryStatus = 'locked' | 'available' | 'cleared' | 'failed' | 'resolved' | 'bypassed';
 
 export interface TerritoryState extends TerritorySpec {
   status: TerritoryStatus;
@@ -190,6 +192,7 @@ export interface CampaignState {
   reserves: ArmyUnit[];
   formations: Formation[];
   territories: TerritoryState[];
+  operationResults: Record<string, CampaignOperationResult>;
   research: ResearchState;
   activeBattle?: ActiveBattle;
   log: CampaignLogEntry[];
@@ -213,6 +216,8 @@ export interface SerializedCampaignState {
   // Optional for saves created before formation management was exposed at HQ.
   formations?: Formation[];
   territories: TerritoryState[];
+  // Optional for saves created before campaign outcome routes were introduced.
+  operationResults?: Record<string, CampaignOperationResult>;
   research: {
     known: string[];
     completed: string[];
@@ -286,6 +291,84 @@ const findCampaignSpec = (bundle: ContentBundle, id?: string): CampaignSpec => {
   const [first] = bundle.campaigns;
   if (!first) throw new Error('No campaign specs defined');
   return first;
+};
+
+const initialTerritoryStatus = (territory: TerritorySpec): TerritoryStatus => (
+  territory.route || territory.requires?.length ? 'locked' : 'available'
+);
+
+const routeSourceIdsFor = (spec: CampaignSpec) => new Set(
+  spec.territories.flatMap((territory) => territory.route ? [territory.route.territoryId] : [])
+);
+
+const isCompletedTerritory = (territory: TerritoryState) => (
+  territory.status === 'cleared' || territory.status === 'resolved'
+);
+
+const isTerminalTerritory = (territory: TerritoryState) => (
+  isCompletedTerritory(territory) || territory.status === 'bypassed'
+);
+
+const refreshCampaignRoutes = (
+  state: CampaignState,
+  spec: CampaignSpec,
+  announceAvailable = false
+) => {
+  const territoryStates = new Map(state.territories.map((territory) => [territory.id, territory]));
+
+  for (let changed = true; changed;) {
+    changed = false;
+    for (const territorySpec of spec.territories) {
+      const territory = territoryStates.get(territorySpec.id);
+      if (!territory || isTerminalTerritory(territory)) continue;
+
+      const requirements = (territorySpec.requires ?? [])
+        .map((requirementId) => territoryStates.get(requirementId))
+        .filter((requirement): requirement is TerritoryState => Boolean(requirement));
+      let nextStatus: TerritoryStatus;
+
+      if (requirements.some((requirement) => requirement.status === 'bypassed')) {
+        nextStatus = 'bypassed';
+      } else if (!requirements.every(isCompletedTerritory)) {
+        nextStatus = 'locked';
+      } else if (territorySpec.route) {
+        const source = territoryStates.get(territorySpec.route.territoryId);
+        const selectedResult = state.operationResults[territorySpec.route.territoryId];
+        if (source?.status === 'bypassed' || (selectedResult && selectedResult !== territorySpec.route.result)) {
+          nextStatus = 'bypassed';
+        } else if (source && isCompletedTerritory(source) && selectedResult === territorySpec.route.result) {
+          nextStatus = 'available';
+        } else if (
+          source?.status === 'failed'
+          && selectedResult === territorySpec.route.result
+        ) {
+          nextStatus = 'available';
+        } else {
+          nextStatus = 'locked';
+        }
+      } else {
+        nextStatus = 'available';
+      }
+
+      if (territory.status === 'failed' && nextStatus === 'available') continue;
+      if (territory.status === nextStatus) continue;
+      const becameAvailable = nextStatus === 'available';
+      territory.status = nextStatus;
+      territory.remainingTimer = becameAvailable ? territory.timer : undefined;
+      if (becameAvailable && announceAvailable) {
+        state.log.push({
+          key: 'newSectorAvailable',
+          params: { territory: territory.name, territoryId: territory.id }
+        });
+      }
+      changed = true;
+    }
+  }
+};
+
+const campaignIsComplete = (state: CampaignState) => {
+  const realSectors = state.territories.filter((territory) => !isGeneratedCounteroffensive(territory));
+  return realSectors.length > 0 && realSectors.every(isTerminalTerritory);
 };
 
 const addResearchUnlocksToKnown = (bundle: ContentBundle, topicIds: Iterable<string>): Set<string> => {
@@ -373,14 +456,12 @@ export function createCampaign(
     paused: {}
   };
 
-  // Create territories with proper locked/available status based on requires
-  const territories: TerritoryState[] = spec.territories.map((t) => {
-    // Territory is available if it has no requirements
-    const hasRequirements = t.requires && t.requires.length > 0;
+  const territories: TerritoryState[] = spec.territories.map((territory) => {
+    const status = initialTerritoryStatus(territory);
     return {
-      ...t,
-      status: hasRequirements ? 'locked' : 'available',
-      remainingTimer: t.timer
+      ...territory,
+      status,
+      remainingTimer: territory.route ? undefined : territory.timer
     };
   });
 
@@ -408,6 +489,7 @@ export function createCampaign(
     reserves: [],
     formations: createDefaultFormations(army),
     territories,
+    operationResults: {},
     research,
     log: [{ key: 'campaignInitialized', params: { name: spec.name, campaignId: spec.id, difficulty } }],
     events: [],
@@ -691,6 +773,12 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
     });
     state.log.push({ key: 'raidStaticDetected' });
     state.events?.push({ turn: state.turn, key: 'raidStatic' });
+  }
+
+  const routeSourceIds = routeSourceIdsFor(findCampaignSpec(bundle, state.campaignId));
+  for (const territory of state.territories) {
+    if (territory.status !== 'failed' || !routeSourceIds.has(territory.id)) continue;
+    territory.status = 'available';
   }
 
   // Both feeds grow every turn and get serialized into every save slot — keep them bounded.
@@ -1258,6 +1346,10 @@ export function startBattleForTerritory(
     triggeredEventIds: [],
     completedObjectiveIds: []
   };
+  if (territory.route && state.operationResults[territory.route.territoryId] === territory.route.result) {
+    const routeSource = state.territories.find((candidate) => candidate.id === territory.route?.territoryId);
+    if (routeSource && routeSource.status !== 'cleared') routeSource.status = 'resolved';
+  }
   state.lastOperationTurn = state.turn;
   state.activeBattle = activeBattle;
   return activeBattle;
@@ -1748,6 +1840,11 @@ export function applyBattleOutcome(
   }
 
   state.army = survivors;
+  const spec = findCampaignSpec(bundle, state.campaignId);
+  const routeSourceIds = routeSourceIdsFor(spec);
+  if (routeSourceIds.has(territory.id)) {
+    state.operationResults[territory.id] ??= result;
+  }
 
   if (result === 'victory') {
     territory.status = 'cleared';
@@ -1763,33 +1860,10 @@ export function applyBattleOutcome(
       kind: 'reward'
     });
 
-    // Unlock territories whose requirements are now met
-    const clearedIds = new Set(
-      state.territories.filter(t => t.status === 'cleared').map(t => t.id)
-    );
-
-    for (const t of state.territories) {
-      if (t.status === 'locked') {
-        // Check if all required territories are cleared
-        const requires = t.requires ?? [];
-        const allRequirementsMet = requires.every(reqId => clearedIds.has(reqId));
-        if (allRequirementsMet) {
-          t.status = 'available';
-          t.remainingTimer = t.timer; // Start the timer when territory becomes available
-          state.log.push({ key: 'newSectorAvailable', params: { territory: t.name, territoryId: t.id } });
-        }
-      }
-    }
-
-    // Campaign victory: every real sector (excluding generated raids/counterattacks) is cleared.
-    const realSectors = state.territories.filter((t) => !isGeneratedCounteroffensive(t));
-    if (!state.outcome && realSectors.length > 0 && realSectors.every((t) => t.status === 'cleared')) {
-      state.outcome = 'victory';
-      state.log.push({ key: 'campaignWon' });
-      state.popups?.push({ turn: state.turn, key: 'campaignWon', kind: 'reward' });
-    }
   } else {
-    territory.status = territory.status === 'available' ? 'available' : 'failed';
+    territory.status = routeSourceIds.has(territory.id)
+      ? 'failed'
+      : territory.status === 'available' ? 'available' : 'failed';
     state.log.push({ key: 'defeatAt', params: { territory: territory.name, territoryId: territory.id } });
     state.popups?.push({
       turn: state.turn,
@@ -1799,6 +1873,12 @@ export function applyBattleOutcome(
     });
   }
 
+  refreshCampaignRoutes(state, spec, true);
+  if (!state.outcome && campaignIsComplete(state)) {
+    state.outcome = 'victory';
+    state.log.push({ key: 'campaignWon' });
+    state.popups?.push({ turn: state.turn, key: 'campaignWon', kind: 'reward' });
+  }
   state.activeBattle = undefined;
 }
 
@@ -1856,6 +1936,9 @@ export function serializeCampaignState(state: CampaignState): SerializedCampaign
     reserves: structuredClone(state.reserves),
     formations: structuredClone(state.formations),
     territories: structuredClone(state.territories),
+    ...(Object.keys(state.operationResults).length > 0
+      ? { operationResults: { ...state.operationResults } }
+      : {}),
     research: {
       known: Array.from(state.research.known),
       completed: Array.from(state.research.completed),
@@ -1889,6 +1972,13 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
   const campaignId = snapshot.campaignId ?? spec.id;
   const difficulty = snapshot.difficulty ?? 'commander';
   const territoryBase = new Map(spec.territories.map((t) => [t.id, t]));
+  const savedTerritories = new Map(snapshot.territories.map((territory) => [territory.id, territory]));
+  const routeSourceIds = routeSourceIdsFor(spec);
+  const operationResults = { ...(snapshot.operationResults ?? {}) };
+  for (const sourceId of routeSourceIds) {
+    if (operationResults[sourceId]) continue;
+    if (savedTerritories.get(sourceId)?.status === 'cleared') operationResults[sourceId] = 'victory';
+  }
 
   const researchKnown = addResearchUnlocksToKnown(bundle, snapshot.research.completed);
   for (const k of snapshot.research.known) {
@@ -1959,13 +2049,34 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     army,
     reserves,
     formations: normalizeFormations(snapshot.formations, army),
-    // Older builds flipped expired path sectors to 'failed', leaving those campaigns silently
-    // unwinnable; normalize them back to attackable on load.
-    territories: snapshot.territories.map((t) => ({
-      ...(territoryBase.get(t.id) ?? t),
-      status: t.status === 'failed' ? 'available' : t.status,
-      remainingTimer: t.status === 'failed' ? undefined : t.remainingTimer
-    })),
+    territories: [
+      ...spec.territories.map((territorySpec) => {
+        const saved = savedTerritories.get(territorySpec.id);
+        if (!saved) {
+          const status = initialTerritoryStatus(territorySpec);
+          return {
+            ...territorySpec,
+            status,
+            remainingTimer: territorySpec.route ? undefined : territorySpec.timer
+          };
+        }
+        return {
+          ...territorySpec,
+          status: saved.status === 'failed' ? 'available' as const : saved.status,
+          remainingTimer: saved.status === 'failed' || (saved.status === 'locked' && territorySpec.route)
+            ? undefined
+            : saved.remainingTimer
+        };
+      }),
+      ...snapshot.territories
+        .filter((territory) => !territoryBase.has(territory.id) && isGeneratedCounteroffensive(territory))
+        .map((territory) => ({
+          ...territory,
+          status: territory.status === 'failed' ? 'available' as const : territory.status,
+          remainingTimer: territory.status === 'failed' ? undefined : territory.remainingTimer
+        }))
+    ],
+    operationResults,
     research: {
       known: researchKnown,
       completed: completedResearch,
@@ -1979,5 +2090,7 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     outcome: snapshot.outcome
   };
 
+  refreshCampaignRoutes(state, spec);
+  if (state.outcome === 'victory' && !campaignIsComplete(state)) state.outcome = undefined;
   return state;
 }

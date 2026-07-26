@@ -1,4 +1,5 @@
 import { starterBundle } from '@spellcross/data';
+import type { ContentBundle } from '@spellcross/data';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -81,6 +82,23 @@ const definitionsReachableInCampaign = (
   }
 
   return { alliance, hostile };
+};
+
+const makeOutcomeRouteBundle = (): ContentBundle => {
+  const bundle = structuredClone(starterBundle);
+  const campaign = bundle.campaigns[0];
+  const source = campaign.territories.find((territory) => territory.id === 'sector-paris');
+  const victory = campaign.territories.find((territory) => territory.id === 'sector-lyon');
+  const defeat = campaign.territories.find((territory) => territory.id === 'sector-brussels');
+  if (!source || !victory || !defeat) throw new Error('expected route test territories');
+
+  source.requires = undefined;
+  victory.requires = undefined;
+  victory.route = { territoryId: source.id, result: 'victory' };
+  defeat.requires = undefined;
+  defeat.route = { territoryId: source.id, result: 'defeat' };
+  campaign.territories = [source, victory, defeat];
+  return bundle;
 };
 
 // This boss has no strength-neutral placement inside Commander's two-unit waves. Veteran remains
@@ -488,6 +506,165 @@ describe('campaign core', () => {
       expect(state.globalTimer).toBeGreaterThan(0);
     }
   );
+
+  it('a campaign completes when the unchosen branch is bypassed', () => {
+    const bundle = makeOutcomeRouteBundle();
+    const state = createCampaign(bundle);
+
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'victory');
+
+    expect(state.territories.find((territory) => territory.id === 'sector-lyon')?.status).toBe('available');
+    expect(state.territories.find((territory) => territory.id === 'sector-brussels')?.status).toBe('bypassed');
+    endStrategicTurn(state, bundle);
+
+    startBattleForTerritory(state, bundle, 'sector-lyon');
+    applyBattleOutcome(state, bundle, 'victory');
+
+    expect(state.outcome).toBe('victory');
+    expect(state.territories.map(({ id, status }) => [id, status])).toEqual([
+      ['sector-paris', 'cleared'],
+      ['sector-lyon', 'cleared'],
+      ['sector-brussels', 'bypassed']
+    ]);
+  });
+
+  it('keeps the first route result after a failed operation is retried and won', () => {
+    const bundle = makeOutcomeRouteBundle();
+    const state = createCampaign(bundle);
+
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'defeat');
+
+    expect(state.operationResults['sector-paris']).toBe('defeat');
+    expect(state.territories.find((territory) => territory.id === 'sector-paris')?.status).toBe('failed');
+    expect(state.territories.find((territory) => territory.id === 'sector-lyon')?.status).toBe('bypassed');
+    expect(state.territories.find((territory) => territory.id === 'sector-brussels')?.status).toBe('available');
+
+    endStrategicTurn(state, bundle);
+    expect(state.territories.find((territory) => territory.id === 'sector-paris')?.status).toBe('available');
+
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'victory');
+
+    expect(state.operationResults['sector-paris']).toBe('defeat');
+    expect(state.territories.find((territory) => territory.id === 'sector-paris')?.status).toBe('cleared');
+    expect(state.territories.find((territory) => territory.id === 'sector-lyon')?.status).toBe('bypassed');
+    expect(state.territories.find((territory) => territory.id === 'sector-brussels')?.status).toBe('available');
+
+    const restored = hydrateCampaignState(bundle, JSON.parse(JSON.stringify(serializeCampaignState(state))));
+    expect(restored.operationResults['sector-paris']).toBe('defeat');
+    expect(restored.territories.find((territory) => territory.id === 'sector-lyon')?.status).toBe('bypassed');
+    expect(restored.territories.find((territory) => territory.id === 'sector-brussels')?.status).toBe('available');
+  });
+
+  it('completes a defeat-selected route without awarding the failed source operation', () => {
+    const bundle = makeOutcomeRouteBundle();
+    const state = createCampaign(bundle);
+    const startingResources = { ...state.resources };
+
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'defeat');
+    expect(state.resources).toEqual(startingResources);
+    endStrategicTurn(state, bundle);
+
+    startBattleForTerritory(state, bundle, 'sector-brussels');
+    expect(state.territories.find((territory) => territory.id === 'sector-paris')?.status).toBe('resolved');
+    applyBattleOutcome(state, bundle, 'victory');
+
+    expect(state.outcome).toBe('victory');
+    expect(state.territories.map(({ id, status }) => [id, status])).toEqual([
+      ['sector-paris', 'resolved'],
+      ['sector-lyon', 'bypassed'],
+      ['sector-brussels', 'cleared']
+    ]);
+  });
+
+  it('merges newly authored territories into a legacy save without dropping its active battle', () => {
+    const state = createCampaign(starterBundle);
+    startBattleForTerritory(state, starterBundle, 'sector-paris');
+    applyBattleOutcome(state, starterBundle, 'victory');
+    endStrategicTurn(state, starterBundle);
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');
+    const [unit] = battle.state.sides.alliance.units.values();
+    if (!unit) throw new Error('expected deployed unit');
+    unit.statusEffects.add('suppressed');
+    const armyIds = state.army.map((armyUnit) => armyUnit.id);
+    const researchIds = Array.from(state.research.completed);
+    const resources = { ...state.resources };
+
+    const legacySnapshot = JSON.parse(JSON.stringify(serializeCampaignState(state)));
+    expect(legacySnapshot).not.toHaveProperty('operationResults');
+
+    const expandedBundle = structuredClone(starterBundle);
+    const newTerritory = structuredClone(expandedBundle.campaigns[0].territories.at(-1)!);
+    newTerritory.id = 'sector-aftershock';
+    newTerritory.name = 'Aftershock';
+    newTerritory.requires = ['sector-paris'];
+    expandedBundle.campaigns[0].territories.push(newTerritory);
+
+    const restored = hydrateCampaignState(expandedBundle, legacySnapshot);
+
+    expect(restored.territories).toHaveLength(state.territories.length + 1);
+    expect(restored.territories.find((territory) => territory.id === 'sector-paris')?.status).toBe('cleared');
+    expect(restored.territories.find((territory) => territory.id === 'sector-aftershock')?.status).toBe('available');
+    expect(restored.army.map((armyUnit) => armyUnit.id)).toEqual(armyIds);
+    expect(Array.from(restored.research.completed)).toEqual(researchIds);
+    expect(restored.resources).toEqual(resources);
+    expect(restored.activeBattle?.territoryId).toBe('sector-lyon');
+    expect(restored.activeBattle?.state.sides.alliance.units.get(unit.id)?.statusEffects.has('suppressed')).toBe(true);
+  });
+
+  it('infers a cleared legacy route source and reopens a completed save for new operations', () => {
+    const legacyBundle = structuredClone(starterBundle);
+    legacyBundle.campaigns[0].territories = [
+      legacyBundle.campaigns[0].territories.find((territory) => territory.id === 'sector-paris')!
+    ];
+    const legacyState = createCampaign(legacyBundle);
+    startBattleForTerritory(legacyState, legacyBundle, 'sector-paris');
+    applyBattleOutcome(legacyState, legacyBundle, 'victory');
+    const legacySnapshot = JSON.parse(JSON.stringify(serializeCampaignState(legacyState)));
+
+    expect(legacySnapshot.outcome).toBe('victory');
+    expect(legacySnapshot).not.toHaveProperty('operationResults');
+
+    const restored = hydrateCampaignState(makeOutcomeRouteBundle(), legacySnapshot);
+
+    expect(restored.operationResults['sector-paris']).toBe('victory');
+    expect(restored.outcome).toBeUndefined();
+    expect(restored.territories.find((territory) => territory.id === 'sector-lyon')?.status).toBe('available');
+    expect(restored.territories.find((territory) => territory.id === 'sector-brussels')?.status).toBe('bypassed');
+  });
+
+  it('keeps a completion path reachable from every shipped campaign route state', () => {
+    const routeSourceIds = Array.from(new Set(starterBundle.campaigns[0].territories.flatMap((territory) => (
+      territory.route ? [territory.route.territoryId] : []
+    ))));
+
+    for (let routeState = 0; routeState < 2 ** routeSourceIds.length; routeState += 1) {
+      const selectedResults = new Map(routeSourceIds.map((territoryId, index) => [
+        territoryId,
+        routeState & (2 ** index) ? 'defeat' as const : 'victory' as const
+      ]));
+      const campaignTerritoryIds = new Set(starterBundle.campaigns[0].territories.map((territory) => territory.id));
+      const state = createCampaign(starterBundle);
+      let operations = 0;
+
+      while (!state.outcome && operations <= campaignTerritoryIds.size * 2) {
+        const territory = state.territories
+          .filter((candidate) => campaignTerritoryIds.has(candidate.id) && candidate.status === 'available')
+          .sort((left, right) => Number(Boolean(right.route)) - Number(Boolean(left.route)))[0];
+        if (!territory) break;
+
+        startBattleForTerritory(state, starterBundle, territory.id);
+        applyBattleOutcome(state, starterBundle, selectedResults.get(territory.id) ?? 'victory');
+        operations += 1;
+        if (!state.outcome) endStrategicTurn(state, starterBundle);
+      }
+
+      expect(state.outcome, `route state ${JSON.stringify(Object.fromEntries(selectedResults))}`).toBe('victory');
+    }
+  });
 
   it('serializes and hydrates campaign state for persistence', () => {
     const state = createCampaign(starterBundle, undefined, 'veteran');
