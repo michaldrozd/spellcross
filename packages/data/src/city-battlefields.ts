@@ -616,6 +616,11 @@ function buildEvents(
     definitionId: roster[(reserveOffset + index) % roster.length],
     coordinate
   }));
+  if (cfg.territoryId === 'sector-berlin' && reinforcements[1]) {
+    // The generated rotation puts hell-rider here. Winged-fiend is comparable and must stay inside
+    // Commander's two-unit window; hell-rider remains in Berlin's initial/signature forces and four other sectors.
+    reinforcements[1].definitionId = 'winged-fiend';
+  }
   const messageByGameplay: Record<GameplayType, TacticalScenarioEvent['messageKey']> = {
     evac: 'evacPursuit',
     rescue: 'rescueHunters',

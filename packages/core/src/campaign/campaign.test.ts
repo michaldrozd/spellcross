@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   applyBattleOutcome,
+  CAMPAIGN_DIFFICULTY_RULES,
   convertStrategicToMoney,
   convertStrategicToResearch,
   createCampaign,
@@ -26,7 +27,65 @@ import {
   unitTierForExperience,
   processTacticalEvents
 } from './campaign.js';
+import type { CampaignDifficulty } from './campaign.js';
 import { TurnProcessor } from '../simulation/systems/turn-processor.js';
+
+const definitionsReachableInCampaign = (
+  bundle: typeof starterBundle,
+  difficulty: CampaignDifficulty
+) => {
+  const campaign = bundle.campaigns[0];
+  const reachableResearchIds = new Set(campaign.startingResearch);
+  for (let discovered = true; discovered;) {
+    discovered = false;
+    for (const topic of bundle.research) {
+      if (reachableResearchIds.has(topic.id)) continue;
+      if (!(topic.requires ?? []).every((requirement) => reachableResearchIds.has(requirement))) continue;
+      reachableResearchIds.add(topic.id);
+      discovered = true;
+    }
+  }
+
+  const alliance = new Set([
+    ...campaign.startingUnits.map((unit) => unit.definitionId),
+    ...bundle.research
+      .filter((topic) => reachableResearchIds.has(topic.id))
+      .flatMap((topic) => topic.unlocks)
+  ]);
+  const hostile = new Set<string>();
+
+  // Launch every territory through the campaign engine so hostile events are truncated by the
+  // selected difficulty exactly as they are for players. Demo and QA scenarios are never launched.
+  for (const territory of campaign.territories) {
+    const state = createCampaign(bundle, undefined, difficulty);
+    const campaignTerritory = state.territories.find((candidate) => candidate.id === territory.id);
+    if (!campaignTerritory) throw new Error(`expected campaign territory ${territory.id}`);
+    campaignTerritory.status = 'available';
+    const battle = startBattleForTerritory(state, bundle, territory.id);
+    battle.state.round = Number.MAX_SAFE_INTEGER;
+
+    for (const unit of battle.state.sides.otherSide.units.values()) {
+      hostile.add(unit.definitionId);
+    }
+    for (let pass = 0; pass <= (battle.scenario.events?.length ?? 0); pass += 1) {
+      // Empty the map before each wave so spawn crowding cannot masquerade as difficulty truncation.
+      for (const unit of battle.state.sides.otherSide.units.values()) {
+        unit.stance = 'destroyed';
+        unit.currentHealth = 0;
+      }
+      processTacticalEvents(state, bundle);
+      for (const unit of battle.state.sides.otherSide.units.values()) {
+        hostile.add(unit.definitionId);
+      }
+    }
+  }
+
+  return { alliance, hostile };
+};
+
+// This boss has no strength-neutral placement inside Commander's two-unit waves. Veteran remains
+// the deliberate campaign route for encountering it; additions to this list require design review.
+const COMMANDER_HOSTILE_EXCEPTIONS = ['breorn-titan'].sort();
 
 describe('campaign core', () => {
   it('creates a starter campaign with available territories and formations', () => {
@@ -637,6 +696,59 @@ describe('campaign core', () => {
       unit.currentHealth = 0;
     }
     expect(processTacticalEvents(lateVeteranState, starterBundle)[0]?.units).toHaveLength(4);
+  });
+
+  it('keeps the authored roster reachable at each supported campaign difficulty', () => {
+    const hostileIds = starterBundle.units
+      .filter((unit) => unit.faction === 'otherSide')
+      .map((unit) => unit.id);
+    const allianceIds = starterBundle.units
+      .filter((unit) => unit.faction === 'alliance')
+      .map((unit) => unit.id);
+    const missingFrom = (reachable: Set<string>, definitions: string[]) => (
+      definitions.filter((definitionId) => !reachable.has(definitionId)).sort()
+    );
+
+    const story = definitionsReachableInCampaign(starterBundle, 'story');
+    const commander = definitionsReachableInCampaign(starterBundle, 'commander');
+    const veteran = definitionsReachableInCampaign(starterBundle, 'veteran');
+
+    expect(starterBundle.units).toHaveLength(80);
+    const artifactHint = 'After editing packages/data, rebuild it first: pnpm --filter @spellcross/data build';
+    expect(missingFrom(veteran.hostile, hostileIds), artifactHint).toEqual([]);
+    expect(missingFrom(commander.hostile, hostileIds), artifactHint).toEqual(COMMANDER_HOSTILE_EXCEPTIONS);
+    expect(missingFrom(story.hostile, hostileIds)).toEqual([
+      'ash-crown-sovereign',
+      'black-angel',
+      'breorn-titan',
+      'glass-regent',
+      'signal-eater',
+      'winged-fiend'
+    ]);
+    expect(CAMPAIGN_DIFFICULTY_RULES.story.reinforcementBase).toBe(0);
+    expect(missingFrom(commander.alliance, allianceIds)).toEqual([]);
+  });
+
+  it('does not let an unreferenced scenario hide a campaign-dead hostile definition', () => {
+    const bundle = structuredClone(starterBundle);
+    const campaignScenarioIds = new Set(bundle.campaigns[0].territories.map((territory) => territory.scenarioId));
+    for (const scenario of bundle.scenarios.filter((candidate) => campaignScenarioIds.has(candidate.id))) {
+      scenario.otherSideForces = scenario.otherSideForces.filter((unit) => unit.definitionId !== 'winged-fiend');
+      for (const event of scenario.events ?? []) {
+        event.reinforcements = event.reinforcements.filter((unit) => unit.definitionId !== 'winged-fiend');
+      }
+    }
+
+    const unreferencedHostiles = new Set(bundle.scenarios
+      .filter((scenario) => !campaignScenarioIds.has(scenario.id))
+      .flatMap((scenario) => [
+        ...scenario.otherSideForces,
+        ...(scenario.events ?? []).flatMap((event) => event.reinforcements)
+      ])
+      .map((unit) => unit.definitionId));
+
+    expect(unreferencedHostiles).toContain('winged-fiend');
+    expect(definitionsReachableInCampaign(bundle, 'commander').hostile).not.toContain('winged-fiend');
   });
 
   it('stages a signature wave after its prerequisite event processing pass', () => {

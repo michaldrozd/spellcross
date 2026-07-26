@@ -130,30 +130,13 @@ describe('data bundle', () => {
     expect(() => loadContentBundle(unknown)).toThrow(/unknown territory sector-nowhere/);
   });
 
-  it('ships at least eighty unique authored unit definitions with no dead roster entries', () => {
+  it('ships at least eighty unique authored unit definitions', () => {
     const bundle = validatedStarterBundle;
     const ids = bundle.units.map((unit) => unit.id);
     const names = bundle.units.map((unit) => unit.name);
     expect(ids.length).toBeGreaterThanOrEqual(80);
     expect(new Set(ids).size).toBe(ids.length);
     expect(new Set(names).size).toBe(names.length);
-
-    const campaign = bundle.campaigns[0];
-    const obtainableAlliance = new Set([
-      ...campaign.startingUnits.map((unit) => unit.definitionId),
-      ...bundle.research.flatMap((topic) => topic.unlocks)
-    ]);
-    for (const unit of bundle.units.filter((candidate) => candidate.faction === 'alliance')) {
-      expect(obtainableAlliance, `Alliance unit ${unit.id} is neither starting nor research-unlocked`).toContain(unit.id);
-    }
-
-    const encounteredEnemies = new Set(bundle.scenarios.flatMap((scenario) => [
-      ...scenario.otherSideForces.map((unit) => unit.definitionId),
-      ...(scenario.events ?? []).flatMap((event) => event.reinforcements.map((unit) => unit.definitionId))
-    ]));
-    for (const unit of bundle.units.filter((candidate) => candidate.faction === 'otherSide')) {
-      expect(encounteredEnemies, `Other Side unit ${unit.id} never appears in campaign content`).toContain(unit.id);
-    }
   });
 
   it('gives the new Alliance fire-support units separate tactical jobs', () => {

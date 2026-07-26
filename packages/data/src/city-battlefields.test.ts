@@ -136,6 +136,17 @@ describe('Per-city battlefields', () => {
     expect(signature?.reinforcements[0]?.definitionId).toBe(leadDefinitionId);
   });
 
+  it('fields the winged fiend in Berlin without changing its signature encounter', () => {
+    const scenario = cityScenarios.find((candidate) => candidate.id === 'city-sector-berlin');
+    const [reserve, signature] = scenario?.events ?? [];
+    expect(reserve?.reinforcements.map((unit) => unit.definitionId)).toEqual([
+      'ogre-brute', 'winged-fiend', 'warlock', 'salamander'
+    ]);
+    expect(signature?.reinforcements.map((unit) => unit.definitionId)).toEqual([
+      'signal-eater', 'death-knight', 'warlock', 'hell-rider'
+    ]);
+  });
+
   it('rewards the optional Rift ward action with one Alliance ranger', () => {
     const scenario = cityScenarios.find((candidate) => candidate.id === 'city-sector-rift');
     const objective = scenario?.objectives.find((candidate) => candidate.id === 'sector-rift-disrupt-ward');

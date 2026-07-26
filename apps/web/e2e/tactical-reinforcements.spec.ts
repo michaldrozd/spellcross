@@ -39,3 +39,22 @@ test('Ash Crown encounter arrives as a second Rift phase', async ({ page }) => {
     (window as any).__battleControl?.enemyUnits?.().filter((unit: any) => unit.stance !== 'destroyed').length ?? 0
   ))).toBe(2);
 });
+
+test('Commander Berlin reserve fields the campaign winged fiend', async ({ page }) => {
+  test.setTimeout(60_000);
+  await startBattle(page, 'sector-berlin');
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await page.evaluate(() => (window as any).__battleControl?.revealAll?.());
+
+  await page.evaluate(() => (window as any).__battleControl?.killAllEnemies?.());
+  await page.getByRole('button', { name: /^End Turn$/i }).click();
+  await expect(page.locator('.battle-phase-notice')).toContainText(/Portal Surge/i);
+  await expect.poll(async () => page.evaluate(() => (
+    (window as any).__battleControl?.enemyUnits?.()
+      .some((unit: any) => unit.definitionId === 'winged-fiend' && unit.stance !== 'destroyed') ?? false
+  ))).toBe(true);
+
+  await page.evaluate(() => (window as any).__battleControl?.killAllEnemies?.());
+  await page.getByRole('button', { name: /^End Turn$/i }).click();
+  await expect(page.locator('.battle-phase-notice')).toContainText(/Signal-Eater Answers/i);
+});
