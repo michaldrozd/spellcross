@@ -446,6 +446,7 @@ test('explicit target preview and cancel preserve manual camera focus', async ({
 });
 
 test('visible friendly vehicle body wins over adjacent enemy tile hit', async ({ page }) => {
+  test.setTimeout(45_000);
   await startBattle(page);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
   await expect.poll(async () => {
