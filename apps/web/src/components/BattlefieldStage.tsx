@@ -276,6 +276,27 @@ export interface ArrivalEffect {
   startTime: number;
 }
 
+export type ScenarioEventVisualKind = 'revealObjective' | 'transformTerrain' | 'pressurePulse';
+
+export interface ScenarioEventVisualEffect {
+  id: string;
+  kind: ScenarioEventVisualKind;
+  coordinate: HexCoordinate;
+  faction: FactionId;
+  startTime: number;
+}
+
+export function scenarioEventVisualStyle(kind: ScenarioEventVisualKind) {
+  switch (kind) {
+    case 'revealObjective':
+      return { primary: 0x4ed6c4, glow: 0xc5fff3, shape: 'beacon' as const };
+    case 'transformTerrain':
+      return { primary: 0xe8a64a, glow: 0xffe0a3, shape: 'fracture' as const };
+    case 'pressurePulse':
+      return { primary: 0xd84b91, glow: 0xffb0dd, shape: 'rings' as const };
+  }
+}
+
 export interface BattlefieldStageProps {
   battleState: TacticalBattleState;
   onSelectUnit?: (unitId: string) => void;
@@ -304,6 +325,7 @@ export interface BattlefieldStageProps {
   startZoneCoords?: HexCoordinate[];
   attackEffects?: AttackEffect[];
   arrivalEffects?: ArrivalEffect[];
+  scenarioEventEffects?: ScenarioEventVisualEffect[];
   movingUnit?: MovingUnit | null;
 }
 
@@ -523,8 +545,15 @@ export const presentationTerrainAt = (
   index: number
 ) => underlayByTile.get(index) ?? tiles[index]?.terrain ?? 'plain';
 
-export const terrainDestructionRevision = (events: readonly { kind: string }[]) => (
-  events.reduce((revision, event) => revision + (event.kind === 'tile:destroyed' ? 1 : 0), 0)
+export const terrainDestructionRevision = (
+  events: readonly { kind: string; effectKinds?: readonly string[] }[]
+) => (
+  events.reduce((revision, event) => revision + (
+    event.kind === 'tile:destroyed'
+    || (event.kind === 'scenario:event' && event.effectKinds?.includes('transformTerrain'))
+      ? 1
+      : 0
+  ), 0)
 );
 
 export const terrainDetailDensity = (q: number, r: number, terrain: string) => {
@@ -1697,6 +1726,7 @@ export function BattlefieldStage({
   startZoneCoords = [],
   attackEffects = [],
   arrivalEffects = [],
+  scenarioEventEffects = [],
   movingUnit
 }: BattlefieldStageProps) {
   const { t } = useTranslation('battlefield');
@@ -1742,10 +1772,15 @@ export function BattlefieldStage({
   );
   // Update more frequently during animations (and while a wreck smokes, at a lighter 16fps).
   useEffect(() => {
-    const interval = (movingUnit || attackEffects.length > 0 || arrivalEffects.length > 0) ? 16 : hasActiveWreckSmoke ? 60 : 250;
+    const interval = (
+      movingUnit
+      || attackEffects.length > 0
+      || arrivalEffects.length > 0
+      || scenarioEventEffects.length > 0
+    ) ? 16 : hasActiveWreckSmoke ? 60 : 250;
     const id = window.setInterval(() => setAnimationTick(Date.now()), interval);
     return () => window.clearInterval(id);
-  }, [movingUnit, attackEffects.length, arrivalEffects.length, hasActiveWreckSmoke]);
+  }, [movingUnit, attackEffects.length, arrivalEffects.length, scenarioEventEffects.length, hasActiveWreckSmoke]);
 
   const stageDimensions = useMemo(() => {
     if (ISO_MODE) {
@@ -2889,7 +2924,8 @@ export function BattlefieldStage({
   );
   const procBuildingUnderlay = useMemo(
     () => proceduralBuildingUnderlayTerrain(map.tiles, map.props ?? [], map.width, map.height),
-    // Destruction mutates map.tiles in place; the destruction count is its existing render revision.
+    // Terrain mutations keep the tiles array identity, so the semantic timeline revision invalidates
+    // the cached underlay and tile graphics after both demolition and scripted transformations.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [map.height, map.props, map.tiles, map.width, terrainPresentationRevision]
   );
@@ -5331,6 +5367,95 @@ export function BattlefieldStage({
       )];
     });
   }, [arrivalEffects, map.width, now, prefersReducedMotion, topGeomFor, visibleTiles]);
+
+  const scenarioEventOverlays = useMemo(() => scenarioEventEffects.flatMap((effect) => {
+    const age = now - effect.startTime;
+    if (age < 0 || age > 9000) return [];
+    const progress = prefersReducedMotion ? 0.72 : Math.min(1, age / 5600);
+    const fade = age < 6500 ? 1 : Math.max(0, 1 - (age - 6500) / 2500);
+    const pulse = prefersReducedMotion ? 0.5 : (Math.sin(age / 120) + 1) / 2;
+    const tileIndex = effect.coordinate.r * map.width + effect.coordinate.q;
+    const sensorAlpha = visibleTiles.has(tileIndex) ? 1 : 0.72;
+    const position = toScreen(effect.coordinate);
+    const geom = topGeomFor(effect.coordinate.q, effect.coordinate.r);
+    const y = position.y - geom.avgHeight * ELEV_Y_OFFSET;
+    const style = scenarioEventVisualStyle(effect.kind);
+    const outer = geom.inset(Math.max(0.44, 0.92 - progress * 0.26));
+    const halfWidth = Math.max(...outer.map((point) => Math.abs(point.x)));
+    const halfHeight = Math.max(...outer.map((point) => Math.abs(point.y)));
+    const alpha = fade * sensorAlpha;
+
+    return [(
+      <Graphics
+        key={effect.id}
+        x={position.x}
+        y={y}
+        draw={(g) => {
+          g.clear();
+          if (style.shape === 'beacon') {
+            g.beginFill(style.primary, (0.1 + pulse * 0.06) * alpha);
+            drawPoly(g as PixiGraphics, outer);
+            g.endFill();
+            g.lineStyle(3.6, 0x07100f, 0.66 * alpha);
+            drawPoly(g as PixiGraphics, outer);
+            g.lineStyle(1.8, style.primary, (0.78 + pulse * 0.2) * alpha);
+            drawPoly(g as PixiGraphics, outer);
+            const inner = geom.inset(0.42 + pulse * 0.08);
+            g.lineStyle(1.1, style.glow, 0.9 * alpha);
+            drawPoly(g as PixiGraphics, inner);
+            g.lineStyle(2.4, style.primary, 0.38 * alpha);
+            g.moveTo(0, -6);
+            g.lineTo(0, -68 - pulse * 12);
+            g.lineStyle(1.1, style.glow, 0.85 * alpha);
+            g.moveTo(0, -8);
+            g.lineTo(0, -66 - pulse * 10);
+            g.beginFill(style.glow, (0.58 + pulse * 0.28) * alpha);
+            g.drawCircle(0, -69 - pulse * 10, 2.2 + pulse * 1.4);
+            g.endFill();
+          } else if (style.shape === 'fracture') {
+            g.beginFill(style.primary, (0.08 + pulse * 0.08) * alpha);
+            drawPoly(g as PixiGraphics, outer);
+            g.endFill();
+            g.lineStyle(3.2, 0x110b04, 0.58 * alpha);
+            drawPoly(g as PixiGraphics, outer);
+            g.lineStyle(1.7, style.primary, (0.72 + pulse * 0.2) * alpha);
+            drawPoly(g as PixiGraphics, outer);
+            g.lineStyle(1.25, style.glow, 0.86 * alpha);
+            for (let index = 0; index < outer.length; index += 1) {
+              const point = outer[index];
+              const bend = outer[(index + 2) % outer.length];
+              g.moveTo(0, 0);
+              g.lineTo(point.x * 0.45, point.y * 0.45);
+              g.lineTo(bend.x * 0.72, bend.y * 0.72);
+            }
+            const sweepY = -halfHeight * 0.36 + halfHeight * 0.72 * progress;
+            g.lineStyle(2.2, style.glow, (0.34 + pulse * 0.34) * alpha);
+            g.moveTo(-halfWidth * 0.6, sweepY);
+            g.lineTo(halfWidth * 0.6, sweepY);
+          } else {
+            g.beginFill(style.primary, (0.08 + pulse * 0.08) * alpha);
+            drawPoly(g as PixiGraphics, geom.inset(0.9));
+            g.endFill();
+            for (let ringIndex = 0; ringIndex < 3; ringIndex += 1) {
+              const ringProgress = (progress + ringIndex * 0.23) % 1;
+              const ring = geom.inset(0.28 + ringProgress * 0.62);
+              g.lineStyle(
+                ringIndex === 0 ? 2.4 : 1.25,
+                ringIndex === 0 ? style.glow : style.primary,
+                (0.72 - ringProgress * 0.46) * alpha
+              );
+              drawPoly(g as PixiGraphics, ring);
+            }
+            g.lineStyle(1.2, style.glow, (0.46 + pulse * 0.32) * alpha);
+            g.moveTo(-halfWidth * 0.58, 0);
+            g.lineTo(halfWidth * 0.58, 0);
+            g.moveTo(0, -halfHeight * 0.58);
+            g.lineTo(0, halfHeight * 0.58);
+          }
+        }}
+      />
+    )];
+  }), [map.width, now, prefersReducedMotion, scenarioEventEffects, topGeomFor, visibleTiles]);
 
   // Deployment start zone: a cool pulsing tint so "click a glowing tile" is literally true.
   const startZoneOverlays = useMemo(() => {
@@ -8067,6 +8192,7 @@ export function BattlefieldStage({
       {plannedHighlights}
       {objectiveOverlays}
       {arrivalOverlays}
+      {scenarioEventOverlays}
       {startZoneOverlays}
     </>
   );

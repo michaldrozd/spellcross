@@ -11,6 +11,7 @@
   "tileDestroyed": "Zničené políčko na {{q}},{{r}}",
   "levelUp": "Level up: {{unit}} (úroveň {{level}})",
   "reinforcements": "Posily: {{count}} jednotiek nastúpilo za stranu {{faction}}",
+  "scriptedEvent": "Udalosť na bojisku: {{event}}",
   "objectiveCompleted": "Akcia misie: {{unit}} — {{action}} splnená",
   "genericEvent": "Udalosť bitky"
 }

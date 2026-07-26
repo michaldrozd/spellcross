@@ -62,7 +62,12 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
-import type { ArrivalEffect, AttackEffect, MovingUnit } from './components/BattlefieldStage.js';
+import type {
+  ArrivalEffect,
+  AttackEffect,
+  MovingUnit,
+  ScenarioEventVisualEffect
+} from './components/BattlefieldStage.js';
 import {
   combatEffectForShot,
   combatOutcomePresentationReady,
@@ -349,6 +354,10 @@ function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState)
       return i18n.t('log:levelUp', { unit: unitDisplayName(event.unitId, battleState), level: event.level });
     case 'reinforcements:arrived':
       return i18n.t('log:reinforcements', { count: event.unitIds.length, faction: faction(event.faction) });
+    case 'scenario:event':
+      return i18n.t('log:scriptedEvent', {
+        event: i18n.t(`battle:scriptedEvents.${event.messageKey}.title`)
+      });
     case 'objective:completed': {
       return i18n.t('log:objectiveCompleted', {
         unit: unitDisplayName(event.unitId, battleState),
@@ -610,6 +619,10 @@ const BattleView: React.FC<{
   const concealedTimelineIndexesRef = useRef(new Set<number>());
   attackEffectsRef.current = attackEffects;
   const [arrivalEffects, setArrivalEffects] = useState<ArrivalEffect[]>([]);
+  const [scenarioEventEffects, setScenarioEventEffects] = useState<ScenarioEventVisualEffect[]>([]);
+  const scenarioEventEffectsRef = useRef(scenarioEventEffects);
+  const presentTacticalEventsRef = useRef<(events: TriggeredTacticalEvent[]) => void>(() => undefined);
+  scenarioEventEffectsRef.current = scenarioEventEffects;
   // Movement animation state
   const [movingUnit, setMovingUnit] = useState<MovingUnit | null>(null);
   // Battlefield ambience bed for as long as this view is mounted; weather sets the mood.
@@ -704,6 +717,14 @@ const BattleView: React.FC<{
     }, 100);
     return () => window.clearInterval(timer);
   }, [arrivalEffects.length]);
+  useEffect(() => {
+    if (scenarioEventEffects.length === 0) return;
+    const timer = window.setInterval(() => {
+      const cutoff = Date.now() - 9000;
+      setScenarioEventEffects((effects) => effects.filter((effect) => effect.startTime >= cutoff));
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [scenarioEventEffects.length]);
   // Cancel any staged SFX timeouts when the battle view unmounts (e.g. retreat mid-Auto-Turn), so
   // gunfire/impact sounds don't play over the strategic screen.
   useEffect(() => () => {
@@ -881,6 +902,7 @@ const BattleView: React.FC<{
         setAttackEffects([]);
         concealedTimelineIndexesRef.current.clear();
         setArrivalEffects([]);
+        setScenarioEventEffects([]);
         setShowRanges(false);
         setTargetedEnemy(null);
         setPendingAttack(null);
@@ -914,6 +936,13 @@ const BattleView: React.FC<{
         killed: effect.killed,
         sourceVisible: effect.sourceVisible,
         targetVisible: effect.targetVisible,
+        startTime: effect.startTime
+      })),
+      activeScenarioEventEffects: () => scenarioEventEffectsRef.current.map((effect) => ({
+        id: effect.id,
+        kind: effect.kind,
+        coordinate: effect.coordinate,
+        faction: effect.faction,
         startTime: effect.startTime
       })),
       setAllianceVision: (coordinates: HexCoordinate[]) => {
@@ -1233,6 +1262,11 @@ const BattleView: React.FC<{
         actionPoints: objective.actionPoints,
         completed: isObjectiveMet(objective, battle)
       })),
+      scriptedEvents: () => structuredClone(battle.scenario.events ?? []),
+      tileAt: (q: number, r: number) => {
+        const tile = getTile({ q, r });
+        return tile ? structuredClone(tile) : null;
+      },
       replaceObjectives: (objectives: typeof battle.scenario.objectives) => {
         battle.scenario.objectives = structuredClone(objectives);
         battle.completedObjectiveIds = [];
@@ -1288,6 +1322,8 @@ const BattleView: React.FC<{
           coord: u.coordinate,
           orientation: u.orientation,
           ap: u.actionPoints,
+          health: u.currentHealth,
+          maxHealth: u.stats.maxHealth,
           morale: u.currentMorale,
           stance: u.stance,
           entrench: u.entrench ?? 0,
@@ -1319,6 +1355,21 @@ const BattleView: React.FC<{
         updateAllFactionsVision(battle.state);
         persist();
         return true;
+      },
+      runScriptedEventsAtRound: (round: number) => {
+        battle.state.round = Math.max(1, Math.floor(round));
+        battle.state.activeFaction = 'alliance';
+        const events = processTacticalEvents(campaign, bundle);
+        presentTacticalEventsRef.current(events);
+        persist();
+        return events.map((event) => ({
+          id: event.id,
+          units: event.units.length,
+          effects: event.effects.map((effect) => ({
+            kind: effect.kind,
+            coordinates: effect.coordinates
+          }))
+        }));
       },
       selectUnit: (unitId?: string) => {
         const target = unitId
@@ -1449,7 +1500,7 @@ const BattleView: React.FC<{
     return () => {
       delete devWindow.__battleControl;
     };
-  }, [battle.state, map.width, map.height]);
+  }, [battle.state, campaign, map.width, map.height]);
   const handleSelect = (unit: UnitInstance) => {
     if (battle.state.activeFaction !== 'alliance') return;
     if (unit.faction !== 'alliance') return;
@@ -1612,6 +1663,18 @@ const BattleView: React.FC<{
         startTime: startedAt
       })))
     ]);
+    setScenarioEventEffects((effects) => [
+      ...effects,
+      ...events.flatMap((event) => event.effects.flatMap((effect, effectIndex) => (
+        effect.coordinates.map((coordinate, coordinateIndex) => ({
+          id: `${event.id}:${effect.kind}:${effectIndex}:${coordinateIndex}:${startedAt}`,
+          kind: effect.kind,
+          coordinate,
+          faction: event.faction,
+          startTime: startedAt
+        }))
+      )))
+    ]);
     const event = events[0];
     const count = events.reduce((total, current) => total + current.units.length, 0);
     showPhaseNotice(
@@ -1620,10 +1683,16 @@ const BattleView: React.FC<{
       event.faction === 'otherSide' ? 'enemy' : 'alliance',
       4200
     );
+    const effectKinds = new Set(events.flatMap((current) => current.effects.map((effect) => effect.kind)));
     const arcaneArrival = ['portalSurge', 'nightAmbush', 'signalEaterAwakes', 'glassChoirMarches', 'ashCrownDescends']
       .includes(event.messageKey);
-    AudioManager.play(arcaneArrival ? 'magic' : 'objective');
+    AudioManager.play(
+      effectKinds.has('pressurePulse') ? 'magic'
+        : effectKinds.has('transformTerrain') ? 'explosion'
+          : arcaneArrival ? 'magic' : 'objective'
+    );
   };
+  presentTacticalEventsRef.current = presentTacticalEvents;
   const findBattleUnit = (unitId: string) => {
     for (const side of Object.values(battle.state.sides)) {
       const unit = side.units.get(unitId);
@@ -2565,6 +2634,7 @@ const BattleView: React.FC<{
             startZoneCoords={deployMode ? battle.startTiles : undefined}
             attackEffects={attackEffects}
             arrivalEffects={arrivalEffects}
+            scenarioEventEffects={scenarioEventEffects}
             movingUnit={movingUnit}
           />
         </React.Suspense>
@@ -3027,6 +3097,8 @@ const BattleView: React.FC<{
                         ? e.hit ? ' log-line-hit' : ' log-line-miss'
                         : e.kind === 'unit:defeated'
                           ? ' log-line-kill'
+                          : e.kind === 'scenario:event'
+                            ? ' log-line-alert'
                           : '';
                       return (
                         <div key={idx} className={`log-line${logTone}`}>{formatBattleEvent(e, battle.state)}</div>

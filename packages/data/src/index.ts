@@ -193,7 +193,31 @@ export type TacticalEventMessageKey =
   | 'ashCrownDescends'
   | 'wardBeaconSecured'
   | 'echoBatteryArrives'
-  | 'veilHeartManifests';
+  | 'veilHeartManifests'
+  | 'lanternArchiveRevealed'
+  | 'causewayWardBreaks'
+  | 'orchardMemoryPulse'
+  | 'thornRegulatorOpens';
+
+export type TacticalScenarioEventEffect =
+  | {
+      kind: 'revealObjective';
+      objective: TacticalObjective;
+    }
+  | {
+      kind: 'transformTerrain';
+      tiles: Array<{
+        coordinate: HexCoordinate;
+        tile: MapTile;
+      }>;
+    }
+  | {
+      kind: 'pressurePulse';
+      coordinates: HexCoordinate[];
+      targetFaction: FactionId;
+      healthDamage: number;
+      moraleDamage: number;
+    };
 
 export interface TacticalScenarioEvent {
   id: string;
@@ -204,6 +228,7 @@ export interface TacticalScenarioEvent {
   messageKey: TacticalEventMessageKey;
   faction: FactionId;
   reinforcements: ScenarioUnit[];
+  effects?: TacticalScenarioEventEffect[];
 }
 
 export interface TacticalScenario {
@@ -393,39 +418,6 @@ const scenarioUnitSchema = z.object({
   isKey: z.boolean().optional()
 });
 
-const tacticalScenarioEventSchema = z.object({
-  id: z.string(),
-  triggerRound: z.number().int().positive().optional(),
-  triggerEnemyRemaining: z.number().int().nonnegative().optional(),
-  triggerObjectiveId: z.string().optional(),
-  messageKey: z.enum([
-    'evacPursuit',
-    'rescueHunters',
-    'holdAssault',
-    'bridgeReserves',
-    'convoyIntercept',
-    'nightAmbush',
-    'portalSurge',
-    'signalEaterAwakes',
-    'glassChoirMarches',
-    'ashCrownDescends',
-    'wardBeaconSecured',
-    'echoBatteryArrives',
-    'veilHeartManifests'
-  ]),
-  triggerAfterEventId: z.string().optional(),
-  faction: z.enum(['alliance', 'otherSide']),
-  reinforcements: z.array(scenarioUnitSchema).min(1)
-}).superRefine((event, context) => {
-  if (event.triggerRound == null && event.triggerEnemyRemaining == null && !event.triggerObjectiveId) {
-    context.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'Tactical event requires a round, attrition, or objective trigger',
-      path: ['triggerRound']
-    });
-  }
-});
-
 const tacticalObjectiveSchema = z.object({
   id: z.string(),
   kind: z.enum(['eliminate', 'reach', 'protect', 'hold', 'interact']),
@@ -463,6 +455,78 @@ const tacticalObjectiveSchema = z.object({
   }
 });
 
+const tacticalScenarioEventEffectSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('revealObjective'),
+    objective: tacticalObjectiveSchema.refine((objective) => objective.optional === true, {
+      message: 'Revealed objectives must be optional',
+      path: ['optional']
+    })
+  }),
+  z.object({
+    kind: z.literal('transformTerrain'),
+    tiles: z.array(z.object({
+      coordinate: hexCoordinateSchema,
+      tile: mapTileSchema.refine((tile) => tile.passable, {
+        message: 'Terrain event replacements must remain passable',
+        path: ['passable']
+      })
+    })).min(1).max(12)
+  }),
+  z.object({
+    kind: z.literal('pressurePulse'),
+    coordinates: z.array(hexCoordinateSchema).min(1).max(12),
+    targetFaction: z.enum(['alliance', 'otherSide']),
+    healthDamage: z.number().int().min(1).max(30),
+    moraleDamage: z.number().int().min(0).max(30)
+  })
+]);
+
+const tacticalScenarioEventSchema = z.object({
+  id: z.string(),
+  triggerRound: z.number().int().positive().optional(),
+  triggerEnemyRemaining: z.number().int().nonnegative().optional(),
+  triggerObjectiveId: z.string().optional(),
+  messageKey: z.enum([
+    'evacPursuit',
+    'rescueHunters',
+    'holdAssault',
+    'bridgeReserves',
+    'convoyIntercept',
+    'nightAmbush',
+    'portalSurge',
+    'signalEaterAwakes',
+    'glassChoirMarches',
+    'ashCrownDescends',
+    'wardBeaconSecured',
+    'echoBatteryArrives',
+    'veilHeartManifests',
+    'lanternArchiveRevealed',
+    'causewayWardBreaks',
+    'orchardMemoryPulse',
+    'thornRegulatorOpens'
+  ]),
+  triggerAfterEventId: z.string().optional(),
+  faction: z.enum(['alliance', 'otherSide']),
+  reinforcements: z.array(scenarioUnitSchema),
+  effects: z.array(tacticalScenarioEventEffectSchema).min(1).optional()
+}).superRefine((event, context) => {
+  if (event.triggerRound == null && event.triggerEnemyRemaining == null && !event.triggerObjectiveId) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Tactical event requires a round, attrition, or objective trigger',
+      path: ['triggerRound']
+    });
+  }
+  if (event.reinforcements.length === 0 && !event.effects?.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Tactical event requires reinforcements or effects',
+      path: ['reinforcements']
+    });
+  }
+});
+
 const scenarioSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -486,6 +550,7 @@ const scenarioSchema = z.object({
     });
   }
   const objectiveIds = new Set(scenario.objectives.map((objective) => objective.id));
+  const revealedObjectiveIds = new Set<string>();
   const eventIds = new Set((scenario.events ?? []).map((event) => event.id));
   scenario.events?.forEach((event, index) => {
     if (event.triggerObjectiveId && !objectiveIds.has(event.triggerObjectiveId)) {
@@ -495,6 +560,54 @@ const scenarioSchema = z.object({
         path: ['events', index, 'triggerObjectiveId']
       });
     }
+    event.effects?.forEach((effect, effectIndex) => {
+      if (effect.kind === 'revealObjective') {
+        if (objectiveIds.has(effect.objective.id) || revealedObjectiveIds.has(effect.objective.id)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Duplicate revealed objective ${effect.objective.id}`,
+            path: ['events', index, 'effects', effectIndex, 'objective', 'id']
+          });
+        }
+        revealedObjectiveIds.add(effect.objective.id);
+        if (
+          effect.objective.target
+          && (
+            effect.objective.target.q >= scenario.map.width
+            || effect.objective.target.r >= scenario.map.height
+          )
+        ) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Revealed objective target ${effect.objective.target.q},${effect.objective.target.r} is outside the battlefield`,
+            path: ['events', index, 'effects', effectIndex, 'objective', 'target']
+          });
+        }
+        return;
+      }
+      const coordinates = effect.kind === 'transformTerrain'
+        ? effect.tiles.map((change) => change.coordinate)
+        : effect.coordinates;
+      const coordinateKeys = new Set<string>();
+      coordinates.forEach((coordinate, coordinateIndex) => {
+        const coordinateKey = `${coordinate.q},${coordinate.r}`;
+        if (coordinateKeys.has(coordinateKey)) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Duplicate event coordinate ${coordinateKey}`,
+            path: ['events', index, 'effects', effectIndex, effect.kind === 'transformTerrain' ? 'tiles' : 'coordinates', coordinateIndex]
+          });
+        }
+        coordinateKeys.add(coordinateKey);
+        if (coordinate.q >= scenario.map.width || coordinate.r >= scenario.map.height) {
+          context.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Event coordinate ${coordinateKey} is outside the battlefield`,
+            path: ['events', index, 'effects', effectIndex, effect.kind === 'transformTerrain' ? 'tiles' : 'coordinates', coordinateIndex]
+          });
+        }
+      });
+    });
     if (event.triggerAfterEventId && !eventIds.has(event.triggerAfterEventId)) {
       context.addIssue({
         code: z.ZodIssueCode.custom,

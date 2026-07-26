@@ -5,6 +5,7 @@ import type {
   TacticalEventMessageKey,
   TacticalObjective,
   TacticalScenario,
+  TacticalScenarioEventEffect,
   TerritorySpec,
   UnitData
 } from '@spellcross/data';
@@ -12,6 +13,7 @@ import { nanoid } from 'nanoid';
 
 import { experienceLevelFor } from '../simulation/combat/experience.js';
 import { createBattleState, createUnitInstance } from '../simulation/game-state.js';
+import { stanceForMorale } from '../simulation/systems/morale.js';
 import type { HexCoordinate, TacticalBattleState, UnitDefinition, UnitInstance } from '../simulation/types.js';
 import { isoDistance } from '../simulation/utils/grid-iso.js';
 import { coordinateKey } from '../simulation/utils/grid.js';
@@ -1386,11 +1388,31 @@ export function startBattleForTerritory(
   return activeBattle;
 }
 
+export type TriggeredTacticalEventEffect =
+  | {
+      kind: 'revealObjective';
+      objectiveId: string;
+      coordinates: HexCoordinate[];
+    }
+  | {
+      kind: 'transformTerrain';
+      coordinates: HexCoordinate[];
+    }
+  | {
+      kind: 'pressurePulse';
+      coordinates: HexCoordinate[];
+      affectedUnitIds: string[];
+      targetFaction: FactionId;
+      healthDamage: number;
+      moraleDamage: number;
+    };
+
 export interface TriggeredTacticalEvent {
   id: string;
   messageKey: TacticalEventMessageKey;
   faction: FactionId;
   units: Array<{ id: string; coordinate: HexCoordinate }>;
+  effects: TriggeredTacticalEventEffect[];
 }
 
 const reinforcementCountForBattle = (battle: ActiveBattle, sectorDifficulty = 1) => (
@@ -1440,6 +1462,59 @@ const openReinforcementCoordinate = (
   return candidates[0];
 };
 
+function applyTacticalEventEffects(
+  battle: ActiveBattle,
+  effects: TacticalScenarioEventEffect[]
+): TriggeredTacticalEventEffect[] {
+  const applied: TriggeredTacticalEventEffect[] = [];
+  for (const effect of effects) {
+    if (effect.kind === 'revealObjective') {
+      battle.scenario.objectives.push(structuredClone(effect.objective));
+      applied.push({
+        kind: effect.kind,
+        objectiveId: effect.objective.id,
+        coordinates: effect.objective.target ? [{ ...effect.objective.target }] : []
+      });
+      continue;
+    }
+    if (effect.kind === 'transformTerrain') {
+      for (const change of effect.tiles) {
+        battle.state.map.tiles[change.coordinate.r * battle.state.map.width + change.coordinate.q] = {
+          ...change.tile
+        };
+      }
+      applied.push({
+        kind: effect.kind,
+        coordinates: effect.tiles.map((change) => ({ ...change.coordinate }))
+      });
+      continue;
+    }
+
+    const pulseCoordinates = new Set(effect.coordinates.map(coordinateKey));
+    const affectedUnitIds: string[] = [];
+    for (const unit of battle.state.sides[effect.targetFaction].units.values()) {
+      if (
+        unit.stance === 'destroyed'
+        || unit.embarkedOn
+        || !pulseCoordinates.has(coordinateKey(unit.coordinate))
+      ) continue;
+      unit.currentHealth = Math.max(1, unit.currentHealth - effect.healthDamage);
+      unit.currentMorale = Math.max(0, unit.currentMorale - effect.moraleDamage);
+      unit.stance = stanceForMorale(unit.currentMorale);
+      affectedUnitIds.push(unit.id);
+    }
+    applied.push({
+      kind: effect.kind,
+      coordinates: effect.coordinates.map((coordinate) => ({ ...coordinate })),
+      affectedUnitIds,
+      targetFaction: effect.targetFaction,
+      healthDamage: effect.healthDamage,
+      moraleDamage: effect.moraleDamage
+    });
+  }
+  return applied;
+}
+
 export function processTacticalEvents(
   state: CampaignState,
   bundle: ContentBundle
@@ -1453,7 +1528,8 @@ export function processTacticalEvents(
   const enemyRemaining = livingUnitCount(battle, 'otherSide');
   const sectorDifficulty = state.territories.find((territory) => territory.id === battle.territoryId)?.difficulty ?? 1;
   const waveSize = reinforcementCountForBattle(battle, sectorDifficulty);
-  const arrivals: TriggeredTacticalEvent[] = [];
+  const triggeredEvents: TriggeredTacticalEvent[] = [];
+  let terrainChanged = false;
 
   for (const event of battle.scenario.events ?? []) {
     if (triggered.has(event.id)) continue;
@@ -1468,10 +1544,11 @@ export function processTacticalEvents(
 
     battle.triggeredEventIds.push(event.id);
     triggered.add(event.id);
+    const appliedEffects = applyTacticalEventEffects(battle, event.effects ?? []);
+    terrainChanged ||= appliedEffects.some((effect) => effect.kind === 'transformTerrain');
     const requestedUnits = event.faction === 'alliance'
       ? event.reinforcements
       : event.reinforcements.slice(0, waveSize);
-    if (requestedUnits.length === 0) continue;
 
     const occupied = new Set<string>();
     for (const side of Object.values(battle.state.sides)) {
@@ -1510,12 +1587,31 @@ export function processTacticalEvents(
         unitIds: spawnedUnits.map((unit) => unit.id),
         coordinates: spawnedUnits.map((unit) => unit.coordinate)
       });
-      arrivals.push({ id: event.id, messageKey: event.messageKey, faction: event.faction, units: spawnedUnits });
+    }
+    if (appliedEffects.length > 0) {
+      battle.state.timeline.push({
+        kind: 'scenario:event',
+        eventId: event.id,
+        messageKey: event.messageKey,
+        faction: event.faction,
+        effectKinds: appliedEffects.map((effect) => effect.kind)
+      });
+    }
+    if (spawnedUnits.length > 0 || appliedEffects.length > 0) {
+      triggeredEvents.push({
+        id: event.id,
+        messageKey: event.messageKey,
+        faction: event.faction,
+        units: spawnedUnits,
+        effects: appliedEffects
+      });
     }
   }
 
-  if (arrivals.length > 0) updateAllFactionsVision(battle.state);
-  return arrivals;
+  if (terrainChanged || triggeredEvents.some((event) => event.units.length > 0)) {
+    updateAllFactionsVision(battle.state);
+  }
+  return triggeredEvents;
 }
 
 const unitsOccupyingReachObjective = (objective: TacticalObjective, battle: ActiveBattle) => {

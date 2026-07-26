@@ -12,6 +12,7 @@ import type {
   TacticalObjective,
   TacticalScenario,
   TacticalScenarioEvent,
+  TacticalScenarioEventEffect,
   ScenarioUnit,
   TerrainType
 } from './index.js';
@@ -488,6 +489,11 @@ interface MissionDefinition {
   weather?: 'clear' | 'night' | 'fog';
 }
 
+interface AuthoredReserveEvent {
+  messageKey: TacticalScenarioEvent['messageKey'];
+  effects: TacticalScenarioEventEffect[];
+}
+
 function buildMission(cfg: CityConfig, g: Generated, rng: () => number): MissionDefinition {
   const id = cfg.territoryId;
   // objective anchor: a REACHABLE tile deep in enemy territory (top-right region)
@@ -610,12 +616,141 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
   return { objectives: objs, allianceForces, weather: cfg.weather };
 }
 
+function nearestCoordinates(candidates: Coord[], target: Coord, count: number) {
+  return candidates.slice().sort((left, right) => {
+    const leftDistance = Math.abs(left.q - target.q) + Math.abs(left.r - target.r);
+    const rightDistance = Math.abs(right.q - target.q) + Math.abs(right.r - target.r);
+    return leftDistance - rightDistance || left.r - right.r || left.q - right.q;
+  }).slice(0, count);
+}
+
+function openedTerrainTile(tile: MapTile): MapTile {
+  return {
+    terrain: 'road',
+    elevation: tile.elevation,
+    cover: 1,
+    movementCostModifier: 0.8,
+    passable: true,
+    providesVisionBoost: false,
+    blocksVision: false,
+    destructible: false
+  };
+}
+
+function terrainOpening(
+  g: Generated,
+  target: Coord,
+  count: number
+): NonNullable<TacticalScenarioEvent['effects']>[number] & { kind: 'transformTerrain' } {
+  const propTiles = new Set((g.map.props ?? []).flatMap((prop) => (
+    prop.tiles?.length ? prop.tiles : [prop.coordinate]
+  )).map((coordinate) => `${coordinate.q},${coordinate.r}`));
+  const reachableKeys = new Set(g.reachable.map((coordinate) => `${coordinate.q},${coordinate.r}`));
+  const candidates: Coord[] = [];
+  for (let r = 0; r < g.map.height; r += 1) {
+    for (let q = 0; q < g.map.width; q += 1) {
+      const tile = g.map.tiles[r * g.map.width + q];
+      if (!tile || propTiles.has(`${q},${r}`)) continue;
+      const touchesReachable = [
+        `${q - 1},${r}`, `${q + 1},${r}`, `${q},${r - 1}`, `${q},${r + 1}`,
+        `${q - 1},${r - 1}`, `${q + 1},${r + 1}`
+      ].some((candidate) => reachableKeys.has(candidate));
+      if (tile.terrain === 'structure' && !tile.passable && touchesReachable) candidates.push({ q, r });
+    }
+  }
+  const fallback = g.reachable.filter((coordinate) => {
+    const tile = g.map.tiles[coordinate.r * g.map.width + coordinate.q];
+    return tile?.blocksVision && !propTiles.has(`${coordinate.q},${coordinate.r}`);
+  });
+  const coordinates = nearestCoordinates(candidates.length ? candidates : fallback, target, count);
+  return {
+    kind: 'transformTerrain',
+    tiles: coordinates.map((coordinate) => ({
+      coordinate,
+      tile: openedTerrainTile(g.map.tiles[coordinate.r * g.map.width + coordinate.q])
+    }))
+  };
+}
+
+function authoredReserveEvent(
+  cfg: CityConfig,
+  g: Generated,
+  mission: MissionDefinition,
+  occupied: Set<string>
+): AuthoredReserveEvent | undefined {
+  const target = mission.objectives.find((objective) => objective.target)?.target
+    ?? { q: Math.floor(cfg.width / 2), r: Math.floor(cfg.height / 2) };
+  if (cfg.territoryId === 'sector-lantern-vault') {
+    const chartTarget = nearestCoordinates(g.reachable.filter((coordinate) => (
+      !occupied.has(`${coordinate.q},${coordinate.r}`)
+      && coordinate.q >= cfg.width * 0.45
+      && coordinate.r <= cfg.height * 0.52
+    )), { q: cfg.width * 0.58, r: cfg.height * 0.34 }, 1)[0] ?? target;
+    return {
+      messageKey: 'lanternArchiveRevealed',
+      effects: [{
+        kind: 'revealObjective',
+        objective: {
+          id: `${cfg.territoryId}-chart-cache`,
+          kind: 'reach',
+          description: 'Recover the survey team’s prism charts from the newly opened archive.',
+          target: chartTarget,
+          optional: true
+        }
+      }]
+    };
+  }
+  if (cfg.territoryId === 'sector-sable-causeway') {
+    return {
+      messageKey: 'causewayWardBreaks',
+      effects: [terrainOpening(g, target, 3)]
+    };
+  }
+  if (cfg.territoryId === 'sector-mnemonic-orchard') {
+    const pulseCoordinates = nearestCoordinates(g.reachable, target, 6);
+    return {
+      messageKey: 'orchardMemoryPulse',
+      effects: [{
+        kind: 'pressurePulse',
+        coordinates: pulseCoordinates,
+        targetFaction: 'alliance',
+        healthDamage: 12,
+        moraleDamage: 18
+      }]
+    };
+  }
+  if (cfg.territoryId === 'sector-thorn-engine') {
+    const opening = terrainOpening(g, target, 2);
+    const regulatorTarget = opening.tiles[0]?.coordinate
+      ?? nearestCoordinates(g.reachable, target, 1)[0]
+      ?? target;
+    return {
+      messageKey: 'thornRegulatorOpens',
+      effects: [
+        opening,
+        {
+          kind: 'revealObjective',
+          objective: {
+            id: `${cfg.territoryId}-stabilize-regulator`,
+            kind: 'reach',
+            description: 'Secure the exposed regulator before the next contraction.',
+            target: regulatorTarget,
+            optional: true
+          }
+        }
+      ]
+    };
+  }
+  return undefined;
+}
+
 function buildEvents(
   cfg: CityConfig,
   g: Generated,
   roster: string[],
   otherSideForces: ScenarioUnit[],
   allianceForces: ScenarioUnit[] | undefined,
+  mission: MissionDefinition,
   rng: () => number
 ): TacticalScenarioEvent[] {
   const occupied = new Set(
@@ -660,13 +795,15 @@ function buildEvents(
     'raid-night': 2,
     spire: 3
   };
+  const authoredReserve = authoredReserveEvent(cfg, g, mission, occupied);
   const reserveEvent: TacticalScenarioEvent = {
     id: `${cfg.territoryId}-reserve-wave`,
     triggerRound: roundByGameplay[cfg.gameplay],
     triggerEnemyRemaining: Math.max(1, Math.floor(otherSideForces.length / 3)),
-    messageKey: messageByGameplay[cfg.gameplay],
+    messageKey: authoredReserve?.messageKey ?? messageByGameplay[cfg.gameplay],
     faction: 'otherSide',
-    reinforcements
+    reinforcements,
+    effects: authoredReserve?.effects
   };
   const confluenceReward: TacticalScenarioEvent | undefined = cfg.territoryId === 'sector-ashen-confluence'
     ? {
@@ -741,7 +878,7 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
     coordinate: c
   }));
 
-  const events = buildEvents(cfg, g, roster, otherSideForces, mission.allianceForces, rng);
+  const events = buildEvents(cfg, g, roster, otherSideForces, mission.allianceForces, mission, rng);
 
   return {
     id: `city-${cfg.territoryId}`,

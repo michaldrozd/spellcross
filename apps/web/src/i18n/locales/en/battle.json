@@ -89,6 +89,22 @@
     "veilHeartManifests": {
       "title": "The Veil Heart Manifests",
       "detail": "The chamber contracts as the buried heart and its remembered guard take physical form: {{count}} contacts."
+    },
+    "lanternArchiveRevealed": {
+      "title": "Archive Signal Restored",
+      "detail": "The survey prism uncovers a sealed chart vault. A new recovery marker is live."
+    },
+    "causewayWardBreaks": {
+      "title": "Causeway Ward Fractures",
+      "detail": "The reserve surge overloads the ward-tower lattice, collapsing a blocked lane into a usable approach."
+    },
+    "orchardMemoryPulse": {
+      "title": "The Orchard Remembers",
+      "detail": "Root echoes discharge across the marked ground, battering exposed troops without lethal force."
+    },
+    "thornRegulatorOpens": {
+      "title": "Regulator Shell Opens",
+      "detail": "The engine sheds its outer shell. A new approach and optional stabilization point are exposed."
     }
   },
   "autoTurn": {

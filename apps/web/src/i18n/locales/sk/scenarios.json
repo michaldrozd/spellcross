@@ -198,7 +198,8 @@
     "brief": "Nájdite uviaznutý prieskumný tím a sprevádzajte jeho hviezdne mapy cez rúcajúce sa galérie observatória.",
     "objectives": {
       "sector-lantern-vault-reach": "Dopravte prieskumný tím a jeho mapy do evakuačnej zóny.",
-      "sector-lantern-vault-protect": "Udržte prieskumný tím nažive."
+      "sector-lantern-vault-protect": "Udržte prieskumný tím nažive.",
+      "sector-lantern-vault-chart-cache": "Voliteľné: získajte hranolové mapy z novootvoreného archívu."
     }
   },
   "city-sector-hollow-tide": {
@@ -239,7 +240,8 @@
     "brief": "Udržte riadiaci kruh regulátora, kým technici obrátia sťahovanie oboch frontov.",
     "objectives": {
       "sector-thorn-engine-hold": "Udržte riadiaci kruh regulátora na 3 kolá.",
-      "sector-thorn-engine-protect": "Udržte kapitána Alexandra nažive."
+      "sector-thorn-engine-protect": "Udržte kapitána Alexandra nažive.",
+      "sector-thorn-engine-stabilize-regulator": "Voliteľné: zaistite odkrytý regulátor pred ďalším stiahnutím."
     }
   },
   "city-sector-veil-heart": {

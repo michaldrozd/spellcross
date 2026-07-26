@@ -446,6 +446,91 @@ describe('data bundle', () => {
     expect(() => loadContentBundle(outsideMap)).toThrow(/is outside the battlefield/);
   });
 
+  it('validates scripted-event effects at the content boundary', () => {
+    const eventBundle = () => {
+      const bundle = structuredClone(starterBundle);
+      bundle.scenarios[0].events = [{
+        id: 'effect-only',
+        triggerRound: 2,
+        messageKey: 'lanternArchiveRevealed',
+        faction: 'alliance',
+        reinforcements: [],
+        effects: [{
+          kind: 'revealObjective',
+          objective: {
+            id: 'revealed-cache',
+            kind: 'reach',
+            description: 'Reach the cache.',
+            target: { q: 1, r: 1 },
+            optional: true
+          }
+        }]
+      }];
+      return bundle;
+    };
+    expect(() => loadContentBundle(eventBundle())).not.toThrow();
+
+    const empty = eventBundle();
+    empty.scenarios[0].events![0].effects = undefined;
+    expect(() => loadContentBundle(empty)).toThrow(/requires reinforcements or effects/);
+
+    const mandatoryReveal = eventBundle();
+    const reveal = mandatoryReveal.scenarios[0].events![0].effects![0];
+    if (reveal.kind !== 'revealObjective') throw new Error('expected reveal objective fixture');
+    reveal.objective.optional = false;
+    expect(() => loadContentBundle(mandatoryReveal)).toThrow(/Revealed objectives must be optional/);
+
+    const duplicateReveal = eventBundle();
+    const duplicate = structuredClone(duplicateReveal.scenarios[0].events![0].effects![0]);
+    duplicateReveal.scenarios[0].events![0].effects!.push(duplicate);
+    expect(() => loadContentBundle(duplicateReveal)).toThrow(/Duplicate revealed objective revealed-cache/);
+
+    const impassableTerrain = eventBundle();
+    impassableTerrain.scenarios[0].events![0].effects = [{
+      kind: 'transformTerrain',
+      tiles: [{
+        coordinate: { q: 1, r: 1 },
+        tile: {
+          terrain: 'structure',
+          elevation: 0,
+          cover: 3,
+          movementCostModifier: 1,
+          passable: false,
+          providesVisionBoost: false,
+          blocksVision: true
+        }
+      }]
+    }];
+    expect(() => loadContentBundle(impassableTerrain)).toThrow(/must remain passable/);
+
+    const duplicatePulse = eventBundle();
+    duplicatePulse.scenarios[0].events![0].effects = [{
+      kind: 'pressurePulse',
+      coordinates: [{ q: 2, r: 2 }, { q: 2, r: 2 }],
+      targetFaction: 'alliance',
+      healthDamage: 12,
+      moraleDamage: 18
+    }];
+    expect(() => loadContentBundle(duplicatePulse)).toThrow(/Duplicate event coordinate 2,2/);
+
+    const outsideTerrain = eventBundle();
+    outsideTerrain.scenarios[0].events![0].effects = [{
+      kind: 'transformTerrain',
+      tiles: [{
+        coordinate: { q: outsideTerrain.scenarios[0].map.width, r: 1 },
+        tile: {
+          terrain: 'road',
+          elevation: 0,
+          cover: 1,
+          movementCostModifier: 0.8,
+          passable: true,
+          providesVisionBoost: false
+        }
+      }]
+    }];
+    expect(() => loadContentBundle(outsideTerrain)).toThrow(/is outside the battlefield/);
+  });
+
   it('ships bridge demolitions as paid interactions and an optional Rift reserve action', () => {
     const bridgeheads = validatedStarterBundle.scenarios.filter((scenario) => (
       scenario.id === 'bridgehead'

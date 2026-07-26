@@ -198,7 +198,8 @@
     "brief": "Reach the trapped survey team and escort its star charts out through the collapsing observatory galleries.",
     "objectives": {
       "sector-lantern-vault-reach": "Bring the survey team and its charts to the extraction zone.",
-      "sector-lantern-vault-protect": "Keep the survey team alive."
+      "sector-lantern-vault-protect": "Keep the survey team alive.",
+      "sector-lantern-vault-chart-cache": "Optional: recover the prism charts from the newly opened archive."
     }
   },
   "city-sector-hollow-tide": {
@@ -239,7 +240,8 @@
     "brief": "Hold the regulator control ring while the field teams reverse the contraction pulling both fronts together.",
     "objectives": {
       "sector-thorn-engine-hold": "Hold the regulator control ring for 3 rounds.",
-      "sector-thorn-engine-protect": "Keep Captain Alexander alive."
+      "sector-thorn-engine-protect": "Keep Captain Alexander alive.",
+      "sector-thorn-engine-stabilize-regulator": "Optional: secure the exposed regulator before the next contraction."
     }
   },
   "city-sector-veil-heart": {

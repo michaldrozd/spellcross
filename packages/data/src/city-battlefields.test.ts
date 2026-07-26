@@ -206,4 +206,55 @@ describe('Per-city battlefields', () => {
     expect(reward?.reinforcements).toHaveLength(1);
     expect(reward?.reinforcements[0]?.definitionId).toBe('thunderhead-155');
   });
+
+  it('authors all three event-effect families across four reachable Act II operations', () => {
+    const expected = {
+      'sector-lantern-vault': ['revealObjective'],
+      'sector-sable-causeway': ['transformTerrain'],
+      'sector-mnemonic-orchard': ['pressurePulse'],
+      'sector-thorn-engine': ['transformTerrain', 'revealObjective']
+    } as const;
+    const scenariosWithEffects = cityScenarios.filter((scenario) => (
+      scenario.events?.some((event) => event.effects?.length)
+    ));
+    expect(scenariosWithEffects.map((scenario) => scenario.id).sort()).toEqual(
+      Object.keys(expected).map((territoryId) => `city-${territoryId}`).sort()
+    );
+
+    for (const [territoryId, effectKinds] of Object.entries(expected)) {
+      const scenario = scenariosWithEffects.find((candidate) => candidate.id === `city-${territoryId}`);
+      const event = scenario?.events?.find((candidate) => candidate.effects?.length);
+      expect(event?.effects?.map((effect) => effect.kind)).toEqual(effectKinds);
+      expect(event?.reinforcements.length).toBeGreaterThan(0);
+      for (const effect of event?.effects ?? []) {
+        if (effect.kind === 'revealObjective') {
+          expect(effect.objective.optional).toBe(true);
+          expect(scenario?.objectives.some((objective) => objective.id === effect.objective.id)).toBe(false);
+          expect(inBounds(
+            effect.objective.target?.q ?? -1,
+            effect.objective.target?.r ?? -1,
+            scenario?.map.width ?? 0,
+            scenario?.map.height ?? 0
+          )).toBe(true);
+        } else if (effect.kind === 'transformTerrain') {
+          expect(effect.tiles.length).toBeGreaterThan(0);
+          for (const change of effect.tiles) {
+            expect(inBounds(change.coordinate.q, change.coordinate.r, scenario?.map.width ?? 0, scenario?.map.height ?? 0)).toBe(true);
+            expect(change.tile.passable).toBe(true);
+            expect(scenario?.map.tiles[
+              change.coordinate.r * (scenario?.map.width ?? 0) + change.coordinate.q
+            ]?.terrain).not.toBe(change.tile.terrain);
+          }
+        } else {
+          expect(effect.coordinates).toHaveLength(6);
+          expect(effect.targetFaction).toBe('alliance');
+          expect(effect.healthDamage).toBe(12);
+          expect(effect.moraleDamage).toBe(18);
+          expect(effect.coordinates.every((coordinate) => (
+            inBounds(coordinate.q, coordinate.r, scenario?.map.width ?? 0, scenario?.map.height ?? 0)
+          ))).toBe(true);
+        }
+      }
+    }
+  });
 });

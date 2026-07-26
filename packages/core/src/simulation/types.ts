@@ -230,6 +230,13 @@ export type BattleEvent =
       coordinates: HexCoordinate[];
     }
   | {
+      kind: 'scenario:event';
+      eventId: string;
+      messageKey: string;
+      faction: FactionId;
+      effectKinds: Array<'revealObjective' | 'transformTerrain' | 'pressurePulse'>;
+    }
+  | {
       kind: 'objective:completed';
       objectiveId: string;
       unitId: string;

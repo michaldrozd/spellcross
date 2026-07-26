@@ -89,6 +89,22 @@
     "veilHeartManifests": {
       "title": "Srdce závoja sa zhmotňuje",
       "detail": "Komora sa sťahuje, kým pochované srdce a jeho zapamätaná stráž nadobúdajú fyzickú podobu: {{count}} kontaktov."
+    },
+    "lanternArchiveRevealed": {
+      "title": "Signál archívu obnovený",
+      "detail": "Prieskumný hranol odhalil zapečatený archív máp. Nový bod na ich získanie je aktívny."
+    },
+    "causewayWardBreaks": {
+      "title": "Ochrana hrádze praská",
+      "detail": "Nápor záloh preťažil sieť ochranných veží a zablokovaný pruh sa zrútil na priechodnú cestu."
+    },
+    "orchardMemoryPulse": {
+      "title": "Sad si spomína",
+      "detail": "Koreňové ozveny zasiahli označené územie a otrasú odkrytými jednotkami bez smrteľného účinku."
+    },
+    "thornRegulatorOpens": {
+      "title": "Plášť regulátora sa otvára",
+      "detail": "Stroj odhodil vonkajší plášť. Odkryl nový priechod aj voliteľný bod stabilizácie."
     }
   },
   "autoTurn": {

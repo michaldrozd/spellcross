@@ -9,6 +9,7 @@ import {
   buildingVisibilityPresentation,
   presentationTerrainAt,
   proceduralBuildingUnderlayTerrain,
+  scenarioEventVisualStyle,
   softShadowLayers,
   smoothTerrainNoise,
   terrainDestructionRevision,
@@ -67,6 +68,18 @@ import {
 const APC_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'];
 
 describe('terrain and fog presentation', () => {
+  it('gives objective, terrain, and pressure events distinct visual languages', () => {
+    const styles = [
+      scenarioEventVisualStyle('revealObjective'),
+      scenarioEventVisualStyle('transformTerrain'),
+      scenarioEventVisualStyle('pressurePulse')
+    ];
+
+    expect(new Set(styles.map((style) => style.primary)).size).toBe(3);
+    expect(new Set(styles.map((style) => style.glow)).size).toBe(3);
+    expect(styles.map((style) => style.shape)).toEqual(['beacon', 'fracture', 'rings']);
+  });
+
   it('keeps remembered buildings solid and muted while preserving visible-unit occlusion', () => {
     const rememberedBehindUnit = buildingVisibilityPresentation(false, 0.2);
     const rememberedAlone = buildingVisibilityPresentation(false, 1);
@@ -242,6 +255,16 @@ describe('terrain and fog presentation', () => {
     expect(after.has(6)).toBe(false);
     expect(after.get(7)).toBe(before.get(7));
     expect(tiles[6].terrain).toBe('plain');
+  });
+
+  it('invalidates memoized terrain when a scripted event transforms tiles', () => {
+    const timeline = [
+      { kind: 'round:started' },
+      { kind: 'scenario:event', effectKinds: ['revealObjective'] },
+      { kind: 'scenario:event', effectKinds: ['transformTerrain'] }
+    ];
+
+    expect(terrainDestructionRevision(timeline)).toBe(1);
   });
 
   it('does not infer a water underlay that the building footprint cannot render', () => {
