@@ -24,6 +24,36 @@ function localeServiceKeys(language: 'en' | 'sk') {
   return flatten(locale.service);
 }
 
+function localeOfficerKeys(language: 'en' | 'sk') {
+  const path = resolve(process.cwd(), `apps/web/src/i18n/locales/${language}/hq.json`);
+  const locale = JSON.parse(readFileSync(path, 'utf8')) as {
+    army: { officerProfiles: Record<string, unknown>; officerRanks: Record<string, unknown> };
+  };
+  const flatten = (value: unknown, prefix = ''): string[] => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [prefix];
+    return Object.entries(value)
+      .flatMap(([key, child]) => flatten(child, prefix ? `${prefix}.${key}` : key))
+      .sort();
+  };
+  return [
+    ...flatten(locale.army.officerProfiles, 'officerProfiles'),
+    ...flatten(locale.army.officerRanks, 'officerRanks')
+  ].sort();
+}
+
+function localeCampaignKeys(language: 'en' | 'sk') {
+  const path = resolve(process.cwd(), `apps/web/src/i18n/locales/${language}/campaign.json`);
+  const locale = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+  delete locale._note;
+  const flatten = (value: unknown, prefix = ''): string[] => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return [prefix];
+    return Object.entries(value)
+      .flatMap(([key, child]) => flatten(child, prefix ? `${prefix}.${key}` : key))
+      .sort();
+  };
+  return flatten(locale);
+}
+
 async function openLightInfantryService(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: /Army \(/i }).click();
   const infantryRow = page.locator('.unit-row').filter({ hasText: /Light Infantry/i }).first();
@@ -33,6 +63,11 @@ async function openLightInfantryService(page: import('@playwright/test').Page) {
 
 test('equipment doctrine copy has exact English and Slovak key parity', () => {
   expect(localeServiceKeys('en')).toEqual(localeServiceKeys('sk'));
+});
+
+test('officer corps copy has exact English and Slovak key parity', () => {
+  expect(localeOfficerKeys('en')).toEqual(localeOfficerKeys('sk'));
+  expect(localeCampaignKeys('en')).toEqual(localeCampaignKeys('sk'));
 });
 
 test('visible operation planner deploys only the confirmed roster and pins the commander', async ({ page }) => {
@@ -78,6 +113,82 @@ test('task-group assignment persists and drives planner quick selection', async 
   await page.waitForFunction(() => Boolean((window as any).__battleControl));
   expect(await page.evaluate(() => (window as any).__battleControl.deploymentRosterIds()))
     .toEqual(['captain', 'lance-1']);
+});
+
+test('officer recruits, attaches, promotes, persists and leads only when the carrier deploys', async ({ page }) => {
+  await startFreshCampaign(page, 1);
+  await page.evaluate(() => (window as any).__campaignControl.setMoney(10_000));
+  await page.getByRole('button', { name: /Army \(/i }).click();
+
+  let officerCard = page.locator('.officer-card').filter({ hasText: /Arden Kade/i });
+  await officerCard.getByRole('button', { name: /RECRUIT/i }).click();
+  const carrier = officerCard.getByRole('combobox', { name: /Assign carrier for Arden Kade/i });
+  await carrier.selectOption('lance-1');
+  await expect(carrier).toHaveValue('lance-1');
+  await expect(page.locator('.formation-card-alpha')).toContainText(/Field Adjutant.*Arden Kade/is);
+
+  await page.evaluate(() => (window as any).__campaignControl.setOfficerService('arden-kade', 6));
+  for (const rank of ['Line Lieutenant', 'Battle Captain', 'Sector Commandant']) {
+    await officerCard.getByRole('button', { name: new RegExp(`PROMOTE.*${rank}`, 'i') }).click();
+  }
+  await expect(officerCard).toContainText(/Sector Commandant/i);
+  await expect(page.locator('.formation-card-alpha')).toContainText(/6 \/ 10 assigned/i);
+
+  await page.reload();
+  await page.getByRole('button', { name: /Continue/i }).click();
+  await page.getByRole('button', { name: /Army \(/i }).click();
+  officerCard = page.locator('.officer-card').filter({ hasText: /Arden Kade/i });
+  await expect(officerCard).toContainText(/Sector Commandant/i);
+  await expect(officerCard.getByRole('combobox')).toHaveValue('lance-1');
+
+  await openParisPlanner(page);
+  const leader = page.locator('.deployment-unit').filter({ hasText: /FORMATION LEADER/i });
+  await expect(leader).toHaveCount(1);
+  await leader.click();
+  await expect(page.getByText(/COMMAND AURA OFFLINE/i)).toBeVisible();
+  await leader.click();
+  await expect(page.getByText(/COMMAND AURA OFFLINE/i)).toHaveCount(0);
+
+  const projected = await page.evaluate(() => (window as any).__campaignControl.effectiveUnitStats('recon-1'));
+  await page.getByRole('button', { name: /Confirm Deployment/i }).click();
+  await page.waitForFunction(() => Boolean((window as any).__battleControl));
+  expect(await page.evaluate(() => (window as any).__battleControl.deployedUnitStats('recon-1')))
+    .toEqual(projected);
+});
+
+test('destroyed officer carrier returns a fallen memorial, command shock and clean membership', async ({ page }) => {
+  await startFreshCampaign(page, 1);
+  await page.evaluate(() => (window as any).__campaignControl.setMoney(10_000));
+  await page.getByRole('button', { name: /Army \(/i }).click();
+  const officerCard = page.locator('.officer-card').filter({ hasText: /Mirela Sorn/i });
+  await officerCard.getByRole('button', { name: /RECRUIT/i }).click();
+  await officerCard.getByRole('combobox', { name: /Assign carrier for Mirela Sorn/i }).selectOption('lance-1');
+
+  await openParisPlanner(page);
+  await page.getByRole('button', { name: /Confirm Deployment/i }).click();
+  await page.waitForFunction(() => Boolean((window as any).__battleControl));
+  await page.evaluate(() => {
+    const control = (window as any).__battleControl;
+    const carrierId = control.deploymentTacticalId('lance-1');
+    control.destroyUnit(carrierId);
+    control.replaceObjectives([]);
+    control.killAllEnemies();
+    control.resolveOutcome();
+  });
+  await expect(page.locator('.battle-outcome-card.victory, .battle-outcome-overlay.victory')).toBeVisible();
+  await page.getByRole('button', { name: /Return to HQ/i }).click();
+  await page.waitForFunction(() => Boolean((window as any).__campaignControl));
+
+  const corps = await page.evaluate(() => (window as any).__campaignControl.officers());
+  expect(corps.find((officer: { profileId: string }) => officer.profileId === 'mirela-sorn'))
+    .toMatchObject({ status: 'fallen', assignedUnitId: undefined });
+  const formations = await page.evaluate(() => (window as any).__campaignControl.formations());
+  expect(formations.find((formation: { id: string }) => formation.id === 'alpha').units).not.toContain('lance-1');
+
+  await page.getByRole('button', { name: /Army \(/i }).click();
+  await expect(page.locator('.officer-card').filter({ hasText: /Mirela Sorn/i })).toContainText(/ROLL OF HONOUR/i);
+  await expect(page.locator('.formation-card-alpha')).toContainText(/5 \/ 6 assigned/i);
+  await expect(page.locator('.formation-card-alpha')).toContainText(/COMMAND SHOCK −8/i);
 });
 
 test('unit service and research switching execute their visible exact previews', async ({ page }) => {

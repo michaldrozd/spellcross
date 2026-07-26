@@ -75,6 +75,36 @@ describe('data bundle', () => {
     expect(() => loadContentBundle(shortCategory)).toThrow(/must define at least four packages/);
   });
 
+  it('ships six original officer profiles and four ordered command ranks', () => {
+    expect(starterBundle.officerProfiles).toHaveLength(6);
+    expect(new Set(starterBundle.officerProfiles.map((profile) => profile.id)).size).toBe(6);
+    expect(starterBundle.officerRanks).toHaveLength(4);
+    expect(starterBundle.officerRanks.map((rank) => rank.requiredService)).toEqual([0, 1, 3, 6]);
+    expect(starterBundle.officerRanks.map((rank) => rank.capacity)).toEqual([6, 7, 8, 10]);
+    for (const profile of starterBundle.officerProfiles) {
+      expect(profile.recruitCost).toBeGreaterThan(0);
+      expect(Object.values(profile.bonus).some((bonus) => bonus > 0), profile.id).toBe(true);
+    }
+  });
+
+  it('rejects duplicate officer profiles and malformed rank ladders', () => {
+    const duplicateProfile = structuredClone(starterBundle);
+    duplicateProfile.officerProfiles[1].id = duplicateProfile.officerProfiles[0].id;
+    expect(() => loadContentBundle(duplicateProfile)).toThrow(/Duplicate officer profile/);
+
+    const shortRanks = structuredClone(starterBundle);
+    shortRanks.officerRanks.pop();
+    expect(() => loadContentBundle(shortRanks)).toThrow(/exactly four officer ranks/);
+
+    const descendingCapacity = structuredClone(starterBundle);
+    descendingCapacity.officerRanks[2].capacity = 5;
+    expect(() => loadContentBundle(descendingCapacity)).toThrow(/capacity cannot decrease/);
+
+    const descendingService = structuredClone(starterBundle);
+    descendingService.officerRanks[2].requiredService = 0;
+    expect(() => loadContentBundle(descendingService)).toThrow(/service threshold must increase/);
+  });
+
   it('rejects fire modes for weapons a unit does not have', () => {
     const invalidBundle = structuredClone(starterBundle);
     invalidBundle.units[0].stats.weaponFireModes = { missing: 'indirect' };

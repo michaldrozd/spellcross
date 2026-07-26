@@ -4,6 +4,8 @@ import type {
   EquipmentCategory,
   EquipmentPackage,
   FactionId,
+  OfficerProfile,
+  OfficerRankSpec,
   TacticalEventMessageKey,
   TacticalObjective,
   TacticalScenario,
@@ -63,6 +65,18 @@ export interface Formation {
     defense: number;
     morale: number;
   };
+  commandShockUntilTurn?: number;
+}
+
+export type OfficerStatus = 'active' | 'fallen';
+
+export interface Officer {
+  id: string;
+  profileId: string;
+  rankId: string;
+  service: number;
+  status: OfficerStatus;
+  assignedUnitId?: string;
 }
 
 export interface ResearchState {
@@ -196,6 +210,7 @@ export interface CampaignState {
   army: ArmyUnit[];
   reserves: ArmyUnit[];
   formations: Formation[];
+  officers: Officer[];
   territories: TerritoryState[];
   operationResults: Record<string, CampaignOperationResult>;
   actTimeBonusesApplied: Record<string, number>;
@@ -221,6 +236,8 @@ export interface SerializedCampaignState {
   reserves: ArmyUnit[];
   // Optional for saves created before formation management was exposed at HQ.
   formations?: Formation[];
+  // Optional for saves created before the persistent officer corps.
+  officers?: Officer[];
   territories: TerritoryState[];
   // Optional for saves created before campaign outcome routes were introduced.
   operationResults?: Record<string, CampaignOperationResult>;
@@ -434,6 +451,9 @@ const STANDARD_FORMATIONS: Array<Omit<Formation, 'units'>> = [
   { id: 'charlie', name: 'Task Force Charlie', bonus: { attack: 2, defense: 0, morale: 1 } }
 ];
 
+export const COMMANDER_FREE_FORMATION_CAPACITY = 6;
+export const COMMAND_SHOCK_MORALE_PENALTY = 8;
+
 const createDefaultFormations = (army: ArmyUnit[]): Formation[] => STANDARD_FORMATIONS.map((formation, index) => ({
   ...structuredClone(formation),
   units: index === 0 ? army.map((unit) => unit.id) : []
@@ -463,7 +483,10 @@ const normalizeFormations = (formations: Formation[] | undefined, army: ArmyUnit
         attack: Number.isFinite(formation.bonus?.attack) ? formation.bonus.attack : 0,
         defense: Number.isFinite(formation.bonus?.defense) ? formation.bonus.defense : 0,
         morale: Number.isFinite(formation.bonus?.morale) ? formation.bonus.morale : 0
-      }
+      },
+      commandShockUntilTurn: Number.isFinite(formation.commandShockUntilTurn)
+        ? formation.commandShockUntilTurn
+        : undefined
     });
   }
 
@@ -478,6 +501,67 @@ const normalizeFormations = (formations: Formation[] | undefined, army: ArmyUnit
     normalized[0].units = army.map((unit) => unit.id);
   }
   return normalized;
+};
+
+const normalizeOfficers = (
+  bundle: ContentBundle,
+  officers: Officer[] | undefined,
+  army: ArmyUnit[]
+): Officer[] => {
+  const profiles = new Set(bundle.officerProfiles.map((profile) => profile.id));
+  const ranks = new Set(bundle.officerRanks.map((rank) => rank.id));
+  const defaultRankId = bundle.officerRanks[0]?.id;
+  const armyById = new Map(army.map((unit) => [unit.id, unit]));
+  const seenIds = new Set<string>();
+  const seenProfiles = new Set<string>();
+  const seenCarriers = new Set<string>();
+  const normalized: Officer[] = [];
+
+  for (const officer of officers ?? []) {
+    if (
+      !officer?.id
+      || seenIds.has(officer.id)
+      || !profiles.has(officer.profileId)
+      || seenProfiles.has(officer.profileId)
+      || !defaultRankId
+    ) continue;
+    seenIds.add(officer.id);
+    seenProfiles.add(officer.profileId);
+    const status: OfficerStatus = officer.status === 'fallen' ? 'fallen' : 'active';
+    const carrier = officer.assignedUnitId ? armyById.get(officer.assignedUnitId) : undefined;
+    const carrierDefinition = carrier
+      ? bundle.units.find((definition) => definition.id === carrier.definitionId)
+      : undefined;
+    const assignedUnitId = status === 'active'
+      && carrier
+      && carrierDefinition?.type !== 'hero'
+      && !seenCarriers.has(carrier.id)
+      ? carrier.id
+      : undefined;
+    if (assignedUnitId) seenCarriers.add(assignedUnitId);
+    normalized.push({
+      id: officer.id,
+      profileId: officer.profileId,
+      rankId: ranks.has(officer.rankId) ? officer.rankId : defaultRankId,
+      service: Math.max(0, Number.isFinite(officer.service) ? Math.floor(officer.service) : 0),
+      status,
+      assignedUnitId
+    });
+  }
+  return normalized;
+};
+
+const normalizeOfficerFormationAssignments = (officers: Officer[], formations: Formation[]) => {
+  const ledFormationIds = new Set<string>();
+  for (const officer of officers) {
+    if (officer.status !== 'active' || !officer.assignedUnitId) continue;
+    const formation = formations.find((candidate) => candidate.units.includes(officer.assignedUnitId!));
+    if (!formation || ledFormationIds.has(formation.id)) {
+      officer.assignedUnitId = undefined;
+      continue;
+    }
+    ledFormationIds.add(formation.id);
+  }
 };
 
 export function createCampaign(
@@ -526,6 +610,7 @@ export function createCampaign(
     army,
     reserves: [],
     formations: createDefaultFormations(army),
+    officers: [],
     territories,
     operationResults: {},
     actTimeBonusesApplied: {},
@@ -1002,11 +1087,280 @@ export function rearmUnit(
   return unit;
 }
 
+const officerProfileFor = (bundle: ContentBundle, profileId: string): OfficerProfile => {
+  const profile = bundle.officerProfiles.find((candidate) => candidate.id === profileId);
+  if (!profile) throw new CampaignError('officerProfileNotFound', 'Officer profile not found');
+  return profile;
+};
+
+const officerRankFor = (bundle: ContentBundle, rankId: string): OfficerRankSpec => {
+  const rank = bundle.officerRanks.find((candidate) => candidate.id === rankId);
+  if (!rank) throw new CampaignError('officerRankNotFound', 'Officer rank not found');
+  return rank;
+};
+
+export interface FormationCommandSummary {
+  formationId: string;
+  members: number;
+  capacity: number;
+  overstrength: boolean;
+  baseBonus: Formation['bonus'];
+  bonus: Formation['bonus'];
+  shockMoralePenalty: number;
+  officerId?: string;
+  officerProfileId?: string;
+  officerRankId?: string;
+  assignedUnitId?: string;
+}
+
+export function getFormationCommand(
+  state: CampaignState,
+  bundle: ContentBundle,
+  formationId: string
+): FormationCommandSummary {
+  const formation = state.formations.find((candidate) => candidate.id === formationId);
+  if (!formation) throw new CampaignError('formationNotFound', 'Formation not found');
+  const officer = state.officers.find((candidate) => (
+    candidate.status === 'active'
+    && candidate.assignedUnitId != null
+    && formation.units.includes(candidate.assignedUnitId)
+  ));
+  const profile = officer ? bundle.officerProfiles.find((candidate) => candidate.id === officer.profileId) : undefined;
+  const rank = officer ? bundle.officerRanks.find((candidate) => candidate.id === officer.rankId) : undefined;
+  const shockMoralePenalty = (formation.commandShockUntilTurn ?? 0) > state.turn
+    ? COMMAND_SHOCK_MORALE_PENALTY
+    : 0;
+  const bonus = {
+    attack: formation.bonus.attack + (profile?.bonus.attack ?? 0) + (rank?.bonus.attack ?? 0),
+    defense: formation.bonus.defense + (profile?.bonus.defense ?? 0) + (rank?.bonus.defense ?? 0),
+    morale: formation.bonus.morale
+      + (profile?.bonus.morale ?? 0)
+      + (rank?.bonus.morale ?? 0)
+      - shockMoralePenalty
+  };
+  const capacity = rank?.capacity ?? COMMANDER_FREE_FORMATION_CAPACITY;
+  return {
+    formationId: formation.id,
+    members: formation.units.length,
+    capacity,
+    overstrength: formation.units.length > capacity,
+    baseBonus: { ...formation.bonus },
+    bonus,
+    shockMoralePenalty,
+    officerId: officer?.id,
+    officerProfileId: officer?.profileId,
+    officerRankId: officer?.rankId,
+    assignedUnitId: officer?.assignedUnitId
+  };
+}
+
+export function recruitOfficer(
+  state: CampaignState,
+  bundle: ContentBundle,
+  profileId: string
+): Officer {
+  const profile = officerProfileFor(bundle, profileId);
+  if (state.officers.some((officer) => officer.profileId === profileId)) {
+    throw new CampaignError('officerAlreadyRecruited', 'Officer profile was already recruited');
+  }
+  if (state.resources.money < profile.recruitCost) {
+    throw new CampaignError('notEnoughMoneyOfficer', 'Not enough money to recruit officer');
+  }
+  const startingRank = bundle.officerRanks[0];
+  if (!startingRank) throw new CampaignError('officerRankNotFound', 'Officer rank not found');
+  const officer: Officer = {
+    id: profile.id,
+    profileId: profile.id,
+    rankId: startingRank.id,
+    service: 0,
+    status: 'active'
+  };
+  state.resources.money -= profile.recruitCost;
+  state.officers.push(officer);
+  state.log.push({
+    key: 'officerRecruited',
+    params: { officer: profile.name, officerId: profile.id, cost: profile.recruitCost }
+  });
+  return officer;
+}
+
+export interface OfficerPromotionQuote {
+  rankId: string;
+  cost: number;
+  requiredService: number;
+}
+
+export function getOfficerPromotion(
+  state: CampaignState,
+  bundle: ContentBundle,
+  officerId: string
+): OfficerPromotionQuote | undefined {
+  const officer = state.officers.find((candidate) => candidate.id === officerId);
+  if (!officer || officer.status !== 'active') return undefined;
+  const currentIndex = bundle.officerRanks.findIndex((rank) => rank.id === officer.rankId);
+  const nextRank = bundle.officerRanks[currentIndex + 1];
+  return nextRank
+    ? {
+        rankId: nextRank.id,
+        cost: nextRank.promotionCost,
+        requiredService: nextRank.requiredService
+      }
+    : undefined;
+}
+
+export function promoteOfficer(
+  state: CampaignState,
+  bundle: ContentBundle,
+  officerId: string
+): Officer {
+  const officer = state.officers.find((candidate) => candidate.id === officerId);
+  if (!officer || officer.status !== 'active') {
+    throw new CampaignError('officerUnavailable', 'Officer is not available');
+  }
+  const quote = getOfficerPromotion(state, bundle, officerId);
+  if (!quote) throw new CampaignError('officerAtMaximumRank', 'Officer is already at maximum rank');
+  if (officer.service < quote.requiredService) {
+    throw new CampaignError('officerServiceRequired', 'Officer needs more service before promotion', {
+      required: quote.requiredService,
+      current: officer.service
+    });
+  }
+  if (state.resources.money < quote.cost) {
+    throw new CampaignError('notEnoughMoneyPromotion', 'Not enough money to promote officer');
+  }
+  const profile = officerProfileFor(bundle, officer.profileId);
+  const rank = officerRankFor(bundle, quote.rankId);
+  state.resources.money -= quote.cost;
+  officer.rankId = rank.id;
+  state.log.push({
+    key: 'officerPromoted',
+    params: {
+      officer: profile.name,
+      officerId: profile.id,
+      rank: rank.name,
+      rankId: rank.id,
+      cost: quote.cost
+    }
+  });
+  state.popups?.push({
+    turn: state.turn,
+    key: 'officerPromoted',
+    params: { officer: profile.name, officerId: profile.id, rank: rank.name, rankId: rank.id },
+    kind: 'reward'
+  });
+  return officer;
+}
+
+export function assignOfficer(
+  state: CampaignState,
+  bundle: ContentBundle,
+  officerId: string,
+  unitId?: string
+): Officer {
+  const officer = state.officers.find((candidate) => candidate.id === officerId);
+  if (!officer || officer.status !== 'active') {
+    throw new CampaignError('officerUnavailable', 'Officer is not available');
+  }
+  const previousFormation = officer.assignedUnitId
+    ? state.formations.find((formation) => formation.units.includes(officer.assignedUnitId!))
+    : undefined;
+  if (!unitId) {
+    if (previousFormation && previousFormation.units.length > COMMANDER_FREE_FORMATION_CAPACITY) {
+      throw new CampaignError(
+        'officerAssignmentWouldExceedCapacity',
+        'Reduce the task group before standing down its officer'
+      );
+    }
+    officer.assignedUnitId = undefined;
+    state.log.push({
+      key: 'officerStoodDown',
+      params: { officer: officerProfileFor(bundle, officer.profileId).name, officerId: officer.profileId }
+    });
+    return officer;
+  }
+  if (officer.assignedUnitId === unitId) {
+    throw new CampaignError('officerAlreadyAssigned', 'Officer is already attached to this unit');
+  }
+  const unit = state.army.find((candidate) => candidate.id === unitId);
+  if (!unit || (unit.availableOnTurn ?? 0) > state.turn) {
+    throw new CampaignError('officerCarrierUnavailable', 'Officer carrier is not ready in the field army');
+  }
+  const definition = findUnitDef(bundle, unit.definitionId);
+  if (definition.type === 'hero') {
+    throw new CampaignError('officerCarrierHero', 'Hero units cannot carry an officer');
+  }
+  const targetFormation = state.formations.find((formation) => formation.units.includes(unit.id));
+  if (!targetFormation) {
+    throw new CampaignError('officerCarrierUnassigned', 'Officer carrier must belong to a task group');
+  }
+  if (state.officers.some((candidate) => (
+    candidate.id !== officer.id
+    && candidate.status === 'active'
+    && candidate.assignedUnitId === unit.id
+  ))) {
+    throw new CampaignError('officerCarrierOccupied', 'Unit already carries an officer');
+  }
+  if (state.officers.some((candidate) => (
+    candidate.id !== officer.id
+    && candidate.status === 'active'
+    && candidate.assignedUnitId != null
+    && targetFormation.units.includes(candidate.assignedUnitId)
+  ))) {
+    throw new CampaignError('formationAlreadyLed', 'Task group already has an officer');
+  }
+  if (
+    previousFormation
+    && previousFormation.id !== targetFormation.id
+    && previousFormation.units.length > COMMANDER_FREE_FORMATION_CAPACITY
+  ) {
+    throw new CampaignError(
+      'officerAssignmentWouldExceedCapacity',
+      'Reduce the former task group before reassigning its officer'
+    );
+  }
+  const rank = officerRankFor(bundle, officer.rankId);
+  if (targetFormation.units.length > rank.capacity) {
+    throw new CampaignError('formationCapacityExceeded', 'Task group exceeds this officer rank capacity', {
+      members: targetFormation.units.length,
+      capacity: rank.capacity
+    });
+  }
+  officer.assignedUnitId = unit.id;
+  state.log.push({
+    key: 'officerAssigned',
+    params: {
+      officer: officerProfileFor(bundle, officer.profileId).name,
+      officerId: officer.profileId,
+      formation: targetFormation.name,
+      formationId: targetFormation.id,
+      unitId: unit.id
+    }
+  });
+  return officer;
+}
+
 export function dismissUnit(state: CampaignState, bundle: ContentBundle, unitId: string) {
   const unit = state.army.find((u) => u.id === unitId);
   // The hero anchors evac escort/protect objectives; without him those sectors silently degrade to
   // a full-wipe-only win, so he can't be dismissed.
   if (!unit || findUnitDef(bundle, unit.definitionId).type === 'hero') return;
+  const officer = state.officers.find((candidate) => (
+    candidate.status === 'active' && candidate.assignedUnitId === unitId
+  ));
+  const formation = state.formations.find((candidate) => candidate.units.includes(unitId));
+  if (officer && formation && formation.units.length - 1 > COMMANDER_FREE_FORMATION_CAPACITY) {
+    throw new CampaignError(
+      'officerAssignmentWouldExceedCapacity',
+      'Reduce the task group before dismissing its officer carrier'
+    );
+  }
+  if (officer) {
+    officer.assignedUnitId = undefined;
+    state.log.push({
+      key: 'officerStoodDown',
+      params: { officer: officerProfileFor(bundle, officer.profileId).name, officerId: officer.profileId }
+    });
+  }
   state.army = state.army.filter((u) => u.id !== unitId);
   state.formations = state.formations.map((f) => ({
     ...f,
@@ -1014,13 +1368,37 @@ export function dismissUnit(state: CampaignState, bundle: ContentBundle, unitId:
   }));
 }
 
-export function setUnitFormation(state: CampaignState, unitId: string, formationId?: string) {
+export function setUnitFormation(
+  state: CampaignState,
+  unitId: string,
+  formationId?: string,
+  bundle?: ContentBundle
+) {
   if (!state.army.some((unit) => unit.id === unitId)) {
     throw new CampaignError('unitNotInArmy', 'Unit is not available in the field army');
   }
   const normalized = normalizeFormations(state.formations, state.army);
   if (formationId && !normalized.some((formation) => formation.id === formationId)) {
     throw new CampaignError('formationNotFound', 'Formation not found');
+  }
+  const currentFormation = normalized.find((formation) => formation.units.includes(unitId));
+  if (currentFormation?.id === formationId) return;
+  if (state.officers.some((officer) => (
+    officer.status === 'active' && officer.assignedUnitId === unitId
+  ))) {
+    throw new CampaignError('officerCarrierLocked', 'Reassign the officer before moving its carrier');
+  }
+  if (formationId) {
+    const target = normalized.find((formation) => formation.id === formationId)!;
+    const capacity = bundle
+      ? getFormationCommand({ ...state, formations: normalized }, bundle, formationId).capacity
+      : COMMANDER_FREE_FORMATION_CAPACITY;
+    if (target.units.length >= capacity) {
+      throw new CampaignError('formationCapacityExceeded', 'Task group has reached command capacity', {
+        members: target.units.length,
+        capacity
+      });
+    }
   }
   state.formations = normalized.map((formation) => ({
     ...formation,
@@ -1217,12 +1595,22 @@ const buildEffectiveArmyUnitDefinition = (
   state: CampaignState,
   bundle: ContentBundle,
   roster: ArmyUnit,
-  equipment: ArmyUnit['equipment'] = roster.equipment
+  equipment: ArmyUnit['equipment'] = roster.equipment,
+  deployedRosterIds?: ReadonlySet<string>
 ) => {
   const baseDefinition = findUnitDef(bundle, roster.definitionId);
   const tierAdjusted = applyTierAdjustments(baseDefinition, roster.tier);
   const formation = state.formations.find((candidate) => candidate.units.includes(roster.id));
-  const withFormation = applyFormationBonus(tierAdjusted, formation?.bonus);
+  const command = formation ? getFormationCommand(state, bundle, formation.id) : undefined;
+  const commandBonus = command
+    ? deployedRosterIds && command.assignedUnitId && !deployedRosterIds.has(command.assignedUnitId)
+      ? {
+          ...command.baseBonus,
+          morale: command.baseBonus.morale - command.shockMoralePenalty
+        }
+      : command.bonus
+    : undefined;
+  const withFormation = applyFormationBonus(tierAdjusted, commandBonus);
   const withResearch = applyResearchBonus(state, bundle, withFormation);
   const packages = equipmentPackagesForLoadout(state, bundle, baseDefinition, equipment);
   return clampCampaignUnitStats(applyEquipmentPackages(withResearch, packages));
@@ -1515,11 +1903,14 @@ const buildArmySide = (
     rosterUnits = [...objectiveUnits, ...rosterUnits.filter((unit) => !objectiveUnitIds.has(unit.id))];
   }
   const tacticalUnits: Array<{ definition: UnitDefinition; coordinate: HexCoordinate; rosterId: string; experience: number }> = [];
+  const deployedRosterIds = new Set(
+    rosterUnits.slice(0, startTiles.length).map((roster) => roster.id)
+  );
 
   for (let i = 0; i < Math.min(startTiles.length, rosterUnits.length); i++) {
     const roster = rosterUnits[i];
     tacticalUnits.push({
-      definition: buildEffectiveArmyUnitDefinition(state, bundle, roster),
+      definition: buildEffectiveArmyUnitDefinition(state, bundle, roster, roster.equipment, deployedRosterIds),
       coordinate: startTiles[i],
       rosterId: roster.id,
       experience: roster.experience
@@ -2155,6 +2546,91 @@ const reconcileRosterProgression = (
   state.popups?.push({ turn: state.turn, key: 'unitPromoted', params, kind: 'reward' });
 };
 
+type OfficerLossRecord = {
+  officer: Officer;
+  profile: OfficerProfile;
+  formation?: Formation;
+};
+
+const reconcileDeployedOfficers = (
+  state: CampaignState,
+  bundle: ContentBundle,
+  battle: ActiveBattle,
+  lostRosterIds: ReadonlySet<string>,
+  awardService: boolean
+): OfficerLossRecord[] => {
+  const losses: OfficerLossRecord[] = [];
+  for (const officer of state.officers) {
+    if (officer.status !== 'active' || !officer.assignedUnitId) continue;
+    const tacticalId = battle.deployment[officer.assignedUnitId];
+    if (!tacticalId) continue;
+    const tactical = battle.state.sides.alliance.units.get(tacticalId);
+    if (lostRosterIds.has(officer.assignedUnitId)) {
+      const formation = state.formations.find((candidate) => candidate.units.includes(officer.assignedUnitId!));
+      officer.status = 'fallen';
+      officer.assignedUnitId = undefined;
+      if (formation) {
+        formation.commandShockUntilTurn = Math.max(formation.commandShockUntilTurn ?? 0, state.turn + 2);
+      }
+      losses.push({ officer, profile: officerProfileFor(bundle, officer.profileId), formation });
+      continue;
+    }
+    if (!awardService || !tactical || tactical.stance === 'destroyed' || tactical.currentHealth <= 0) continue;
+    officer.service += 1;
+    const promotion = getOfficerPromotion(state, bundle, officer.id);
+    if (promotion && officer.service === promotion.requiredService) {
+      const rank = officerRankFor(bundle, promotion.rankId);
+      const profile = officerProfileFor(bundle, officer.profileId);
+      state.log.push({
+        key: 'officerPromotionReady',
+        params: {
+          officer: profile.name,
+          officerId: profile.id,
+          rank: rank.name,
+          rankId: rank.id,
+          service: officer.service
+        }
+      });
+    }
+  }
+  return losses;
+};
+
+const reconcileFormationCasualties = (
+  state: CampaignState,
+  losses: OfficerLossRecord[]
+) => {
+  const armyIds = new Set(state.army.map((unit) => unit.id));
+  const claimedUnitIds = new Set<string>();
+  for (const formation of state.formations) {
+    formation.units = formation.units.filter((unitId) => {
+      if (!armyIds.has(unitId) || claimedUnitIds.has(unitId)) return false;
+      claimedUnitIds.add(unitId);
+      return true;
+    });
+  }
+
+  for (const loss of losses) {
+    const formation = loss.formation
+      ? state.formations.find((candidate) => candidate.id === loss.formation?.id)
+      : undefined;
+    const released = formation && formation.units.length > COMMANDER_FREE_FORMATION_CAPACITY
+      ? formation.units.splice(COMMANDER_FREE_FORMATION_CAPACITY)
+      : [];
+    const params = {
+      officer: loss.profile.name,
+      officerId: loss.profile.id,
+      formation: formation?.name ?? '',
+      formationId: formation?.id ?? '',
+      moralePenalty: COMMAND_SHOCK_MORALE_PENALTY,
+      released: released.length,
+      shockThroughTurn: Math.max(state.turn, (formation?.commandShockUntilTurn ?? state.turn + 1) - 1)
+    };
+    state.log.push({ key: 'officerLost', params });
+    state.popups?.push({ turn: state.turn, key: 'officerLost', params, kind: 'loss' });
+  }
+};
+
 export function getBattleRetreatForecast(
   state: CampaignState,
   bundle: ContentBundle
@@ -2191,6 +2667,7 @@ export function retreatFromBattle(state: CampaignState, bundle: ContentBundle) {
   const forecast = getBattleRetreatForecast(state, bundle);
   const lostUnitIds = new Set(forecast.lostUnitIds);
   const recoveredHeroIds = new Set(forecast.recoveredHeroIds);
+  const officerLosses = reconcileDeployedOfficers(state, bundle, battle, lostUnitIds, false);
   // Preserve never-deployed (benched) units — they didn't fight, so a retreat can't lose them.
   const deployedRosterIds = new Set(Object.keys(battle.deployment));
   const updatedArmy: ArmyUnit[] = [];
@@ -2212,6 +2689,7 @@ export function retreatFromBattle(state: CampaignState, bundle: ContentBundle) {
     updatedArmy.push(roster);
   }
   state.army = updatedArmy;
+  reconcileFormationCasualties(state, officerLosses);
   state.activeBattle = undefined;
   state.log.push({ key: 'battleRetreated' });
 }
@@ -2232,6 +2710,7 @@ export function applyBattleOutcome(
   // part of state.army, so it is naturally excluded.
   const deployedRosterIds = new Set(Object.keys(battle.deployment));
   const survivors: ArmyUnit[] = [];
+  const lostRosterIds = new Set<string>();
   for (const roster of state.army) {
     if (!deployedRosterIds.has(roster.id)) {
       survivors.push(roster);
@@ -2244,6 +2723,7 @@ export function applyBattleOutcome(
     }
     const hero = findUnitDef(bundle, roster.definitionId).type === 'hero';
     if ((unit.stance === 'destroyed' || unit.currentHealth <= 0) && !hero) {
+      lostRosterIds.add(roster.id);
       continue;
     }
     roster.currentHealth = hero && (unit.stance === 'destroyed' || unit.currentHealth <= 0)
@@ -2253,7 +2733,9 @@ export function applyBattleOutcome(
     survivors.push(roster);
   }
 
+  const officerLosses = reconcileDeployedOfficers(state, bundle, battle, lostRosterIds, true);
   state.army = survivors;
+  reconcileFormationCasualties(state, officerLosses);
   const spec = findCampaignSpec(bundle, state.campaignId);
   const routeSourceIds = routeSourceIdsFor(spec);
   if (routeSourceIds.has(territory.id)) {
@@ -2350,6 +2832,7 @@ export function serializeCampaignState(state: CampaignState): SerializedCampaign
     army: structuredClone(state.army),
     reserves: structuredClone(state.reserves),
     formations: structuredClone(state.formations),
+    officers: structuredClone(state.officers),
     territories: structuredClone(state.territories),
     ...(Object.keys(state.operationResults).length > 0
       ? { operationResults: { ...state.operationResults } }
@@ -2405,6 +2888,9 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
 
   const army = structuredClone(snapshot.army).map(normalizeArmyUnitProgression);
   const reserves = structuredClone(snapshot.reserves).map(normalizeArmyUnitProgression);
+  const formations = normalizeFormations(snapshot.formations, army);
+  const officers = normalizeOfficers(bundle, snapshot.officers, army);
+  normalizeOfficerFormationAssignments(officers, formations);
   const completedResearch = new Set(snapshot.research.completed);
   const researchTopics = new Map(bundle.research.map((topic) => [topic.id, topic]));
   const pausedResearch = Object.fromEntries(Object.entries(snapshot.research.paused ?? {}).flatMap(([topicId, remaining]) => {
@@ -2466,7 +2952,8 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     resources: { ...snapshot.resources },
     army,
     reserves,
-    formations: normalizeFormations(snapshot.formations, army),
+    formations,
+    officers,
     territories: [
       ...spec.territories.map((territorySpec) => {
         const saved = savedTerritories.get(territorySpec.id);

@@ -1,6 +1,7 @@
 import './styles.css';
 import {
   applyBattleOutcome,
+  assignOfficer,
   calculateAttackRange,
   calculateHitChance,
   CampaignError,
@@ -21,6 +22,9 @@ import {
   getEnemyActionBudget,
   getEnemyDecisionBudget,
   getEnemyDifficultyTier,
+  getEffectiveArmyUnitDefinition,
+  getFormationCommand,
+  getOfficerPromotion,
   getUnitEquipmentOptions,
   getOperationDeploymentPlan,
   getUnitRearmOptions,
@@ -40,8 +44,10 @@ import {
   projectUnitEquipment,
   projectUnitService,
   pauseResearch,
+  promoteOfficer,
   reactionThreats,
   rearmUnit,
+  recruitOfficer,
   recruitUnit,
   dismissUnit,
   refillUnit,
@@ -297,6 +303,18 @@ function localizedEquipmentName(equipmentId: string, fallback: string) {
 }
 function localizedEquipmentDescription(equipmentId: string, fallback: string) {
   return i18n.t(`hq:service.packages.${equipmentId}.description`, { defaultValue: fallback });
+}
+function localizedOfficerName(profileId: string, fallback: string) {
+  return i18n.t(`hq:army.officerProfiles.${profileId}.name`, { defaultValue: fallback });
+}
+function localizedOfficerCallsign(profileId: string, fallback: string) {
+  return i18n.t(`hq:army.officerProfiles.${profileId}.callsign`, { defaultValue: fallback });
+}
+function localizedOfficerDescription(profileId: string, fallback: string) {
+  return i18n.t(`hq:army.officerProfiles.${profileId}.description`, { defaultValue: fallback });
+}
+function localizedOfficerRank(rankId: string, fallback: string) {
+  return i18n.t(`hq:army.officerRanks.${rankId}`, { defaultValue: fallback });
 }
 
 type EquipmentPreviewStat = 'armor' | 'morale' | 'mobility' | 'vision' | 'weaponPower' | 'range' | 'accuracy';
@@ -1354,6 +1372,7 @@ const BattleView: React.FC<{
         return true;
       },
       deploymentRosterIds: () => Object.keys(battle.deployment),
+      deploymentTacticalId: (rosterId: string) => battle.deployment[rosterId] ?? null,
       deployedUnitStats: (rosterId: string) => {
         const tacticalId = battle.deployment[rosterId];
         const unit = tacticalId ? battle.state.sides.alliance.units.get(tacticalId) : undefined;
@@ -3490,6 +3509,16 @@ export function App() {
         mutate((state) => { state.resources.money = Math.max(0, amount); });
         return true;
       },
+      setOfficerService: (officerId: string, service: number) => {
+        let updated = false;
+        mutate((state) => {
+          const officer = state.officers.find((candidate) => candidate.id === officerId);
+          if (!officer) return;
+          officer.service = Math.max(0, Math.floor(service));
+          updated = true;
+        });
+        return updated;
+      },
       setTerritoryAvailable: (territoryId: string) => {
         let updated = false;
         mutate((state) => {
@@ -3522,8 +3551,17 @@ export function App() {
       })),
       formations: () => campaign.formations.map((formation) => ({
         id: formation.id,
-        units: [...formation.units]
+        units: [...formation.units],
+        command: getFormationCommand(campaign, bundle, formation.id)
       })),
+      officers: () => campaign.officers.map((officer) => ({ ...officer })),
+      effectiveUnitStats: (unitId: string) => {
+        try {
+          return structuredClone(getEffectiveArmyUnitDefinition(campaign, bundle, unitId).stats);
+        } catch {
+          return null;
+        }
+      },
       research: () => ({
         active: campaign.research.inProgress ? { ...campaign.research.inProgress } : null,
         paused: { ...campaign.research.paused },
@@ -3659,6 +3697,78 @@ export function App() {
   };
   const armyUnits = campaign.army.map(toArmyUnit);
   const reserveUnits = campaign.reserves.map(toArmyUnit);
+  const formations = campaign.formations.map((formation) => {
+    const command = getFormationCommand(campaign, bundle, formation.id);
+    const officer = command.officerId
+      ? campaign.officers.find((candidate) => candidate.id === command.officerId)
+      : undefined;
+    const profile = officer
+      ? bundle.officerProfiles.find((candidate) => candidate.id === officer.profileId)
+      : undefined;
+    const rank = officer
+      ? bundle.officerRanks.find((candidate) => candidate.id === officer.rankId)
+      : undefined;
+    return {
+      id: formation.id,
+      name: formation.name,
+      units: [...formation.units],
+      baseBonus: command.baseBonus,
+      bonus: command.bonus,
+      capacity: command.capacity,
+      overstrength: command.overstrength,
+      shockMoralePenalty: command.shockMoralePenalty,
+      commandShockUntilTurn: formation.commandShockUntilTurn,
+      officerId: officer?.id,
+      officerName: profile ? localizedOfficerName(profile.id, profile.name) : undefined,
+      officerRankName: rank ? localizedOfficerRank(rank.id, rank.name) : undefined,
+      assignedUnitId: command.assignedUnitId
+    };
+  });
+  const officers = bundle.officerProfiles.map((profile) => {
+    const officer = campaign.officers.find((candidate) => candidate.profileId === profile.id);
+    const rank = officer
+      ? bundle.officerRanks.find((candidate) => candidate.id === officer.rankId)
+      : undefined;
+    const promotion = officer ? getOfficerPromotion(campaign, bundle, officer.id) : undefined;
+    const nextRank = promotion
+      ? bundle.officerRanks.find((candidate) => candidate.id === promotion.rankId)
+      : undefined;
+    const assignedUnit = officer?.assignedUnitId
+      ? armyUnits.find((candidate) => candidate.id === officer.assignedUnitId)
+      : undefined;
+    const assignedFormation = formations.find((formation) => formation.units.includes(officer?.assignedUnitId ?? ''));
+    return {
+      id: officer?.id ?? profile.id,
+      profileId: profile.id,
+      name: localizedOfficerName(profile.id, profile.name),
+      callsign: localizedOfficerCallsign(profile.id, profile.callsign),
+      description: localizedOfficerDescription(profile.id, profile.description),
+      recruitCost: profile.recruitCost,
+      bonus: { ...profile.bonus },
+      status: officer?.status ?? 'available' as const,
+      rankId: rank?.id,
+      rankName: rank ? localizedOfficerRank(rank.id, rank.name) : undefined,
+      capacity: rank?.capacity,
+      service: officer?.service ?? 0,
+      assignedUnitId: officer?.assignedUnitId,
+      assignedUnitName: assignedUnit?.name,
+      assignedFormationId: assignedFormation?.id,
+      assignedFormationName: assignedFormation?.name,
+      canRecruit: !officer && campaign.resources.money >= profile.recruitCost,
+      nextRank: nextRank && promotion
+        ? {
+            id: nextRank.id,
+            name: localizedOfficerRank(nextRank.id, nextRank.name),
+            cost: promotion.cost,
+            requiredService: promotion.requiredService,
+            capacity: nextRank.capacity,
+            bonus: { ...nextRank.bonus },
+            ready: (officer?.service ?? 0) >= promotion.requiredService,
+            canAfford: campaign.resources.money >= promotion.cost
+          }
+        : undefined
+    };
+  });
   const territories = campaign.territories.map((t) => ({
     id: t.id,
     name: localizedTerritoryName(t),
@@ -3752,7 +3862,8 @@ export function App() {
         strategic={campaign.resources.strategic}
         army={armyUnits}
         reserves={reserveUnits}
-        formations={campaign.formations}
+        formations={formations}
+        officers={officers}
         territories={territories}
         operationPlans={operationPlans}
         operationDossiers={operationDossiers}
@@ -3800,9 +3911,39 @@ export function App() {
         }}
         onSetFormation={(id, formationId) => {
           try {
-            mutate((s) => setUnitFormation(s, id, formationId));
+            mutate((s) => setUnitFormation(s, id, formationId, bundle));
           } catch (err) {
             const reason = err instanceof CampaignError ? t(`campaign:errors.${err.key}`, err.params) : t('campaign:errors.genericFormationFailed');
+            showToast(reason, 'error');
+          }
+        }}
+        onRecruitOfficer={(profileId) => {
+          try {
+            mutate((state) => recruitOfficer(state, bundle, profileId));
+          } catch (err) {
+            const reason = err instanceof CampaignError
+              ? t(`campaign:errors.${err.key}`, err.params)
+              : t('campaign:errors.genericOfficerFailed');
+            showToast(reason, 'error');
+          }
+        }}
+        onPromoteOfficer={(officerId) => {
+          try {
+            mutate((state) => promoteOfficer(state, bundle, officerId));
+          } catch (err) {
+            const reason = err instanceof CampaignError
+              ? t(`campaign:errors.${err.key}`, err.params)
+              : t('campaign:errors.genericOfficerFailed');
+            showToast(reason, 'error');
+          }
+        }}
+        onAssignOfficer={(officerId, unitId) => {
+          try {
+            mutate((state) => assignOfficer(state, bundle, officerId, unitId));
+          } catch (err) {
+            const reason = err instanceof CampaignError
+              ? t(`campaign:errors.${err.key}`, err.params)
+              : t('campaign:errors.genericOfficerFailed');
             showToast(reason, 'error');
           }
         }}

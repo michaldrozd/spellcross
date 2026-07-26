@@ -5595,6 +5595,17 @@ button:disabled {
   font-size: 0.58rem;
 }
 
+.formation-command-line {
+  min-height: 1.7em;
+  margin: 0.06rem 0;
+  overflow: hidden;
+  color: #cad3cb;
+  font-size: 0.56rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .formation-card > div {
   display: flex;
   flex-wrap: wrap;
@@ -5608,6 +5619,328 @@ button:disabled {
   color: #b8c6b7;
   font-size: 0.54rem;
   font-style: normal;
+}
+
+.formation-card.formation-overstrength {
+  border-color: rgba(221, 135, 75, 0.72);
+  box-shadow: inset 0 0 18px rgba(157, 62, 34, 0.1);
+}
+
+.formation-alert,
+.formation-shock {
+  margin-top: 0.16rem;
+  color: #e4a073;
+  font-size: 0.51rem;
+  font-style: normal;
+  font-weight: 800;
+  letter-spacing: 0.045em;
+  line-height: 1.35;
+}
+
+.formation-shock {
+  color: #ef806e;
+}
+
+.officer-corps-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 0.82rem;
+  padding-top: 0.72rem;
+  border-top: 1px solid rgba(117, 137, 126, 0.35);
+}
+
+.officer-corps-heading > div > span {
+  color: #87988d;
+  font: 0.56rem "Courier New", monospace;
+  letter-spacing: 0.14em;
+}
+
+.officer-corps-heading h4 {
+  margin: 0.1rem 0 0;
+  color: #e5eadf;
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+}
+
+.officer-corps-heading > small {
+  max-width: 520px;
+  color: #94a198;
+  font-size: 0.6rem;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.officer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.52rem;
+  margin-top: 0.58rem;
+}
+
+.officer-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 224px;
+  flex-direction: column;
+  gap: 0.42rem;
+  padding: 0.58rem;
+  overflow: hidden;
+  border: 1px solid rgba(92, 119, 105, 0.68);
+  background:
+    linear-gradient(115deg, rgba(99, 120, 103, 0.075), transparent 42%),
+    repeating-linear-gradient(0deg, rgba(123, 151, 128, 0.025) 0 1px, transparent 1px 4px),
+    linear-gradient(155deg, rgba(27, 39, 34, 0.98), rgba(6, 11, 10, 0.99));
+  box-shadow: inset 1px 1px 0 rgba(222, 232, 210, 0.08), 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.officer-card::after {
+  position: absolute;
+  right: -22px;
+  bottom: -32px;
+  width: 96px;
+  height: 96px;
+  border: 1px solid rgba(157, 181, 159, 0.08);
+  border-radius: 50%;
+  box-shadow: 0 0 0 12px rgba(157, 181, 159, 0.025), 0 0 0 24px rgba(157, 181, 159, 0.018);
+  content: "";
+  pointer-events: none;
+}
+
+.officer-card > header {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  gap: 0.48rem;
+  align-items: center;
+}
+
+.officer-portrait {
+  position: relative;
+  display: grid;
+  width: 46px;
+  height: 50px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(177, 197, 174, 0.55);
+  background:
+    radial-gradient(circle at 50% 30%, rgba(225, 214, 151, 0.3), transparent 18%),
+    linear-gradient(145deg, rgba(101, 129, 106, 0.9), rgba(23, 38, 32, 0.98));
+  box-shadow: inset 0 0 14px rgba(0, 0, 0, 0.5);
+  filter: hue-rotate(calc(var(--officer-index) * 11deg));
+}
+
+.officer-portrait::before {
+  position: absolute;
+  bottom: -14px;
+  width: 38px;
+  height: 36px;
+  border-radius: 50% 50% 20% 20%;
+  background: rgba(5, 10, 9, 0.72);
+  content: "";
+}
+
+.officer-portrait b {
+  position: relative;
+  z-index: 1;
+  color: #f0dea0;
+  font: 800 0.68rem "Courier New", monospace;
+  letter-spacing: 0.08em;
+}
+
+.officer-portrait i {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  z-index: 2;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #7fc78d;
+  box-shadow: 0 0 7px rgba(106, 217, 132, 0.72);
+}
+
+.officer-identity {
+  display: grid;
+  min-width: 0;
+}
+
+.officer-identity small {
+  color: #d8bd67;
+  font: 0.51rem "Courier New", monospace;
+  letter-spacing: 0.14em;
+}
+
+.officer-identity strong {
+  overflow: hidden;
+  color: #eff1e8;
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.officer-identity em {
+  overflow: hidden;
+  color: #9eada3;
+  font-size: 0.54rem;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.officer-status {
+  padding: 0.15rem 0.25rem;
+  border: 1px solid rgba(104, 145, 113, 0.48);
+  color: #9fd1a5;
+  font: 700 0.45rem "Courier New", monospace;
+  letter-spacing: 0.06em;
+}
+
+.officer-status-available {
+  border-color: rgba(199, 173, 92, 0.5);
+  color: #dcc579;
+}
+
+.officer-status-fallen {
+  border-color: rgba(158, 84, 74, 0.55);
+  color: #d98d80;
+}
+
+.officer-card > p {
+  min-height: 3.9em;
+  margin: 0;
+  color: #aab8af;
+  font-size: 0.56rem;
+  line-height: 1.32;
+}
+
+.officer-aura {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+
+.officer-aura i {
+  padding: 0.12rem 0.24rem;
+  border: 1px solid rgba(124, 151, 130, 0.3);
+  background: rgba(2, 8, 6, 0.32);
+  color: #c0cdbf;
+  font-size: 0.49rem;
+  font-style: normal;
+}
+
+.officer-recruit,
+.officer-promote {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  margin-top: auto;
+  padding: 0.42rem 0.48rem;
+  border: 1px solid #69785f;
+  background: linear-gradient(180deg, #44513e, #202a24);
+  color: #f0e4ab;
+  font: 800 0.56rem "Courier New", monospace;
+  letter-spacing: 0.055em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.officer-recruit:disabled,
+.officer-promote:disabled {
+  border-color: #3f4a45;
+  color: #6f7b74;
+  background: #18201d;
+  cursor: not-allowed;
+}
+
+.officer-service {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.32rem;
+  margin-top: auto;
+}
+
+.officer-service-line {
+  display: flex;
+  justify-content: space-between;
+  color: #aab8af;
+  font: 0.5rem "Courier New", monospace;
+}
+
+.officer-service-line b {
+  color: #d6c679;
+}
+
+.officer-service label {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.officer-service label > span {
+  color: #87968d;
+  font-size: 0.47rem;
+  letter-spacing: 0.08em;
+}
+
+.officer-service select {
+  width: 100%;
+  min-height: 28px;
+  padding: 0.2rem 1.4rem 0.2rem 0.32rem;
+  border: 1px solid #4e5c58;
+  border-radius: 0;
+  background: #0d1514;
+  color: #d6ded8;
+  font: 0.54rem "Courier New", monospace;
+}
+
+.officer-promote {
+  display: grid;
+  gap: 0.12rem;
+  margin-top: 0;
+}
+
+.officer-promote small {
+  color: #aab7aa;
+  font-size: 0.47rem;
+  font-weight: 500;
+}
+
+.officer-max-rank,
+.officer-memorial {
+  position: relative;
+  z-index: 1;
+  margin-top: auto;
+  padding: 0.38rem;
+  border: 1px solid rgba(118, 143, 126, 0.32);
+  color: #c6b96f;
+  font: 700 0.5rem "Courier New", monospace;
+  letter-spacing: 0.06em;
+  text-align: center;
+}
+
+.officer-memorial {
+  display: grid;
+  gap: 0.18rem;
+  border-color: rgba(141, 73, 65, 0.42);
+  color: #cf8d80;
+}
+
+.officer-memorial small {
+  color: #9e827d;
+  font-size: 0.48rem;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.officer-fallen {
+  filter: saturate(0.58);
+}
+
+.officer-fallen .officer-portrait i {
+  background: #8e5b55;
+  box-shadow: none;
 }
 
 .formation-assignment {
@@ -5828,6 +6161,15 @@ button:disabled {
   background: rgba(92, 31, 22, 0.32);
   color: #efad8d;
   font-size: 0.66rem;
+}
+
+.deployment-command-warning {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid rgba(203, 158, 75, 0.45);
+  background: rgba(91, 67, 20, 0.3);
+  color: #e4ca7c;
+  font-size: 0.62rem;
 }
 
 .deployment-roster {
@@ -6169,6 +6511,7 @@ button:disabled {
 
 @media (max-width: 900px) {
   .formation-cards,
+  .officer-grid,
   .service-options {
     grid-template-columns: 1fr;
   }
@@ -6212,12 +6555,14 @@ button:disabled {
   }
 
   .formation-command-heading,
+  .officer-corps-heading,
   .service-section-heading {
     display: grid;
     align-items: start;
   }
 
   .formation-command-heading small,
+  .officer-corps-heading > small,
   .service-section-heading small {
     text-align: left;
   }

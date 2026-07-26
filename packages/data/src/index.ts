@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 import { cityScenarios, cityScenarioIdByTerritory } from './city-battlefields.js';
 import { starterEquipment } from './equipment-doctrine.js';
+import { starterOfficerProfiles, starterOfficerRanks } from './officer-corps.js';
 import { operationAudioThemes, starterOperationDossiers, type OperationDossier } from './operation-dossiers.js';
 import { rosterExpansionResearch, rosterExpansionUnits } from './roster-expansion.js';
 
@@ -181,6 +182,30 @@ export interface EquipmentPackage {
   modifiers: EquipmentModifiers;
 }
 
+export interface CommandBonus {
+  attack: number;
+  defense: number;
+  morale: number;
+}
+
+export interface OfficerProfile {
+  id: string;
+  name: string;
+  callsign: string;
+  description: string;
+  recruitCost: number;
+  bonus: CommandBonus;
+}
+
+export interface OfficerRankSpec {
+  id: string;
+  name: string;
+  requiredService: number;
+  promotionCost: number;
+  capacity: number;
+  bonus: CommandBonus;
+}
+
 export type ObjectiveKind = 'eliminate' | 'reach' | 'protect' | 'hold' | 'interact';
 export type TacticalObjectiveActionKey =
   | 'plantCharges'
@@ -340,6 +365,8 @@ export interface ContentBundle {
   units: UnitData[];
   research: ResearchTopic[];
   equipment: EquipmentPackage[];
+  officerProfiles: OfficerProfile[];
+  officerRanks: OfficerRankSpec[];
   scenarios: TacticalScenario[];
   territories: TerritorySpec[];
   campaigns: CampaignSpec[];
@@ -461,6 +488,30 @@ const equipmentSchema = z.object({
   requiresResearch: z.string().min(1),
   applyTo: z.array(z.enum(['infantry', 'vehicle', 'artillery', 'air', 'support', 'hero'])).min(1),
   modifiers: equipmentModifiersSchema
+});
+
+const commandBonusSchema = z.object({
+  attack: z.number().int().nonnegative(),
+  defense: z.number().int().nonnegative(),
+  morale: z.number().int().nonnegative()
+});
+
+const officerProfileSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  callsign: z.string().min(1),
+  description: z.string().min(1),
+  recruitCost: z.number().int().positive(),
+  bonus: commandBonusSchema
+});
+
+const officerRankSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  requiredService: z.number().int().nonnegative(),
+  promotionCost: z.number().int().nonnegative(),
+  capacity: z.number().int().positive(),
+  bonus: commandBonusSchema
 });
 
 const scenarioUnitSchema = z.object({
@@ -813,6 +864,8 @@ const bundleSchema = z.object({
   units: z.array(unitSchema),
   research: z.array(researchSchema),
   equipment: z.array(equipmentSchema),
+  officerProfiles: z.array(officerProfileSchema),
+  officerRanks: z.array(officerRankSchema),
   scenarios: z.array(scenarioSchema),
   territories: z.array(territorySchema),
   campaigns: z.array(campaignSchema),
@@ -853,6 +906,66 @@ const bundleSchema = z.object({
       path: ['equipment']
     });
   }
+
+  const officerProfileIds = new Set<string>();
+  bundle.officerProfiles.forEach((profile, index) => {
+    if (officerProfileIds.has(profile.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate officer profile ${profile.id}`,
+        path: ['officerProfiles', index, 'id']
+      });
+    }
+    officerProfileIds.add(profile.id);
+    if (Object.values(profile.bonus).some((bonus) => bonus > 0)) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `Officer profile ${profile.id} must provide a command bonus`,
+      path: ['officerProfiles', index, 'bonus']
+    });
+  });
+  if (bundle.officerProfiles.length < 6) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Content must define at least six officer profiles',
+      path: ['officerProfiles']
+    });
+  }
+
+  if (bundle.officerRanks.length !== 4) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Content must define exactly four officer ranks',
+      path: ['officerRanks']
+    });
+  }
+  const officerRankIds = new Set<string>();
+  bundle.officerRanks.forEach((rank, index) => {
+    if (officerRankIds.has(rank.id)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Duplicate officer rank ${rank.id}`,
+        path: ['officerRanks', index, 'id']
+      });
+    }
+    officerRankIds.add(rank.id);
+    const previous = bundle.officerRanks[index - 1];
+    if (!previous) return;
+    if (rank.requiredService <= previous.requiredService) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Officer rank ${rank.id} service threshold must increase`,
+        path: ['officerRanks', index, 'requiredService']
+      });
+    }
+    if (rank.capacity < previous.capacity) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Officer rank ${rank.id} capacity cannot decrease`,
+        path: ['officerRanks', index, 'capacity']
+      });
+    }
+  });
 
   const authoredTerritoryIds = new Set(bundle.territories.map((territory) => territory.id));
   const campaignTerritoryIds = new Set(bundle.campaigns.flatMap((campaign) => (
@@ -2922,6 +3035,8 @@ export const starterBundle: ContentBundle = {
   units: starterUnits,
   research: starterResearch,
   equipment: starterEquipment,
+  officerProfiles: starterOfficerProfiles,
+  officerRanks: starterOfficerRanks,
   scenarios: starterScenarios,
   territories: starterTerritories,
   campaigns: [starterCampaign],
@@ -2929,3 +3044,5 @@ export const starterBundle: ContentBundle = {
 };
 
 export const validatedStarterBundle = loadContentBundle(starterBundle);
+
+export { starterOfficerProfiles, starterOfficerRanks };

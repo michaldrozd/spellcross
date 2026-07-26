@@ -128,13 +128,80 @@
     "taskGroups": "OPERATIONAL ORGANIZATION",
     "formations": "TASK GROUPS",
     "formation": "Task group",
-    "formationHint": "Membership is exclusive. The listed bonuses apply on the next deployment.",
+    "formationHint": "Membership is exclusive. Officer auras apply only when their carrier deploys.",
     "formationMembers": "{{count}} assigned",
-    "bonusAttack": "ATK +{{value}}",
-    "bonusDefense": "DEF +{{value}}",
-    "bonusMorale": "MOR +{{value}}",
+    "formationStrength": "{{members}} / {{capacity}} assigned",
+    "formationLedBy": "{{rank}} · {{officer}}",
+    "formationUnled": "No officer attached · base doctrine only",
+    "formationOverstrength": "OVERSTRENGTH · REMOVE MEMBERS BEFORE ADDING",
+    "commandShock": "COMMAND SHOCK −{{penalty}} MORALE THROUGH TURN {{turn}}",
+    "bonusAttack": "ATK {{value}}",
+    "bonusDefense": "DEF {{value}}",
+    "bonusMorale": "MOR {{value}}",
     "assignFormationFor": "Assign task group for {{unit}}",
     "unassigned": "Unassigned",
+    "officerDesk": "COMMAND PERSONNEL",
+    "officerCorps": "OFFICER CORPS",
+    "officerCorpsHint": "Recruit one of six specialists, attach them to a non-hero field unit, and risk the carrier to earn promotion service.",
+    "officerCandidate": "Officer candidate",
+    "officerFallen": "Fallen in action",
+    "officerAura": "Profile command aura",
+    "officerStatus": {
+      "available": "AVAILABLE",
+      "active": "ACTIVE",
+      "fallen": "MEMORIAL"
+    },
+    "recruitOfficer": "RECRUIT · {{cost}} CR",
+    "recruitOfficerShort": "NEED {{cost}} CR",
+    "memorialRoll": "ROLL OF HONOUR",
+    "memorialHint": "This profile cannot be recruited again in this campaign.",
+    "serviceMarks": "SERVICE {{count}}",
+    "commandCapacity": "CAPACITY {{capacity}}",
+    "carrierUnit": "Officer carrier",
+    "assignOfficerCarrier": "Assign carrier for {{officer}}",
+    "officerUnassigned": "Standing by at HQ",
+    "promoteTo": "PROMOTE · {{rank}}",
+    "promotionCost": "{{cost}} CR",
+    "promotionService": "SERVICE {{current}} / {{required}}",
+    "maximumRank": "MAXIMUM COMMAND RANK",
+    "officerRanks": {
+      "field-adjutant": "Field Adjutant",
+      "line-lieutenant": "Line Lieutenant",
+      "battle-captain": "Battle Captain",
+      "sector-commandant": "Sector Commandant"
+    },
+    "officerProfiles": {
+      "arden-kade": {
+        "name": "Arden Kade",
+        "callsign": "BREAKER",
+        "description": "A breach planner who turns concentrated fire into decisive local superiority."
+      },
+      "mirela-sorn": {
+        "name": "Mirela Sorn",
+        "callsign": "RAMPART",
+        "description": "A defensive tactician known for layered positions and disciplined fallback lines."
+      },
+      "tomas-vey": {
+        "name": "Tomas Vey",
+        "callsign": "STEADFAST",
+        "description": "A calm field leader whose formations keep cohesion under supernatural pressure."
+      },
+      "anika-rell": {
+        "name": "Anika Rell",
+        "callsign": "TEMPO",
+        "description": "An aggressive coordinator who keeps fire teams moving without breaking their nerve."
+      },
+      "elias-dorn": {
+        "name": "Elias Dorn",
+        "callsign": "WARDEN",
+        "description": "A measured protector who binds prepared defenses to steady battlefield control."
+      },
+      "samira-kest": {
+        "name": "Samira Kest",
+        "callsign": "CONCORD",
+        "description": "A combined-arms specialist who trades extremes for reliable strength across the line."
+      }
+    },
     "formationName": {
       "alpha": "Task Force Alpha",
       "bravo": "Task Force Bravo",
@@ -217,6 +284,8 @@
     "selectReady": "SELECT TO CAPACITY",
     "clearOptional": "CLEAR OPTIONAL",
     "selectFormation": "Select a task group",
+    "leaderBenched": "COMMAND AURA OFFLINE — leader carrier not selected: {{list}}",
+    "formationLeader": "FORMATION LEADER",
     "healthPct": "{{value}}% HP",
     "required": "REQUIRED",
     "specialist": "OPTIONAL SPECIALIST",

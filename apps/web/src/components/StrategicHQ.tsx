@@ -73,7 +73,46 @@ interface FormationSummary {
   id: string;
   name: string;
   units: string[];
+  baseBonus: { attack: number; defense: number; morale: number };
   bonus: { attack: number; defense: number; morale: number };
+  capacity: number;
+  overstrength: boolean;
+  shockMoralePenalty: number;
+  commandShockUntilTurn?: number;
+  officerId?: string;
+  officerName?: string;
+  officerRankName?: string;
+  assignedUnitId?: string;
+}
+
+interface OfficerSummary {
+  id: string;
+  profileId: string;
+  name: string;
+  callsign: string;
+  description: string;
+  recruitCost: number;
+  bonus: { attack: number; defense: number; morale: number };
+  status: 'available' | 'active' | 'fallen';
+  rankId?: string;
+  rankName?: string;
+  capacity?: number;
+  service: number;
+  assignedUnitId?: string;
+  assignedUnitName?: string;
+  assignedFormationId?: string;
+  assignedFormationName?: string;
+  canRecruit: boolean;
+  nextRank?: {
+    id: string;
+    name: string;
+    cost: number;
+    requiredService: number;
+    capacity: number;
+    bonus: { attack: number; defense: number; morale: number };
+    ready: boolean;
+    canAfford: boolean;
+  };
 }
 
 interface OperationPlan {
@@ -111,6 +150,7 @@ interface StrategicHQProps {
   army: ArmyUnit[];
   reserves: ArmyUnit[];
   formations: FormationSummary[];
+  officers: OfficerSummary[];
   territories: Territory[];
   operationPlans: Record<string, OperationPlan>;
   operationDossiers: Record<string, LocalizedOperationDossier>;
@@ -127,6 +167,9 @@ interface StrategicHQProps {
   onRearm: (unitId: string, definitionId: string) => void;
   onSetEquipment: (unitId: string, category: EquipmentCategory, equipmentId?: string) => void;
   onSetFormation: (unitId: string, formationId?: string) => void;
+  onRecruitOfficer: (profileId: string) => void;
+  onPromoteOfficer: (officerId: string) => void;
+  onAssignOfficer: (officerId: string, unitId?: string) => void;
   onDismiss: (unitId: string) => void;
   onResearch: (topicId: string) => void;
   onPauseResearch: () => void;
@@ -150,6 +193,14 @@ interface StrategicHQProps {
 
 function rosterPortrait(definitionId: string, unitType: string) {
   return unitPortrait(unitType, definitionId, true);
+}
+
+function officerInitials(name: string) {
+  return name.split(/\s+/).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+}
+
+function signedCommandValue(value: number) {
+  return value >= 0 ? `+${value}` : `−${Math.abs(value)}`;
 }
 
 const recruitFilters = ['all', 'infantry', 'vehicle', 'artillery', 'air', 'support', 'hero'] as const;
@@ -298,6 +349,21 @@ function localizedLogParams(params?: Record<string, string | number>) {
   if (typeof params.category === 'string') {
     resolved.category = i18n.t(`hq:service.categories.${params.category}`, {
       defaultValue: params.category
+    });
+  }
+  if (typeof params.officerId === 'string' && typeof params.officer === 'string') {
+    resolved.officer = i18n.t(`hq:army.officerProfiles.${params.officerId}.name`, {
+      defaultValue: params.officer
+    });
+  }
+  if (typeof params.rankId === 'string' && typeof params.rank === 'string') {
+    resolved.rank = i18n.t(`hq:army.officerRanks.${params.rankId}`, {
+      defaultValue: params.rank
+    });
+  }
+  if (typeof params.formationId === 'string' && typeof params.formation === 'string') {
+    resolved.formation = i18n.t(`hq:army.formationName.${params.formationId}`, {
+      defaultValue: params.formation
     });
   }
   return resolved;
@@ -844,8 +910,9 @@ const StrategicMapView: React.FC<{
 
 export const StrategicHQ: React.FC<StrategicHQProps> = ({
   campaignDifficulty, turn, operationAvailable, warClock, money, research, strategic,
-  army, reserves, formations, territories, operationPlans, operationDossiers, researchTopics, currentResearch, pausedResearch, completedResearch,
-  log, onStartBattle, onEndTurn, onRecruit, onRefill, onRearm, onSetEquipment, onSetFormation, onDismiss,
+  army, reserves, formations, officers, territories, operationPlans, operationDossiers, researchTopics, currentResearch, pausedResearch, completedResearch,
+  log, onStartBattle, onEndTurn, onRecruit, onRefill, onRearm, onSetEquipment, onSetFormation,
+  onRecruitOfficer, onPromoteOfficer, onAssignOfficer, onDismiss,
   onResearch, onPauseResearch, onConvertMoney, onConvertResearch, onBack, popups, onDismissPopups, availableUnits
 }) => {
   const { t } = useTranslation(['hq', 'common', 'campaign']);
@@ -982,6 +1049,13 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
     && unavailableRequiredUnits.length === 0
     && selectedDeploymentIds.length <= (planningPlan?.capacity ?? 0)
     && (selectedDeploymentIds.length > 0 || Boolean(planningPlan?.canDeployWithoutRoster));
+  const inactiveCommandFormations = planningPlan
+    ? formations.filter((formation) => (
+        formation.assignedUnitId
+        && !selectedDeploymentIds.includes(formation.assignedUnitId)
+        && formation.units.some((unitId) => selectedDeploymentIds.includes(unitId))
+      ))
+    : [];
   const serviceUnit = serviceUnitId ? army.find((unit) => unit.id === serviceUnitId) : undefined;
   const activeEquipmentOptions = serviceUnit?.equipmentOptions.filter(
     (option) => option.category === equipmentCategory
@@ -1184,17 +1258,159 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                 </div>
                 <div className="formation-cards">
                   {formations.map((formation) => (
-                    <article key={formation.id} className={`formation-card formation-card-${formation.id}`}>
+                    <article
+                      key={formation.id}
+                      className={`formation-card formation-card-${formation.id} ${formation.overstrength ? 'formation-overstrength' : ''}`}
+                    >
                       <span>{formation.id.toUpperCase()}</span>
                       <b>{formationName(formation)}</b>
-                      <small>{t('army.formationMembers', { count: formation.units.length })}</small>
+                      <small>{t('army.formationStrength', {
+                        members: formation.units.length,
+                        capacity: formation.capacity
+                      })}</small>
+                      <p className="formation-command-line">
+                        {formation.officerName
+                          ? t('army.formationLedBy', {
+                              officer: formation.officerName,
+                              rank: formation.officerRankName
+                            })
+                          : t('army.formationUnled')}
+                      </p>
                       <div>
-                        <i>{t('army.bonusAttack', { value: formation.bonus.attack })}</i>
-                        <i>{t('army.bonusDefense', { value: formation.bonus.defense })}</i>
-                        <i>{t('army.bonusMorale', { value: formation.bonus.morale })}</i>
+                        <i>{t('army.bonusAttack', { value: signedCommandValue(formation.bonus.attack) })}</i>
+                        <i>{t('army.bonusDefense', { value: signedCommandValue(formation.bonus.defense) })}</i>
+                        <i>{t('army.bonusMorale', { value: signedCommandValue(formation.bonus.morale) })}</i>
                       </div>
+                      {formation.overstrength && (
+                        <em className="formation-alert">{t('army.formationOverstrength')}</em>
+                      )}
+                      {formation.shockMoralePenalty > 0 && (
+                        <em className="formation-shock">
+                          {t('army.commandShock', {
+                            penalty: formation.shockMoralePenalty,
+                            turn: (formation.commandShockUntilTurn ?? turn + 1) - 1
+                          })}
+                        </em>
+                      )}
                     </article>
                   ))}
+                </div>
+                <div className="officer-corps-heading">
+                  <div>
+                    <span>{t('army.officerDesk')}</span>
+                    <h4>{t('army.officerCorps')}</h4>
+                  </div>
+                  <small>{t('army.officerCorpsHint')}</small>
+                </div>
+                <div className="officer-grid">
+                  {officers.map((officer, index) => {
+                    const carrierOptions = army.filter((unit) => {
+                      if (unit.unitType === 'hero' || !unit.formationId) return false;
+                      const formation = formations.find((candidate) => candidate.id === unit.formationId);
+                      const carrierOccupied = officers.some((candidate) => (
+                        candidate.id !== officer.id
+                        && candidate.status === 'active'
+                        && candidate.assignedUnitId === unit.id
+                      ));
+                      return !carrierOccupied && (!formation?.officerId || formation.officerId === officer.id);
+                    });
+                    return (
+                      <article
+                        key={officer.profileId}
+                        className={`officer-card officer-${officer.status}`}
+                        style={{ '--officer-index': index } as React.CSSProperties}
+                      >
+                        <header>
+                          <span className="officer-portrait" aria-hidden="true">
+                            <b>{officerInitials(officer.name)}</b>
+                            <i />
+                          </span>
+                          <span className="officer-identity">
+                            <small>{officer.callsign}</small>
+                            <strong>{officer.name}</strong>
+                            <em>{officer.status === 'available'
+                              ? t('army.officerCandidate')
+                              : officer.status === 'fallen'
+                                ? t('army.officerFallen')
+                                : officer.rankName}</em>
+                          </span>
+                          <span className={`officer-status officer-status-${officer.status}`}>
+                            {t(`army.officerStatus.${officer.status}`)}
+                          </span>
+                        </header>
+                        <p>{officer.description}</p>
+                        <div className="officer-aura" aria-label={t('army.officerAura')}>
+                          <i>{t('army.bonusAttack', { value: signedCommandValue(officer.bonus.attack) })}</i>
+                          <i>{t('army.bonusDefense', { value: signedCommandValue(officer.bonus.defense) })}</i>
+                          <i>{t('army.bonusMorale', { value: signedCommandValue(officer.bonus.morale) })}</i>
+                        </div>
+                        {officer.status === 'available' && (
+                          <button
+                            className="officer-recruit"
+                            disabled={!officer.canRecruit}
+                            onClick={() => onRecruitOfficer(officer.profileId)}
+                          >
+                            {officer.canRecruit
+                              ? t('army.recruitOfficer', { cost: officer.recruitCost })
+                              : t('army.recruitOfficerShort', { cost: officer.recruitCost })}
+                          </button>
+                        )}
+                        {officer.status === 'fallen' && (
+                          <div className="officer-memorial">
+                            <b>{t('army.memorialRoll')}</b>
+                            <small>{t('army.memorialHint')}</small>
+                          </div>
+                        )}
+                        {officer.status === 'active' && (
+                          <div className="officer-service">
+                            <div className="officer-service-line">
+                              <span>{t('army.serviceMarks', { count: officer.service })}</span>
+                              <b>{t('army.commandCapacity', { capacity: officer.capacity })}</b>
+                            </div>
+                            <label>
+                              <span>{t('army.carrierUnit')}</span>
+                              <select
+                                aria-label={t('army.assignOfficerCarrier', { officer: officer.name })}
+                                value={officer.assignedUnitId ?? ''}
+                                onChange={(event) => onAssignOfficer(officer.id, event.target.value || undefined)}
+                              >
+                                <option value="">{t('army.officerUnassigned')}</option>
+                                {carrierOptions.map((unit) => {
+                                  const formation = formations.find((candidate) => candidate.id === unit.formationId);
+                                  return (
+                                    <option key={unit.id} value={unit.id}>
+                                      {unit.name} · {formation ? formationName(formation) : t('army.unassigned')}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </label>
+                            {officer.nextRank ? (
+                              <button
+                                className="officer-promote"
+                                disabled={!officer.nextRank.ready || !officer.nextRank.canAfford}
+                                onClick={() => onPromoteOfficer(officer.id)}
+                              >
+                                <span>{t('army.promoteTo', { rank: officer.nextRank.name })}</span>
+                                <small>
+                                  {officer.nextRank.ready
+                                    ? t('army.promotionCost', { cost: officer.nextRank.cost })
+                                    : t('army.promotionService', {
+                                        current: officer.service,
+                                        required: officer.nextRank.requiredService
+                                      })}
+                                  {' · '}
+                                  {t('army.commandCapacity', { capacity: officer.nextRank.capacity })}
+                                </small>
+                              </button>
+                            ) : (
+                              <span className="officer-max-rank">{t('army.maximumRank')}</span>
+                            )}
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
                 </div>
               </section>
               {forceFocusUnit && (
@@ -1254,7 +1470,13 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                               >
                                 <option value="">{t('army.unassigned')}</option>
                                 {formations.map((formation) => (
-                                  <option key={formation.id} value={formation.id}>{formationName(formation)}</option>
+                                  <option
+                                    key={formation.id}
+                                    value={formation.id}
+                                    disabled={u.formationId !== formation.id && formation.units.length >= formation.capacity}
+                                  >
+                                    {formationName(formation)} · {formation.units.length}/{formation.capacity}
+                                  </option>
                                 ))}
                               </select>
                             </label>
@@ -1536,6 +1758,13 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                 ))}
               </div>
             </div>
+            {inactiveCommandFormations.length > 0 && (
+              <p className="deployment-command-warning" role="status">
+                {t('deployment.leaderBenched', {
+                  list: inactiveCommandFormations.map((formation) => formationName(formation)).join(', ')
+                })}
+              </p>
+            )}
             {unavailableRequiredUnits.length ? (
               <p className="deployment-blocker" role="alert">
                 {t('deployment.requiredInTransit', { list: unavailableRequiredUnits.map((unit) => unit.name).join(', ') })}
@@ -1592,6 +1821,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                 const specialist = planningPlan.specialistUnitIds.includes(unit.id);
                 const healthPercent = Math.round((unit.currentHealth / unit.maxHealth) * 100);
                 const formation = formations.find((candidate) => candidate.id === unit.formationId);
+                const officerCarrier = formation?.assignedUnitId === unit.id;
                 return (
                   <button
                     key={unit.id}
@@ -1610,6 +1840,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                       <i>{formation ? formationName(formation) : t('army.unassigned')}</i>
                     </span>
                     <span className="deployment-unit-flags">
+                      {officerCarrier && <em>{t('deployment.formationLeader')}</em>}
                       {required && <em>{t('deployment.required')}</em>}
                       {specialist && <em>{t('deployment.specialist')}</em>}
                       <strong>{selected ? '✓' : '+'}</strong>

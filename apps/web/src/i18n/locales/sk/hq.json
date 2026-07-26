@@ -128,13 +128,80 @@
     "taskGroups": "OPERAČNÁ ORGANIZÁCIA",
     "formations": "OPERAČNÉ SKUPINY",
     "formation": "Operačná skupina",
-    "formationHint": "Príslušnosť je výlučná. Uvedené bonusy platia pri ďalšom nasadení.",
+    "formationHint": "Príslušnosť je výlučná. Aura dôstojníka platí iba vtedy, keď je nasadený jej nosič.",
     "formationMembers": "Priradených: {{count}}",
-    "bonusAttack": "ÚTOK +{{value}}",
-    "bonusDefense": "OBR +{{value}}",
-    "bonusMorale": "MOR +{{value}}",
+    "formationStrength": "Priradených {{members}} / {{capacity}}",
+    "formationLedBy": "{{rank}} · {{officer}}",
+    "formationUnled": "Bez dôstojníka · iba základná doktrína",
+    "formationOverstrength": "NAD STAVOM · PRED PRIDANÍM UVOĽNI JEDNOTKY",
+    "commandShock": "ŠOK VELENIA −{{penalty}} MORÁLKY DO KOLA {{turn}}",
+    "bonusAttack": "ÚTOK {{value}}",
+    "bonusDefense": "OBR {{value}}",
+    "bonusMorale": "MOR {{value}}",
     "assignFormationFor": "Priradiť operačnú skupinu pre {{unit}}",
     "unassigned": "Bez zaradenia",
+    "officerDesk": "VELITEĽSKÝ PERSONÁL",
+    "officerCorps": "DÔSTOJNÍCKY ZBOR",
+    "officerCorpsHint": "Naverbuj jedného zo šiestich špecialistov, prideľ ho nehrdinskej poľnej jednotke a riskuj nosič pre služobný postup.",
+    "officerCandidate": "Kandidát na dôstojníka",
+    "officerFallen": "Padol v boji",
+    "officerAura": "Veliteľská aura profilu",
+    "officerStatus": {
+      "available": "DOSTUPNÝ",
+      "active": "AKTÍVNY",
+      "fallen": "PAMIATKA"
+    },
+    "recruitOfficer": "NAVERBOVAŤ · {{cost}} CR",
+    "recruitOfficerShort": "TREBA {{cost}} CR",
+    "memorialRoll": "ČESTNÝ ZOZNAM",
+    "memorialHint": "Tento profil už v tejto kampani nemožno znovu naverbovať.",
+    "serviceMarks": "SLUŽBA {{count}}",
+    "commandCapacity": "KAPACITA {{capacity}}",
+    "carrierUnit": "Nosič dôstojníka",
+    "assignOfficerCarrier": "Priradiť nosič pre {{officer}}",
+    "officerUnassigned": "V pohotovosti na veliteľstve",
+    "promoteTo": "POVÝŠIŤ · {{rank}}",
+    "promotionCost": "{{cost}} CR",
+    "promotionService": "SLUŽBA {{current}} / {{required}}",
+    "maximumRank": "NAJVYŠŠIA VELITEĽSKÁ HODNOSŤ",
+    "officerRanks": {
+      "field-adjutant": "Poľný adjutant",
+      "line-lieutenant": "Líniový poručík",
+      "battle-captain": "Bojový kapitán",
+      "sector-commandant": "Veliteľ sektora"
+    },
+    "officerProfiles": {
+      "arden-kade": {
+        "name": "Arden Kade",
+        "callsign": "PRIELOM",
+        "description": "Plánovač prielomov, ktorý premieňa sústredenú paľbu na rozhodujúcu miestnu prevahu."
+      },
+      "mirela-sorn": {
+        "name": "Mirela Sorn",
+        "callsign": "HRADBA",
+        "description": "Obranná taktička známa vrstvenými pozíciami a disciplinovanými ústupovými líniami."
+      },
+      "tomas-vey": {
+        "name": "Tomas Vey",
+        "callsign": "NEZLOMNÝ",
+        "description": "Pokojný poľný veliteľ, ktorého formácie držia súdržnosť aj pod nadprirodzeným tlakom."
+      },
+      "anika-rell": {
+        "name": "Anika Rell",
+        "callsign": "TEMPO",
+        "description": "Útočná koordinátorka, ktorá udržiava palebné tímy v pohybe bez straty odhodlania."
+      },
+      "elias-dorn": {
+        "name": "Elias Dorn",
+        "callsign": "STRÁŽCA",
+        "description": "Rozvážny ochranca spájajúci pripravenú obranu so stabilnou kontrolou bojiska."
+      },
+      "samira-kest": {
+        "name": "Samira Kest",
+        "callsign": "SÚLAD",
+        "description": "Špecialistka kombinovaných síl, ktorá mení extrémy za spoľahlivú silu celej línie."
+      }
+    },
     "formationName": {
       "alpha": "Operačná skupina Alfa",
       "bravo": "Operačná skupina Bravo",
@@ -217,6 +284,8 @@
     "selectReady": "VYBRAŤ DO KAPACITY",
     "clearOptional": "ZRUŠIŤ VOLITEĽNÉ",
     "selectFormation": "Vybrať operačnú skupinu",
+    "leaderBenched": "VELITEĽSKÁ AURA JE MIMO — nosič dôstojníka nie je vybraný: {{list}}",
+    "formationLeader": "VELITEĽ FORMÁCIE",
     "healthPct": "{{value}}% HP",
     "required": "POVINNÁ",
     "specialist": "VOLITEĽNÝ ŠPECIALISTA",
