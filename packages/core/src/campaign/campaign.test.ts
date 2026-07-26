@@ -615,7 +615,7 @@ describe('campaign core', () => {
     expect(restored.activeBattle?.state.sides.alliance.units.get(unit.id)?.statusEffects.has('suppressed')).toBe(true);
   });
 
-  it('infers a cleared legacy route source and reopens a completed save for new operations', () => {
+  it('a save completed under the old campaign, migrated into the expanded one, still reports victory', () => {
     const legacyBundle = structuredClone(starterBundle);
     legacyBundle.campaigns[0].territories = [
       legacyBundle.campaigns[0].territories.find((territory) => territory.id === 'sector-paris')!
@@ -631,7 +631,7 @@ describe('campaign core', () => {
     const restored = hydrateCampaignState(makeOutcomeRouteBundle(), legacySnapshot);
 
     expect(restored.operationResults['sector-paris']).toBe('victory');
-    expect(restored.outcome).toBeUndefined();
+    expect(restored.outcome).toBe('victory');
     expect(restored.territories.find((territory) => territory.id === 'sector-lyon')?.status).toBe('available');
     expect(restored.territories.find((territory) => territory.id === 'sector-brussels')?.status).toBe('bypassed');
   });

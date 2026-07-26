@@ -2091,6 +2091,5 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
   };
 
   refreshCampaignRoutes(state, spec);
-  if (state.outcome === 'victory' && !campaignIsComplete(state)) state.outcome = undefined;
   return state;
 }
