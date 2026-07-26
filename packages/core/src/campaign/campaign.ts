@@ -193,6 +193,7 @@ export interface CampaignState {
   formations: Formation[];
   territories: TerritoryState[];
   operationResults: Record<string, CampaignOperationResult>;
+  actTimeBonusesApplied: Record<string, number>;
   research: ResearchState;
   activeBattle?: ActiveBattle;
   log: CampaignLogEntry[];
@@ -218,6 +219,8 @@ export interface SerializedCampaignState {
   territories: TerritoryState[];
   // Optional for saves created before campaign outcome routes were introduced.
   operationResults?: Record<string, CampaignOperationResult>;
+  // Optional for saves created before later campaign acts could extend the war clock.
+  actTimeBonusesApplied?: Record<string, number>;
   research: {
     known: string[];
     completed: string[];
@@ -371,6 +374,24 @@ const campaignIsComplete = (state: CampaignState) => {
   return realSectors.length > 0 && realSectors.every(isTerminalTerritory);
 };
 
+const applyAvailableActTimeBonuses = (state: CampaignState, spec: CampaignSpec) => {
+  if (state.outcome === 'defeat') return;
+  for (const bonus of spec.actTimeBonuses ?? []) {
+    const actOpen = state.territories.some((territory) => (
+      territory.act === bonus.act
+      && (territory.status === 'available' || isCompletedTerritory(territory))
+    ));
+    if (!actOpen) continue;
+
+    const key = String(bonus.act);
+    const target = bonus.turns[state.difficulty];
+    const applied = state.actTimeBonusesApplied[key] ?? 0;
+    if (target <= applied) continue;
+    state.globalTimer += target - applied;
+    state.actTimeBonusesApplied[key] = target;
+  }
+};
+
 const addResearchUnlocksToKnown = (bundle: ContentBundle, topicIds: Iterable<string>): Set<string> => {
   const known = new Set<string>();
   for (const id of topicIds) {
@@ -474,7 +495,7 @@ export function createCampaign(
     currentHealth: findUnitDef(bundle, u.definitionId).stats.maxHealth
   }));
 
-  return {
+  const state: CampaignState = {
     campaignId: spec.id,
     difficulty,
     turn: 1,
@@ -490,11 +511,14 @@ export function createCampaign(
     formations: createDefaultFormations(army),
     territories,
     operationResults: {},
+    actTimeBonusesApplied: {},
     research,
     log: [{ key: 'campaignInitialized', params: { name: spec.name, campaignId: spec.id, difficulty } }],
     events: [],
     popups: []
   };
+  applyAvailableActTimeBonuses(state, spec);
+  return state;
 }
 
 export function convertStrategicToMoney(state: CampaignState, amount: number) {
@@ -655,7 +679,7 @@ export function endStrategicTurn(state: CampaignState, bundle: ContentBundle) {
     state.log.push({ key: 'warClockExpired' });
     state.popups?.push({ turn: state.turn, key: 'strategicDefeat', kind: 'loss' });
   }
-  if (state.globalTimer === 5) {
+  if (state.globalTimer === 5 && !state.log.some((entry) => entry.key === 'warClockCritical')) {
     state.log.push({ key: 'warClockCritical' });
     state.events?.push({ turn: state.turn, key: 'warClockCritical' });
     state.popups?.push({ turn: state.turn, key: 'warClockCritical', kind: 'warning' });
@@ -1874,6 +1898,7 @@ export function applyBattleOutcome(
   }
 
   refreshCampaignRoutes(state, spec, true);
+  applyAvailableActTimeBonuses(state, spec);
   if (!state.outcome && campaignIsComplete(state)) {
     state.outcome = 'victory';
     state.log.push({ key: 'campaignWon' });
@@ -1938,6 +1963,9 @@ export function serializeCampaignState(state: CampaignState): SerializedCampaign
     territories: structuredClone(state.territories),
     ...(Object.keys(state.operationResults).length > 0
       ? { operationResults: { ...state.operationResults } }
+      : {}),
+    ...(Object.keys(state.actTimeBonusesApplied).length > 0
+      ? { actTimeBonusesApplied: { ...state.actTimeBonusesApplied } }
       : {}),
     research: {
       known: Array.from(state.research.known),
@@ -2077,6 +2105,7 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
         }))
     ],
     operationResults,
+    actTimeBonusesApplied: { ...(snapshot.actTimeBonusesApplied ?? {}) },
     research: {
       known: researchKnown,
       completed: completedResearch,
@@ -2091,5 +2120,6 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
   };
 
   refreshCampaignRoutes(state, spec);
+  applyAvailableActTimeBonuses(state, spec);
   return state;
 }

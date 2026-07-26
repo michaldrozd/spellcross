@@ -67,6 +67,18 @@
     "name": "Východná trhlina",
     "brief": "Hlavný invázny portál. Zničte ho a obráťte priebeh vojny."
   },
+  "sector-cinder-gate": {
+    "name": "Žeravá brána",
+    "brief": "Za zapečatenou trhlinou sa otvoril druhý horizont. Vybudujte predmostie skôr, než sa priechod zrúti."
+  },
+  "sector-lantern-vault": {
+    "name": "Lampášový trezor",
+    "brief": "V podzemnom observatóriu stále prežívajú prieskumníci, ktorí zmapovali novú oblohu. Dostaňte sa k nim skôr, než trezor padne."
+  },
+  "sector-hollow-tide": {
+    "name": "Prázdny príliv",
+    "brief": "Nevydarený prielom rozptýlil predvoj pozdĺž čierneho pobrežia. Obnovte líniu skôr, než sa príliv vráti."
+  },
   "mapLabel": {
     "sector-paris": "Paríž",
     "sector-lyon": "Lyon",
@@ -84,6 +96,9 @@
     "sector-kyiv": "Kyjev",
     "sector-carpathian": "Karpatský priesmyk",
     "sector-blacksea": "Čierne more",
-    "sector-rift": "Trhlina"
+    "sector-rift": "Trhlina",
+    "sector-cinder-gate": "Žeravá brána",
+    "sector-lantern-vault": "Lampášový trezor",
+    "sector-hollow-tide": "Prázdny príliv"
   }
 }

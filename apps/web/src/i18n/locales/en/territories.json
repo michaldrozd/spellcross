@@ -67,6 +67,18 @@
     "name": "The Eastern Rift",
     "brief": "The main invasion portal. Destroy it to turn the tide of war."
   },
+  "sector-cinder-gate": {
+    "name": "Cinder Gate",
+    "brief": "A second horizon has opened beyond the sealed fracture. Establish a foothold before the passage collapses."
+  },
+  "sector-lantern-vault": {
+    "name": "Lantern Vault",
+    "brief": "A buried observatory still shelters scouts who mapped the new sky. Reach them before the vault is breached."
+  },
+  "sector-hollow-tide": {
+    "name": "Hollow Tide",
+    "brief": "The failed breach scattered the vanguard along a black shoreline. Rebuild the line before the tide returns."
+  },
   "mapLabel": {
     "sector-paris": "Paris",
     "sector-lyon": "Lyon",
@@ -84,6 +96,9 @@
     "sector-kyiv": "Kyiv",
     "sector-carpathian": "Carpathian Pass",
     "sector-blacksea": "Black Sea",
-    "sector-rift": "Rift"
+    "sector-rift": "Rift",
+    "sector-cinder-gate": "Cinder Gate",
+    "sector-lantern-vault": "Lantern Vault",
+    "sector-hollow-tide": "Hollow Tide"
   }
 }

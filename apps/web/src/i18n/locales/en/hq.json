@@ -54,13 +54,16 @@
     "denmark": "DENMARK",
     "netherlands": "NETHERLANDS",
     "switzerland": "SWITZERLAND",
-    "theRift": "THE RIFT"
+    "theRift": "THE RIFT",
+    "shatterline": "SHATTERLINE"
   },
   "status": {
     "cleared": "Cleared",
     "available": "Available",
     "locked": "Locked",
-    "failed": "Failed"
+    "failed": "Failed",
+    "resolved": "Resolved",
+    "bypassed": "Route Closed"
   },
   "territory": {
     "difficulty": "Difficulty",
@@ -83,7 +86,10 @@
     "operationCommitted": "OPERATION COMMITTED",
     "operationCommittedHint": "End the strategic turn before launching another operation.",
     "rapidResponse": "RAPID RESPONSE",
-    "sectorSecured": "SECTOR SECURED"
+    "sectorSecured": "SECTOR SECURED",
+    "operationResolved": "OPERATION RESOLVED",
+    "actLabel": "ACT {{act}}",
+    "actTwoTitle": "VEILBREAK"
   },
   "army": {
     "ready": "ready",

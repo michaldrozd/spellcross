@@ -1,4 +1,4 @@
-// Per-city battlefield generator. Each of the campaign's 17 sectors gets its own unique, deterministic
+// Per-city battlefield generator. Each campaign sector gets its own unique, deterministic
 // map themed to the city (river crossings, alpine passes, ruined metropolises, the demonic rift, …),
 // instead of reusing 5 shared layouts. Generation is seeded by the sector id, so a city always looks the
 // same, and every start zone / spawn / objective is chosen from known-passable tiles — valid by
@@ -29,6 +29,7 @@ interface CityConfig {
   height: number;
   weather?: 'clear' | 'night' | 'fog';
   difficulty: number; // 1-5, scales enemy roster
+  rosterOffset?: number;
 }
 
 // --- deterministic RNG (mulberry32) so generated data is stable across reloads/saves/tests ---
@@ -690,7 +691,8 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
   // Each city starts at a deterministic point in its tier roster. Without rotation, every city
   // deployed only the first handful of definitions and the back half existed in data but never
   // appeared on a battlefield.
-  const rosterOffset = Array.from(cfg.territoryId).reduce((sum, char) => sum + char.charCodeAt(0), 0) % tierRoster.length;
+  const rosterOffset = cfg.rosterOffset
+    ?? Array.from(cfg.territoryId).reduce((sum, char) => sum + char.charCodeAt(0), 0) % tierRoster.length;
   const roster = tierRoster.map((_, index) => tierRoster[(index + rosterOffset) % tierRoster.length]);
   // scale with both difficulty and map area so the enlarged battlefields don't feel empty (diff1 ~7 … diff5 ~13)
   // Cap the area term so big Rift maps no longer stack both a swarm of bodies AND the heavies on top.
@@ -722,7 +724,7 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
   };
 }
 
-// === the 17 sectors, each with a distinct theme/size/weather tuned to its lore and difficulty ===
+// Each sector has a distinct theme, size, weather and mission profile tuned to its role.
 const CITY_CONFIGS: CityConfig[] = [
   { territoryId: 'sector-paris', name: 'Paris Outskirts', brief: 'Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.', theme: 'urban', gameplay: 'evac', width: 30, height: 20, weather: 'clear', difficulty: 1 },
   { territoryId: 'sector-lyon', name: 'Lyon Industrial Zone', brief: 'Hold the factory strongpoint against the demonic raid on the arms works.', theme: 'industrial', gameplay: 'hold', width: 30, height: 20, weather: 'clear', difficulty: 1 },
@@ -740,7 +742,10 @@ const CITY_CONFIGS: CityConfig[] = [
   { territoryId: 'sector-kyiv', name: 'Kyiv Siege', brief: 'Night raid through the ruined metropolis to silence the coven and hold the relay.', theme: 'ruins', gameplay: 'raid-night', width: 40, height: 26, weather: 'night', difficulty: 5 },
   { territoryId: 'sector-carpathian', name: 'Carpathian Pass', brief: 'Hold the high pass strongpoint and clear the patrol-ridden ridges.', theme: 'alpine', gameplay: 'hold', width: 36, height: 24, weather: 'clear', difficulty: 4 },
   { territoryId: 'sector-blacksea', name: 'Black Sea Coast', brief: 'Push along the foggy coast, rout the shore-spawn and seize the far cape.', theme: 'coast', gameplay: 'bridgehead', width: 36, height: 24, weather: 'fog', difficulty: 4 },
-  { territoryId: 'sector-rift', name: 'Operation Ash Crown', brief: 'Cross the burning scar, anchor the seal, and survive the self-crowned warden that rises from its final breach.', theme: 'rift', gameplay: 'spire', width: 40, height: 26, weather: 'fog', difficulty: 5 }
+  { territoryId: 'sector-rift', name: 'Operation Ash Crown', brief: 'Cross the burning scar, anchor the seal, and survive the self-crowned warden that rises from its final breach.', theme: 'rift', gameplay: 'spire', width: 40, height: 26, weather: 'fog', difficulty: 5 },
+  { territoryId: 'sector-cinder-gate', name: 'Cinder Gate', brief: 'Cross the unstable passage, break the heat-scarred pylon ring, and anchor the first Shatterline foothold.', theme: 'rift', gameplay: 'spire', width: 38, height: 25, weather: 'fog', difficulty: 5, rosterOffset: 11 },
+  { territoryId: 'sector-lantern-vault', name: 'Lantern Vault', brief: 'Reach the trapped survey team and escort its star charts out through the collapsing observatory galleries.', theme: 'ruins', gameplay: 'rescue', width: 37, height: 24, weather: 'clear', difficulty: 5, rosterOffset: 12 },
+  { territoryId: 'sector-hollow-tide', name: 'Hollow Tide', brief: 'Raid the black shoreline, silence the tide-callers, and hold the stranded vanguard beacon through the mist.', theme: 'coast', gameplay: 'raid-night', width: 39, height: 25, weather: 'night', difficulty: 5, rosterOffset: 13 }
 ];
 
 export const cityScenarios: TacticalScenario[] = CITY_CONFIGS.map(buildScenario);

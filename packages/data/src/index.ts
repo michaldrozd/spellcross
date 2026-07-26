@@ -240,6 +240,8 @@ export interface TerritorySpec {
     territoryId: string;
     result: 'victory' | 'defeat';
   };
+  /** Campaign act shown in strategic presentation; omitted territories belong to Act I */
+  act?: 1 | 2;
   /** Region name for grouping on the map */
   region?: string;
   /** Difficulty level 1-5 */
@@ -264,6 +266,14 @@ export interface CampaignSpec {
     nickname?: string;
   }>;
   territories: TerritorySpec[];
+  actTimeBonuses?: Array<{
+    act: 2;
+    turns: {
+      story: number;
+      commander: number;
+      veteran: number;
+    };
+  }>;
 }
 
 export interface ContentBundle {
@@ -535,6 +545,7 @@ const territorySchema = z.object({
     territoryId: z.string(),
     result: z.enum(['victory', 'defeat'])
   }).optional(),
+  act: z.union([z.literal(1), z.literal(2)]).optional(),
   region: z.string().optional(),
   difficulty: z.number().int().min(1).max(5).optional()
 });
@@ -558,12 +569,20 @@ const campaignSchema = z.object({
       nickname: z.string().optional()
     })
   ),
-  territories: z.array(territorySchema)
+  territories: z.array(territorySchema),
+  actTimeBonuses: z.array(z.object({
+    act: z.literal(2),
+    turns: z.object({
+      story: z.number().int().nonnegative(),
+      commander: z.number().int().nonnegative(),
+      veteran: z.number().int().nonnegative()
+    })
+  })).optional()
 });
 
 const operationDossierSchema = z.object({
   territoryId: z.string().min(1),
-  chapter: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]),
+  chapter: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
   chapterTitle: z.string().min(1),
   codename: z.string().min(1),
   situation: z.string().min(1),
@@ -618,6 +637,24 @@ const bundleSchema = z.object({
   bundle.campaigns.forEach((campaign, campaignIndex) => {
     const territoryIds = new Set(campaign.territories.map((territory) => territory.id));
     const routeResults = new Map<string, Set<'victory' | 'defeat'>>();
+    const bonusActs = new Set<number>();
+
+    campaign.actTimeBonuses?.forEach((bonus, bonusIndex) => {
+      if (bonusActs.has(bonus.act)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Campaign ${campaign.id} defines duplicate time credit for act ${bonus.act}`,
+          path: ['campaigns', campaignIndex, 'actTimeBonuses', bonusIndex, 'act']
+        });
+      }
+      bonusActs.add(bonus.act);
+      if (campaign.territories.some((territory) => territory.act === bonus.act)) return;
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Campaign ${campaign.id} defines time credit for missing act ${bonus.act}`,
+        path: ['campaigns', campaignIndex, 'actTimeBonuses', bonusIndex, 'act']
+      });
+    });
 
     campaign.territories.forEach((territory, territoryIndex) => {
       for (const requirementId of territory.requires ?? []) {
@@ -2448,6 +2485,45 @@ const baseTerritories: TerritorySpec[] = [
     requires: ['sector-kyiv', 'sector-blacksea'],
     region: 'The Rift',
     difficulty: 5
+  },
+  {
+    id: 'sector-cinder-gate',
+    name: 'Cinder Gate',
+    brief: 'A second horizon has opened beyond the sealed fracture. Establish a foothold before the passage collapses.',
+    scenarioId: 'black-spire-assault',
+    timer: 12,
+    reward: { money: 640, research: 160, strategic: 108 },
+    mapPosition: { x: 91, y: 48 },
+    requires: ['sector-rift'],
+    act: 2,
+    region: 'Shatterline',
+    difficulty: 5
+  },
+  {
+    id: 'sector-lantern-vault',
+    name: 'Lantern Vault',
+    brief: 'A buried observatory still shelters scouts who mapped the new sky. Reach them before the vault is breached.',
+    scenarioId: 'evacuation-run',
+    timer: 11,
+    reward: { money: 670, research: 168, strategic: 112 },
+    mapPosition: { x: 96, y: 36 },
+    route: { territoryId: 'sector-cinder-gate', result: 'victory' },
+    act: 2,
+    region: 'Shatterline',
+    difficulty: 5
+  },
+  {
+    id: 'sector-hollow-tide',
+    name: 'Hollow Tide',
+    brief: 'The failed breach scattered the vanguard along a black shoreline. Rebuild the line before the tide returns.',
+    scenarioId: 'outpost-night',
+    timer: 11,
+    reward: { money: 650, research: 164, strategic: 110 },
+    mapPosition: { x: 96, y: 61 },
+    route: { territoryId: 'sector-cinder-gate', result: 'defeat' },
+    act: 2,
+    region: 'Shatterline',
+    difficulty: 5
   }
 ];
 
@@ -2476,7 +2552,11 @@ export const starterCampaign: CampaignSpec = {
     { id: 'apc-1', definitionId: 'm113', tier: 'rookie', experience: 0 },
     { id: 'medic-1', definitionId: 'field-medic', tier: 'rookie', experience: 0 }
   ],
-  territories: starterTerritories
+  territories: starterTerritories,
+  actTimeBonuses: [{
+    act: 2,
+    turns: { story: 2, commander: 2, veteran: 2 }
+  }]
 };
 
 export const starterBundle: ContentBundle = {

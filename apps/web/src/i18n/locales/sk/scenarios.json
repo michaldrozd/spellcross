@@ -184,5 +184,29 @@
       "sector-rift-hold": "Udržte pečať v horiacej jazve 3 kolá.",
       "sector-rift-disrupt-ward": "Voliteľné: prelomte ochranný maják a privolajte prieskumníkov Aliancie cez jazvu."
     }
+  },
+  "city-sector-cinder-gate": {
+    "name": "Žeravá brána",
+    "brief": "Prejdite nestabilným priechodom, rozbite kruh žiarou poznačených pylónov a ukotvite prvé predmostie na Línii zlomu.",
+    "objectives": {
+      "sector-cinder-gate-eliminate": "Zničte rituálnych strážcov okolo priechodu.",
+      "sector-cinder-gate-hold": "Udržte priestor pylónov 3 kolá."
+    }
+  },
+  "city-sector-lantern-vault": {
+    "name": "Lampášový trezor",
+    "brief": "Nájdite uviaznutý prieskumný tím a sprevádzajte jeho hviezdne mapy cez rúcajúce sa galérie observatória.",
+    "objectives": {
+      "sector-lantern-vault-reach": "Dopravte prieskumný tím a jeho mapy do evakuačnej zóny.",
+      "sector-lantern-vault-protect": "Udržte prieskumný tím nažive."
+    }
+  },
+  "city-sector-hollow-tide": {
+    "name": "Prázdny príliv",
+    "brief": "Prepadnite čierne pobrežie, umlčte vyvolávačov prílivu a udržte maják odrezaného predvoja v hmle.",
+    "objectives": {
+      "sector-hollow-tide-eliminate": "Umlčte vyvolávačov prílivu.",
+      "sector-hollow-tide-hold": "Udržte hrebeň s majákom 3 kolá."
+    }
   }
 }

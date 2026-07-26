@@ -17,6 +17,8 @@ interface Territory {
   remainingTimer?: number;
   mapPosition?: { x: number; y: number };
   requires?: string[];
+  route?: { territoryId: string; result: 'victory' | 'defeat' };
+  act?: 1 | 2;
   region?: string;
   difficulty?: number;
 }
@@ -215,6 +217,8 @@ function regionLabel(region: string, t: TFunction<'hq'>) {
       return t('region.switzerland');
     case 'The Rift':
       return t('region.theRift');
+    case 'Shatterline':
+      return t('region.shatterline');
     default:
       return region;
   }
@@ -281,7 +285,9 @@ const StrategicMapView: React.FC<{
     cleared: territories.filter((t) => t.status === 'cleared').length,
     available: territories.filter((t) => t.status === 'available').length,
     locked: territories.filter((t) => t.status === 'locked').length,
-    failed: territories.filter((t) => t.status === 'failed').length
+    failed: territories.filter((t) => t.status === 'failed').length,
+    resolved: territories.filter((t) => t.status === 'resolved').length,
+    bypassed: territories.filter((t) => t.status === 'bypassed').length
   }), [territories]);
   const urgentTerritory = useMemo(() => (
     territories
@@ -297,15 +303,19 @@ const StrategicMapView: React.FC<{
 
   // Calculate connection lines between territories
   const connections = useMemo(() => {
-    const lines: Array<{ from: Territory; to: Territory }> = [];
+    const lines: Array<{ from: Territory; to: Territory; routed: boolean }> = [];
     for (const t of territories) {
       if (t.requires && t.mapPosition) {
         for (const reqId of t.requires) {
           const req = territories.find(r => r.id === reqId);
           if (req?.mapPosition) {
-            lines.push({ from: req, to: t });
+            lines.push({ from: req, to: t, routed: false });
           }
         }
+      }
+      if (t.route && t.mapPosition) {
+        const source = territories.find((territory) => territory.id === t.route?.territoryId);
+        if (source?.mapPosition) lines.push({ from: source, to: t, routed: true });
       }
     }
     return lines;
@@ -317,6 +327,8 @@ const StrategicMapView: React.FC<{
       case 'available': return '#eab308';
       case 'locked': return '#6b7280';
       case 'failed': return '#ef4444';
+      case 'resolved': return '#38bdf8';
+      case 'bypassed': return '#59636c';
       default: return '#6b7280';
     }
   };
@@ -418,8 +430,9 @@ const StrategicMapView: React.FC<{
               y2={conn.to.mapPosition!.y}
                 stroke={conn.to.status === 'locked' ? '#555d58' : '#8a907b'}
                 strokeWidth="0.3"
-                strokeDasharray={conn.to.status === 'locked' ? '1,1' : 'none'}
+                strokeDasharray={conn.routed ? '0.55,0.65' : conn.to.status === 'locked' ? '1,1' : 'none'}
                 opacity={conn.to.status === 'locked' ? 0.54 : 0.72}
+                className={conn.routed ? 'route-connection' : undefined}
               />
           ))}
 
@@ -435,13 +448,21 @@ const StrategicMapView: React.FC<{
             </g>
           )}
 
+          {/* Invasion vector stays behind interactive campaign nodes. */}
+          <path
+            d="M 88,52 L 94,47 L 94,50 L 97,50 L 97,54 L 94,54 L 94,57 Z"
+            fill="#ef4444"
+            opacity="0.24"
+          />
+          <text x="91" y="60" className="invasion-label">{translate('hq:map.invasion')}</text>
+
           {/* Territory markers */}
           {territories.map(t => {
             if (!t.mapPosition) return null;
             const isSelected = t.id === selectedTerritory;
             const isSeaAnchor = t.id === 'sector-blacksea';
             const color = getStatusColor(t.status);
-            const markerFill = t.status === 'locked'
+            const markerFill = t.status === 'locked' || t.status === 'bypassed'
               ? (isSeaAnchor ? '#243745' : '#27272a')
               : color;
             const markerStroke = isSelected
@@ -511,6 +532,15 @@ const StrategicMapView: React.FC<{
                   className="territory-node"
                   style={{ cursor: 'pointer' }}
                 />
+                {t.status === 'bypassed' && (
+                  <line
+                    x1={t.mapPosition.x - 1.25}
+                    y1={t.mapPosition.y + 1.25}
+                    x2={t.mapPosition.x + 1.25}
+                    y2={t.mapPosition.y - 1.25}
+                    className="bypassed-slash"
+                  />
+                )}
 
                 {/* Timer badge */}
                 {t.remainingTimer != null && t.status === 'available' && (
@@ -524,28 +554,20 @@ const StrategicMapView: React.FC<{
 
                 {/* Territory name */}
                 <text
-                  x={t.mapPosition.x}
+                  x={t.mapPosition.x > 92 ? 99 : t.mapPosition.x}
                   y={t.mapPosition.y + 3.5}
-                  className={`territory-name ${t.status}`}
+                  className={`territory-name ${t.status} ${t.mapPosition.x > 92 ? 'map-edge-label' : ''}`}
                 >
                   {mapLabelForTerritory(t.id)}
                 </text>
               </g>
             );
           })}
-
-          {/* Invasion arrow from the east */}
-          <path
-            d="M 88,52 L 94,47 L 94,50 L 97,50 L 97,54 L 94,54 L 94,57 Z"
-            fill="#ef4444"
-            opacity="0.38"
-          />
-          <text x="91" y="60" className="invasion-label">{translate('hq:map.invasion')}</text>
         </svg>
 
         <div className="map-status-strip">
           <span><b>{statusCounts.available}</b> {translate('hq:map.activeFronts')}</span>
-          <span><b>{statusCounts.cleared}</b> {translate('hq:map.secured')}</span>
+          <span><b>{statusCounts.cleared + statusCounts.resolved}</b> {translate('hq:map.secured')}</span>
           <span><b>{statusCounts.locked}</b> {translate('hq:map.locked')}</span>
           <strong>{urgentTerritory ? translate('hq:map.timedCrisis', { territory: urgentTerritory.name, turns: urgentTerritory.remainingTimer }) : translate('hq:map.noTimedCrisis')}</strong>
         </div>
@@ -556,6 +578,8 @@ const StrategicMapView: React.FC<{
           <div className="legend-item"><span className="legend-dot available"></span> {translate('hq:status.available')}</div>
           <div className="legend-item"><span className="legend-dot locked"></span> {translate('hq:status.locked')}</div>
           <div className="legend-item"><span className="legend-dot failed"></span> {translate('hq:status.failed')}</div>
+          <div className="legend-item"><span className="legend-dot resolved"></span> {translate('hq:status.resolved')}</div>
+          <div className="legend-item"><span className="legend-dot bypassed"></span> {translate('hq:status.bypassed')}</div>
         </div>
       </div>
 
@@ -587,6 +611,12 @@ const StrategicMapView: React.FC<{
         )}
         {selected ? (
           <>
+            {selected.act === 2 && (
+              <div className="territory-act-banner" data-act="2">
+                <span>{translate('hq:territory.actLabel', { act: 'II' })}</span>
+                <b>{translate('hq:territory.actTwoTitle')}</b>
+              </div>
+            )}
             <h2>{selected.name}</h2>
             <div className="territory-region">{selected.region ? regionLabel(selected.region, translate) : null}</div>
             <div className="territory-difficulty">
@@ -636,9 +666,11 @@ const StrategicMapView: React.FC<{
               </button>
             )}
 
-            {selected.status === 'cleared' && (
+            {(selected.status === 'cleared' || selected.status === 'resolved') && (
               <div className="territory-reward-earned">
-                <span className="checkmark">✓</span> {translate('hq:territory.sectorSecured')}
+                <span className="checkmark">✓</span> {translate(
+                  selected.status === 'cleared' ? 'hq:territory.sectorSecured' : 'hq:territory.operationResolved'
+                )}
               </div>
             )}
           </>

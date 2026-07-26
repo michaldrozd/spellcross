@@ -116,12 +116,14 @@
     "won": "KAMPAŇ VYHRATÁ",
     "lost": "KAMPAŇ PREHRATÁ",
     "victoryFlavor": "Všetky sektory sú zabezpečené — invázny koridor je zničený. Front drží.",
+    "actTwoUnlockedFlavor": "Východná trhlina je zapečatená, no odhalila cestu za známy front. Víťazstvo platí a nový akt je pripravený.",
     "defeatFlavor": "Vojnové hodiny vypršali a front sa zrútil. Invázia ovládla kontinent.",
-    "sectorsCleared": "Vyčistené sektory",
+    "operationsResolved": "Uzavreté operácie",
     "turnsTaken": "Odohraných kôl",
     "unitsSurviving": "Prežívajúce jednotky",
     "reserveSuffix": "+{{count}} v zálohe",
     "techResearched": "Dokončený výskum",
+    "continueActTwo": "Pokračovať do II. aktu",
     "newCampaign": "Nová kampaň",
     "mainMenu": "Hlavné menu"
   }

@@ -3208,6 +3208,10 @@ export function App() {
   const dismissPopups = () => mutate((s) => { s.popups = []; });
   const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
   const [savedSlots, setSavedSlots] = useState<(SaveSlot | null)[]>(() => loadAllSummaries());
+  const [campaignOutcomeDismissed, setCampaignOutcomeDismissed] = useState(false);
+  useEffect(() => {
+    setCampaignOutcomeDismissed(false);
+  }, [campaign.outcome, slot]);
   // Campaign-end sting. Ref-guarded so the frequent strategic re-renders can't re-trigger it.
   const campaignOutcomeStingRef = useRef<string | null>(null);
   useEffect(() => {
@@ -3468,6 +3472,8 @@ export function App() {
     remainingTimer: t.remainingTimer,
     mapPosition: t.mapPosition,
     requires: t.requires,
+    route: t.route,
+    act: t.act,
     region: t.region,
     difficulty: t.difficulty,
   }));
@@ -3488,22 +3494,30 @@ export function App() {
       localizedTerritoryBrief(territory)
     )
   ]));
+  const availableActTwo = campaign.outcome === 'victory'
+    && campaign.territories.some((territory) => territory.act === 2 && territory.status === 'available');
+  const showCampaignOutcome = Boolean(campaign.outcome)
+    && !(availableActTwo && campaignOutcomeDismissed);
   return (
     <>
       <ToastContainer />
-      {campaign.outcome ? (
+      {showCampaignOutcome ? (
         <div className="gameover-overlay">
           <div className={`gameover-panel ${campaign.outcome}`}>
             <h1>{campaign.outcome === 'victory' ? t('campaign:gameover.won') : t('campaign:gameover.lost')}</h1>
             <p className="gameover-flavor">
               {campaign.outcome === 'victory'
-                ? t('campaign:gameover.victoryFlavor')
+                ? t(availableActTwo ? 'campaign:gameover.actTwoUnlockedFlavor' : 'campaign:gameover.victoryFlavor')
                 : t('campaign:gameover.defeatFlavor')}
             </p>
             <dl className="gameover-summary">
               <div className="gameover-stat">
-                <dt>{t('campaign:gameover.sectorsCleared')}</dt>
-                <dd>{campaign.territories.filter((t) => t.status === 'cleared').length}/{campaign.territories.length}</dd>
+                <dt>{t('campaign:gameover.operationsResolved')}</dt>
+                <dd>{campaign.territories.filter((territory) => (
+                  territory.status === 'cleared'
+                  || territory.status === 'resolved'
+                  || territory.status === 'bypassed'
+                )).length}/{campaign.territories.length}</dd>
               </div>
               <div className="gameover-stat">
                 <dt>{t('campaign:gameover.turnsTaken')}</dt>
@@ -3519,6 +3533,14 @@ export function App() {
               </div>
             </dl>
             <div className="gameover-actions">
+              {availableActTwo && (
+                <button
+                  className="primary-btn continue-act-two"
+                  onClick={() => setCampaignOutcomeDismissed(true)}
+                >
+                  {t('campaign:gameover.continueActTwo')}
+                </button>
+              )}
               <button className="primary-btn" onClick={() => { reset(campaign.difficulty); }}>{t('campaign:gameover.newCampaign')}</button>
               <button className="secondary-btn" onClick={() => setMode('menu')}>{t('campaign:gameover.mainMenu')}</button>
             </div>

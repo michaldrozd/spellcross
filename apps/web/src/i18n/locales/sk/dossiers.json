@@ -159,5 +159,32 @@
     "command": "Rozbite líniu ochranných znakov, prežite útok zbiehajúcej sa stráže a zrúťte trhlinu zvnútra jej obvodu.",
     "victory": "Koruna popola je zlomená. Trhlina sa zmenšuje, nepriateľské sily strácajú súdržnosť a na východnú líniu prichádza úsvit.",
     "defeat": "Trhlina zostala otvorená a jej vládca drží bojisko. Aliancia pripravuje poslednú obrannú líniu na západe."
+  },
+  "sector-cinder-gate": {
+    "chapterTitle": "Prelomenie závoja",
+    "codename": "Žeravá brána",
+    "situation": "Zapečatená Východná trhlina odhalila úzky priechod do rozlámaného kraja pod neznámou oblohou.",
+    "threat": "Priechod sa v pulzoch rúca, zatiaľ čo sa okolo kruhu žiarou poznačených pylónov zhromažďujú noví obrancovia.",
+    "command": "Prejdite pred ďalším zrútením, rozbite kruh pylónov a na druhej strane ukotvite signál.",
+    "victory": "Kotva drží a priechod sa ustálil. Signály prieskumníkov odhaľujú dve trasy do Línie zlomu.",
+    "defeat": "Predvoj sa rozptýlil, keď sa priechod zlomil. Preživší vysielajú z tmavého pobrežia ďalej na juh."
+  },
+  "sector-lantern-vault": {
+    "chapterTitle": "Prelomenie závoja",
+    "codename": "Lampášový trezor",
+    "situation": "Prieskumníci z úspešného prechodu našli podzemné observatórium, ktorého prístroje stále mapujú rozbitú oblohu.",
+    "threat": "Kamenní strážcovia prerážajú vonkajšie galérie, kým uviaznutý tím chráni jedinú úplnú hviezdnu mapu.",
+    "command": "Dostaňte sa k prieskumnému tímu, sprevádzajte ho cez prielom v galérii a zachráňte záznamy observatória.",
+    "victory": "Prieskumný tím aj mapy sú v bezpečí. Ich merania menia Líniu zlomu z prázdna na priechodný kraj.",
+    "defeat": "Galérie observatória sa zrútili okolo prieskumného tímu. Ďalší postup sa musí zaobísť bez spoľahlivej orientácie."
+  },
+  "sector-hollow-tide": {
+    "chapterTitle": "Prelomenie závoja",
+    "codename": "Prázdny príliv",
+    "situation": "Rozptýlení preživší nevydareného prechodu vytvorili perimeter na pobreží, od ktorého voda bez varovania ustupuje.",
+    "threat": "Každá ustupujúca vlna odhaľuje spiace bojové tvary, ktoré postupujú hmlou k odrezaným signálnym majákom.",
+    "command": "Umlčte vyvolávačov prílivu, udržte hrebeň s majákom a obnovte stabilnú trasu k preživšiemu predvoju.",
+    "victory": "Vyvolávači prílivu sú preč a hrebeň s majákom je bezpečný. Odrezaný predvoj sa stal novým predmostím.",
+    "defeat": "Čierny príliv zakryl hrebeň skôr, než sa línia obnovila. Kontakt s preživším predvojom slabne."
   }
 }

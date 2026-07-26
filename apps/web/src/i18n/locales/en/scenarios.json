@@ -184,5 +184,29 @@
       "sector-rift-hold": "Anchor the seal inside the burning scar for 3 rounds.",
       "sector-rift-disrupt-ward": "Optional: break the ward beacon to call Alliance rangers through the scar."
     }
+  },
+  "city-sector-cinder-gate": {
+    "name": "Cinder Gate",
+    "brief": "Cross the unstable passage, break the heat-scarred pylon ring, and anchor the first Shatterline foothold.",
+    "objectives": {
+      "sector-cinder-gate-eliminate": "Destroy the ritual guardians around the passage.",
+      "sector-cinder-gate-hold": "Hold the pylon grounds for 3 rounds."
+    }
+  },
+  "city-sector-lantern-vault": {
+    "name": "Lantern Vault",
+    "brief": "Reach the trapped survey team and escort its star charts out through the collapsing observatory galleries.",
+    "objectives": {
+      "sector-lantern-vault-reach": "Bring the survey team and its charts to the extraction zone.",
+      "sector-lantern-vault-protect": "Keep the survey team alive."
+    }
+  },
+  "city-sector-hollow-tide": {
+    "name": "Hollow Tide",
+    "brief": "Raid the black shoreline, silence the tide-callers, and hold the stranded vanguard beacon through the mist.",
+    "objectives": {
+      "sector-hollow-tide-eliminate": "Silence the tide-callers.",
+      "sector-hollow-tide-hold": "Secure the beacon ridge for 3 rounds."
+    }
   }
 }

@@ -1624,6 +1624,10 @@ body {
   filter: drop-shadow(0 0 0.32px rgba(0, 0, 0, 0.95));
 }
 
+.strategic-map-svg .territory-name.map-edge-label {
+  text-anchor: end;
+}
+
 .strategic-map-svg .city-label {
   font-size: 1.02px;
   fill: rgba(221, 230, 218, 0.92);
@@ -1641,6 +1645,14 @@ body {
 
 .strategic-map-svg .territory-name.available {
   fill: #ffd238;
+}
+
+.strategic-map-svg .territory-name.resolved {
+  fill: #72d5f5;
+}
+
+.strategic-map-svg .territory-name.bypassed {
+  fill: rgba(160, 171, 177, 0.7);
 }
 
 .strategic-map-svg .territory-name.locked {
@@ -1713,6 +1725,23 @@ body {
   filter: drop-shadow(0 0 0.75px rgba(239, 68, 68, 0.9));
 }
 
+.strategic-map-svg .territory-marker.territory-resolved .territory-node {
+  filter: drop-shadow(0 0 0.62px rgba(56, 189, 248, 0.72));
+}
+
+.strategic-map-svg .territory-marker.territory-bypassed {
+  opacity: 0.62;
+}
+
+.strategic-map-svg .bypassed-slash {
+  stroke: #aab4ba;
+  stroke-width: 0.32;
+}
+
+.strategic-map-svg .route-connection {
+  stroke: rgba(107, 202, 220, 0.84);
+}
+
 .strategic-map-svg .territory-marker:hover .territory-node {
   opacity: 0.95;
   stroke: #f8fafc;
@@ -1770,6 +1799,7 @@ body {
   bottom: 1rem;
   left: 1rem;
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   padding: 0.5rem 1rem;
   background: rgba(9, 10, 9, 0.82);
@@ -1797,6 +1827,11 @@ body {
 .legend-dot.available { background: #eab308; }
 .legend-dot.locked { background: #6b7280; }
 .legend-dot.failed { background: #ef4444; }
+.legend-dot.resolved { background: #38bdf8; }
+.legend-dot.bypassed {
+  background: #59636c;
+  box-shadow: inset 0 0 0 1px #aab4ba;
+}
 
 /* Territory info panel */
 .territory-info-panel {
@@ -1891,6 +1926,31 @@ body {
   letter-spacing: 0.1em;
 }
 
+.territory-act-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid rgba(74, 207, 226, 0.54);
+  background:
+    linear-gradient(90deg, rgba(23, 112, 132, 0.3), rgba(33, 47, 56, 0.2)),
+    repeating-linear-gradient(135deg, transparent 0 8px, rgba(129, 225, 235, 0.04) 8px 9px);
+  color: #a9edf3;
+  font-family: "Courier New", monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.territory-act-banner span {
+  color: #6fd5e2;
+  font-size: 0.68rem;
+}
+
+.territory-act-banner b {
+  font-size: 0.82rem;
+}
+
 .territory-difficulty {
   color: var(--text-dim);
   font-size: 0.9rem;
@@ -1967,6 +2027,18 @@ body {
   background: rgba(239, 68, 68, 0.2);
   color: #ef4444;
   border: 1px solid #ef4444;
+}
+
+.territory-status-badge[data-status="resolved"] {
+  background: rgba(56, 189, 248, 0.16);
+  color: #72d5f5;
+  border: 1px solid #38bdf8;
+}
+
+.territory-status-badge[data-status="bypassed"] {
+  background: rgba(89, 99, 108, 0.2);
+  color: #aab4ba;
+  border: 1px dashed #6b7780;
 }
 
 .territory-requires {
@@ -3601,7 +3673,8 @@ header.app-header {
 }
 
 .gameover-panel {
-  min-width: 420px;
+  width: min(560px, calc(100vw - 2rem));
+  min-width: 0;
   max-width: 560px;
   padding: 2rem 2.4rem;
   text-align: center;
@@ -3660,8 +3733,17 @@ header.app-header {
 
 .gameover-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.75rem;
   justify-content: center;
+}
+
+.gameover-actions .continue-act-two {
+  flex-basis: 100%;
+  border-color: #6fd5e2;
+  background: linear-gradient(180deg, #2d8795, #1b5965);
+  color: #effdff;
+  box-shadow: 0 0 22px rgba(74, 207, 226, 0.18);
 }
 
 /* In-battle outcome card — shown on the frozen battlefield before returning to HQ */

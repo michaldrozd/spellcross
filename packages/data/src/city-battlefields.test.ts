@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
 import { cityScenarios } from './city-battlefields.js';
@@ -6,9 +7,38 @@ const inBounds = (q: number, r: number, w: number, h: number) => q >= 0 && q < w
 
 describe('Per-city battlefields', () => {
   it('generates one scenario per sector', () => {
-    expect(cityScenarios.length).toBe(17);
-    expect(new Set(cityScenarios.map((s) => s.id)).size).toBe(17); // unique ids
-    expect(new Set(cityScenarios.map((s) => s.map.id)).size).toBe(17); // unique maps
+    expect(cityScenarios.length).toBe(20);
+    expect(new Set(cityScenarios.map((s) => s.id)).size).toBe(20); // unique ids
+    expect(new Set(cityScenarios.map((s) => s.map.id)).size).toBe(20); // unique maps
+  });
+
+  it('gives every sector a distinct deterministic battlefield layout', () => {
+    const hashes = cityScenarios.map((scenario) => createHash('sha256').update(JSON.stringify({
+      width: scenario.map.width,
+      height: scenario.map.height,
+      tiles: scenario.map.tiles.map((tile) => [
+        tile.terrain,
+        tile.elevation,
+        tile.cover,
+        tile.movementCostModifier,
+        tile.passable,
+        tile.providesVisionBoost,
+        tile.blocksVision
+      ]),
+      props: scenario.map.props?.map((prop) => [
+        prop.kind,
+        prop.coordinate.q,
+        prop.coordinate.r,
+        prop.w,
+        prop.h,
+        prop.levels,
+        prop.texture,
+        prop.scale,
+        prop.flipX
+      ])
+    })).digest('hex'));
+
+    expect(new Set(hashes).size).toBe(cityScenarios.length);
   });
 
   for (const sc of cityScenarios) {

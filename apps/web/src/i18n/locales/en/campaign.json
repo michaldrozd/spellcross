@@ -115,12 +115,14 @@
     "won": "CAMPAIGN WON",
     "lost": "CAMPAIGN LOST",
     "victoryFlavor": "Every sector is secured — the invasion corridor is shattered. The front holds.",
+    "actTwoUnlockedFlavor": "The Eastern Rift is sealed, but the breach exposed a road beyond the known front. The victory stands; a new act is ready.",
     "defeatFlavor": "The war clock ran out and the front collapsed. The invasion has overrun the continent.",
-    "sectorsCleared": "Sectors cleared",
+    "operationsResolved": "Operations concluded",
     "turnsTaken": "Turns taken",
     "unitsSurviving": "Units surviving",
     "reserveSuffix": "+{{count}} reserve",
     "techResearched": "Tech researched",
+    "continueActTwo": "Continue to Act II",
     "newCampaign": "New Campaign",
     "mainMenu": "Main Menu"
   }

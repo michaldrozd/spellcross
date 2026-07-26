@@ -54,13 +54,16 @@
     "denmark": "DÁNSKO",
     "netherlands": "HOLANDSKO",
     "switzerland": "ŠVAJČIARSKO",
-    "theRift": "TRHLINA"
+    "theRift": "TRHLINA",
+    "shatterline": "LÍNIA ZLOMU"
   },
   "status": {
     "cleared": "Vyčistené",
     "available": "Dostupné",
     "locked": "Uzamknuté",
-    "failed": "Zlyhané"
+    "failed": "Zlyhané",
+    "resolved": "Uzavreté",
+    "bypassed": "Trasa uzavretá"
   },
   "territory": {
     "difficulty": "Náročnosť",
@@ -83,7 +86,10 @@
     "operationCommitted": "OPERÁCIA UŽ PREBEHLA",
     "operationCommittedHint": "Pred ďalšou operáciou ukonči strategické kolo.",
     "rapidResponse": "RÝCHLA REAKCIA",
-    "sectorSecured": "SEKTOR ZABEZPEČENÝ"
+    "sectorSecured": "SEKTOR ZABEZPEČENÝ",
+    "operationResolved": "OPERÁCIA UZAVRETÁ",
+    "actLabel": "AKT {{act}}",
+    "actTwoTitle": "PRELOMENIE ZÁVOJA"
   },
   "army": {
     "ready": "pripravených",

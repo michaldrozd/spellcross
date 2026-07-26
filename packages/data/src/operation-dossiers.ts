@@ -3,7 +3,7 @@ export type OperationAudioTheme = (typeof operationAudioThemes)[number];
 
 export interface OperationDossier {
   territoryId: string;
-  chapter: 1 | 2 | 3 | 4;
+  chapter: 1 | 2 | 3 | 4 | 5;
   chapterTitle: string;
   codename: string;
   situation: string;
@@ -217,6 +217,42 @@ export const starterOperationDossiers: OperationDossier[] = [
     command: 'Break the ward line, survive the converging guard, and collapse the fracture from within its perimeter.',
     victory: 'The Ash Crown is broken. The fracture is shrinking, hostile formations are losing cohesion, and dawn reaches the eastern line.',
     defeat: 'The fracture remains open and the warden holds the field. Alliance command is preparing one last defensive line in the west.',
+    audioTheme: 'rift'
+  },
+  {
+    territoryId: 'sector-cinder-gate',
+    chapter: 5,
+    chapterTitle: 'Veilbreak',
+    codename: 'Cinder Gate',
+    situation: 'The sealed Eastern Rift has exposed a narrow passage into a fractured landscape under an unfamiliar sky.',
+    threat: 'The passage is collapsing in pulses while fresh defenders gather around a ring of heat-scarred pylons.',
+    command: 'Cross before the next collapse, break the pylon ring, and establish a signal anchor on the far side.',
+    victory: 'The anchor is holding and the passage has stabilized. Scout signals now reveal two routes into the Shatterline.',
+    defeat: 'The vanguard was scattered when the passage folded. Survivors are transmitting from a dark shoreline farther south.',
+    audioTheme: 'rift'
+  },
+  {
+    territoryId: 'sector-lantern-vault',
+    chapter: 5,
+    chapterTitle: 'Veilbreak',
+    codename: 'Lantern Vault',
+    situation: 'Scouts from the successful crossing found an underground observatory whose instruments still chart the broken sky.',
+    threat: 'Stone sentries are cutting through the outer galleries while a trapped survey team protects the only complete star map.',
+    command: 'Reach the survey team, escort it through the gallery breach, and preserve the observatory records.',
+    victory: 'The survey team and its charts are safe. Their measurements turn the Shatterline from a void into navigable ground.',
+    defeat: 'The observatory galleries collapsed around the survey team. The next advance must proceed without reliable bearings.',
+    audioTheme: 'night'
+  },
+  {
+    territoryId: 'sector-hollow-tide',
+    chapter: 5,
+    chapterTitle: 'Veilbreak',
+    codename: 'Hollow Tide',
+    situation: 'Scattered survivors of the failed crossing have formed a perimeter on a shore where the water withdraws without warning.',
+    threat: 'Each retreating wave uncovers dormant war forms that advance through the mist toward the stranded signal beacons.',
+    command: 'Silence the tide-callers, hold the beacon ridge, and reopen a stable route to the surviving vanguard.',
+    victory: 'The tide-callers are gone and the beacon ridge is secure. The stranded vanguard has become a new foothold.',
+    defeat: 'The black tide covered the beacon ridge before the line could reform. Contact with the surviving vanguard is fading.',
     audioTheme: 'rift'
   }
 ];

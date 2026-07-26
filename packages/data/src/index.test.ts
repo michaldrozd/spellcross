@@ -17,6 +17,7 @@ const makeOutcomeRouteBundle = () => {
   defeat.requires = undefined;
   defeat.route = { territoryId: source.id, result: 'defeat' };
   campaign.territories = [source, victory, defeat];
+  campaign.actTimeBonuses = undefined;
   return bundle;
 };
 
@@ -174,6 +175,50 @@ describe('data bundle', () => {
     const deadlocked = makeOutcomeRouteBundle();
     deadlocked.campaigns[0].territories[1].requires = ['sector-brussels'];
     expect(() => loadContentBundle(deadlocked)).toThrow(/cannot complete for route state/);
+  });
+
+  it('requires one time-credit target for an authored later act', () => {
+    const valid = makeOutcomeRouteBundle();
+    valid.campaigns[0].territories[1].act = 2;
+    valid.campaigns[0].territories[2].act = 2;
+    valid.campaigns[0].actTimeBonuses = [{
+      act: 2,
+      turns: { story: 2, commander: 2, veteran: 2 }
+    }];
+    expect(() => loadContentBundle(valid)).not.toThrow();
+
+    const duplicate = structuredClone(valid);
+    duplicate.campaigns[0].actTimeBonuses!.push(structuredClone(duplicate.campaigns[0].actTimeBonuses![0]));
+    expect(() => loadContentBundle(duplicate)).toThrow(/duplicate time credit for act 2/);
+
+    const missingAct = structuredClone(valid);
+    for (const territory of missingAct.campaigns[0].territories) territory.act = undefined;
+    expect(() => loadContentBundle(missingAct)).toThrow(/time credit for missing act 2/);
+  });
+
+  it('ships the Veilbreak opening as a complete paired route', () => {
+    const campaign = validatedStarterBundle.campaigns[0];
+    const cinderGate = campaign.territories.find((territory) => territory.id === 'sector-cinder-gate');
+    const lanternVault = campaign.territories.find((territory) => territory.id === 'sector-lantern-vault');
+    const hollowTide = campaign.territories.find((territory) => territory.id === 'sector-hollow-tide');
+
+    expect(cinderGate).toMatchObject({ act: 2, requires: ['sector-rift'], region: 'Shatterline' });
+    expect(lanternVault).toMatchObject({
+      act: 2,
+      route: { territoryId: 'sector-cinder-gate', result: 'victory' }
+    });
+    expect(hollowTide).toMatchObject({
+      act: 2,
+      route: { territoryId: 'sector-cinder-gate', result: 'defeat' }
+    });
+    expect(campaign.actTimeBonuses).toEqual([{
+      act: 2,
+      turns: { story: 2, commander: 2, veteran: 2 }
+    }]);
+    expect(validatedStarterBundle.dossiers
+      .filter((dossier) => dossier.chapter === 5)
+      .map((dossier) => dossier.territoryId)
+      .sort()).toEqual(['sector-cinder-gate', 'sector-hollow-tide', 'sector-lantern-vault']);
   });
 
   it('ships at least eighty unique authored unit definitions', () => {

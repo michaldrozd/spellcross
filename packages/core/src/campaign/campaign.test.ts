@@ -98,6 +98,20 @@ const makeOutcomeRouteBundle = (): ContentBundle => {
   defeat.requires = undefined;
   defeat.route = { territoryId: source.id, result: 'defeat' };
   campaign.territories = [source, victory, defeat];
+  campaign.actTimeBonuses = undefined;
+  return bundle;
+};
+
+const makeTimedOutcomeRouteBundle = (): ContentBundle => {
+  const bundle = makeOutcomeRouteBundle();
+  const campaign = bundle.campaigns[0];
+  for (const territory of campaign.territories.filter((candidate) => candidate.route)) {
+    territory.act = 2;
+  }
+  campaign.actTimeBonuses = [{
+    act: 2,
+    turns: { story: 2, commander: 2, veteran: 2 }
+  }];
   return bundle;
 };
 
@@ -501,7 +515,10 @@ describe('campaign core', () => {
       }
 
       expect(state.outcome).toBe('victory');
-      expect(operations).toBe(campaignSectorIds.size);
+      const bypassed = state.territories.filter(
+        (territory) => campaignSectorIds.has(territory.id) && territory.status === 'bypassed'
+      );
+      expect(operations + bypassed.length).toBe(campaignSectorIds.size);
       expect(state.turn).toBe(operations);
       expect(state.globalTimer).toBeGreaterThan(0);
     }
@@ -580,6 +597,100 @@ describe('campaign core', () => {
     ]);
   });
 
+  it('grants an act time credit before the transition turn can expire', () => {
+    const bundle = makeTimedOutcomeRouteBundle();
+    const state = createCampaign(bundle);
+    state.globalTimer = 1;
+
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'victory');
+
+    expect(state.globalTimer).toBe(3);
+    expect(state.actTimeBonusesApplied['2']).toBe(2);
+    endStrategicTurn(state, bundle);
+    expect(state.globalTimer).toBe(2);
+    expect(state.outcome).toBeUndefined();
+  });
+
+  it('does not repeat the critical clock warning after an act time credit', () => {
+    const bundle = makeTimedOutcomeRouteBundle();
+    const state = createCampaign(bundle);
+    state.globalTimer = 4;
+    state.log.push({ key: 'warClockCritical' });
+
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'victory');
+    endStrategicTurn(state, bundle);
+
+    expect(state.globalTimer).toBe(5);
+    expect(state.log.filter((entry) => entry.key === 'warClockCritical')).toHaveLength(1);
+  });
+
+  it('relieves clock-driven counterattack pressure when a new act opens', () => {
+    const bundle = makeTimedOutcomeRouteBundle();
+    const state = createCampaign(bundle);
+    state.globalTimer = 5;
+
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'victory');
+    endStrategicTurn(state, bundle);
+
+    expect(state.globalTimer).toBe(6);
+    expect(state.territories.some((territory) => territory.id === 'counterattack')).toBe(false);
+  });
+
+  it('persists act time credit once and grants only a later target increase', () => {
+    const bundle = makeTimedOutcomeRouteBundle();
+    const state = createCampaign(bundle);
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'victory');
+    const creditedTimer = state.globalTimer;
+
+    const restored = hydrateCampaignState(bundle, JSON.parse(JSON.stringify(serializeCampaignState(state))));
+    expect(restored.globalTimer).toBe(creditedTimer);
+    expect(restored.actTimeBonusesApplied['2']).toBe(2);
+
+    const expanded = structuredClone(bundle);
+    expanded.campaigns[0].actTimeBonuses![0].turns = { story: 5, commander: 5, veteran: 5 };
+    const toppedUp = hydrateCampaignState(expanded, serializeCampaignState(restored));
+    expect(toppedUp.globalTimer).toBe(creditedTimer + 3);
+    expect(toppedUp.actTimeBonusesApplied['2']).toBe(5);
+
+    const reloaded = hydrateCampaignState(expanded, serializeCampaignState(toppedUp));
+    expect(reloaded.globalTimer).toBe(toppedUp.globalTimer);
+  });
+
+  it('does not pay act time credit twice when the route source is retried', () => {
+    const bundle = makeTimedOutcomeRouteBundle();
+    const state = createCampaign(bundle);
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'defeat');
+    const creditedTimer = state.globalTimer;
+    endStrategicTurn(state, bundle);
+
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'victory');
+
+    expect(state.globalTimer).toBe(creditedTimer - 1);
+    expect(state.actTimeBonusesApplied['2']).toBe(2);
+    expect(state.operationResults['sector-paris']).toBe('defeat');
+  });
+
+  it('applies but does not overstate the credit for a pre-clock legacy save', () => {
+    const bundle = makeTimedOutcomeRouteBundle();
+    const state = createCampaign(bundle);
+    startBattleForTerritory(state, bundle, 'sector-paris');
+    applyBattleOutcome(state, bundle, 'victory');
+    const snapshot = serializeCampaignState(state);
+    delete (snapshot as Partial<typeof snapshot>).globalTimer;
+    delete snapshot.actTimeBonusesApplied;
+
+    const restored = hydrateCampaignState(bundle, snapshot);
+
+    expect(restored.globalTimer).toBe(17);
+    expect(restored.actTimeBonusesApplied['2']).toBe(2);
+  });
+
   it('merges newly authored territories into a legacy save without dropping its active battle', () => {
     const state = createCampaign(starterBundle);
     startBattleForTerritory(state, starterBundle, 'sector-paris');
@@ -601,6 +712,8 @@ describe('campaign core', () => {
     newTerritory.id = 'sector-aftershock';
     newTerritory.name = 'Aftershock';
     newTerritory.requires = ['sector-paris'];
+    newTerritory.route = undefined;
+    newTerritory.act = undefined;
     expandedBundle.campaigns[0].territories.push(newTerritory);
 
     const restored = hydrateCampaignState(expandedBundle, legacySnapshot);
@@ -636,33 +749,51 @@ describe('campaign core', () => {
     expect(restored.territories.find((territory) => territory.id === 'sector-brussels')?.status).toBe('bypassed');
   });
 
-  it('keeps a completion path reachable from every shipped campaign route state', () => {
+  it('keeps every shipped campaign route inside each difficulty clock', () => {
     const routeSourceIds = Array.from(new Set(starterBundle.campaigns[0].territories.flatMap((territory) => (
       territory.route ? [territory.route.territoryId] : []
     ))));
+    const expectedSlack: Record<CampaignDifficulty, number> = {
+      story: 13,
+      commander: 8,
+      veteran: 3
+    };
 
-    for (let routeState = 0; routeState < 2 ** routeSourceIds.length; routeState += 1) {
-      const selectedResults = new Map(routeSourceIds.map((territoryId, index) => [
-        territoryId,
-        routeState & (2 ** index) ? 'defeat' as const : 'victory' as const
-      ]));
-      const campaignTerritoryIds = new Set(starterBundle.campaigns[0].territories.map((territory) => territory.id));
-      const state = createCampaign(starterBundle);
-      let operations = 0;
+    for (const difficulty of ['story', 'commander', 'veteran'] as const) {
+      for (let routeState = 0; routeState < 2 ** routeSourceIds.length; routeState += 1) {
+        const selectedResults = new Map(routeSourceIds.map((territoryId, index) => [
+          territoryId,
+          routeState & (2 ** index) ? 'defeat' as const : 'victory' as const
+        ]));
+        const campaignTerritoryIds = new Set(starterBundle.campaigns[0].territories.map((territory) => territory.id));
+        const state = createCampaign(starterBundle, undefined, difficulty);
+        let operations = 0;
 
-      while (!state.outcome && operations <= campaignTerritoryIds.size * 2) {
-        const territory = state.territories
-          .filter((candidate) => campaignTerritoryIds.has(candidate.id) && candidate.status === 'available')
-          .sort((left, right) => Number(Boolean(right.route)) - Number(Boolean(left.route)))[0];
-        if (!territory) break;
+        while (!state.outcome && operations <= campaignTerritoryIds.size * 2) {
+          const territory = state.territories
+            .filter((candidate) => campaignTerritoryIds.has(candidate.id) && candidate.status === 'available')
+            .sort((left, right) => Number(Boolean(right.route)) - Number(Boolean(left.route)))[0];
+          if (!territory) break;
 
-        startBattleForTerritory(state, starterBundle, territory.id);
-        applyBattleOutcome(state, starterBundle, selectedResults.get(territory.id) ?? 'victory');
-        operations += 1;
-        if (!state.outcome) endStrategicTurn(state, starterBundle);
+          startBattleForTerritory(state, starterBundle, territory.id);
+          applyBattleOutcome(state, starterBundle, selectedResults.get(territory.id) ?? 'victory');
+          operations += 1;
+          if (!state.outcome) endStrategicTurn(state, starterBundle);
+        }
+
+        const routeDescription = `${difficulty} ${JSON.stringify(Object.fromEntries(selectedResults))}`;
+        const timeCredit = state.actTimeBonusesApplied['2'] ?? 0;
+        const effectiveBudget = CAMPAIGN_DIFFICULTY_RULES[difficulty].globalTimer + timeCredit;
+        expect(state.outcome, routeDescription).toBe('victory');
+        expect(operations, routeDescription).toBeLessThanOrEqual(effectiveBudget);
+        expect(effectiveBudget - operations, routeDescription).toBe(expectedSlack[difficulty]);
+        expect(state.territories.filter((territory) => (
+          campaignTerritoryIds.has(territory.id)
+          && territory.status !== 'cleared'
+          && territory.status !== 'resolved'
+          && territory.status !== 'bypassed'
+        )), routeDescription).toHaveLength(0);
       }
-
-      expect(state.outcome, `route state ${JSON.stringify(Object.fromEntries(selectedResults))}`).toBe('victory');
     }
   });
 
