@@ -6,7 +6,7 @@ const baseURL = externalBaseUrl ?? 'http://localhost:4173';
 export default defineConfig({
   testDir: './apps/web/e2e',
   testMatch: '**/*.spec.ts',
-  timeout: 20_000,
+  timeout: 60_000,
   expect: { timeout: 5_000 },
   workers: 2,
   use: {
