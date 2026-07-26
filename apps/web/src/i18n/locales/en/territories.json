@@ -79,6 +79,26 @@
     "name": "Hollow Tide",
     "brief": "The failed breach scattered the vanguard along a black shoreline. Rebuild the line before the tide returns."
   },
+  "sector-ashen-confluence": {
+    "name": "Ashen Confluence",
+    "brief": "The expedition routes meet at a shifting fault. Bring the survey convoy through intact."
+  },
+  "sector-sable-causeway": {
+    "name": "Sable Causeway",
+    "brief": "Break the ward towers bending the northern road over a lightless sea."
+  },
+  "sector-mnemonic-orchard": {
+    "name": "Mnemonic Orchard",
+    "brief": "Silence the forest that repeats lost Alliance transmissions to guide its ambushes."
+  },
+  "sector-thorn-engine": {
+    "name": "Thorn Engine",
+    "brief": "Seize the regulator pulling both fronts toward the same killing ground."
+  },
+  "sector-veil-heart": {
+    "name": "Veil Heart",
+    "brief": "Enter the buried core and end the second horizon before it seals around the army."
+  },
   "mapLabel": {
     "sector-paris": "Paris",
     "sector-lyon": "Lyon",
@@ -99,6 +119,11 @@
     "sector-rift": "Rift",
     "sector-cinder-gate": "Cinder Gate",
     "sector-lantern-vault": "Lantern Vault",
-    "sector-hollow-tide": "Hollow Tide"
+    "sector-hollow-tide": "Hollow Tide",
+    "sector-ashen-confluence": "Confluence",
+    "sector-sable-causeway": "Sable Causeway",
+    "sector-mnemonic-orchard": "Mnemonic Orchard",
+    "sector-thorn-engine": "Thorn Engine",
+    "sector-veil-heart": "Veil Heart"
   }
 }

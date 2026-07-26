@@ -208,5 +208,46 @@
       "sector-hollow-tide-eliminate": "Umlčte vyvolávačov prílivu.",
       "sector-hollow-tide-hold": "Udržte hrebeň s majákom 3 kolá."
     }
+  },
+  "city-sector-ashen-confluence": {
+    "name": "Popolavý sútok",
+    "brief": "Sprevádzajte prieskumný konvoj cez spojený zlom a voliteľne nalaďte ozvenový maják pre palebnú podporu.",
+    "objectives": {
+      "sector-ashen-confluence-reach": "Sprevádzajte prieskumný konvoj do predsunutého cieľa.",
+      "sector-ashen-confluence-protect": "Udržte prieskumný konvoj v prevádzke.",
+      "sector-ashen-confluence-align-beacon": "Voliteľné: nalaďte ozvenový maják a naveďte delostrelectvo Aliancie cez zlom."
+    }
+  },
+  "city-sector-sable-causeway": {
+    "name": "Čierna hrádza",
+    "brief": "Zlomte stráž hrádze, zaistite ochranné veže a zabráňte zrúteniu severnej cesty do mora.",
+    "objectives": {
+      "sector-sable-causeway-eliminate": "Zničte alebo zažeňte stráž hrádze.",
+      "sector-sable-causeway-reach": "Umiestnite nálože do ovládania ochranných veží."
+    }
+  },
+  "city-sector-mnemonic-orchard": {
+    "name": "Pamäťový sad",
+    "brief": "Zaútočte v noci na ozývajúci sa les, umlčte napodobňovače signálov a udržte koreňové relé.",
+    "objectives": {
+      "sector-mnemonic-orchard-eliminate": "Umlčte napodobňovače signálov ukryté v sade.",
+      "sector-mnemonic-orchard-hold": "Zaistite koreňové relé na 3 kolá."
+    }
+  },
+  "city-sector-thorn-engine": {
+    "name": "Tŕňový stroj",
+    "brief": "Udržte riadiaci kruh regulátora, kým technici obrátia sťahovanie oboch frontov.",
+    "objectives": {
+      "sector-thorn-engine-hold": "Udržte riadiaci kruh regulátora na 3 kolá.",
+      "sector-thorn-engine-protect": "Udržte kapitána Alexandra nažive."
+    }
+  },
+  "city-sector-veil-heart": {
+    "name": "Srdce závoja",
+    "brief": "Vstúpte do pochovaného jadra, zlomte jeho rituálnu stráž a prežite posledný horizont.",
+    "objectives": {
+      "sector-veil-heart-eliminate": "Zničte rituálnu stráž Srdca závoja.",
+      "sector-veil-heart-hold": "Ukotvite komoru srdca na 3 kolá."
+    }
   }
 }

@@ -1,6 +1,6 @@
 import type { CampaignDifficulty, CampaignState } from '@spellcross/core';
 import type { TFunction } from 'i18next';
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { clearToasts } from './Toast.js';
@@ -17,6 +17,7 @@ interface Territory {
   remainingTimer?: number;
   mapPosition?: { x: number; y: number };
   requires?: string[];
+  requiresAny?: string[];
   route?: { territoryId: string; result: 'victory' | 'defeat' };
   act?: 1 | 2;
   region?: string;
@@ -280,46 +281,80 @@ const StrategicMapView: React.FC<{
   // Aliased to `translate` (not `t`) — this component uses `t` pervasively as a loop variable name for
   // Territory objects (`territories.map((t) => t.status)` etc.), which would shadow the i18n function.
   const { t: translate } = useTranslation(['hq', 'territories', 'campaign']);
-  const selected = territories.find(t => t.id === selectedTerritory);
+  const actTwoUnlocked = territories.some((territory) => (
+    territory.act === 2 && territory.status !== 'locked'
+  ));
+  const selectedAct = territories.find((territory) => territory.id === selectedTerritory)?.act ?? 1;
+  const [mapAct, setMapAct] = useState<1 | 2>(() => (
+    selectedAct === 2 && actTwoUnlocked ? 2 : actTwoUnlocked ? 2 : 1
+  ));
+  useEffect(() => {
+    if (!actTwoUnlocked && mapAct === 2) setMapAct(1);
+  }, [actTwoUnlocked, mapAct]);
+  useEffect(() => {
+    if (selectedTerritory && selectedAct === 2 && actTwoUnlocked) setMapAct(2);
+  }, [actTwoUnlocked, selectedAct, selectedTerritory]);
+  const mapTerritories = useMemo(() => (
+    territories.filter((territory) => (territory.act ?? 1) === mapAct)
+  ), [mapAct, territories]);
+  const selected = mapTerritories.find(t => t.id === selectedTerritory);
   const statusCounts = useMemo(() => ({
-    cleared: territories.filter((t) => t.status === 'cleared').length,
-    available: territories.filter((t) => t.status === 'available').length,
-    locked: territories.filter((t) => t.status === 'locked').length,
-    failed: territories.filter((t) => t.status === 'failed').length,
-    resolved: territories.filter((t) => t.status === 'resolved').length,
-    bypassed: territories.filter((t) => t.status === 'bypassed').length
-  }), [territories]);
+    cleared: mapTerritories.filter((t) => t.status === 'cleared').length,
+    available: mapTerritories.filter((t) => t.status === 'available').length,
+    locked: mapTerritories.filter((t) => t.status === 'locked').length,
+    failed: mapTerritories.filter((t) => t.status === 'failed').length,
+    resolved: mapTerritories.filter((t) => t.status === 'resolved').length,
+    bypassed: mapTerritories.filter((t) => t.status === 'bypassed').length
+  }), [mapTerritories]);
   const urgentTerritory = useMemo(() => (
-    territories
+    mapTerritories
       .filter((t) => t.status === 'available' && t.remainingTimer != null)
       .sort((a, b) => (a.remainingTimer ?? 99) - (b.remainingTimer ?? 99))[0]
-  ), [territories]);
+  ), [mapTerritories]);
   const nextLockedTerritory = useMemo(() => (
-    territories.find((t) => t.status === 'locked')
-  ), [territories]);
+    mapTerritories.find((t) => t.status === 'locked')
+  ), [mapTerritories]);
   const rapidResponseOperations = useMemo(() => (
-    territories.filter((territory) => territory.status === 'available' && !territory.mapPosition)
-  ), [territories]);
+    mapTerritories.filter((territory) => territory.status === 'available' && !territory.mapPosition)
+  ), [mapTerritories]);
 
-  // Calculate connection lines between territories
   const connections = useMemo(() => {
-    const lines: Array<{ from: Territory; to: Territory; routed: boolean }> = [];
-    for (const t of territories) {
-      if (t.requires && t.mapPosition) {
-        for (const reqId of t.requires) {
-          const req = territories.find(r => r.id === reqId);
+    const lines: Array<{ from: Territory; to: Territory; routed: boolean; alternative: boolean }> = [];
+    for (const t of mapTerritories) {
+      if (t.mapPosition) {
+        for (const reqId of t.requires ?? []) {
+          const req = mapTerritories.find(r => r.id === reqId);
           if (req?.mapPosition) {
-            lines.push({ from: req, to: t, routed: false });
+            lines.push({ from: req, to: t, routed: false, alternative: false });
+          }
+        }
+        for (const reqId of t.requiresAny ?? []) {
+          const req = mapTerritories.find(r => r.id === reqId);
+          if (req?.mapPosition) {
+            lines.push({ from: req, to: t, routed: false, alternative: true });
           }
         }
       }
       if (t.route && t.mapPosition) {
-        const source = territories.find((territory) => territory.id === t.route?.territoryId);
-        if (source?.mapPosition) lines.push({ from: source, to: t, routed: true });
+        const source = mapTerritories.find((territory) => territory.id === t.route?.territoryId);
+        if (source?.mapPosition) lines.push({ from: source, to: t, routed: true, alternative: false });
       }
     }
     return lines;
-  }, [territories]);
+  }, [mapTerritories]);
+
+  const selectTheater = (act: 1 | 2) => {
+    if (act === 2 && !actTwoUnlocked) return;
+    setMapAct(act);
+    const currentSelection = territories.find((territory) => territory.id === selectedTerritory);
+    if ((currentSelection?.act ?? 1) === act) return;
+    const candidates = territories.filter((territory) => (territory.act ?? 1) === act);
+    const nextSelection = candidates.find((territory) => territory.status === 'available')
+      ?? candidates.find((territory) => territory.status === 'failed')
+      ?? candidates.find((territory) => territory.status === 'cleared')
+      ?? candidates[0];
+    onSelectTerritory(nextSelection?.id ?? null);
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -339,17 +374,49 @@ const StrategicMapView: React.FC<{
   const mapLabelForTerritory = (id: string) => translate(`territories:mapLabel.${id}`, { defaultValue: id.replace(/^sector-/, '') });
 
   const getDifficultyStars = (diff: number = 1) => '★'.repeat(diff) + '☆'.repeat(5 - diff);
+  const selectedRequirements = selected?.requires ?? selected?.requiresAny ?? [];
+  const requirementComplete = (territory?: Territory) => (
+    territory?.status === 'cleared' || territory?.status === 'resolved'
+  );
 
   return (
     <div className="strategic-map-view">
       {/* Main map area */}
       <div className="strategic-map-container">
-        <svg viewBox="0 0 100 80" className="strategic-map-svg" preserveAspectRatio="xMidYMid meet">
+        <div className="map-theater-switch" aria-label={translate('hq:map.theater')}>
+          <span>{translate('hq:map.theater')}</span>
+          <button
+            type="button"
+            aria-pressed={mapAct === 1}
+            onClick={() => selectTheater(1)}
+          >
+            {translate('hq:map.actOneTheater')}
+          </button>
+          <button
+            type="button"
+            aria-pressed={mapAct === 2}
+            disabled={!actTwoUnlocked}
+            onClick={() => selectTheater(2)}
+          >
+            {translate('hq:map.actTwoTheater')}
+          </button>
+        </div>
+        <svg
+          viewBox="0 0 100 80"
+          className="strategic-map-svg"
+          preserveAspectRatio="xMidYMid meet"
+          data-theater={mapAct}
+        >
           <defs>
-            <radialGradient id="mapGradient" cx="85%" cy="40%" r="60%">
+            <radialGradient id="mapGradientActOne" cx="85%" cy="40%" r="60%">
               <stop offset="0%" stopColor="#493036" />
               <stop offset="52%" stopColor="#394b39" />
               <stop offset="100%" stopColor="#263946" />
+            </radialGradient>
+            <radialGradient id="mapGradientActTwo" cx="50%" cy="42%" r="72%">
+              <stop offset="0%" stopColor="#3d3154" />
+              <stop offset="48%" stopColor="#253c3d" />
+              <stop offset="100%" stopColor="#101923" />
             </radialGradient>
             <pattern id="paperGrain" width="4" height="4" patternUnits="userSpaceOnUse">
               <rect width="4" height="4" fill="transparent" />
@@ -374,51 +441,68 @@ const StrategicMapView: React.FC<{
           </defs>
 
           {/* Map background */}
-          <rect x="0" y="0" width="100" height="80" fill="url(#mapGradient)" />
+          <rect
+            x="0"
+            y="0"
+            width="100"
+            height="80"
+            fill={`url(#mapGradientAct${mapAct === 1 ? 'One' : 'Two'})`}
+          />
           <rect x="0" y="0" width="100" height="80" fill="url(#paperGrain)" opacity="0.55" />
           <rect x="0" y="0" width="100" height="80" fill="url(#mapGrid)" opacity="0.42" />
-          <path d="M 0,0 L 100,0 L 100,80 L 75,80 C 62,72 53,66 40,63 C 26,60 12,54 0,47 Z" fill="#111d2a" opacity="0.28" />
-          <path d="M 52,10 C 60,15 69,15 79,24 C 88,31 92,38 96,50 L 100,80 L 64,80 C 76,69 86,60 91,47 C 96,34 83,22 70,17 C 62,14 56,15 52,10 Z" fill="url(#frontGradient)" />
-          <path d="M 12,55 C 24,46 36,48 48,52 C 58,55 67,53 78,46" fill="none" stroke="#273f52" strokeWidth="0.36" opacity="0.45" />
-          <path d="M 48,17 C 49,25 52,31 55,39 C 57,45 56,51 52,57" fill="none" stroke="#25394b" strokeWidth="0.28" opacity="0.42" />
-          <path d="M 36,28 C 44,31 52,31 59,35 C 67,39 75,38 84,42" fill="none" stroke="#5e5037" strokeWidth="0.18" strokeDasharray="0.8,1.2" opacity="0.5" />
-          <path d="M 22,44 C 32,48 43,50 52,57" fill="none" stroke="#5e5037" strokeWidth="0.18" strokeDasharray="0.8,1.2" opacity="0.42" />
-          <path d="M 61,22 C 70,27 79,29 89,35" fill="none" stroke="#5e5037" strokeWidth="0.18" strokeDasharray="0.8,1.2" opacity="0.48" />
-
-          {/* Simplified Europe outline */}
-          <path
-            d="M 15,25 Q 20,20 30,18 L 50,12 Q 55,15 60,14 L 70,18 Q 80,22 85,30 L 88,45 Q 85,55 80,60 L 70,65 Q 60,68 50,65 L 40,60 Q 30,55 25,50 L 20,40 Q 15,35 15,25"
-            fill="none"
-            stroke="#3d3125"
-            strokeWidth="0.45"
-            opacity="0.65"
-          />
-          <path d="M 17,26 Q 26,22 36,21 Q 46,19 53,15" fill="none" stroke="#5d513d" strokeWidth="0.18" opacity="0.5" />
-          <path d="M 28,54 Q 39,58 52,63 Q 60,66 69,64" fill="none" stroke="#5d513d" strokeWidth="0.16" opacity="0.42" />
-          <path d="M 72,22 Q 81,28 86,39 Q 87,48 82,57" fill="none" stroke="#5d513d" strokeWidth="0.16" opacity="0.45" />
-
-          {/* Fixed city anchors make the strategic layer feel less like empty nodes */}
-          {[
-            ['Paris', 25, 43],
-            ['Lyon', 30, 57],
-            ['Amsterdam', 31, 29],
-            ['Berlin', 49, 34],
-            ['Prague', 50, 43],
-            ['Vienna', 53, 51],
-            ['Warsaw', 61, 38],
-            ['Kyiv', 75, 43]
-          ].map(([name, x, y]) => (
-            <g key={name}>
-              <circle cx={x} cy={y} r="0.45" fill="#1b2422" opacity="0.7" />
+          {mapAct === 1 ? (
+            <g className="europe-cartography">
+              <path d="M 0,0 L 100,0 L 100,80 L 75,80 C 62,72 53,66 40,63 C 26,60 12,54 0,47 Z" fill="#111d2a" opacity="0.28" />
+              <path d="M 52,10 C 60,15 69,15 79,24 C 88,31 92,38 96,50 L 100,80 L 64,80 C 76,69 86,60 91,47 C 96,34 83,22 70,17 C 62,14 56,15 52,10 Z" fill="url(#frontGradient)" />
+              <path d="M 12,55 C 24,46 36,48 48,52 C 58,55 67,53 78,46" fill="none" stroke="#273f52" strokeWidth="0.36" opacity="0.45" />
+              <path d="M 48,17 C 49,25 52,31 55,39 C 57,45 56,51 52,57" fill="none" stroke="#25394b" strokeWidth="0.28" opacity="0.42" />
+              <path d="M 36,28 C 44,31 52,31 59,35 C 67,39 75,38 84,42" fill="none" stroke="#5e5037" strokeWidth="0.18" strokeDasharray="0.8,1.2" opacity="0.5" />
+              <path d="M 22,44 C 32,48 43,50 52,57" fill="none" stroke="#5e5037" strokeWidth="0.18" strokeDasharray="0.8,1.2" opacity="0.42" />
+              <path d="M 61,22 C 70,27 79,29 89,35" fill="none" stroke="#5e5037" strokeWidth="0.18" strokeDasharray="0.8,1.2" opacity="0.48" />
+              <path
+                d="M 15,25 Q 20,20 30,18 L 50,12 Q 55,15 60,14 L 70,18 Q 80,22 85,30 L 88,45 Q 85,55 80,60 L 70,65 Q 60,68 50,65 L 40,60 Q 30,55 25,50 L 20,40 Q 15,35 15,25"
+                fill="none"
+                stroke="#3d3125"
+                strokeWidth="0.45"
+                opacity="0.65"
+              />
+              <path d="M 17,26 Q 26,22 36,21 Q 46,19 53,15" fill="none" stroke="#5d513d" strokeWidth="0.18" opacity="0.5" />
+              <path d="M 28,54 Q 39,58 52,63 Q 60,66 69,64" fill="none" stroke="#5d513d" strokeWidth="0.16" opacity="0.42" />
+              <path d="M 72,22 Q 81,28 86,39 Q 87,48 82,57" fill="none" stroke="#5d513d" strokeWidth="0.16" opacity="0.45" />
+              {[
+                ['Paris', 25, 43],
+                ['Lyon', 30, 57],
+                ['Amsterdam', 31, 29],
+                ['Berlin', 49, 34],
+                ['Prague', 50, 43],
+                ['Vienna', 53, 51],
+                ['Warsaw', 61, 38],
+                ['Kyiv', 75, 43]
+              ].map(([name, x, y]) => (
+                <circle key={name} cx={x} cy={y} r="0.45" fill="#1b2422" opacity="0.7" />
+              ))}
+              <text x="20" y="48" className="region-label">{translate('hq:region.france')}</text>
+              <text x="42" y="41" className="region-label">{translate('hq:region.germany')}</text>
+              <text x="54" y="57" className="region-label">{translate('hq:region.austria')}</text>
+              <text x="69" y="35" className="region-label">{translate('hq:region.poland')}</text>
+              <text x="76" y="58" className="region-label">{translate('hq:region.ukraine')}</text>
             </g>
-          ))}
-
-          {/* Region labels */}
-          <text x="20" y="48" className="region-label">{translate('hq:region.france')}</text>
-          <text x="42" y="41" className="region-label">{translate('hq:region.germany')}</text>
-          <text x="54" y="57" className="region-label">{translate('hq:region.austria')}</text>
-          <text x="69" y="35" className="region-label">{translate('hq:region.poland')}</text>
-          <text x="76" y="58" className="region-label">{translate('hq:region.ukraine')}</text>
+          ) : (
+            <g className="shatterline-cartography">
+              <path className="shatterland" d="M 4,17 C 15,9 27,14 35,8 C 45,1 57,12 66,7 C 78,1 93,9 98,22 L 94,67 C 83,77 70,68 61,74 C 50,81 41,69 31,74 C 20,79 7,68 3,54 Z" />
+              <path className="rift-band" d="M 2,43 C 18,32 29,48 43,38 C 57,27 67,47 80,34 C 88,26 94,32 100,25" />
+              <path className="rift-band secondary" d="M 8,63 C 21,51 35,65 48,55 C 61,46 75,61 94,49" />
+              <path className="horizon-fault" d="M 11,22 L 23,17 L 31,25 L 43,15 L 54,24 L 66,13 L 78,23 L 91,17" />
+              <path className="horizon-fault lower" d="M 14,53 L 24,46 L 35,57 L 47,48 L 59,58 L 72,49 L 84,57" />
+              {[18, 34, 50, 66, 82].map((x, index) => (
+                <g key={x} className="echo-spire" transform={`translate(${x} ${index % 2 ? 64 : 16})`}>
+                  <path d="M -1.2,3 L 0,-3 L 1.2,3 Z" />
+                  <circle cx="0" cy="0" r="2.2" />
+                </g>
+              ))}
+              <text x="50" y="11" className="shatterline-label">{translate('hq:region.shatterline')}</text>
+            </g>
+          )}
 
           {/* Connection lines */}
           {connections.map((conn, i) => (
@@ -430,9 +514,9 @@ const StrategicMapView: React.FC<{
               y2={conn.to.mapPosition!.y}
                 stroke={conn.to.status === 'locked' ? '#555d58' : '#8a907b'}
                 strokeWidth="0.3"
-                strokeDasharray={conn.routed ? '0.55,0.65' : conn.to.status === 'locked' ? '1,1' : 'none'}
+                strokeDasharray={conn.routed ? '0.55,0.65' : conn.alternative ? '2,0.8' : conn.to.status === 'locked' ? '1,1' : 'none'}
                 opacity={conn.to.status === 'locked' ? 0.54 : 0.72}
-                className={conn.routed ? 'route-connection' : undefined}
+                className={conn.routed ? 'route-connection' : conn.alternative ? 'alternative-connection' : undefined}
               />
           ))}
 
@@ -441,23 +525,26 @@ const StrategicMapView: React.FC<{
               <line
                 x1={selected.mapPosition.x}
                 y1={selected.mapPosition.y}
-                x2="87"
-                y2="52"
+                x2={mapAct === 1 ? 87 : 95}
+                y2={mapAct === 1 ? 52 : 40}
               />
               <path d={`M ${selected.mapPosition.x + 2.2},${selected.mapPosition.y + 0.4} L ${selected.mapPosition.x + 4.6},${selected.mapPosition.y - 1.2} L ${selected.mapPosition.x + 5.4},${selected.mapPosition.y + 1.4}`} />
             </g>
           )}
 
-          {/* Invasion vector stays behind interactive campaign nodes. */}
-          <path
-            d="M 88,52 L 94,47 L 94,50 L 97,50 L 97,54 L 94,54 L 94,57 Z"
-            fill="#ef4444"
-            opacity="0.24"
-          />
-          <text x="91" y="60" className="invasion-label">{translate('hq:map.invasion')}</text>
+          {mapAct === 1 && (
+            <>
+              <path
+                d="M 88,52 L 94,47 L 94,50 L 97,50 L 97,54 L 94,54 L 94,57 Z"
+                fill="#ef4444"
+                opacity="0.24"
+              />
+              <text x="91" y="60" className="invasion-label">{translate('hq:map.invasion')}</text>
+            </>
+          )}
 
           {/* Territory markers */}
-          {territories.map(t => {
+          {mapTerritories.map(t => {
             if (!t.mapPosition) return null;
             const isSelected = t.id === selectedTerritory;
             const isSeaAnchor = t.id === 'sector-blacksea';
@@ -630,7 +717,13 @@ const StrategicMapView: React.FC<{
             <div className="territory-intel">
               <span><b>{translate('hq:territory.entry')}</b>{selected.status === 'locked' ? translate('hq:territory.entryBlocked') : selected.status === 'available' ? translate('hq:territory.entryOpen') : translate('hq:territory.entryClosed')}</span>
               <span><b>{translate('hq:territory.pressure')}</b>{selected.remainingTimer != null ? translate('hq:territory.turnClock', { turns: selected.remainingTimer }) : translate('hq:territory.noActiveTimer')}</span>
-              <span><b>{translate('hq:territory.chain')}</b>{selected.requires?.length ? translate('hq:territory.prerequisiteCount', { count: selected.requires.length }) : translate('hq:territory.frontlineSector')}</span>
+              <span><b>{translate('hq:territory.chain')}</b>{
+                selected.requires?.length
+                  ? translate('hq:territory.prerequisiteCount', { count: selected.requires.length })
+                  : selected.requiresAny?.length
+                    ? translate('hq:territory.prerequisiteAnyCount', { count: selected.requiresAny.length })
+                    : translate('hq:territory.frontlineSector')
+              }</span>
             </div>
             <p className="territory-brief">{selected.brief}</p>
 
@@ -639,15 +732,16 @@ const StrategicMapView: React.FC<{
               {selected.remainingTimer != null && ` • ${translate('hq:territory.turnsBadge', { turns: selected.remainingTimer })}`}
             </div>
 
-            {selected.requires && selected.requires.length > 0 && selected.status === 'locked' && (
+            {selectedRequirements.length > 0 && selected.status === 'locked' && (
               <div className="territory-requires">
-                <strong>{translate('hq:territory.requires')}</strong>
+                <strong>{translate(selected.requiresAny?.length ? 'hq:territory.requiresAny' : 'hq:territory.requires')}</strong>
                 <ul>
-                  {selected.requires.map(reqId => {
+                  {selectedRequirements.map(reqId => {
                     const req = territories.find(t => t.id === reqId);
+                    const done = requirementComplete(req);
                     return (
-                      <li key={reqId} className={req?.status === 'cleared' ? 'done' : ''}>
-                        {req?.name || reqId} {req?.status === 'cleared' && '✓'}
+                      <li key={reqId} className={done ? 'done' : ''}>
+                        {req?.name || reqId} {done && '✓'}
                       </li>
                     );
                   })}
@@ -678,9 +772,9 @@ const StrategicMapView: React.FC<{
           <div className="no-selection">
             <p>{translate('hq:map.selectTerritoryHint')}</p>
             <div className="quick-stats">
-              <div>{translate('hq:status.cleared')}: {territories.filter(t => t.status === 'cleared').length}</div>
-              <div>{translate('hq:status.available')}: {territories.filter(t => t.status === 'available').length}</div>
-              <div>{translate('hq:map.remaining')}: {territories.filter(t => t.status === 'locked').length}</div>
+              <div>{translate('hq:status.cleared')}: {mapTerritories.filter(t => t.status === 'cleared').length}</div>
+              <div>{translate('hq:status.available')}: {mapTerritories.filter(t => t.status === 'available').length}</div>
+              <div>{translate('hq:map.remaining')}: {mapTerritories.filter(t => t.status === 'locked').length}</div>
             </div>
             <div className="front-intel-grid">
               <span><b>{translate('hq:map.primaryThreat')}</b>{urgentTerritory?.name ?? translate('hq:map.noTimedCrisis')}</span>

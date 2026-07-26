@@ -452,6 +452,15 @@ const SIGNATURE_EVENTS: Partial<Record<string, SignatureEventDefinition>> = {
       { id: 'rift-harrower', definitionId: 'void-drake' },
       { id: 'ember-seer', definitionId: 'lich-lord' }
     ]
+  },
+  'sector-veil-heart': {
+    messageKey: 'veilHeartManifests',
+    reinforcements: [
+      { id: 'heart-shadow', definitionId: 'black-angel' },
+      { id: 'horizon-drake', definitionId: 'void-drake' },
+      { id: 'memory-mammoth', definitionId: 'ash-mammoth' },
+      { id: 'last-bastion', definitionId: 'dread-fortress' }
+    ]
   }
 };
 
@@ -556,6 +565,17 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
         unitIds: [convoyId]
       });
       objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Keep the convoy operational.', unitIds: [convoyId] });
+      if (id === 'sector-ashen-confluence') {
+        objs.push({
+          id: `${id}-align-beacon`,
+          kind: 'interact',
+          description: 'Align the echo beacon to guide Alliance fire support through the fault.',
+          target: hold,
+          optional: true,
+          actionKey: 'alignEchoBeacon',
+          actionPoints: 3
+        });
+      }
       break;
     }
     case 'raid-night':
@@ -648,7 +668,20 @@ function buildEvents(
     faction: 'otherSide',
     reinforcements
   };
-  if (!signature) return [reserveEvent];
+  const confluenceReward: TacticalScenarioEvent | undefined = cfg.territoryId === 'sector-ashen-confluence'
+    ? {
+        id: `${cfg.territoryId}-echo-battery`,
+        triggerObjectiveId: `${cfg.territoryId}-align-beacon`,
+        messageKey: 'echoBatteryArrives',
+        faction: 'alliance',
+        reinforcements: [{
+          id: `${cfg.territoryId}-thunderhead`,
+          definitionId: 'thunderhead-155',
+          coordinate: g.allianceZone[0] ?? g.reachable[0]
+        }]
+      }
+    : undefined;
+  if (!signature) return confluenceReward ? [reserveEvent, confluenceReward] : [reserveEvent];
 
   const signatureReinforcements = signature.reinforcements.map((reinforcement, index) => ({
     id: `${cfg.territoryId}-${reinforcement.id}`,
@@ -745,7 +778,12 @@ const CITY_CONFIGS: CityConfig[] = [
   { territoryId: 'sector-rift', name: 'Operation Ash Crown', brief: 'Cross the burning scar, anchor the seal, and survive the self-crowned warden that rises from its final breach.', theme: 'rift', gameplay: 'spire', width: 40, height: 26, weather: 'fog', difficulty: 5 },
   { territoryId: 'sector-cinder-gate', name: 'Cinder Gate', brief: 'Cross the unstable passage, break the heat-scarred pylon ring, and anchor the first Shatterline foothold.', theme: 'rift', gameplay: 'spire', width: 38, height: 25, weather: 'fog', difficulty: 5, rosterOffset: 11 },
   { territoryId: 'sector-lantern-vault', name: 'Lantern Vault', brief: 'Reach the trapped survey team and escort its star charts out through the collapsing observatory galleries.', theme: 'ruins', gameplay: 'rescue', width: 37, height: 24, weather: 'clear', difficulty: 5, rosterOffset: 12 },
-  { territoryId: 'sector-hollow-tide', name: 'Hollow Tide', brief: 'Raid the black shoreline, silence the tide-callers, and hold the stranded vanguard beacon through the mist.', theme: 'coast', gameplay: 'raid-night', width: 39, height: 25, weather: 'night', difficulty: 5, rosterOffset: 13 }
+  { territoryId: 'sector-hollow-tide', name: 'Hollow Tide', brief: 'Raid the black shoreline, silence the tide-callers, and hold the stranded vanguard beacon through the mist.', theme: 'coast', gameplay: 'raid-night', width: 39, height: 25, weather: 'night', difficulty: 5, rosterOffset: 13 },
+  { territoryId: 'sector-ashen-confluence', name: 'Ashen Confluence', brief: 'Escort the survey convoy across the joined fault line and align the echo beacon for optional fire support.', theme: 'rift', gameplay: 'convoy', width: 40, height: 27, weather: 'fog', difficulty: 5, rosterOffset: 11 },
+  { territoryId: 'sector-sable-causeway', name: 'Sable Causeway', brief: 'Break the causeway guard, arm the ward towers, and keep the northern road from folding into the sea.', theme: 'coast', gameplay: 'bridgehead', width: 42, height: 25, weather: 'clear', difficulty: 5, rosterOffset: 12 },
+  { territoryId: 'sector-mnemonic-orchard', name: 'Mnemonic Orchard', brief: 'Raid the echoing forest by night, silence the signal mimics, and hold the root relay through their answer.', theme: 'forest', gameplay: 'raid-night', width: 39, height: 27, weather: 'night', difficulty: 5, rosterOffset: 13 },
+  { territoryId: 'sector-thorn-engine', name: 'Thorn Engine', brief: 'Hold the regulator control ring while the field teams reverse the contraction pulling both fronts together.', theme: 'industrial', gameplay: 'hold', width: 42, height: 26, weather: 'fog', difficulty: 5, rosterOffset: 11 },
+  { territoryId: 'sector-veil-heart', name: 'Veil Heart', brief: 'Enter the buried core, break its ritual guard, and survive the last horizon taking form around the heart.', theme: 'rift', gameplay: 'spire', width: 43, height: 28, weather: 'fog', difficulty: 5, rosterOffset: 12 }
 ];
 
 export const cityScenarios: TacticalScenario[] = CITY_CONFIGS.map(buildScenario);

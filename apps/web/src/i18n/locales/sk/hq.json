@@ -41,7 +41,10 @@
     "primaryThreat": "HLAVNÁ HROZBA",
     "nextLock": "ĎALŠIE UZAMKNUTIE",
     "readiness": "PRIPRAVENOSŤ",
-    "recentEvents": "Nedávne udalosti"
+    "recentEvents": "Nedávne udalosti",
+    "theater": "Bojisko",
+    "actOneTheater": "Európsky front",
+    "actTwoTheater": "Línia zlomu"
   },
   "region": {
     "france": "FRANCÚZSKO",
@@ -82,6 +85,8 @@
     "frontlineSector": "Frontový sektor",
     "turnsBadge": "{{turns}} KÔL",
     "requires": "Vyžaduje:",
+    "requiresAny": "Vyžaduje jedno z:",
+    "prerequisiteAnyCount": "Stačí 1 z {{count}} predpokladov",
     "launchAttack": "SPUSTIŤ ÚTOK",
     "operationCommitted": "OPERÁCIA UŽ PREBEHLA",
     "operationCommittedHint": "Pred ďalšou operáciou ukonči strategické kolo.",

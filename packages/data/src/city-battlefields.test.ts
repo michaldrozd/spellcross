@@ -7,9 +7,9 @@ const inBounds = (q: number, r: number, w: number, h: number) => q >= 0 && q < w
 
 describe('Per-city battlefields', () => {
   it('generates one scenario per sector', () => {
-    expect(cityScenarios.length).toBe(20);
-    expect(new Set(cityScenarios.map((s) => s.id)).size).toBe(20); // unique ids
-    expect(new Set(cityScenarios.map((s) => s.map.id)).size).toBe(20); // unique maps
+    expect(cityScenarios.length).toBe(25);
+    expect(new Set(cityScenarios.map((s) => s.id)).size).toBe(25); // unique ids
+    expect(new Set(cityScenarios.map((s) => s.map.id)).size).toBe(25); // unique maps
   });
 
   it('gives every sector a distinct deterministic battlefield layout', () => {
@@ -156,7 +156,8 @@ describe('Per-city battlefields', () => {
   it.each([
     ['sector-berlin', 'signalEaterAwakes', 'signal-eater'],
     ['sector-krakow', 'glassChoirMarches', 'glass-regent'],
-    ['sector-rift', 'ashCrownDescends', 'ash-crown-sovereign']
+    ['sector-rift', 'ashCrownDescends', 'ash-crown-sovereign'],
+    ['sector-veil-heart', 'veilHeartManifests', 'black-angel']
   ] as const)('gives %s a chained signature encounter', (territoryId, messageKey, leadDefinitionId) => {
     const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
     expect(scenario?.events).toHaveLength(territoryId === 'sector-rift' ? 3 : 2);
@@ -186,5 +187,23 @@ describe('Per-city battlefields', () => {
     expect(reward).toMatchObject({ faction: 'alliance', messageKey: 'wardBeaconSecured' });
     expect(reward?.reinforcements).toHaveLength(1);
     expect(reward?.reinforcements[0]?.definitionId).toBe('rangers');
+  });
+
+  it('rewards the optional Confluence beacon action with one Alliance artillery unit', () => {
+    const scenario = cityScenarios.find((candidate) => candidate.id === 'city-sector-ashen-confluence');
+    const objective = scenario?.objectives.find((candidate) => candidate.id === 'sector-ashen-confluence-align-beacon');
+    const reward = scenario?.events?.find((event) => event.triggerObjectiveId === objective?.id);
+
+    expect(objective).toMatchObject({
+      kind: 'interact',
+      optional: true,
+      actionKey: 'alignEchoBeacon',
+      actionPoints: 3
+    });
+    expect(reward).toMatchObject({ faction: 'alliance', messageKey: 'echoBatteryArrives' });
+    expect(reward?.triggerRound).toBeUndefined();
+    expect(reward?.triggerEnemyRemaining).toBeUndefined();
+    expect(reward?.reinforcements).toHaveLength(1);
+    expect(reward?.reinforcements[0]?.definitionId).toBe('thunderhead-155');
   });
 });

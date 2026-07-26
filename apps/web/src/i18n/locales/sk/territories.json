@@ -79,6 +79,26 @@
     "name": "Prázdny príliv",
     "brief": "Nevydarený prielom rozptýlil predvoj pozdĺž čierneho pobrežia. Obnovte líniu skôr, než sa príliv vráti."
   },
+  "sector-ashen-confluence": {
+    "name": "Popolavý sútok",
+    "brief": "Výpravy sa stretli pri pohyblivom zlome. Preveďte prieskumný konvoj bez strát."
+  },
+  "sector-sable-causeway": {
+    "name": "Čierna hrádza",
+    "brief": "Zničte ochranné veže, ktoré ohýbajú severnú cestu nad morom bez svetla."
+  },
+  "sector-mnemonic-orchard": {
+    "name": "Pamäťový sad",
+    "brief": "Umlčte les, ktorý opakuje stratené vysielania Aliancie a navádza nimi prepady."
+  },
+  "sector-thorn-engine": {
+    "name": "Tŕňový stroj",
+    "brief": "Obsaďte regulátor, ktorý sťahuje oba fronty do jedného vražedného priestoru."
+  },
+  "sector-veil-heart": {
+    "name": "Srdce závoja",
+    "brief": "Vstúpte do pochovaného jadra a ukončite druhý horizont skôr, než uväzní armádu."
+  },
   "mapLabel": {
     "sector-paris": "Paríž",
     "sector-lyon": "Lyon",
@@ -99,6 +119,11 @@
     "sector-rift": "Trhlina",
     "sector-cinder-gate": "Žeravá brána",
     "sector-lantern-vault": "Lampášový trezor",
-    "sector-hollow-tide": "Prázdny príliv"
+    "sector-hollow-tide": "Prázdny príliv",
+    "sector-ashen-confluence": "Popolavý sútok",
+    "sector-sable-causeway": "Čierna hrádza",
+    "sector-mnemonic-orchard": "Pamäťový sad",
+    "sector-thorn-engine": "Tŕňový stroj",
+    "sector-veil-heart": "Srdce závoja"
   }
 }

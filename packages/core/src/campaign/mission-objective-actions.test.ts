@@ -248,6 +248,48 @@ describe('mission objective actions', () => {
     expect(processTacticalEvents(restored, starterBundle)).toEqual([]);
   });
 
+  it('persists the Confluence artillery reward exactly once across save, reload, and repeat processing', () => {
+    const state = openTerritory('sector-ashen-confluence');
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-ashen-confluence');
+    battle.deployed = true;
+    const objective = battle.scenario.objectives.find((candidate) => (
+      candidate.actionKey === 'alignEchoBeacon'
+    ));
+    const reward = battle.scenario.events?.find((event) => event.triggerObjectiveId === objective?.id);
+    const actor = Array.from(battle.state.sides.alliance.units.values())[0];
+    if (!objective?.target || !reward || !actor) throw new Error('expected Confluence beacon reward');
+    actor.coordinate = { ...objective.target };
+    actor.actionPoints = 4;
+
+    expect(performObjectiveAction(battle, actor.id, objective.id)).toEqual({ success: true, actionPoints: 3 });
+    expect(processTacticalEvents(state, starterBundle)).toMatchObject([{
+      id: reward.id,
+      messageKey: 'echoBatteryArrives',
+      faction: 'alliance'
+    }]);
+    expect(Array.from(battle.state.sides.alliance.units.values())
+      .filter((unit) => unit.definitionId === 'thunderhead-155')).toHaveLength(1);
+
+    const restored = hydrateCampaignState(
+      starterBundle,
+      JSON.parse(JSON.stringify(serializeCampaignState(state)))
+    );
+    const restoredBattle = restored.activeBattle;
+    if (!restoredBattle) throw new Error('expected restored Confluence battle');
+    const restoredActor = restoredBattle.state.sides.alliance.units.get(actor.id);
+    if (!restoredActor) throw new Error('expected restored beacon operator');
+
+    expect(restoredBattle.completedObjectiveIds).toContain(objective.id);
+    expect(restoredBattle.triggeredEventIds).toContain(reward.id);
+    expect(performObjectiveAction(restoredBattle, restoredActor.id, objective.id)).toMatchObject({
+      success: false,
+      errorKey: 'objectiveActionCompleted'
+    });
+    expect(processTacticalEvents(restored, starterBundle)).toEqual([]);
+    expect(Array.from(restoredBattle.state.sides.alliance.units.values())
+      .filter((unit) => unit.definitionId === 'thunderhead-155')).toHaveLength(1);
+  });
+
   it('preserves a snapshotted legacy reach objective while new bridgeheads use actions', () => {
     const legacyState = openTerritory('sector-strasbourg', 'story');
     startBattleForTerritory(legacyState, starterBundle, 'sector-strasbourg');

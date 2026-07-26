@@ -87,6 +87,9 @@ describe('data bundle', () => {
       for (const req of territory.requires ?? []) {
         expect(territoryIds, `territory ${territory.id} requires ${req}`).toContain(req);
       }
+      for (const req of territory.requiresAny ?? []) {
+        expect(territoryIds, `territory ${territory.id} requires any ${req}`).toContain(req);
+      }
       if (territory.route) {
         expect(territoryIds, `territory ${territory.id} routes from ${territory.route.territoryId}`)
           .toContain(territory.route.territoryId);
@@ -177,6 +180,55 @@ describe('data bundle', () => {
     expect(() => loadContentBundle(deadlocked)).toThrow(/cannot complete for route state/);
   });
 
+  it('validates converging any-of campaign prerequisites', () => {
+    const valid = makeOutcomeRouteBundle();
+    const convergence = structuredClone(valid.campaigns[0].territories[0]);
+    convergence.id = 'sector-convergence';
+    convergence.name = 'Convergence';
+    convergence.route = undefined;
+    convergence.requires = undefined;
+    convergence.requiresAny = ['sector-lyon', 'sector-brussels'];
+    valid.campaigns[0].territories.push(convergence);
+    valid.territories.push({
+      ...structuredClone(valid.territories[0]),
+      id: convergence.id,
+      name: convergence.name
+    });
+    valid.dossiers.push({
+      ...structuredClone(valid.dossiers[0]),
+      territoryId: convergence.id,
+      codename: 'Convergence Test'
+    });
+    expect(() => loadContentBundle(valid)).not.toThrow();
+
+    const mixed = structuredClone(valid);
+    mixed.campaigns[0].territories.at(-1)!.requires = ['sector-paris'];
+    expect(() => loadContentBundle(mixed)).toThrow(/cannot combine requires and requiresAny/);
+
+    const undersized = structuredClone(valid);
+    undersized.campaigns[0].territories.at(-1)!.requiresAny = ['sector-lyon'];
+    expect(() => loadContentBundle(undersized)).toThrow(/requiresAny must name at least two territories/);
+
+    const duplicate = structuredClone(valid);
+    duplicate.campaigns[0].territories.at(-1)!.requiresAny = ['sector-lyon', 'sector-lyon'];
+    expect(() => loadContentBundle(duplicate)).toThrow(/requiresAny contains duplicate territory sector-lyon/);
+
+    const unknown = structuredClone(valid);
+    unknown.campaigns[0].territories.at(-1)!.requiresAny = ['sector-lyon', 'sector-nowhere'];
+    expect(() => loadContentBundle(unknown)).toThrow(/requires unknown territory sector-nowhere/);
+
+    const self = structuredClone(valid);
+    self.campaigns[0].territories.at(-1)!.requiresAny = ['sector-lyon', 'sector-convergence'];
+    expect(() => loadContentBundle(self)).toThrow(/cannot require itself/);
+
+    const cyclic = structuredClone(valid);
+    const lyon = cyclic.campaigns[0].territories.find((territory) => territory.id === 'sector-lyon')!;
+    const brussels = cyclic.campaigns[0].territories.find((territory) => territory.id === 'sector-brussels')!;
+    lyon.requiresAny = ['sector-convergence', 'sector-brussels'];
+    brussels.requiresAny = ['sector-convergence', 'sector-lyon'];
+    expect(() => loadContentBundle(cyclic)).toThrow(/cannot complete for route state/);
+  });
+
   it('requires one time-credit target for an authored later act', () => {
     const valid = makeOutcomeRouteBundle();
     valid.campaigns[0].territories[1].act = 2;
@@ -196,11 +248,16 @@ describe('data bundle', () => {
     expect(() => loadContentBundle(missingAct)).toThrow(/time credit for missing act 2/);
   });
 
-  it('ships the Veilbreak opening as a complete paired route', () => {
+  it('ships Veilbreak as a converging consequence route with a complete endgame', () => {
     const campaign = validatedStarterBundle.campaigns[0];
     const cinderGate = campaign.territories.find((territory) => territory.id === 'sector-cinder-gate');
     const lanternVault = campaign.territories.find((territory) => territory.id === 'sector-lantern-vault');
     const hollowTide = campaign.territories.find((territory) => territory.id === 'sector-hollow-tide');
+    const confluence = campaign.territories.find((territory) => territory.id === 'sector-ashen-confluence');
+    const causeway = campaign.territories.find((territory) => territory.id === 'sector-sable-causeway');
+    const orchard = campaign.territories.find((territory) => territory.id === 'sector-mnemonic-orchard');
+    const thornEngine = campaign.territories.find((territory) => territory.id === 'sector-thorn-engine');
+    const veilHeart = campaign.territories.find((territory) => territory.id === 'sector-veil-heart');
 
     expect(cinderGate).toMatchObject({ act: 2, requires: ['sector-rift'], region: 'Shatterline' });
     expect(lanternVault).toMatchObject({
@@ -211,14 +268,23 @@ describe('data bundle', () => {
       act: 2,
       route: { territoryId: 'sector-cinder-gate', result: 'defeat' }
     });
+    expect(confluence).toMatchObject({
+      act: 2,
+      requiresAny: ['sector-lantern-vault', 'sector-hollow-tide']
+    });
+    expect(causeway).toMatchObject({ act: 2, requires: ['sector-ashen-confluence'] });
+    expect(orchard).toMatchObject({ act: 2, requires: ['sector-ashen-confluence'] });
+    expect(thornEngine).toMatchObject({
+      act: 2,
+      requires: ['sector-sable-causeway', 'sector-mnemonic-orchard']
+    });
+    expect(veilHeart).toMatchObject({ act: 2, requires: ['sector-thorn-engine'] });
     expect(campaign.actTimeBonuses).toEqual([{
       act: 2,
-      turns: { story: 2, commander: 2, veteran: 2 }
+      turns: { story: 7, commander: 7, veteran: 7 }
     }]);
-    expect(validatedStarterBundle.dossiers
-      .filter((dossier) => dossier.chapter === 5)
-      .map((dossier) => dossier.territoryId)
-      .sort()).toEqual(['sector-cinder-gate', 'sector-hollow-tide', 'sector-lantern-vault']);
+    expect(campaign.territories.filter((territory) => territory.act === 2)).toHaveLength(8);
+    expect(validatedStarterBundle.dossiers.filter((dossier) => dossier.chapter >= 5)).toHaveLength(8);
   });
 
   it('ships at least eighty unique authored unit definitions', () => {

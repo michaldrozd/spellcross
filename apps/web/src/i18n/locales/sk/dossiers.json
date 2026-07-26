@@ -186,5 +186,50 @@
     "command": "Umlčte vyvolávačov prílivu, udržte hrebeň s majákom a obnovte stabilnú trasu k preživšiemu predvoju.",
     "victory": "Vyvolávači prílivu sú preč a hrebeň s majákom je bezpečný. Odrezaný predvoj sa stal novým predmostím.",
     "defeat": "Čierny príliv zakryl hrebeň skôr, než sa línia obnovila. Kontakt s preživším predvojom slabne."
+  },
+  "sector-ashen-confluence": {
+    "chapterTitle": "Skrížené smery",
+    "codename": "Popolavý sútok",
+    "situation": "Obe expedičné trasy dosiahli zlom, kde sa cesty z oddelených horizontov prekrývajú vždy len na niekoľko hodín.",
+    "threat": "Spojená zem sa pod konvojom posúva, kým nepriateľskí pozorovatelia označujú každý stabilný prechod na zničenie.",
+    "command": "Sprevádzajte prieskumný konvoj cez zlom, ochráňte jeho navigačné jadro a podľa možností nalaďte ozvenový maják.",
+    "victory": "Konvoj prešiel neporušený a jeho prístroje teraz spájajú prieskum oboch trás do jedného spoľahlivého postupu.",
+    "defeat": "Zlom sa uzavrel okolo konvoja skôr, než navigačné jadro opustilo prechod. Oba fronty stratili spoločnú orientáciu."
+  },
+  "sector-sable-causeway": {
+    "chapterTitle": "Skrížené smery",
+    "codename": "Čierna hrádza",
+    "situation": "Cesta z čierneho kameňa preklenuje severnú prázdnotu a ponúka jediný obrnený prístup k vnútornej Línii zlomu.",
+    "threat": "Strážne veže ohýbajú hrádzu po úsekoch a oddeľujú útočné skupiny nad morom bez svetla.",
+    "command": "Prelomte cestnú stráž, umiestnite nálože do ovládania veží a stabilizujte most pre nasledujúcu kolónu.",
+    "victory": "Strážne veže stíchli a hrádza nesie obrnené jednotky k vnútornej línii bez deformácie.",
+    "defeat": "Hrádza sa zlomila skôr, než bolo ovládanie zaistené. Severné formácie uviazli na oddelených úsekoch."
+  },
+  "sector-mnemonic-orchard": {
+    "chapterTitle": "Skrížené smery",
+    "codename": "Pamäťový sad",
+    "situation": "Les priesvitných kmeňov vysiela hlasy a rozkazy skopírované zo všetkých strát Aliancie od prvého kontaktu.",
+    "threat": "Signálne napodobeniny rozdeľujú hliadky a ukrývajú relé, ktoré riadi prepady na celej južnej trase.",
+    "command": "Postupujte v rádiovom tichu, umlčte napodobeniny a udržte koreňové relé, keď sad odpovie.",
+    "victory": "Koreňové relé stíchlo. Skopírované hlasy zmizli a južný postup môže opäť veriť vlastným signálom.",
+    "defeat": "Sad stále ovláda veliteľské pásmo. Južné jednotky radšej ustupujú, než by nasledovali ďalšiu dokonalú napodobeninu."
+  },
+  "sector-thorn-engine": {
+    "chapterTitle": "Sťahujúca sa obloha",
+    "codename": "Tŕňový stroj",
+    "situation": "Dva zabezpečené fronty k sebe priťahuje regulátor, ktorého pohyblivé veže sťahujú krajinu okolo nich.",
+    "threat": "Každé zovretie drví ďalšiu trasu a vypúšťa novú stráž z útrob stroja.",
+    "command": "Obsaďte ovládací kruh, udržte ho počas obrátenia chodu a chráňte kapitána Alexandra, kým poľné tímy pracujú.",
+    "victory": "Regulátor obrátil chod. Fronty sú stabilné a priamy koridor teraz vedie k zdroju pod Líniou zlomu.",
+    "defeat": "Ovládací kruh padol počas obrátenia. Oba fronty sa rúcajú k rovnakému nepriateľskému stredu."
+  },
+  "sector-veil-heart": {
+    "chapterTitle": "Druhý horizont",
+    "codename": "Srdce závoja",
+    "situation": "Každá trhlina a falošný horizont pulzujú pochovaným jadrom, ktoré začína nadobúdať jedinú fyzickú podobu.",
+    "threat": "Srdce obnovuje svoju stráž zo spomienok na bojiská, kým sa posledný horizont uzatvára okolo útočnej skupiny.",
+    "command": "Prelomte rituálnu stráž, ukotvite komoru a zničte srdce skôr, než Línia zlomu uväzní armádu vo vnútri.",
+    "victory": "Srdce závoja stíchlo. Falošné horizonty sa rúcajú do otvorenej oblohy a priechod domov zostáva stabilný.",
+    "defeat": "Srdce dokončilo zovretie. Útočná skupina je odrezaná pod oblohou, ktorá sa už neotvára smerom domov."
   }
 }

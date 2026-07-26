@@ -3472,6 +3472,7 @@ export function App() {
     remainingTimer: t.remainingTimer,
     mapPosition: t.mapPosition,
     requires: t.requires,
+    requiresAny: t.requiresAny,
     route: t.route,
     act: t.act,
     region: t.region,
@@ -3516,7 +3517,6 @@ export function App() {
                 <dd>{campaign.territories.filter((territory) => (
                   territory.status === 'cleared'
                   || territory.status === 'resolved'
-                  || territory.status === 'bypassed'
                 )).length}/{campaign.territories.length}</dd>
               </div>
               <div className="gameover-stat">

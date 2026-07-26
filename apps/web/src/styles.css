@@ -1675,6 +1675,59 @@ body {
   text-anchor: middle;
 }
 
+.strategic-map-svg .shatterland {
+  fill: rgba(23, 40, 43, 0.48);
+  stroke: rgba(124, 171, 161, 0.34);
+  stroke-width: 0.38;
+}
+
+.strategic-map-svg .rift-band {
+  fill: none;
+  stroke: rgba(154, 105, 205, 0.5);
+  stroke-width: 1.1;
+  filter: drop-shadow(0 0 1.1px rgba(113, 69, 160, 0.58));
+}
+
+.strategic-map-svg .rift-band.secondary {
+  stroke: rgba(61, 174, 180, 0.38);
+  stroke-width: 0.72;
+}
+
+.strategic-map-svg .horizon-fault {
+  fill: none;
+  stroke: rgba(213, 201, 137, 0.28);
+  stroke-width: 0.24;
+  stroke-dasharray: 1.2, 0.8;
+}
+
+.strategic-map-svg .horizon-fault.lower {
+  stroke: rgba(113, 204, 196, 0.24);
+}
+
+.strategic-map-svg .echo-spire path {
+  fill: rgba(101, 177, 171, 0.22);
+  stroke: rgba(189, 229, 219, 0.34);
+  stroke-width: 0.16;
+}
+
+.strategic-map-svg .echo-spire circle {
+  fill: none;
+  stroke: rgba(150, 102, 197, 0.28);
+  stroke-width: 0.14;
+}
+
+.strategic-map-svg .shatterline-label {
+  fill: rgba(201, 225, 218, 0.7);
+  font-family: "Courier New", monospace;
+  font-size: 1.7px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  text-anchor: middle;
+  paint-order: stroke fill;
+  stroke: rgba(3, 7, 9, 0.96);
+  stroke-width: 0.38px;
+}
+
 .strategic-map-svg .territory-marker {
   cursor: pointer;
 }
@@ -1742,6 +1795,10 @@ body {
   stroke: rgba(107, 202, 220, 0.84);
 }
 
+.strategic-map-svg .alternative-connection {
+  stroke: rgba(190, 135, 224, 0.84);
+}
+
 .strategic-map-svg .territory-marker:hover .territory-node {
   opacity: 0.95;
   stroke: #f8fafc;
@@ -1758,9 +1815,60 @@ body {
   animation: pulse-ring 2s ease-out infinite;
 }
 
-.map-status-strip {
+.map-theater-switch {
   position: absolute;
   top: 0.8rem;
+  left: 50%;
+  z-index: 3;
+  display: grid;
+  grid-template-columns: auto repeat(2, minmax(104px, auto));
+  align-items: stretch;
+  transform: translateX(-50%);
+  background: rgba(7, 12, 13, 0.94);
+  border: 1px solid rgba(124, 146, 135, 0.76);
+  box-shadow: inset 1px 1px 0 rgba(214, 229, 190, 0.09), 0 8px 18px rgba(0, 0, 0, 0.38);
+  font-family: "Courier New", monospace;
+  text-transform: uppercase;
+}
+
+.map-theater-switch span {
+  display: flex;
+  align-items: center;
+  padding: 0 0.62rem;
+  color: #89988f;
+  font-size: 0.58rem;
+  letter-spacing: 0.12em;
+}
+
+.map-theater-switch button {
+  min-height: 2rem;
+  padding: 0.35rem 0.62rem;
+  color: #aebdb3;
+  background: rgba(35, 43, 40, 0.76);
+  border: 0;
+  border-left: 1px solid rgba(94, 107, 100, 0.62);
+  font: inherit;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.map-theater-switch button[aria-pressed="true"] {
+  color: #f4dc78;
+  background: linear-gradient(180deg, rgba(80, 83, 55, 0.9), rgba(36, 44, 39, 0.92));
+  box-shadow: inset 0 -2px 0 #d3b958;
+}
+
+.map-theater-switch button:disabled {
+  color: #56605b;
+  cursor: not-allowed;
+}
+
+.map-status-strip {
+  position: absolute;
+  top: 3.55rem;
   left: 0.8rem;
   right: 0.8rem;
   display: grid;
@@ -5137,7 +5245,25 @@ header.app-header {
     right: 0.55rem;
   }
 
+  .map-theater-switch {
+    top: 0.55rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: calc(100% - 1.1rem);
+  }
+
+  .map-theater-switch span {
+    display: none;
+  }
+
+  .map-theater-switch button {
+    min-width: 0;
+    min-height: 1.85rem;
+    padding: 0.3rem 0.35rem;
+    font-size: 0.56rem;
+  }
+
   .map-status-strip {
+    top: 3rem;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.3rem;
     font-size: 0.58rem;

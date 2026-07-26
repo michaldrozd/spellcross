@@ -14,11 +14,13 @@
     "optional": "Bonus",
     "action": {
       "plantCharges": "Plant charges",
-      "disruptWard": "Disrupt ward"
+      "disruptWard": "Disrupt ward",
+      "alignEchoBeacon": "Align echo beacon"
     },
     "actionTooltip": {
       "plantCharges": "Spend the listed AP to arm the demolition point",
-      "disruptWard": "Spend the listed AP to break the ward and open the reserve corridor"
+      "disruptWard": "Spend the listed AP to break the ward and open the reserve corridor",
+      "alignEchoBeacon": "Spend the listed AP to tune the beacon and call in artillery support"
     }
   },
   "overwatch": {

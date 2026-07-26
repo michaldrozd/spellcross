@@ -81,6 +81,14 @@
     "wardBeaconSecured": {
       "title": "Koridor cez ochranu je otvorený",
       "detail": "Prelomená ochrana odkryla bezpečný prístup. Na bojisko vstupujú prieskumníci Aliancie. Sila posíl: {{count}}."
+    },
+    "echoBatteryArrives": {
+      "title": "Ozvenová batéria na cieli",
+      "detail": "Naladený maják naviedol batériu Thunderhead Aliancie cez pohyblivý prístup. Sila posíl: {{count}}."
+    },
+    "veilHeartManifests": {
+      "title": "Srdce závoja sa zhmotňuje",
+      "detail": "Komora sa sťahuje, kým pochované srdce a jeho zapamätaná stráž nadobúdajú fyzickú podobu: {{count}} kontaktov."
     }
   },
   "autoTurn": {

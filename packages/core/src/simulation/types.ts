@@ -233,7 +233,7 @@ export type BattleEvent =
       kind: 'objective:completed';
       objectiveId: string;
       unitId: string;
-      actionKey: 'plantCharges' | 'disruptWard';
+      actionKey: 'plantCharges' | 'disruptWard' | 'alignEchoBeacon';
     }
   | {
       kind: 'unit:moved';

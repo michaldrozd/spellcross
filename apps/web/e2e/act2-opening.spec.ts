@@ -8,7 +8,12 @@ import { startFreshCampaign } from './helpers';
 const ACT_TWO_TERRITORIES = [
   'sector-cinder-gate',
   'sector-lantern-vault',
-  'sector-hollow-tide'
+  'sector-hollow-tide',
+  'sector-ashen-confluence',
+  'sector-sable-causeway',
+  'sector-mnemonic-orchard',
+  'sector-thorn-engine',
+  'sector-veil-heart'
 ] as const;
 
 function loadLocale(language: 'en' | 'sk', namespace: string) {
@@ -51,14 +56,14 @@ async function openMigratedActTwo(page: Page, slot: number) {
   await page.locator('.menu-buttons .menu-btn-primary').click();
   await expect(page.getByRole('heading', { name: 'CAMPAIGN WON' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue to Act II' })).toBeVisible();
-  await expect(page.locator('.gameover-summary')).toContainText('17/20');
+  await expect(page.locator('.gameover-summary')).toContainText('17/25');
   await page.getByRole('button', { name: 'Continue to Act II' }).click();
 
   await expect(page.locator('.gameover-overlay')).toHaveCount(0);
   await expect(page.locator('.territory-act-banner')).toContainText('ACT II');
   await expect(page.locator('.territory-act-banner')).toContainText('VEILBREAK');
   await expect(page.locator('.territory-info-panel')).toContainText('Cinder Gate');
-  await expect(page.locator('.turn-info')).toContainText('WAR CLOCK 10');
+  await expect(page.locator('.turn-info')).toContainText('WAR CLOCK 15');
 }
 
 async function launchSelectedOperation(page: Page) {
@@ -90,6 +95,11 @@ test('new Act II copy has exact English and Slovak key parity', () => {
       'region.shatterline',
       'status.resolved',
       'status.bypassed',
+      'map.theater',
+      'map.actOneTheater',
+      'map.actTwoTheater',
+      'territory.requiresAny',
+      'territory.prerequisiteAnyCount',
       'territory.operationResolved',
       'territory.actLabel',
       'territory.actTwoTitle'
@@ -98,6 +108,16 @@ test('new Act II copy has exact English and Slovak key parity', () => {
       'gameover.actTwoUnlockedFlavor',
       'gameover.operationsResolved',
       'gameover.continueActTwo'
+    ],
+    actions: [
+      'objective.action.alignEchoBeacon',
+      'objective.actionTooltip.alignEchoBeacon'
+    ],
+    battle: [
+      'scriptedEvents.echoBatteryArrives.title',
+      'scriptedEvents.echoBatteryArrives.detail',
+      'scriptedEvents.veilHeartManifests.title',
+      'scriptedEvents.veilHeartManifests.detail'
     ]
   };
   for (const [namespace, paths] of Object.entries(sharedPaths)) {

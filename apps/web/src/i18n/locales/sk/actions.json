@@ -14,11 +14,13 @@
     "optional": "Bonus",
     "action": {
       "plantCharges": "Umiestniť nálože",
-      "disruptWard": "Narušiť ochranu"
+      "disruptWard": "Narušiť ochranu",
+      "alignEchoBeacon": "Naladiť ozvenový maják"
     },
     "actionTooltip": {
       "plantCharges": "Minie uvedené AP na aktiváciu demolačného bodu",
-      "disruptWard": "Minie uvedené AP na prelomenie ochrany a otvorenie koridoru pre zálohy"
+      "disruptWard": "Minie uvedené AP na prelomenie ochrany a otvorenie koridoru pre zálohy",
+      "alignEchoBeacon": "Minie uvedené AP na naladenie majáka a privolanie delostreleckej podpory"
     }
   },
   "overwatch": {

@@ -208,5 +208,46 @@
       "sector-hollow-tide-eliminate": "Silence the tide-callers.",
       "sector-hollow-tide-hold": "Secure the beacon ridge for 3 rounds."
     }
+  },
+  "city-sector-ashen-confluence": {
+    "name": "Ashen Confluence",
+    "brief": "Escort the survey convoy across the joined fault line and align the echo beacon for optional fire support.",
+    "objectives": {
+      "sector-ashen-confluence-reach": "Escort the survey convoy to the forward delivery zone.",
+      "sector-ashen-confluence-protect": "Keep the survey convoy operational.",
+      "sector-ashen-confluence-align-beacon": "Optional: align the echo beacon to guide Alliance artillery through the fault."
+    }
+  },
+  "city-sector-sable-causeway": {
+    "name": "Sable Causeway",
+    "brief": "Break the causeway guard, arm the ward towers, and keep the northern road from folding into the sea.",
+    "objectives": {
+      "sector-sable-causeway-eliminate": "Destroy or rout the causeway guard.",
+      "sector-sable-causeway-reach": "Plant charges in the ward-tower controls."
+    }
+  },
+  "city-sector-mnemonic-orchard": {
+    "name": "Mnemonic Orchard",
+    "brief": "Raid the echoing forest by night, silence the signal mimics, and hold the root relay through their answer.",
+    "objectives": {
+      "sector-mnemonic-orchard-eliminate": "Silence the signal mimics hidden in the orchard.",
+      "sector-mnemonic-orchard-hold": "Secure the root relay for 3 rounds."
+    }
+  },
+  "city-sector-thorn-engine": {
+    "name": "Thorn Engine",
+    "brief": "Hold the regulator control ring while the field teams reverse the contraction pulling both fronts together.",
+    "objectives": {
+      "sector-thorn-engine-hold": "Hold the regulator control ring for 3 rounds.",
+      "sector-thorn-engine-protect": "Keep Captain Alexander alive."
+    }
+  },
+  "city-sector-veil-heart": {
+    "name": "Veil Heart",
+    "brief": "Enter the buried core, break its ritual guard, and survive the last horizon taking form around the heart.",
+    "objectives": {
+      "sector-veil-heart-eliminate": "Destroy the ritual guard of the Veil Heart.",
+      "sector-veil-heart-hold": "Anchor the heart chamber for 3 rounds."
+    }
   }
 }

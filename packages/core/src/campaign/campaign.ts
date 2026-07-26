@@ -297,7 +297,7 @@ const findCampaignSpec = (bundle: ContentBundle, id?: string): CampaignSpec => {
 };
 
 const initialTerritoryStatus = (territory: TerritorySpec): TerritoryStatus => (
-  territory.route || territory.requires?.length ? 'locked' : 'available'
+  territory.route || territory.requires?.length || territory.requiresAny?.length ? 'locked' : 'available'
 );
 
 const routeSourceIdsFor = (spec: CampaignSpec) => new Set(
@@ -328,11 +328,18 @@ const refreshCampaignRoutes = (
       const requirements = (territorySpec.requires ?? [])
         .map((requirementId) => territoryStates.get(requirementId))
         .filter((requirement): requirement is TerritoryState => Boolean(requirement));
+      const anyRequirements = (territorySpec.requiresAny ?? [])
+        .map((requirementId) => territoryStates.get(requirementId))
+        .filter((requirement): requirement is TerritoryState => Boolean(requirement));
       let nextStatus: TerritoryStatus;
 
       if (requirements.some((requirement) => requirement.status === 'bypassed')) {
         nextStatus = 'bypassed';
       } else if (!requirements.every(isCompletedTerritory)) {
+        nextStatus = 'locked';
+      } else if (anyRequirements.length > 0 && anyRequirements.every((requirement) => requirement.status === 'bypassed')) {
+        nextStatus = 'bypassed';
+      } else if (anyRequirements.length > 0 && !anyRequirements.some(isCompletedTerritory)) {
         nextStatus = 'locked';
       } else if (territorySpec.route) {
         const source = territoryStates.get(territorySpec.route.territoryId);

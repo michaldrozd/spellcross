@@ -597,6 +597,84 @@ describe('campaign core', () => {
     ]);
   });
 
+  it.each(['victory', 'defeat'] as const)(
+    'converges the %s consequence route and waits for both parallel fronts',
+    (result) => {
+      const bundle = structuredClone(starterBundle);
+      const campaignIds = new Set(bundle.campaigns[0].territories.map((territory) => territory.id));
+      const state = createCampaign(bundle);
+      for (const territory of state.territories) {
+        if (campaignIds.has(territory.id)) territory.status = 'cleared';
+      }
+      const resetIds = [
+        'sector-cinder-gate',
+        'sector-lantern-vault',
+        'sector-hollow-tide',
+        'sector-ashen-confluence',
+        'sector-sable-causeway',
+        'sector-mnemonic-orchard',
+        'sector-thorn-engine',
+        'sector-veil-heart'
+      ];
+      for (const id of resetIds) {
+        const territory = state.territories.find((candidate) => candidate.id === id);
+        if (!territory) throw new Error(`expected ${id}`);
+        territory.status = id === 'sector-cinder-gate' ? 'available' : 'locked';
+      }
+
+      startBattleForTerritory(state, bundle, 'sector-cinder-gate');
+      applyBattleOutcome(state, bundle, result);
+      const selectedRouteId = result === 'victory' ? 'sector-lantern-vault' : 'sector-hollow-tide';
+      const bypassedRouteId = result === 'victory' ? 'sector-hollow-tide' : 'sector-lantern-vault';
+      expect(state.territories.find((territory) => territory.id === selectedRouteId)?.status).toBe('available');
+      expect(state.territories.find((territory) => territory.id === bypassedRouteId)?.status).toBe('bypassed');
+      expect(state.territories.find((territory) => territory.id === 'sector-ashen-confluence')?.status).toBe('locked');
+
+      endStrategicTurn(state, bundle);
+      startBattleForTerritory(state, bundle, selectedRouteId);
+      applyBattleOutcome(state, bundle, 'victory');
+      expect(state.territories.find((territory) => territory.id === 'sector-ashen-confluence')?.status).toBe('available');
+
+      const restored = hydrateCampaignState(bundle, serializeCampaignState(state));
+      expect(restored.territories.find((territory) => territory.id === 'sector-ashen-confluence')?.status).toBe('available');
+      endStrategicTurn(restored, bundle);
+      startBattleForTerritory(restored, bundle, 'sector-ashen-confluence');
+      applyBattleOutcome(restored, bundle, 'victory');
+      expect(restored.territories.find((territory) => territory.id === 'sector-sable-causeway')?.status).toBe('available');
+      expect(restored.territories.find((territory) => territory.id === 'sector-mnemonic-orchard')?.status).toBe('available');
+
+      endStrategicTurn(restored, bundle);
+      startBattleForTerritory(restored, bundle, 'sector-sable-causeway');
+      applyBattleOutcome(restored, bundle, 'victory');
+      expect(restored.territories.find((territory) => territory.id === 'sector-thorn-engine')?.status).toBe('locked');
+
+      endStrategicTurn(restored, bundle);
+      startBattleForTerritory(restored, bundle, 'sector-mnemonic-orchard');
+      applyBattleOutcome(restored, bundle, 'victory');
+      expect(restored.territories.find((territory) => territory.id === 'sector-thorn-engine')?.status).toBe('available');
+    }
+  );
+
+  it('keeps an any-of convergence retryable until every predecessor is bypassed', () => {
+    const state = createCampaign(starterBundle);
+    const lantern = state.territories.find((territory) => territory.id === 'sector-lantern-vault');
+    const hollow = state.territories.find((territory) => territory.id === 'sector-hollow-tide');
+    if (!lantern || !hollow) throw new Error('expected Act II route states');
+    lantern.status = 'bypassed';
+    hollow.status = 'failed';
+
+    const retryable = hydrateCampaignState(starterBundle, serializeCampaignState(state));
+    expect(retryable.territories.find((territory) => territory.id === 'sector-ashen-confluence')?.status)
+      .toBe('locked');
+
+    const retryableHollow = retryable.territories.find((territory) => territory.id === 'sector-hollow-tide');
+    if (!retryableHollow) throw new Error('expected restored Hollow Tide');
+    retryableHollow.status = 'bypassed';
+    const exhausted = hydrateCampaignState(starterBundle, serializeCampaignState(retryable));
+    expect(exhausted.territories.find((territory) => territory.id === 'sector-ashen-confluence')?.status)
+      .toBe('bypassed');
+  });
+
   it('grants an act time credit before the transition turn can expire', () => {
     const bundle = makeTimedOutcomeRouteBundle();
     const state = createCampaign(bundle);

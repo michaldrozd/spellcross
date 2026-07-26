@@ -158,7 +158,7 @@ export interface ResearchTopic {
 }
 
 export type ObjectiveKind = 'eliminate' | 'reach' | 'protect' | 'hold' | 'interact';
-export type TacticalObjectiveActionKey = 'plantCharges' | 'disruptWard';
+export type TacticalObjectiveActionKey = 'plantCharges' | 'disruptWard' | 'alignEchoBeacon';
 
 export interface TacticalObjective {
   id: string;
@@ -191,7 +191,9 @@ export type TacticalEventMessageKey =
   | 'signalEaterAwakes'
   | 'glassChoirMarches'
   | 'ashCrownDescends'
-  | 'wardBeaconSecured';
+  | 'wardBeaconSecured'
+  | 'echoBatteryArrives'
+  | 'veilHeartManifests';
 
 export interface TacticalScenarioEvent {
   id: string;
@@ -235,6 +237,8 @@ export interface TerritorySpec {
   mapPosition?: { x: number; y: number };
   /** IDs of territories that must be cleared before this one becomes available */
   requires?: string[];
+  /** Alternative predecessor IDs; completing any one opens this territory */
+  requiresAny?: string[];
   /** Battle result that selects this operation from a mutually exclusive campaign route */
   route?: {
     territoryId: string;
@@ -405,7 +409,9 @@ const tacticalScenarioEventSchema = z.object({
     'signalEaterAwakes',
     'glassChoirMarches',
     'ashCrownDescends',
-    'wardBeaconSecured'
+    'wardBeaconSecured',
+    'echoBatteryArrives',
+    'veilHeartManifests'
   ]),
   triggerAfterEventId: z.string().optional(),
   faction: z.enum(['alliance', 'otherSide']),
@@ -428,7 +434,7 @@ const tacticalObjectiveSchema = z.object({
   turnLimit: z.number().int().positive().optional(),
   unitIds: z.array(z.string()).min(1).optional(),
   optional: z.boolean().optional(),
-  actionKey: z.enum(['plantCharges', 'disruptWard']).optional(),
+  actionKey: z.enum(['plantCharges', 'disruptWard', 'alignEchoBeacon']).optional(),
   actionPoints: z.number().int().positive().optional()
 }).superRefine((objective, context) => {
   if (objective.kind === 'interact') {
@@ -541,6 +547,7 @@ const territorySchema = z.object({
     y: z.number().min(0).max(100)
   }).optional(),
   requires: z.array(z.string()).optional(),
+  requiresAny: z.array(z.string()).min(2, 'requiresAny must name at least two territories').optional(),
   route: z.object({
     territoryId: z.string(),
     result: z.enum(['victory', 'defeat'])
@@ -582,7 +589,16 @@ const campaignSchema = z.object({
 
 const operationDossierSchema = z.object({
   territoryId: z.string().min(1),
-  chapter: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+  chapter: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+    z.literal(6),
+    z.literal(7),
+    z.literal(8)
+  ]),
   chapterTitle: z.string().min(1),
   codename: z.string().min(1),
   situation: z.string().min(1),
@@ -657,6 +673,13 @@ const bundleSchema = z.object({
     });
 
     campaign.territories.forEach((territory, territoryIndex) => {
+      if (territory.requires?.length && territory.requiresAny?.length) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Campaign territory ${territory.id} cannot combine requires and requiresAny`,
+          path: ['campaigns', campaignIndex, 'territories', territoryIndex, 'requiresAny']
+        });
+      }
       for (const requirementId of territory.requires ?? []) {
         if (territoryIds.has(requirementId)) continue;
         ctx.addIssue({
@@ -664,6 +687,31 @@ const bundleSchema = z.object({
           message: `Campaign territory ${territory.id} requires unknown territory ${requirementId}`,
           path: ['campaigns', campaignIndex, 'territories', territoryIndex, 'requires']
         });
+      }
+      const anyRequirements = territory.requiresAny ?? [];
+      const seenAnyRequirements = new Set<string>();
+      for (const requirementId of anyRequirements) {
+        if (requirementId === territory.id) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Campaign territory ${territory.id} cannot require itself`,
+            path: ['campaigns', campaignIndex, 'territories', territoryIndex, 'requiresAny']
+          });
+        } else if (!territoryIds.has(requirementId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Campaign territory ${territory.id} requires unknown territory ${requirementId}`,
+            path: ['campaigns', campaignIndex, 'territories', territoryIndex, 'requiresAny']
+          });
+        }
+        if (seenAnyRequirements.has(requirementId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Campaign territory ${territory.id} requiresAny contains duplicate territory ${requirementId}`,
+            path: ['campaigns', campaignIndex, 'territories', territoryIndex, 'requiresAny']
+          });
+        }
+        seenAnyRequirements.add(requirementId);
       }
 
       if (!territory.route) return;
@@ -719,6 +767,15 @@ const bundleSchema = z.object({
             continue;
           }
           if (!requirements.every((requirementId) => completed.has(requirementId))) continue;
+          const anyRequirements = territory.requiresAny ?? [];
+          if (anyRequirements.length > 0) {
+            if (anyRequirements.every((requirementId) => bypassed.has(requirementId))) {
+              bypassed.add(territory.id);
+              changed = true;
+              continue;
+            }
+            if (!anyRequirements.some((requirementId) => completed.has(requirementId))) continue;
+          }
 
           if (territory.route) {
             if (bypassed.has(territory.route.territoryId)) {
@@ -2493,7 +2550,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'black-spire-assault',
     timer: 12,
     reward: { money: 640, research: 160, strategic: 108 },
-    mapPosition: { x: 91, y: 48 },
+    mapPosition: { x: 14, y: 40 },
     requires: ['sector-rift'],
     act: 2,
     region: 'Shatterline',
@@ -2506,7 +2563,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'evacuation-run',
     timer: 11,
     reward: { money: 670, research: 168, strategic: 112 },
-    mapPosition: { x: 96, y: 36 },
+    mapPosition: { x: 29, y: 24 },
     route: { territoryId: 'sector-cinder-gate', result: 'victory' },
     act: 2,
     region: 'Shatterline',
@@ -2519,8 +2576,73 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'outpost-night',
     timer: 11,
     reward: { money: 650, research: 164, strategic: 110 },
-    mapPosition: { x: 96, y: 61 },
+    mapPosition: { x: 29, y: 56 },
     route: { territoryId: 'sector-cinder-gate', result: 'defeat' },
+    act: 2,
+    region: 'Shatterline',
+    difficulty: 5
+  },
+  {
+    id: 'sector-ashen-confluence',
+    name: 'Ashen Confluence',
+    brief: 'The two expedition routes meet at a fault where roads from different horizons overlap. Bring the survey convoy through intact.',
+    scenarioId: 'bridgehead',
+    timer: 12,
+    reward: { money: 700, research: 176, strategic: 118 },
+    mapPosition: { x: 44, y: 40 },
+    requiresAny: ['sector-lantern-vault', 'sector-hollow-tide'],
+    act: 2,
+    region: 'Shatterline',
+    difficulty: 5
+  },
+  {
+    id: 'sector-sable-causeway',
+    name: 'Sable Causeway',
+    brief: 'A narrow road of black stone carries the northern advance over a lightless sea. Break its ward towers before the road folds.',
+    scenarioId: 'bridgehead',
+    timer: 12,
+    reward: { money: 725, research: 182, strategic: 122 },
+    mapPosition: { x: 59, y: 24 },
+    requires: ['sector-ashen-confluence'],
+    act: 2,
+    region: 'Shatterline',
+    difficulty: 5
+  },
+  {
+    id: 'sector-mnemonic-orchard',
+    name: 'Mnemonic Orchard',
+    brief: 'A forest of glass-barked trees repeats lost Alliance transmissions. Find the source and silence the ambush hidden inside the echoes.',
+    scenarioId: 'outpost-night',
+    timer: 12,
+    reward: { money: 720, research: 184, strategic: 120 },
+    mapPosition: { x: 59, y: 56 },
+    requires: ['sector-ashen-confluence'],
+    act: 2,
+    region: 'Shatterline',
+    difficulty: 5
+  },
+  {
+    id: 'sector-thorn-engine',
+    name: 'Thorn Engine',
+    brief: 'A colossal regulator is pulling the two opened fronts toward the same killing ground. Seize its control ring and stop the contraction.',
+    scenarioId: 'crossroads-defense',
+    timer: 13,
+    reward: { money: 760, research: 192, strategic: 128 },
+    mapPosition: { x: 74, y: 40 },
+    requires: ['sector-sable-causeway', 'sector-mnemonic-orchard'],
+    act: 2,
+    region: 'Shatterline',
+    difficulty: 5
+  },
+  {
+    id: 'sector-veil-heart',
+    name: 'Veil Heart',
+    brief: 'Every fracture in the Shatterline is beating in time with a buried core. Enter the heart, break its guard, and end the second horizon.',
+    scenarioId: 'black-spire-assault',
+    timer: 15,
+    reward: { money: 840, research: 210, strategic: 140 },
+    mapPosition: { x: 88, y: 40 },
+    requires: ['sector-thorn-engine'],
     act: 2,
     region: 'Shatterline',
     difficulty: 5
@@ -2555,7 +2677,7 @@ export const starterCampaign: CampaignSpec = {
   territories: starterTerritories,
   actTimeBonuses: [{
     act: 2,
-    turns: { story: 2, commander: 2, veteran: 2 }
+    turns: { story: 7, commander: 7, veteran: 7 }
   }]
 };
 

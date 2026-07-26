@@ -41,7 +41,10 @@
     "primaryThreat": "PRIMARY THREAT",
     "nextLock": "NEXT LOCK",
     "readiness": "READINESS",
-    "recentEvents": "Recent Events"
+    "recentEvents": "Recent Events",
+    "theater": "Theater",
+    "actOneTheater": "European Front",
+    "actTwoTheater": "Shatterline"
   },
   "region": {
     "france": "FRANCE",
@@ -82,6 +85,8 @@
     "frontlineSector": "Frontline sector",
     "turnsBadge": "{{turns}} TURNS",
     "requires": "Requires:",
+    "requiresAny": "Requires one of:",
+    "prerequisiteAnyCount": "Any 1 of {{count}} prerequisites",
     "launchAttack": "LAUNCH ATTACK",
     "operationCommitted": "OPERATION COMMITTED",
     "operationCommittedHint": "End the strategic turn before launching another operation.",
