@@ -3,6 +3,54 @@ import { describe, expect, it } from 'vitest';
 import { cityScenarioIdByTerritory } from './city-battlefields.js';
 import { loadContentBundle, starterBundle, validatedStarterBundle } from './index.js';
 
+const legacyResearchContract = [
+  { id: 'optics-i', cost: 60, requires: [] },
+  { id: 'optics-ii', cost: 130, requires: ['optics-i'] },
+  { id: 'armor-upfit', cost: 80, requires: ['optics-i'] },
+  { id: 'esprit-de-corps', cost: 50, requires: [] },
+  { id: 'siege-ops', cost: 180, requires: ['armor-upfit'] },
+  { id: 'sanctified-ammo', cost: 70, requires: ['esprit-de-corps'] },
+  { id: 'mobile-supply', cost: 80, requires: [] },
+  { id: 'arcane-shielding', cost: 200, requires: ['siege-ops'] },
+  { id: 'wyrm-slayer', cost: 220, requires: ['arcane-shielding'] },
+  { id: 'field-fortification', cost: 90, requires: ['esprit-de-corps'] },
+  { id: 'extended-barrels', cost: 110, requires: ['siege-ops'] },
+  { id: 'mobile-fire-support', cost: 110, requires: ['esprit-de-corps'] },
+  { id: 'deep-fires-network', cost: 220, requires: ['siege-ops'] },
+  { id: 'expeditionary-mobility', cost: 160, requires: ['armor-upfit', 'esprit-de-corps'] },
+  { id: 'autonomous-recon', cost: 180, requires: ['optics-ii'] },
+  { id: 'aegis-project', cost: 260, requires: ['arcane-shielding'] }
+] as const;
+
+const researchDepth = (
+  topicId: string,
+  researchById: Map<string, (typeof starterBundle.research)[number]>,
+  visiting = new Set<string>()
+): number => {
+  if (visiting.has(topicId)) throw new Error(`research cycle at ${topicId}`);
+  const topic = researchById.get(topicId);
+  if (!topic) throw new Error(`missing research ${topicId}`);
+  if (!topic.requires?.length) return 1;
+  const nextVisiting = new Set(visiting).add(topicId);
+  return 1 + Math.max(...topic.requires.map((requirement) => (
+    researchDepth(requirement, researchById, nextVisiting)
+  )));
+};
+
+const researchClosure = (
+  topicId: string,
+  researchById: Map<string, (typeof starterBundle.research)[number]>
+): Set<string> => {
+  const topicIds = new Set<string>();
+  const visit = (id: string) => {
+    if (topicIds.has(id)) return;
+    topicIds.add(id);
+    for (const requirement of researchById.get(id)?.requires ?? []) visit(requirement);
+  };
+  visit(topicId);
+  return topicIds;
+};
+
 const makeOutcomeRouteBundle = () => {
   const bundle = structuredClone(starterBundle);
   const campaign = bundle.campaigns[0];
@@ -37,6 +85,108 @@ describe('data bundle', () => {
     expect(validatedStarterBundle.scenarios
       .filter((scenario) => scenario.id.startsWith('city-'))
       .every((scenario) => Boolean(scenario.map.environment))).toBe(true);
+  });
+
+  it('ships a nine-tier research program with one owner per unit unlock and no padding', () => {
+    const researchById = new Map(starterBundle.research.map((topic) => [topic.id, topic]));
+    const allianceUnitIds = new Set(
+      starterBundle.units
+        .filter((unit) => unit.faction === 'alliance')
+        .map((unit) => unit.id)
+    );
+    const unitUnlockOwners = new Map<string, string>();
+    const dependentIds = new Set(starterBundle.research.flatMap((topic) => topic.requires ?? []));
+    const equipmentGateIds = new Set(starterBundle.equipment.map((equipment) => equipment.requiresResearch));
+
+    expect(starterBundle.research).toHaveLength(51);
+    expect(Math.max(...starterBundle.research.map((topic) => researchDepth(topic.id, researchById)))).toBe(9);
+
+    for (const topic of starterBundle.research) {
+      const unitUnlocks = topic.unlocks.filter((unlock) => allianceUnitIds.has(unlock));
+      expect(unitUnlocks.length, `${topic.id} unit unlock count`).toBeLessThanOrEqual(1);
+      for (const unitId of unitUnlocks) {
+        expect(unitUnlockOwners.has(unitId), `${unitId} duplicate owner`).toBe(false);
+        unitUnlockOwners.set(unitId, topic.id);
+      }
+      expect(
+        topic.unlocks.length > 0
+          || topic.statBonus != null
+          || dependentIds.has(topic.id)
+          || equipmentGateIds.has(topic.id),
+        `${topic.id} is inert`
+      ).toBe(true);
+    }
+
+    expect(unitUnlockOwners.size).toBe(35);
+    expect(starterBundle.campaigns[0].startingResearch).toEqual(expect.arrayContaining([
+      'optics-i',
+      'ranger-pathfinder-suite',
+      'gepard-tracking-grid',
+      'vanguard-scout-chassis'
+    ]));
+  });
+
+  it('keeps the deeper research tree affordable on the conservative Veteran victory route', () => {
+    const campaign = starterBundle.campaigns[0];
+    const researchById = new Map(starterBundle.research.map((topic) => [topic.id, topic]));
+    const allianceUnitIds = new Set(
+      starterBundle.units
+        .filter((unit) => unit.faction === 'alliance')
+        .map((unit) => unit.id)
+    );
+    const unitTopicIds = starterBundle.research
+      .filter((topic) => topic.unlocks.some((unlock) => allianceUnitIds.has(unlock)))
+      .map((topic) => topic.id);
+    const unitClosureIds = new Set<string>();
+    for (const topicId of unitTopicIds) {
+      for (const closureId of researchClosure(topicId, researchById)) unitClosureIds.add(closureId);
+    }
+    const routeRewards = new Map<string, number[]>();
+    let guaranteedVictoryResearch = 0;
+    for (const territory of campaign.territories) {
+      if (!territory.route) {
+        guaranteedVictoryResearch += territory.reward.research;
+        continue;
+      }
+      const rewards = routeRewards.get(territory.route.territoryId) ?? [];
+      rewards.push(territory.reward.research);
+      routeRewards.set(territory.route.territoryId, rewards);
+    }
+    const minimumRouteRewards = Array.from(routeRewards.values())
+      .reduce((sum, rewards) => sum + Math.min(...rewards), guaranteedVictoryResearch);
+    const veteranStartingResearch = Math.floor(campaign.startingResources.research * 0.85);
+    const conservativeVeteranBudget = veteranStartingResearch + minimumRouteRewards;
+    const closureCost = (topicId: string) => Array.from(researchClosure(topicId, researchById))
+      .reduce((sum, id) => sum + researchById.get(id)!.cost, 0);
+    const postStartProfile = (topicId: string) => {
+      const startingResearch = new Set(campaign.startingResearch);
+      const postStartIds = Array.from(researchClosure(topicId, researchById))
+        .filter((id) => !startingResearch.has(id));
+      return {
+        cost: postStartIds.reduce((sum, id) => sum + researchById.get(id)!.cost, 0),
+        projects: postStartIds.length
+      };
+    };
+
+    expect(starterBundle.research.reduce((sum, topic) => sum + topic.cost, 0)).toBe(3530);
+    expect(Array.from(unitClosureIds).reduce((sum, id) => sum + researchById.get(id)!.cost, 0)).toBe(3330);
+    expect(unitTopicIds).toHaveLength(35);
+    expect(closureCost('m109-digital-lay')).toBe(355);
+    expect(postStartProfile('m109-digital-lay')).toEqual({ cost: 295, projects: 3 });
+    expect(closureCost('aegis-breakthrough-frame')).toBe(1000);
+    expect(postStartProfile('aegis-breakthrough-frame')).toEqual({ cost: 940, projects: 8 });
+    expect(Math.max(...starterBundle.research.map((topic) => closureCost(topic.id))))
+      .toBeLessThanOrEqual(conservativeVeteranBudget);
+    expect(conservativeVeteranBudget).toBe(2500);
+  });
+
+  it('keeps every pre-expansion research identity, cost and prerequisite stable', () => {
+    const researchById = new Map(starterBundle.research.map((topic) => [topic.id, topic]));
+    expect(legacyResearchContract.map((legacy) => ({
+      id: legacy.id,
+      cost: researchById.get(legacy.id)?.cost,
+      requires: researchById.get(legacy.id)?.requires ?? []
+    }))).toEqual(legacyResearchContract);
   });
 
   it('ships four researched trade-off packages in every equipment category', () => {

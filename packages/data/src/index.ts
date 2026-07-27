@@ -4,6 +4,7 @@ import { cityScenarios, cityScenarioIdByTerritory } from './city-battlefields.js
 import { starterEquipment } from './equipment-doctrine.js';
 import { starterOfficerProfiles, starterOfficerRanks } from './officer-corps.js';
 import { operationAudioThemes, starterOperationDossiers, type OperationDossier } from './operation-dossiers.js';
+import { starterUnitResearch } from './research-expansion.js';
 import { rosterExpansionResearch, rosterExpansionUnits } from './roster-expansion.js';
 
 export type { OperationAudioTheme, OperationDossier } from './operation-dossiers.js';
@@ -1954,14 +1955,14 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Optics I',
     description: 'Scoped sights and rangefinders improve hit odds at distance.',
     cost: 60,
-    unlocks: ['rangers', 'gepard-aa', 'humvee-scout']
+    unlocks: []
   },
   {
     id: 'optics-ii',
     name: 'Optics II',
     description: 'Thermal and low-light sights improve reconnaissance in poor visibility.',
     cost: 130,
-    unlocks: ['sniper-team', 'attack-helo', 'commando-team', 'psi-corps'],
+    unlocks: [],
     requires: ['optics-i']
   },
   {
@@ -1969,7 +1970,7 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Composite Plating',
     description: 'Layered armor kits for frontline vehicles.',
     cost: 80,
-    unlocks: ['leopard-2', 'light-tank', 'bradley-ifv', 'avenger-aa'],
+    unlocks: [],
     requires: ['optics-i']
   },
   {
@@ -1977,14 +1978,14 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Esprit de Corps',
     description: 'Unit cohesion drills that boost morale recovery.',
     cost: 50,
-    unlocks: ['light-infantry', 'mortar-team']
+    unlocks: []
   },
   {
     id: 'siege-ops',
     name: 'Siege Operations',
     description: 'Ballistics tables and spotter protocols for heavy artillery.',
     cost: 180,
-    unlocks: ['spg-m109', 'mlrs-battery', 'railgun-tank'],
+    unlocks: [],
     requires: ['armor-upfit']
   },
   {
@@ -1992,7 +1993,7 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Sanctified Ammunition',
     description: 'Blessed rounds to disrupt spectral enemies.',
     cost: 70,
-    unlocks: ['heavy-infantry', 'flamethrower-squad'],
+    unlocks: [],
     requires: ['esprit-de-corps']
   },
   {
@@ -2000,14 +2001,14 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Mobile Supply Corps',
     description: 'Field supply trucks to resupply ammo mid-battle.',
     cost: 80,
-    unlocks: ['supply-truck']
+    unlocks: []
   },
   {
     id: 'arcane-shielding',
     name: 'Arcane Shielding',
     description: 'Reinforced plating and wards for late-war artillery and SAM cover.',
     cost: 200,
-    unlocks: ['paladin-acs', 'siege-walker', 'exo-troopers'],
+    unlocks: [],
     requires: ['siege-ops']
   },
   {
@@ -2015,7 +2016,7 @@ export const starterResearch: ResearchTopic[] = [
     name: 'Wyrm Slayer Doctrine',
     description: 'Anti-beast tactics and tracking for flying horrors.',
     cost: 220,
-    unlocks: ['sky-lance'],
+    unlocks: [],
     requires: ['arcane-shielding']
   },
   {
@@ -2038,7 +2039,8 @@ export const starterResearch: ResearchTopic[] = [
     statBonus: { range: 1 },
     applyTo: ['artillery']
   },
-  ...rosterExpansionResearch
+  ...rosterExpansionResearch,
+  ...starterUnitResearch
 ];
 
 const borderMap = makeMap('evac-corridor', 14, 10, (q, r) => {
@@ -3015,7 +3017,12 @@ export const starterCampaign: CampaignSpec = {
     research: 80,
     strategic: 40
   },
-  startingResearch: ['optics-i'],
+  startingResearch: [
+    'optics-i',
+    'ranger-pathfinder-suite',
+    'gepard-tracking-grid',
+    'vanguard-scout-chassis'
+  ],
   startingUnits: [
     { id: 'captain', definitionId: 'john-alexander', tier: 'elite', experience: 60 },
     { id: 'lance-1', definitionId: 'light-infantry', tier: 'veteran', experience: 20 },

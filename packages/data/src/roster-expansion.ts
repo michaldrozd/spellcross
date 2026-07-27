@@ -225,7 +225,7 @@ export const rosterExpansionResearch: ResearchTopic[] = [
     name: 'Mobile Fire Support',
     description: 'Light batteries and mortar carriers keep pace with the maneuver force.',
     cost: 110,
-    unlocks: ['firefly-105', 'badger-mortar-carrier'],
+    unlocks: [],
     requires: ['esprit-de-corps']
   },
   {
@@ -233,7 +233,7 @@ export const rosterExpansionResearch: ResearchTopic[] = [
     name: 'Deep Fires Network',
     description: 'Counterbattery radar links long-range guns into a coordinated strike grid.',
     cost: 220,
-    unlocks: ['thunderhead-155', 'tempest-counterbattery', 'horizon-radar'],
+    unlocks: [],
     requires: ['siege-ops']
   },
   {
@@ -241,7 +241,7 @@ export const rosterExpansionResearch: ResearchTopic[] = [
     name: 'Expeditionary Mobility',
     description: 'Fast transports and mobile assault teams exploit gaps before the enemy can reform.',
     cost: 160,
-    unlocks: ['tidewalker-apc', 'valkyrie-mobile-infantry', 'breach-engineers', 'wardog-fire-support'],
+    unlocks: [],
     requires: ['armor-upfit', 'esprit-de-corps']
   },
   {
@@ -249,7 +249,7 @@ export const rosterExpansionResearch: ResearchTopic[] = [
     name: 'Autonomous Recon Wing',
     description: 'Recon drones and hunter gunships extend the Alliance sensor and strike envelope.',
     cost: 180,
-    unlocks: ['kestrel-recon-drone', 'cerberus-gunship'],
+    unlocks: [],
     requires: ['optics-ii']
   },
   {
@@ -257,7 +257,7 @@ export const rosterExpansionResearch: ResearchTopic[] = [
     name: 'Aegis Project',
     description: 'A protected breakthrough chassis carries the war into fortified rift zones.',
     cost: 260,
-    unlocks: ['aegis-assault-tank'],
+    unlocks: [],
     requires: ['arcane-shielding']
   }
 ];

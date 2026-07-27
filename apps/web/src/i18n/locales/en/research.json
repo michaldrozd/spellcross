@@ -62,5 +62,145 @@
   "aegis-project": {
     "name": "Aegis Project",
     "description": "A protected breakthrough chassis carries the war into fortified rift zones."
+  },
+  "ranger-pathfinder-suite": {
+    "name": "Ranger Pathfinder Suite",
+    "description": "Compact sensors and navigation aids prepare ranger teams for independent scouting."
+  },
+  "gepard-tracking-grid": {
+    "name": "Gepard Tracking Grid",
+    "description": "A stabilized tracking loop lets mobile flak crews engage fast aerial threats."
+  },
+  "vanguard-scout-chassis": {
+    "name": "Vanguard Scout Chassis",
+    "description": "Lightweight armor and long-range radios turn utility vehicles into forward scouts."
+  },
+  "thermal-sniper-cell": {
+    "name": "Thermal Sniper Cell",
+    "description": "Matched thermal sights and spotting drills support precision teams in broken terrain."
+  },
+  "rotor-strike-avionics": {
+    "name": "Rotor Strike Avionics",
+    "description": "Hardened flight computers coordinate low-altitude attack runs near the rift front."
+  },
+  "silent-entry-kit": {
+    "name": "Silent Entry Kit",
+    "description": "Suppressed weapons and portable breach tools equip covert assault detachments."
+  },
+  "psi-resonance-screen": {
+    "name": "Psi Resonance Screen",
+    "description": "Field resonators shield specialist operators from hostile psychic interference."
+  },
+  "tam-rapid-armor": {
+    "name": "TAM Rapid Armor",
+    "description": "Modular protection preserves the speed of a light armored breakthrough force."
+  },
+  "marder-fireteam-link": {
+    "name": "Marder Fireteam Link",
+    "description": "Vehicle and dismount radios share targets without slowing the advance."
+  },
+  "leopard-reactive-control": {
+    "name": "Leopard Reactive Control",
+    "description": "Predictive stabilization and layered defenses complete the heavy tank package."
+  },
+  "avenger-threat-library": {
+    "name": "Avenger Threat Library",
+    "description": "Updated signatures help short-range missile teams distinguish rift flyers at speed."
+  },
+  "line-infantry-modernization": {
+    "name": "Line Infantry Modernization",
+    "description": "Revised field kits give rifle sections a dependable common fighting standard."
+  },
+  "mortar-plotting-cell": {
+    "name": "Mortar Plotting Cell",
+    "description": "Portable plotting boards shorten the call-for-fire cycle for infantry mortars."
+  },
+  "m109-digital-lay": {
+    "name": "M109 Digital Lay",
+    "description": "Digital laying gear brings self-propelled guns onto target between rapid moves."
+  },
+  "elmag-rail-stabilizer": {
+    "name": "ELMAG Rail Stabilizer",
+    "description": "Pulse control and reinforced mounts make field rail weapons safe to deploy."
+  },
+  "mlrs-salvo-coordination": {
+    "name": "MLRS Salvo Coordination",
+    "description": "Networked launch control concentrates rocket strikes without overlapping fire lanes."
+  },
+  "storm-assault-loadout": {
+    "name": "Storm Assault Loadout",
+    "description": "Reinforced armor and shock weapons equip infantry for close-range assaults."
+  },
+  "pyro-containment-rig": {
+    "name": "Pyro Containment Rig",
+    "description": "Sealed fuel systems let flame teams operate safely around unstable rift matter."
+  },
+  "forward-supply-module": {
+    "name": "Forward Supply Module",
+    "description": "Modular stores and protected loading gear keep ammunition moving under fire."
+  },
+  "paladin-ward-core": {
+    "name": "Paladin Ward Core",
+    "description": "A compact ward generator protects heavy guns from supernatural counterfire."
+  },
+  "destructor-siege-frame": {
+    "name": "Destructor Siege Frame",
+    "description": "A braced walking carriage carries siege ordnance across shattered approaches."
+  },
+  "exo-seal-system": {
+    "name": "Exo Seal System",
+    "description": "Powered seals isolate assault suits from corrosive spores and hostile magic."
+  },
+  "sky-lance-guidance": {
+    "name": "Sky Lance Guidance",
+    "description": "Predictive guidance locks heavy interceptors onto evasive airborne monsters."
+  },
+  "firefly-light-battery": {
+    "name": "Firefly Light Battery",
+    "description": "Air-portable gun teams provide immediate support to a fast-moving column."
+  },
+  "badger-recoil-bed": {
+    "name": "Badger Recoil Bed",
+    "description": "A low-profile recoil cradle fits a heavy mortar into a protected carrier."
+  },
+  "horizon-spectrum-array": {
+    "name": "Horizon Spectrum Array",
+    "description": "Wide-band receivers trace hostile batteries through rift-distorted signals."
+  },
+  "tempest-counterfire-logic": {
+    "name": "Tempest Counterfire Logic",
+    "description": "Automated firing solutions turn sensor tracks into rapid counterbattery missions."
+  },
+  "thunderhead-shell-network": {
+    "name": "Thunderhead Shell Network",
+    "description": "Distributed fire control coordinates the longest-ranged Alliance gun batteries."
+  },
+  "tidewalker-amphib-drive": {
+    "name": "Tidewalker Amphibious Drive",
+    "description": "Sealed propulsion keeps armored transports moving across flooded battle lines."
+  },
+  "valkyrie-mobility-rig": {
+    "name": "Valkyrie Mobility Rig",
+    "description": "Powered harnesses let assault infantry keep pace with mechanized spearheads."
+  },
+  "breach-demolition-suite": {
+    "name": "Breach Demolition Suite",
+    "description": "Smart charges and structural scanners open routes through fortified obstacles."
+  },
+  "wardog-fire-control": {
+    "name": "Wardog Fire Control",
+    "description": "Linked cannon and missile sights create a mobile all-threat support platform."
+  },
+  "kestrel-autonomy-kernel": {
+    "name": "Kestrel Autonomy Kernel",
+    "description": "Resilient navigation logic lets reconnaissance drones survive signal loss."
+  },
+  "cerberus-hunter-link": {
+    "name": "Cerberus Hunter Link",
+    "description": "A shared sensor link guides gunships toward targets uncovered by forward drones."
+  },
+  "aegis-breakthrough-frame": {
+    "name": "Aegis Breakthrough Frame",
+    "description": "A reinforced hybrid chassis combines heavy armor with warded assault systems."
   }
 }

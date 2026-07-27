@@ -62,5 +62,145 @@
   "aegis-project": {
     "name": "Projekt Aegis",
     "description": "Chránená prielomová platforma prenesie vojnu do opevnených oblastí trhlín."
+  },
+  "ranger-pathfinder-suite": {
+    "name": "Prieskumná súprava rangerov",
+    "description": "Kompaktné senzory a navigačné pomôcky pripravia rangerov na samostatný prieskum."
+  },
+  "gepard-tracking-grid": {
+    "name": "Sledovacia sieť Gepard",
+    "description": "Stabilizované sledovanie umožní mobilným protilietadlovým osádkam zasiahnuť rýchle ciele."
+  },
+  "vanguard-scout-chassis": {
+    "name": "Prieskumný podvozok Vanguard",
+    "description": "Ľahké pancierovanie a diaľkové rádiá menia úžitkové vozidlá na predsunutých prieskumníkov."
+  },
+  "thermal-sniper-cell": {
+    "name": "Termálna ostreľovacia bunka",
+    "description": "Zladené termovízie a pozorovateľský výcvik podporujú presné tímy v členitom teréne."
+  },
+  "rotor-strike-avionics": {
+    "name": "Avionika vrtuľníkového úderu",
+    "description": "Odolné letové počítače koordinujú nízke útočné nálety pri fronte trhlín."
+  },
+  "silent-entry-kit": {
+    "name": "Súprava tichého vstupu",
+    "description": "Tlmené zbrane a prenosné nástroje na prielom vybavia skryté útočné oddiely."
+  },
+  "psi-resonance-screen": {
+    "name": "Psionické rezonančné tienenie",
+    "description": "Poľné rezonátory chránia špecialistov pred nepriateľským psychickým rušením."
+  },
+  "tam-rapid-armor": {
+    "name": "Rýchly pancier TAM",
+    "description": "Modulárna ochrana zachováva rýchlosť ľahkých obrnených prielomových síl."
+  },
+  "marder-fireteam-link": {
+    "name": "Bojové prepojenie Marder",
+    "description": "Rádiá vozidiel a výsadku zdieľajú ciele bez spomalenia postupu."
+  },
+  "leopard-reactive-control": {
+    "name": "Reaktívne riadenie Leopard",
+    "description": "Prediktívna stabilizácia a vrstvená obrana završujú výbavu ťažkého tanku."
+  },
+  "avenger-threat-library": {
+    "name": "Knižnica hrozieb Avenger",
+    "description": "Aktualizované signatúry pomáhajú raketovým tímom rozlíšiť rýchlych letcov z trhlín."
+  },
+  "line-infantry-modernization": {
+    "name": "Modernizácia radovej pechoty",
+    "description": "Upravená poľná výbava dáva streleckým družstvám spoľahlivý spoločný štandard."
+  },
+  "mortar-plotting-cell": {
+    "name": "Mínometná výpočtová bunka",
+    "description": "Prenosné výpočtové pomôcky skracujú prípravu paľby pechotných mínometov."
+  },
+  "m109-digital-lay": {
+    "name": "Digitálne zameranie M109",
+    "description": "Digitálne zameriavanie dostane samohybné delá na cieľ aj medzi rýchlymi presunmi."
+  },
+  "elmag-rail-stabilizer": {
+    "name": "Stabilizátor koľajnice ELMAG",
+    "description": "Riadenie impulzov a zosilnené závesy umožnia bezpečné nasadenie elektromagnetických zbraní."
+  },
+  "mlrs-salvo-coordination": {
+    "name": "Koordinácia salvy MLRS",
+    "description": "Sieťové riadenie sústredí raketové údery bez prekrývania palebných koridorov."
+  },
+  "storm-assault-loadout": {
+    "name": "Útočná výbava Storm",
+    "description": "Zosilnený pancier a úderné zbrane vybavia pechotu na boj zblízka."
+  },
+  "pyro-containment-rig": {
+    "name": "Izolačná súprava Pyro",
+    "description": "Utesnené palivové systémy umožnia plameňometným tímom pôsobiť pri nestabilnej hmote trhlín."
+  },
+  "forward-supply-module": {
+    "name": "Predsunutý zásobovací modul",
+    "description": "Modulárne sklady a chránené nakladanie udržia muníciu v pohybe aj pod paľbou."
+  },
+  "paladin-ward-core": {
+    "name": "Ochranné jadro Paladin",
+    "description": "Kompaktný generátor ochranného poľa chráni ťažké delá pred nadprirodzenou odvetou."
+  },
+  "destructor-siege-frame": {
+    "name": "Obliehací rám Destructor",
+    "description": "Vystužený kráčajúci podvozok prenesie obliehacie zbrane cez rozbité prístupy."
+  },
+  "exo-seal-system": {
+    "name": "Tesniaci systém Exo",
+    "description": "Aktívne tesnenia izolujú útočné obleky od žieravých spór a nepriateľskej mágie."
+  },
+  "sky-lance-guidance": {
+    "name": "Navádzanie Sky Lance",
+    "description": "Prediktívne navádzanie zameria ťažké stíhače na uhýbajúce vzdušné monštrá."
+  },
+  "firefly-light-battery": {
+    "name": "Ľahká batéria Firefly",
+    "description": "Letecky prepraviteľné delostrelecké tímy okamžite podporia rýchlo postupujúcu kolónu."
+  },
+  "badger-recoil-bed": {
+    "name": "Záklzové lôžko Badger",
+    "description": "Nízke záklzové lôžko umiestni ťažký mínomet do chráneného nosiča."
+  },
+  "horizon-spectrum-array": {
+    "name": "Spektrálne pole Horizon",
+    "description": "Širokopásmové prijímače vystopujú nepriateľské batérie cez signály skreslené trhlinou."
+  },
+  "tempest-counterfire-logic": {
+    "name": "Logika protibatériovej paľby Tempest",
+    "description": "Automatizované palebné riešenia menia senzorové stopy na rýchle odvetné misie."
+  },
+  "thunderhead-shell-network": {
+    "name": "Palebná sieť Thunderhead",
+    "description": "Distribuované riadenie paľby koordinuje aliančné batérie s najdlhším dosahom."
+  },
+  "tidewalker-amphib-drive": {
+    "name": "Obojživelný pohon Tidewalker",
+    "description": "Utesnený pohon udrží obrnené transportéry v pohybe cez zaplavenú frontovú líniu."
+  },
+  "valkyrie-mobility-rig": {
+    "name": "Pohybová súprava Valkyrie",
+    "description": "Aktívne postroje umožnia útočnej pechote držať tempo s mechanizovaným klinom."
+  },
+  "breach-demolition-suite": {
+    "name": "Demolačná súprava Breach",
+    "description": "Inteligentné nálože a stavebné skenery otvoria cestu cez opevnené prekážky."
+  },
+  "wardog-fire-control": {
+    "name": "Riadenie paľby Wardog",
+    "description": "Prepojené mieridlá kanóna a rakiet vytvoria mobilnú podpornú platformu proti všetkým hrozbám."
+  },
+  "kestrel-autonomy-kernel": {
+    "name": "Autonómne jadro Kestrel",
+    "description": "Odolná navigačná logika umožní prieskumným dronom prežiť stratu signálu."
+  },
+  "cerberus-hunter-link": {
+    "name": "Lovecké prepojenie Cerberus",
+    "description": "Spoločné senzory navedú bojové stroje na ciele odhalené predsunutými dronmi."
+  },
+  "aegis-breakthrough-frame": {
+    "name": "Prielomový rám Aegis",
+    "description": "Zosilnený hybridný podvozok spája ťažký pancier s chránenými útočnými systémami."
   }
 }

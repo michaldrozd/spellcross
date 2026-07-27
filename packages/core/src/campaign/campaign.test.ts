@@ -16,12 +16,15 @@ import {
   getEnemyDecisionBudget,
   getEnemyDifficultyTier,
   minimumExperienceForTier,
+  pauseResearch,
+  progressResearch,
   projectUnitService,
   recruitUnit,
   rearmUnit,
   refillUnit,
   retreatFromBattle,
   serializeCampaignState,
+  startResearch,
   startBattleForTerritory,
   hydrateCampaignState,
   isUnitUnlocked,
@@ -804,6 +807,30 @@ describe('campaign core', () => {
     expect(restored.resources).toEqual(resources);
     expect(restored.activeBattle?.territoryId).toBe('sector-lyon');
     expect(restored.activeBattle?.state.sides.alliance.units.get(unit.id)?.statusEffects.has('suppressed')).toBe(true);
+  });
+
+  it('preserves old known unlocks plus exact active and paused research investment', () => {
+    const state = createCampaign(starterBundle);
+    state.resources.research = 13;
+    startResearch(state, starterBundle, 'esprit-de-corps');
+    progressResearch(state, starterBundle);
+    pauseResearch(state, starterBundle);
+    state.resources.research = 12;
+    startResearch(state, starterBundle, 'armor-upfit');
+    progressResearch(state, starterBundle);
+    const snapshot = serializeCampaignState(state);
+    const knownBefore = Array.from(state.research.known).sort();
+
+    const restored = hydrateCampaignState(starterBundle, snapshot);
+
+    expect(restored.research.inProgress).toEqual({ topicId: 'armor-upfit', remaining: 68 });
+    expect(restored.research.paused['esprit-de-corps']).toBe(37);
+    expect(Array.from(restored.research.known).sort()).toEqual(knownBefore);
+    expect(Array.from(restored.research.known)).toEqual(expect.arrayContaining([
+      'rangers',
+      'gepard-aa',
+      'humvee-scout'
+    ]));
   });
 
   it('a save completed under the old campaign, migrated into the expanded one, still reports victory', () => {
