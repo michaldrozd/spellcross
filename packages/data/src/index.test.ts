@@ -177,7 +177,7 @@ describe('data bundle', () => {
     expect(postStartProfile('aegis-breakthrough-frame')).toEqual({ cost: 940, projects: 8 });
     expect(Math.max(...starterBundle.research.map((topic) => closureCost(topic.id))))
       .toBeLessThanOrEqual(conservativeVeteranBudget);
-    expect(conservativeVeteranBudget).toBe(2500);
+    expect(conservativeVeteranBudget).toBe(3406);
   });
 
   it('keeps every pre-expansion research identity, cost and prerequisite stable', () => {
@@ -474,6 +474,10 @@ describe('data bundle', () => {
     const orchard = campaign.territories.find((territory) => territory.id === 'sector-mnemonic-orchard');
     const thornEngine = campaign.territories.find((territory) => territory.id === 'sector-thorn-engine');
     const veilHeart = campaign.territories.find((territory) => territory.id === 'sector-veil-heart');
+    const quietMeridian = campaign.territories.find((territory) => territory.id === 'sector-quiet-meridian');
+    const glassWake = campaign.territories.find((territory) => territory.id === 'sector-glass-wake');
+    const ashCompass = campaign.territories.find((territory) => territory.id === 'sector-ash-compass');
+    const dawnAnchor = campaign.territories.find((territory) => territory.id === 'sector-dawn-anchor');
 
     expect(cinderGate).toMatchObject({ act: 2, requires: ['sector-rift'], region: 'Shatterline' });
     expect(lanternVault).toMatchObject({
@@ -495,12 +499,18 @@ describe('data bundle', () => {
       requires: ['sector-sable-causeway', 'sector-mnemonic-orchard']
     });
     expect(veilHeart).toMatchObject({ act: 2, requires: ['sector-thorn-engine'] });
+    expect(quietMeridian).toMatchObject({ act: 2, requires: ['sector-veil-heart'] });
+    expect(glassWake).toMatchObject({ act: 2, requires: ['sector-quiet-meridian'] });
+    expect(ashCompass).toMatchObject({ act: 2, requires: ['sector-glass-wake'] });
+    expect(dawnAnchor).toMatchObject({ act: 2, requires: ['sector-ash-compass'] });
     expect(campaign.actTimeBonuses).toEqual([{
       act: 2,
-      turns: { story: 7, commander: 7, veteran: 7 }
+      turns: { story: 11, commander: 11, veteran: 11 }
     }]);
-    expect(campaign.territories.filter((territory) => territory.act === 2)).toHaveLength(8);
-    expect(validatedStarterBundle.dossiers.filter((dossier) => dossier.chapter >= 5)).toHaveLength(8);
+    expect(campaign.territories).toHaveLength(29);
+    expect(new Set(campaign.territories.map((territory) => territory.scenarioId)).size).toBe(29);
+    expect(campaign.territories.filter((territory) => territory.act === 2)).toHaveLength(12);
+    expect(validatedStarterBundle.dossiers.filter((dossier) => dossier.chapter >= 5)).toHaveLength(12);
   });
 
   it('ships at least eighty unique authored unit definitions', () => {

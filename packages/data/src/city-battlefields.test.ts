@@ -7,9 +7,9 @@ const inBounds = (q: number, r: number, w: number, h: number) => q >= 0 && q < w
 
 describe('Per-city battlefields', () => {
   it('generates one scenario per sector', () => {
-    expect(cityScenarios.length).toBe(25);
-    expect(new Set(cityScenarios.map((s) => s.id)).size).toBe(25); // unique ids
-    expect(new Set(cityScenarios.map((s) => s.map.id)).size).toBe(25); // unique maps
+    expect(cityScenarios.length).toBe(29);
+    expect(new Set(cityScenarios.map((s) => s.id)).size).toBe(29); // unique ids
+    expect(new Set(cityScenarios.map((s) => s.map.id)).size).toBe(29); // unique maps
   });
 
   it('gives every sector a distinct deterministic battlefield layout', () => {
@@ -165,6 +165,20 @@ describe('Per-city battlefields', () => {
     expect(signature?.triggerAfterEventId).toBe(reserve?.id);
     expect(signature?.messageKey).toBe(messageKey);
     expect(signature?.reinforcements[0]?.definitionId).toBe(leadDefinitionId);
+  });
+
+  it.each([
+    'sector-quiet-meridian',
+    'sector-glass-wake',
+    'sector-ash-compass',
+    'sector-dawn-anchor'
+  ])('gives aftermath operation %s a complete deterministic battlefield', (territoryId) => {
+    const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
+    expect(scenario?.map.id).toBe(`city-${territoryId}`);
+    expect(scenario?.map.tiles.length).toBe((scenario?.map.width ?? 0) * (scenario?.map.height ?? 0));
+    expect(scenario?.objectives.length).toBeGreaterThanOrEqual(2);
+    expect(scenario?.startZones.alliance.length).toBeGreaterThan(0);
+    expect(scenario?.otherSideForces.length).toBeGreaterThan(0);
   });
 
   it('fields the winged fiend in Berlin without changing its signature encounter', () => {

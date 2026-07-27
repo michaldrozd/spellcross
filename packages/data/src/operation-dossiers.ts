@@ -314,5 +314,53 @@ export const starterOperationDossiers: OperationDossier[] = [
     victory: 'The Veil Heart is still. False horizons are collapsing into open sky, and the passage home is holding.',
     defeat: 'The heart completed its contraction. The assault force is cut off beneath a sky that no longer opens toward home.',
     audioTheme: 'rift'
+  },
+  {
+    territoryId: 'sector-quiet-meridian',
+    chapter: 8,
+    chapterTitle: 'Dawn Protocol',
+    codename: 'Quiet Meridian',
+    situation: 'The Veil Heart is dead, but the return passage has lost its bearing among ruins that are collapsing out of sequence.',
+    threat: 'A stranded survey team carries the only intact meridian record while remnant guards close through the falling galleries.',
+    command: 'Reach the survey team, keep it alive, and escort its record to the extraction line before the ruins erase the route.',
+    victory: 'The meridian record is secure. Alliance navigation now has one fixed line through the collapsing Shatterline.',
+    defeat: 'The ruins closed over the survey team and its record. The return passage is open, but no longer points toward home.',
+    audioTheme: 'night'
+  },
+  {
+    territoryId: 'sector-glass-wake',
+    chapter: 8,
+    chapterTitle: 'Dawn Protocol',
+    codename: 'Glass Wake',
+    situation: 'The broken horizon has drained into a mirrored tide that covers the southern approach to the return line.',
+    threat: 'Shore guards are folding the last solid crossing into the reflection while the tide rises behind the assault force.',
+    command: 'Break the shore guard and secure the far crossing before the mirrored water cuts the army in two.',
+    victory: 'The crossing is stable and the Glass Wake is receding. Heavy formations can now reach the return corridor.',
+    defeat: 'The reflected tide reclaimed the crossing. The southern column is isolated on ground that disappears with every wave.',
+    audioTheme: 'rift'
+  },
+  {
+    territoryId: 'sector-ash-compass',
+    chapter: 8,
+    chapterTitle: 'Dawn Protocol',
+    codename: 'Ash Compass',
+    situation: 'A mobile stabilizer can align the rescued meridian, but the shortest route crosses a forest displaced from another horizon.',
+    threat: 'Every hostile signal rotates the paths around the convoy and draws fresh hunters toward its navigation core.',
+    command: 'Escort the stabilizer through the forest, protect its core, and deliver it to the final bearing intact.',
+    victory: 'The Ash Compass is aligned. For the first time since the crossing, every Alliance receiver points toward the same dawn.',
+    defeat: 'The stabilizer was lost among the turning paths. Formations are following different bearings into the same forest.',
+    audioTheme: 'night'
+  },
+  {
+    territoryId: 'sector-dawn-anchor',
+    chapter: 8,
+    chapterTitle: 'Dawn Protocol',
+    codename: 'Dawn Anchor',
+    situation: 'The return passage is fixed and evacuation has begun, but sealing it requires an anchor held on the hostile side.',
+    threat: 'Every surviving Shatterline war form is converging on the anchor before the last Alliance formation can cross.',
+    command: 'Hold the anchor through the sealing cycle and deny the final assault access to the return passage.',
+    victory: 'The last formation is home and the Dawn Anchor is sealed. The second horizon has closed without a road back.',
+    defeat: 'The anchor fell before the sealing cycle finished. The return passage is tearing open under the final assault.',
+    audioTheme: 'siege'
   }
 ];

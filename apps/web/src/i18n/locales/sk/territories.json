@@ -99,6 +99,22 @@
     "name": "Srdce závoja",
     "brief": "Vstúpte do pochovaného jadra a ukončite druhý horizont skôr, než uväzní armádu."
   },
+  "sector-quiet-meridian": {
+    "name": "Tichý poludník",
+    "brief": "Zachráňte prieskumný tím s jediným stabilným smerom cez rúcajúce sa ruiny."
+  },
+  "sector-glass-wake": {
+    "name": "Sklenená brázda",
+    "brief": "Obsaďte posledný pevný priechod skôr, než zrkadlový príliv rozdelí armádu."
+  },
+  "sector-ash-compass": {
+    "name": "Popolavý kompas",
+    "brief": "Eskortujte mobilný stabilizátor lesom, ktorého cesty sa otáčajú s každým signálom."
+  },
+  "sector-dawn-anchor": {
+    "name": "Kotva úsvitu",
+    "brief": "Udržte návratovú kotvu, kým neprejde posledná formácia a Trhlina sa neuzavrie."
+  },
   "mapLabel": {
     "sector-paris": "Paríž",
     "sector-lyon": "Lyon",
@@ -124,6 +140,10 @@
     "sector-sable-causeway": "Čierna hrádza",
     "sector-mnemonic-orchard": "Pamäťový sad",
     "sector-thorn-engine": "Tŕňový stroj",
-    "sector-veil-heart": "Srdce závoja"
+    "sector-veil-heart": "Srdce závoja",
+    "sector-quiet-meridian": "Tichý poludník",
+    "sector-glass-wake": "Sklenená brázda",
+    "sector-ash-compass": "Popolavý kompas",
+    "sector-dawn-anchor": "Kotva úsvitu"
   }
 }

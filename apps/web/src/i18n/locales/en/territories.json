@@ -99,6 +99,22 @@
     "name": "Veil Heart",
     "brief": "Enter the buried core and end the second horizon before it seals around the army."
   },
+  "sector-quiet-meridian": {
+    "name": "Quiet Meridian",
+    "brief": "Rescue the survey team carrying the only stable bearing through the collapsing ruins."
+  },
+  "sector-glass-wake": {
+    "name": "Glass Wake",
+    "brief": "Seize the last solid crossing before the mirrored tide divides the army."
+  },
+  "sector-ash-compass": {
+    "name": "Ash Compass",
+    "brief": "Escort the mobile stabilizer through a forest whose paths turn with every signal."
+  },
+  "sector-dawn-anchor": {
+    "name": "Dawn Anchor",
+    "brief": "Hold the return anchor until the last formation crosses and the Shatterline seals."
+  },
   "mapLabel": {
     "sector-paris": "Paris",
     "sector-lyon": "Lyon",
@@ -124,6 +140,10 @@
     "sector-sable-causeway": "Sable Causeway",
     "sector-mnemonic-orchard": "Mnemonic Orchard",
     "sector-thorn-engine": "Thorn Engine",
-    "sector-veil-heart": "Veil Heart"
+    "sector-veil-heart": "Veil Heart",
+    "sector-quiet-meridian": "Quiet Meridian",
+    "sector-glass-wake": "Glass Wake",
+    "sector-ash-compass": "Ash Compass",
+    "sector-dawn-anchor": "Dawn Anchor"
   }
 }

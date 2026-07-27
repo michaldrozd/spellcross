@@ -13,7 +13,11 @@ const ACT_TWO_TERRITORIES = [
   'sector-sable-causeway',
   'sector-mnemonic-orchard',
   'sector-thorn-engine',
-  'sector-veil-heart'
+  'sector-veil-heart',
+  'sector-quiet-meridian',
+  'sector-glass-wake',
+  'sector-ash-compass',
+  'sector-dawn-anchor'
 ] as const;
 
 function loadLocale(language: 'en' | 'sk', namespace: string) {
@@ -56,14 +60,14 @@ async function openMigratedActTwo(page: Page, slot: number) {
   await page.locator('.menu-buttons .menu-btn-primary').click();
   await expect(page.getByRole('heading', { name: 'CAMPAIGN WON' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Continue to Act II' })).toBeVisible();
-  await expect(page.locator('.gameover-summary')).toContainText('17/25');
+  await expect(page.locator('.gameover-summary')).toContainText('17/29');
   await page.getByRole('button', { name: 'Continue to Act II' }).click();
 
   await expect(page.locator('.gameover-overlay')).toHaveCount(0);
   await expect(page.locator('.territory-act-banner')).toContainText('ACT II');
   await expect(page.locator('.territory-act-banner')).toContainText('VEILBREAK');
   await expect(page.locator('.territory-info-panel')).toContainText('Cinder Gate');
-  await expect(page.locator('.turn-info')).toContainText('WAR CLOCK 15');
+  await expect(page.locator('.turn-info')).toContainText('WAR CLOCK 19');
 }
 
 async function launchSelectedOperation(page: Page) {

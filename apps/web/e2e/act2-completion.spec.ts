@@ -51,7 +51,7 @@ test('the Shatterline theater presents the complete converging Act II front', as
   await expect(actTwo).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('.strategic-map-svg')).toHaveAttribute('data-theater', '2');
   await expect(page.locator('.shatterline-cartography')).toBeVisible();
-  await expect(page.locator('.territory-marker')).toHaveCount(8);
+  await expect(page.locator('.territory-marker')).toHaveCount(12);
   await expect(page.locator('.territory-marker').filter({ hasText: 'Veil Heart' })).toBeVisible();
 
   await actOne.click();
@@ -73,7 +73,7 @@ test('the theater switch remains contained and usable at 390px', async ({ page }
   await expect(page.locator('.strategic-map-container')).toHaveCSS('overflow', 'hidden');
 });
 
-test('destroying the Veil Heart completes all 24 playable operations', async ({ page }) => {
+test('destroying the Veil Heart opens the Dawn Protocol aftermath', async ({ page }) => {
   test.setTimeout(60_000);
   await openVeilHeartFront(page, 1);
   await page.locator('.territory-marker').filter({ hasText: 'Veil Heart' }).click();
@@ -92,7 +92,7 @@ test('destroying the Veil Heart completes all 24 playable operations', async ({ 
   await expect(page.locator('.battle-outcome-card')).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: /Return to HQ/i }).click();
 
-  await expect(page.getByRole('heading', { name: 'CAMPAIGN WON', exact: true })).toBeVisible();
-  await expect(page.locator('.gameover-summary')).toContainText('24/25');
-  await expect(page.getByRole('button', { name: 'Continue to Act II' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: /FIELD HQ/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'CAMPAIGN WON', exact: true })).toHaveCount(0);
+  await expect(page.locator('.territory-marker').filter({ hasText: 'Quiet Meridian' })).toBeVisible();
 });

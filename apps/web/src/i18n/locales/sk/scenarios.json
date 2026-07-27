@@ -255,5 +255,37 @@
       "sector-veil-heart-eliminate": "Zničte rituálnu stráž Srdca závoja.",
       "sector-veil-heart-hold": "Ukotvite komoru srdca na 3 kolá."
     }
+  },
+  "city-sector-quiet-meridian": {
+    "name": "Tichý poludník",
+    "brief": "Dostaňte sa k prieskumnému tímu a preveďte ho ruinami rúcajúcimi sa za zlomeným horizontom.",
+    "objectives": {
+      "sector-quiet-meridian-reach": "Dopravte prieskumný tím a záznam poludníka do evakuačnej zóny.",
+      "sector-quiet-meridian-protect": "Udržte prieskumný tím nažive."
+    }
+  },
+  "city-sector-glass-wake": {
+    "name": "Sklenená brázda",
+    "brief": "Zlomte pobrežnú stráž a obsaďte posledný stabilný priechod pred návratom zrkadlového prílivu.",
+    "objectives": {
+      "sector-glass-wake-eliminate": "Zničte alebo zažeňte pobrežnú stráž.",
+      "sector-glass-wake-reach": "Položte nálože pri vzdialenom priechode."
+    }
+  },
+  "city-sector-ash-compass": {
+    "name": "Popolavý kompas",
+    "brief": "Eskortujte stabilizačný konvoj vysunutým lesom, ktorého cesty sa otáčajú s každým signálom.",
+    "objectives": {
+      "sector-ash-compass-reach": "Eskortujte stabilizačný konvoj k poslednému smerovníku.",
+      "sector-ash-compass-protect": "Udržte stabilizačný konvoj v prevádzke."
+    }
+  },
+  "city-sector-dawn-anchor": {
+    "name": "Kotva úsvitu",
+    "brief": "Udržte poslednú kotvu počas uzatvárania návratového priechodu a záverečného útoku stráže.",
+    "objectives": {
+      "sector-dawn-anchor-hold": "Udržte Kotvu úsvitu 3 kolá.",
+      "sector-dawn-anchor-protect": "Udržte kapitána Alexandra nažive."
+    }
   }
 }

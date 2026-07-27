@@ -231,5 +231,41 @@
     "command": "Prelomte rituálnu stráž, ukotvite komoru a zničte srdce skôr, než Línia zlomu uväzní armádu vo vnútri.",
     "victory": "Srdce závoja stíchlo. Falošné horizonty sa rúcajú do otvorenej oblohy a priechod domov zostáva stabilný.",
     "defeat": "Srdce dokončilo zovretie. Útočná skupina je odrezaná pod oblohou, ktorá sa už neotvára smerom domov."
+  },
+  "sector-quiet-meridian": {
+    "chapterTitle": "Protokol úsvitu",
+    "codename": "Tichý poludník",
+    "situation": "Srdce závoja je mŕtve, ale návratový priechod stratil smer medzi ruinami, ktoré sa rúcajú mimo poradia.",
+    "threat": "Uviaznutý prieskumný tím nesie jediný neporušený záznam poludníka, zatiaľ čo stráže uzatvárajú galérie.",
+    "command": "Dostaňte sa k tímu, udržte ho nažive a eskortujte jeho záznam k evakuačnej línii.",
+    "victory": "Záznam poludníka je v bezpečí. Aliančná navigácia má pevnú líniu cez rúcajúcu sa Líniu zlomu.",
+    "defeat": "Ruiny pochovali tím aj jeho záznam. Návratový priechod už neukazuje domov."
+  },
+  "sector-glass-wake": {
+    "chapterTitle": "Protokol úsvitu",
+    "codename": "Sklenená brázda",
+    "situation": "Zlomený horizont stiekol do zrkadlového prílivu, ktorý pokrýva južný prístup k návratovej línii.",
+    "threat": "Pobrežné stráže skladajú posledný pevný priechod do odrazu, zatiaľ čo príliv stúpa za armádou.",
+    "command": "Zlomte pobrežnú stráž a zaistite vzdialený priechod skôr, než zrkadlová voda rozdelí armádu.",
+    "victory": "Priechod je stabilný a Sklenená brázda ustupuje. Ťažké formácie môžu dosiahnuť návratový koridor.",
+    "defeat": "Odrazený príliv pohltil priechod. Južná kolóna zostala odrezaná na miznúcej zemi."
+  },
+  "sector-ash-compass": {
+    "chapterTitle": "Protokol úsvitu",
+    "codename": "Popolavý kompas",
+    "situation": "Mobilný stabilizátor môže zarovnať zachránený poludník, no jeho trasa vedie lesom vysunutým z iného horizontu.",
+    "threat": "Každý nepriateľský signál otáča cesty okolo konvoja a priťahuje lovcov k navigačnému jadru.",
+    "command": "Eskortujte stabilizátor lesom, chráňte jeho jadro a dopravte ho neporušený k poslednému smerovníku.",
+    "victory": "Popolavý kompas je zarovnaný. Každý aliančný prijímač teraz ukazuje k rovnakému úsvitu.",
+    "defeat": "Stabilizátor sa stratil medzi otáčajúcimi sa cestami. Formácie sledujú rôzne smery do rovnakého lesa."
+  },
+  "sector-dawn-anchor": {
+    "chapterTitle": "Protokol úsvitu",
+    "codename": "Kotva úsvitu",
+    "situation": "Návratový priechod je pevný a evakuácia začala, no jeho uzavretie vyžaduje kotvu držanú na nepriateľskej strane.",
+    "threat": "Každá preživšia vojnová forma Línie zlomu sa zbieha skôr, než môže prejsť posledná aliančná formácia.",
+    "command": "Udržte kotvu počas uzatváracieho cyklu a nepustite záverečný útok k návratovému priechodu.",
+    "victory": "Posledná formácia je doma a Kotva úsvitu je zapečatená. Druhý horizont sa uzavrel bez cesty späť.",
+    "defeat": "Kotva padla pred koncom uzatváracieho cyklu. Návratový priechod sa pod záverečným útokom znovu trhá."
   }
 }

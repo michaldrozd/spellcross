@@ -255,5 +255,37 @@
       "sector-veil-heart-eliminate": "Destroy the ritual guard of the Veil Heart.",
       "sector-veil-heart-hold": "Anchor the heart chamber for 3 rounds."
     }
+  },
+  "city-sector-quiet-meridian": {
+    "name": "Quiet Meridian",
+    "brief": "Reach the stranded survey team and guide it through ruins collapsing behind the broken horizon.",
+    "objectives": {
+      "sector-quiet-meridian-reach": "Bring the survey team and its meridian record to extraction.",
+      "sector-quiet-meridian-protect": "Keep the survey team alive."
+    }
+  },
+  "city-sector-glass-wake": {
+    "name": "Glass Wake",
+    "brief": "Break the shore guard and seize the last stable crossing before the reflected tide returns.",
+    "objectives": {
+      "sector-glass-wake-eliminate": "Destroy or rout the shore guard.",
+      "sector-glass-wake-reach": "Plant charges at the far crossing."
+    }
+  },
+  "city-sector-ash-compass": {
+    "name": "Ash Compass",
+    "brief": "Escort the stabilizer convoy through a displaced forest whose paths turn with every signal pulse.",
+    "objectives": {
+      "sector-ash-compass-reach": "Escort the stabilizer convoy to the final bearing.",
+      "sector-ash-compass-protect": "Keep the stabilizer convoy operational."
+    }
+  },
+  "city-sector-dawn-anchor": {
+    "name": "Dawn Anchor",
+    "brief": "Hold the final anchor while the return passage seals and the surviving guard makes its last assault.",
+    "objectives": {
+      "sector-dawn-anchor-hold": "Hold the Dawn Anchor for 3 rounds.",
+      "sector-dawn-anchor-protect": "Keep Captain Alexander alive."
+    }
   }
 }
