@@ -19,6 +19,43 @@ import type {
 
 type Coord = { q: number; r: number };
 type GameplayType = 'evac' | 'rescue' | 'hold' | 'bridgehead' | 'convoy' | 'raid-night' | 'spire';
+type TacticalMapScaleBand = 'early' | 'mid' | 'late';
+
+export const TACTICAL_MAP_SCALE_BANDS = {
+  early: {
+    width: 30,
+    height: 54,
+    deploymentWidth: 5,
+    deploymentDepth: 4,
+    maxCellsPerEnemy: 120,
+    sceneryDensity: 1,
+    reserveRound: 4,
+    travelDeadlineRound: 12,
+    patrolProgress: [0.18, 0.4, 0.62, 0.82]
+  },
+  mid: {
+    width: 40,
+    height: 54,
+    deploymentWidth: 6,
+    deploymentDepth: 4,
+    maxCellsPerEnemy: 120,
+    sceneryDensity: 1,
+    reserveRound: 5,
+    travelDeadlineRound: 15,
+    patrolProgress: [0.16, 0.36, 0.58, 0.8]
+  },
+  late: {
+    width: 50,
+    height: 64,
+    deploymentWidth: 7,
+    deploymentDepth: 5,
+    maxCellsPerEnemy: 120,
+    sceneryDensity: 0.55,
+    reserveRound: 6,
+    travelDeadlineRound: 18,
+    patrolProgress: [0.15, 0.34, 0.56, 0.79]
+  }
+} as const;
 
 interface CityConfig {
   territoryId: string;
@@ -31,6 +68,7 @@ interface CityConfig {
   weather?: 'clear' | 'night' | 'fog';
   difficulty: number; // 1-5, scales enemy roster
   rosterOffset?: number;
+  scaleBand?: TacticalMapScaleBand;
 }
 
 // --- deterministic RNG (mulberry32) so generated data is stable across reloads/saves/tests ---
@@ -114,6 +152,7 @@ interface Generated {
   map: BattlefieldMap;
   allianceZone: Coord[];
   otherSideZone: Coord[];
+  roadPath: Coord[];
   passable: Coord[]; // all passable tiles (no buildings)
   reachable: Coord[]; // passable tiles reachable from the alliance zone — enemies/objectives go here only
 }
@@ -152,6 +191,7 @@ function biomeFor(theme: BattlefieldEnvironment, n: number, n2: number): string 
 
 function generate(cfg: CityConfig): Generated {
   const { width: w, height: h, theme } = cfg;
+  const scaleProfile = cfg.scaleBand ? TACTICAL_MAP_SCALE_BANDS[cfg.scaleBand] : undefined;
   const rng = makeRng(`${cfg.territoryId}:${theme}:${w}x${h}`);
   const kind: string[][] = Array.from({ length: h }, () => Array.from({ length: w }, () => 'ground'));
 
@@ -197,10 +237,12 @@ function generate(cfg: CityConfig): Generated {
   // clusters to clean open ground so deployment and spawns are always valid.
   const homeCells: Coord[] = [];
   const enemyCells: Coord[] = [];
-  for (let r = h - 2; r >= h - 4; r--) for (let q = 0; q < 4; q++) {
+  const deploymentWidth = scaleProfile?.deploymentWidth ?? 4;
+  const deploymentDepth = scaleProfile?.deploymentDepth ?? 3;
+  for (let r = h - 2; r >= h - 1 - deploymentDepth; r--) for (let q = 0; q < deploymentWidth; q++) {
     if (inB(q, r, w, h)) { tiles[r * w + q] = TERRAIN_TILE.plain(rng); homeCells.push({ q, r }); }
   }
-  for (let r = 1; r <= 3; r++) for (let q = w - 4; q < w; q++) {
+  for (let r = 1; r <= deploymentDepth; r++) for (let q = w - deploymentWidth; q < w; q++) {
     if (inB(q, r, w, h)) { tiles[r * w + q] = TERRAIN_TILE.plain(rng); enemyCells.push({ q, r }); }
   }
 
@@ -232,17 +274,20 @@ function generate(cfg: CityConfig): Generated {
     }
   };
   const approachRoadKeys = new Set(roadPath.map((coordinate) => `${coordinate.q},${coordinate.r}`));
-  for (let r = Math.max(1, h - 8); r < h - 1; r++) for (let q = 4; q < Math.min(w - 1, 9); q++) {
-    if (approachRoadKeys.has(`${q},${r}`)) continue;
-    const terrain = approachTerrain();
-    tiles[r * w + q] = TERRAIN_TILE[terrain](approachRng);
+  for (let r = Math.max(1, h - deploymentDepth - 5); r < h - 1; r++) {
+    for (let q = deploymentWidth; q < Math.min(w - 1, deploymentWidth + 5); q++) {
+      if (approachRoadKeys.has(`${q},${r}`)) continue;
+      const terrain = approachTerrain();
+      tiles[r * w + q] = TERRAIN_TILE[terrain](approachRng);
+    }
   }
 
   const props: MapProp[] = [];
   const occupied = new Set<string>(); // tiles taken by a building footprint
   const key = (q: number, r: number) => `${q},${r}`;
   const isReserved = (q: number, r: number) =>
-    (q < 4 && r > h - 5) || (q > w - 5 && r < 4); // keep home corners clear of buildings
+    (q < deploymentWidth && r > h - deploymentDepth - 2)
+    || (q >= w - deploymentWidth && r < deploymentDepth + 1); // keep home corners clear of buildings
   const isRoad = new Set(roadPath.map((c) => key(c.q, c.r)));
 
   const placeBuilding = (q: number, r: number, bw: number, bh: number, opt: Partial<MapProp> = {}) => {
@@ -347,15 +392,24 @@ function generate(cfg: CityConfig): Generated {
       ...(kindProp === 'tree' ? { texture: '/props/tree1.png' } : {})
     });
   };
+  const sceneryDensity = scaleProfile?.sceneryDensity ?? 1;
   for (let r = 0; r < h; r++) for (let q = 0; q < w; q++) {
     if (occupied.has(key(q, r)) || isReserved(q, r) || isRoad.has(key(q, r))) continue;
     const t = tileAt(q, r);
     if (!t.passable || t.terrain === 'water') continue;
-    if (t.terrain === 'forest') { if (rng() < 0.78) addProp(q, r, 'tree'); }
-    else if (t.terrain === 'hill') { if (rng() < 0.4) addProp(q, r, 'rock'); }
-    else if (t.terrain === 'structure' || t.terrain === 'swamp') { if (rng() < 0.34) addProp(q, r, 'rock'); }
-    else if (t.terrain === 'plain' && isForestNear(q, r)) { const x = rng(); if (x < 0.52) addProp(q, r, x < 0.18 ? 'tree' : 'bush'); }
-    else if (t.terrain === 'plain') { const x = rng(); if (x < 0.16) addProp(q, r, x < 0.05 ? 'tree' : x < 0.11 ? 'bush' : 'rock'); }
+    if (t.terrain === 'forest') { if (rng() < 0.78 * sceneryDensity) addProp(q, r, 'tree'); }
+    else if (t.terrain === 'hill') { if (rng() < 0.4 * sceneryDensity) addProp(q, r, 'rock'); }
+    else if (t.terrain === 'structure' || t.terrain === 'swamp') { if (rng() < 0.34 * sceneryDensity) addProp(q, r, 'rock'); }
+    else if (t.terrain === 'plain' && isForestNear(q, r)) {
+      const x = rng();
+      if (x < 0.52 * sceneryDensity) addProp(q, r, x / sceneryDensity < 0.18 ? 'tree' : 'bush');
+    } else if (t.terrain === 'plain') {
+      const x = rng();
+      const normalized = x / sceneryDensity;
+      if (x < 0.16 * sceneryDensity) {
+        addProp(q, r, normalized < 0.05 ? 'tree' : normalized < 0.11 ? 'bush' : 'rock');
+      }
+    }
   }
 
   // 9) collect passable, building-free tiles for choosing zones/objectives/spawns
@@ -394,7 +448,7 @@ function generate(cfg: CityConfig): Generated {
     tiles,
     props
   };
-  return { map, allianceZone, otherSideZone, passable, reachable };
+  return { map, allianceZone, otherSideZone, roadPath, passable, reachable };
 }
 
 // --- enemy rosters: scale composition with difficulty, and finally put the four otherwise-unused
@@ -483,6 +537,61 @@ function pickSpread(pool: Coord[], n: number, rng: () => number): Coord[] {
   return out.slice(0, n);
 }
 
+function pickPatrolLine(
+  cfg: CityConfig,
+  pool: Coord[],
+  n: number,
+  occupied: Set<string>,
+  rng: () => number
+): Coord[] {
+  if (!cfg.scaleBand) return pickSpread(pool, n, rng);
+  const profile = TACTICAL_MAP_SCALE_BANDS[cfg.scaleBand];
+  const candidates = pool
+    .filter((coordinate) => !occupied.has(`${coordinate.q},${coordinate.r}`))
+    .map((coordinate) => ({ coordinate, tieBreak: rng() }));
+  const progress = (coordinate: Coord) => (
+    coordinate.q / Math.max(1, cfg.width - 1)
+    + 1 - coordinate.r / Math.max(1, cfg.height - 1)
+  ) / 2;
+  const selected: Coord[] = [];
+
+  for (let index = 0; index < n; index += 1) {
+    const patrolIndex = Math.min(
+      profile.patrolProgress.length - 1,
+      Math.floor(index * profile.patrolProgress.length / n)
+    );
+    const targetProgress = profile.patrolProgress[patrolIndex];
+    const candidate = candidates
+      .filter(({ coordinate }) => !selected.some((chosen) => (
+        Math.max(
+          Math.abs(chosen.q - coordinate.q),
+          Math.abs(chosen.r - coordinate.r)
+        ) <= 1
+      )))
+      .sort((left, right) => (
+        Math.abs(progress(left.coordinate) - targetProgress)
+        - Math.abs(progress(right.coordinate) - targetProgress)
+        || left.tieBreak - right.tieBreak
+      ))[0];
+    if (!candidate) break;
+    selected.push(candidate.coordinate);
+    candidates.splice(candidates.indexOf(candidate), 1);
+  }
+
+  if (selected.length < n) {
+    const fallback = pickSpread(
+      pool.filter((coordinate) => (
+        !occupied.has(`${coordinate.q},${coordinate.r}`)
+        && !selected.some((chosen) => chosen.q === coordinate.q && chosen.r === coordinate.r)
+      )),
+      n - selected.length,
+      rng
+    );
+    selected.push(...fallback);
+  }
+  return selected.slice(0, n);
+}
+
 interface MissionDefinition {
   objectives: TacticalObjective[];
   allianceForces?: ScenarioUnit[];
@@ -511,9 +620,15 @@ function specialistStaging(g: Generated, cfg: CityConfig, lane = 0): Coord {
 
 function buildMission(cfg: CityConfig, g: Generated, rng: () => number): MissionDefinition {
   const id = cfg.territoryId;
+  const scaleProfile = cfg.scaleBand ? TACTICAL_MAP_SCALE_BANDS[cfg.scaleBand] : undefined;
   // objective anchor: a REACHABLE tile deep in enemy territory (top-right region)
   const deep = g.reachable.filter((c) => c.r <= cfg.height * 0.4 && c.q >= cfg.width * 0.45);
-  const anchor = (deep.length ? pickSpread(deep, 1, rng)[0] : g.otherSideZone[0]) ?? { q: cfg.width - 2, r: 1 };
+  const convoyDestination = cfg.gameplay === 'convoy' && scaleProfile
+    ? g.roadPath[Math.floor(g.roadPath.length * 0.86)]
+    : undefined;
+  const anchor = convoyDestination
+    ?? (deep.length ? pickSpread(deep, 1, rng)[0] : g.otherSideZone[0])
+    ?? { q: cfg.width - 2, r: 1 };
   // hold tile: the reachable tile nearest map centre (the centre itself is the impassable landmark).
   const cx = cfg.width / 2, cy = cfg.height / 2;
   const hold = g.reachable.slice().sort((a, b) =>
@@ -576,14 +691,23 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
         c.q <= cfg.width * 0.3 && c.r >= cfg.height * 0.52
         && !allianceZoneKeys.has(`${c.q},${c.r}`)
       ));
-      const staging = (stagingPool.length ? pickSpread(stagingPool, 1, rng)[0] : hold) ?? hold;
+      const convoyRouteStaging = scaleProfile
+        ? g.roadPath.find((coordinate, index) => (
+            index >= Math.floor(g.roadPath.length * 0.08)
+            && !allianceZoneKeys.has(`${coordinate.q},${coordinate.r}`)
+          ))
+        : undefined;
+      const staging = convoyRouteStaging
+        ?? (stagingPool.length ? pickSpread(stagingPool, 1, rng)[0] : hold)
+        ?? hold;
       allianceForces = [{ id: convoyId, definitionId: 'supply-truck', coordinate: staging, isKey: true }];
       objs.push({
         id: `${id}-reach`,
         kind: 'reach',
         description: 'Escort the supply convoy to the forward delivery zone.',
         target: anchor,
-        unitIds: [convoyId]
+        unitIds: [convoyId],
+        ...(scaleProfile ? { turnLimit: scaleProfile.travelDeadlineRound } : {})
       });
       objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Keep the convoy operational.', unitIds: [convoyId] });
       if (id === 'sector-ashen-confluence') {
@@ -874,10 +998,13 @@ function buildEvents(
     'raid-night': 2,
     spire: 3
   };
+  const reserveRound = cfg.scaleBand
+    ? TACTICAL_MAP_SCALE_BANDS[cfg.scaleBand].reserveRound
+    : roundByGameplay[cfg.gameplay];
   const authoredReserve = authoredReserveEvent(cfg, g, mission, occupied);
   const reserveEvent: TacticalScenarioEvent = {
     id: `${cfg.territoryId}-reserve-wave`,
-    triggerRound: roundByGameplay[cfg.gameplay],
+    triggerRound: reserveRound,
     triggerEnemyRemaining: Math.max(1, Math.floor(otherSideForces.length / 3)),
     messageKey: authoredReserve?.messageKey ?? messageByGameplay[cfg.gameplay],
     faction: 'otherSide',
@@ -923,7 +1050,7 @@ function buildEvents(
   }));
   const signatureEvent: TacticalScenarioEvent = {
     id: `${cfg.territoryId}-signature-wave`,
-    triggerRound: roundByGameplay[cfg.gameplay] + 2,
+    triggerRound: reserveRound + 2,
     triggerEnemyRemaining: 0,
     triggerAfterEventId: reserveEvent.id,
     messageKey: signature.messageKey,
@@ -962,12 +1089,32 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
   const roster = tierRoster.map((_, index) => tierRoster[(index + rosterOffset) % tierRoster.length]);
   // scale with both difficulty and map area so the enlarged battlefields don't feel empty (diff1 ~7 … diff5 ~13)
   // Cap the area term so big Rift maps no longer stack both a swarm of bodies AND the heavies on top.
-  const enemyCount = 3 + cfg.difficulty + Math.min(3, Math.floor((cfg.width * cfg.height) / 320));
+  const scaleProfile = cfg.scaleBand ? TACTICAL_MAP_SCALE_BANDS[cfg.scaleBand] : undefined;
+  const defaultEnemyCount = 3
+    + cfg.difficulty
+    + Math.min(3, Math.floor((cfg.width * cfg.height) / 320));
+  const enemyCount = scaleProfile
+    ? Math.ceil((cfg.width * cfg.height) / scaleProfile.maxCellsPerEnemy)
+    : defaultEnemyCount;
   const alliedCoordinates = new Set((mission.allianceForces ?? []).map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`));
   const enemyArea = g.reachable.filter((c) => c.r <= cfg.height * 0.6 && !alliedCoordinates.has(`${c.q},${c.r}`));
   const fallbackEnemyArea = g.reachable.filter((c) => !alliedCoordinates.has(`${c.q},${c.r}`));
-  const pool = enemyArea.length >= enemyCount ? enemyArea : fallbackEnemyArea;
-  const spots = pickSpread(pool, enemyCount, rng);
+  const patrolArea = scaleProfile
+    ? fallbackEnemyArea.filter((coordinate) => (
+        (mission.allianceForces ?? []).every((unit) => (
+          Math.max(
+            Math.abs(unit.coordinate.q - coordinate.q),
+            Math.abs(unit.coordinate.r - coordinate.r)
+          ) > 6
+        ))
+      ))
+    : [];
+  const pool = patrolArea.length >= enemyCount
+    ? patrolArea
+    : enemyArea.length >= enemyCount ? enemyArea : fallbackEnemyArea;
+  const spots = scaleProfile
+    ? pickPatrolLine(cfg, pool, enemyCount, alliedCoordinates, rng)
+    : pickSpread(pool, enemyCount, rng);
   const otherSideForces: ScenarioUnit[] = spots.map((c, i) => ({
     id: `${cfg.territoryId}-foe-${i}`,
     definitionId: roster[i % roster.length],
@@ -999,7 +1146,7 @@ const CITY_CONFIGS: CityConfig[] = [
   { territoryId: 'sector-zurich', name: 'Alpine Fortress', brief: 'Hold the mountain pass strongpoint while the bunkers are cleared.', theme: 'alpine', gameplay: 'hold', width: 32, height: 21, weather: 'clear', difficulty: 2 },
   { territoryId: 'sector-vienna', name: 'Vienna Siege', brief: 'Break the siege of the old city: rout the besiegers and breach to the inner ring.', theme: 'oldtown', gameplay: 'bridgehead', width: 34, height: 22, weather: 'clear', difficulty: 3 },
   { territoryId: 'sector-brussels', name: 'Brussels Command', brief: 'Reach the isolated reconnaissance team and bring it back before the headquarters perimeter falls.', theme: 'urban', gameplay: 'rescue', width: 30, height: 20, weather: 'clear', difficulty: 1 },
-  { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Escort a supply convoy through the fog-bound canals to the forward quay.', theme: 'canal', gameplay: 'convoy', width: 32, height: 21, weather: 'fog', difficulty: 2 },
+  { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Escort a supply convoy through the fog-bound canals to the forward quay.', theme: 'canal', gameplay: 'convoy', width: 30, height: 54, weather: 'fog', difficulty: 2, scaleBand: 'early' },
   { territoryId: 'sector-copenhagen', name: 'Copenhagen Strait', brief: 'Hold the coastal strongpoint and deny the Baltic flanking approach.', theme: 'coast', gameplay: 'hold', width: 32, height: 21, weather: 'clear', difficulty: 2 },
   { territoryId: 'sector-prague', name: 'Prague Old Town', brief: 'Raid the old-town warren by night and disrupt the dark ritual.', theme: 'oldtown', gameplay: 'raid-night', width: 34, height: 22, weather: 'night', difficulty: 3 },
   { territoryId: 'sector-berlin', name: 'Dead Air Protocol', brief: 'Trace a phantom distress network through the ruins and silence the presence speaking through every abandoned radio.', theme: 'ruins', gameplay: 'spire', width: 36, height: 24, weather: 'fog', difficulty: 4 },
@@ -1012,14 +1159,14 @@ const CITY_CONFIGS: CityConfig[] = [
   { territoryId: 'sector-cinder-gate', name: 'Cinder Gate', brief: 'Cross the unstable passage, break the heat-scarred pylon ring, and anchor the first Shatterline foothold.', theme: 'rift', gameplay: 'spire', width: 38, height: 25, weather: 'fog', difficulty: 5, rosterOffset: 11 },
   { territoryId: 'sector-lantern-vault', name: 'Lantern Vault', brief: 'Reach the trapped survey team and escort its star charts out through the collapsing observatory galleries.', theme: 'ruins', gameplay: 'rescue', width: 37, height: 24, weather: 'clear', difficulty: 5, rosterOffset: 12 },
   { territoryId: 'sector-hollow-tide', name: 'Hollow Tide', brief: 'Raid the black shoreline, silence the tide-callers, and hold the stranded vanguard beacon through the mist.', theme: 'coast', gameplay: 'raid-night', width: 39, height: 25, weather: 'night', difficulty: 5, rosterOffset: 13 },
-  { territoryId: 'sector-ashen-confluence', name: 'Ashen Confluence', brief: 'Escort the survey convoy across the joined fault line and align the echo beacon for optional fire support.', theme: 'rift', gameplay: 'convoy', width: 40, height: 27, weather: 'fog', difficulty: 5, rosterOffset: 11 },
+  { territoryId: 'sector-ashen-confluence', name: 'Ashen Confluence', brief: 'Escort the survey convoy across the joined fault line and align the echo beacon for optional fire support.', theme: 'rift', gameplay: 'convoy', width: 40, height: 54, weather: 'fog', difficulty: 5, rosterOffset: 11, scaleBand: 'mid' },
   { territoryId: 'sector-sable-causeway', name: 'Sable Causeway', brief: 'Break the causeway guard, arm the ward towers, and keep the northern road from folding into the sea.', theme: 'coast', gameplay: 'bridgehead', width: 42, height: 25, weather: 'clear', difficulty: 5, rosterOffset: 12 },
   { territoryId: 'sector-mnemonic-orchard', name: 'Mnemonic Orchard', brief: 'Raid the echoing forest by night, silence the signal mimics, and hold the root relay through their answer.', theme: 'forest', gameplay: 'raid-night', width: 39, height: 27, weather: 'night', difficulty: 5, rosterOffset: 13 },
   { territoryId: 'sector-thorn-engine', name: 'Thorn Engine', brief: 'Hold the regulator control ring while the field teams reverse the contraction pulling both fronts together.', theme: 'industrial', gameplay: 'hold', width: 42, height: 26, weather: 'fog', difficulty: 5, rosterOffset: 11 },
   { territoryId: 'sector-veil-heart', name: 'Veil Heart', brief: 'Enter the buried core, break its ritual guard, and survive the last horizon taking form around the heart.', theme: 'rift', gameplay: 'spire', width: 43, height: 28, weather: 'fog', difficulty: 5, rosterOffset: 12 },
   { territoryId: 'sector-quiet-meridian', name: 'Quiet Meridian', brief: 'Reach the stranded survey team and guide it through ruins collapsing behind the broken horizon.', theme: 'ruins', gameplay: 'rescue', width: 41, height: 27, weather: 'clear', difficulty: 5, rosterOffset: 13 },
   { territoryId: 'sector-glass-wake', name: 'Glass Wake', brief: 'Break the shore guard and seize the last stable crossing before the reflected tide returns.', theme: 'coast', gameplay: 'bridgehead', width: 44, height: 27, weather: 'fog', difficulty: 5, rosterOffset: 11 },
-  { territoryId: 'sector-ash-compass', name: 'Ash Compass', brief: 'Escort the stabilizer convoy through a displaced forest whose paths turn with every signal pulse.', theme: 'forest', gameplay: 'convoy', width: 42, height: 29, weather: 'night', difficulty: 5, rosterOffset: 12 },
+  { territoryId: 'sector-ash-compass', name: 'Ash Compass', brief: 'Escort the stabilizer convoy through a displaced forest whose paths turn with every signal pulse.', theme: 'forest', gameplay: 'convoy', width: 50, height: 64, weather: 'night', difficulty: 5, rosterOffset: 12, scaleBand: 'late' },
   { territoryId: 'sector-dawn-anchor', name: 'Dawn Anchor', brief: 'Hold the final anchor while the return passage seals and the surviving Shatterline guard makes its last assault.', theme: 'rift', gameplay: 'hold', width: 45, height: 29, weather: 'clear', difficulty: 5, rosterOffset: 13 }
 ];
 

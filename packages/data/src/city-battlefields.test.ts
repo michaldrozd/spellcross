@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 
-import { cityScenarios } from './city-battlefields.js';
+import { cityScenarios, TACTICAL_MAP_SCALE_BANDS } from './city-battlefields.js';
 
 const inBounds = (q: number, r: number, w: number, h: number) => q >= 0 && q < w && r >= 0 && r < h;
 
@@ -151,6 +151,48 @@ describe('Per-city battlefields', () => {
     expect(convoy?.definitionId).toBe('supply-truck');
     expect(convoy?.isKey).toBe(true);
     expect(scenario?.objectives.filter((objective) => objective.unitIds?.includes('sector-amsterdam-convoy')).map((objective) => objective.kind).sort()).toEqual(['protect', 'reach']);
+  });
+
+  it.each([
+    ['sector-amsterdam', 'early', 14],
+    ['sector-ashen-confluence', 'mid', 18],
+    ['sector-ash-compass', 'late', 27]
+  ] as const)('authors %s as a paced %s convoy battlefield', (territoryId, band, enemyCount) => {
+    const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
+    if (!scenario) throw new Error(`missing ${territoryId}`);
+    const profile = TACTICAL_MAP_SCALE_BANDS[band];
+    const convoy = scenario.allianceForces?.find((unit) => unit.id === `${territoryId}-convoy`);
+    const destination = scenario.objectives.find((objective) => objective.id === `${territoryId}-reach`);
+    const progress = (coordinate: { q: number; r: number }) => (
+      coordinate.q / Math.max(1, scenario.map.width - 1)
+      + 1 - coordinate.r / Math.max(1, scenario.map.height - 1)
+    ) / 2;
+
+    expect(scenario.map).toMatchObject({ width: profile.width, height: profile.height });
+    expect(scenario.map.tiles).toHaveLength(profile.width * profile.height);
+    expect(scenario.startZones.alliance).toHaveLength(profile.deploymentWidth * profile.deploymentDepth);
+    expect(scenario.startZones.otherSide).toHaveLength(profile.deploymentWidth * profile.deploymentDepth);
+    expect(scenario.otherSideForces).toHaveLength(enemyCount);
+    expect(scenario.map.tiles.length / scenario.otherSideForces.length)
+      .toBeLessThanOrEqual(profile.maxCellsPerEnemy);
+    expect(convoy && progress(convoy.coordinate)).toBeLessThan(0.2);
+    expect(destination?.target && progress(destination.target)).toBeGreaterThan(0.72);
+    expect(destination?.turnLimit).toBe(profile.travelDeadlineRound);
+    expect(scenario.events?.[0]?.triggerRound).toBe(profile.reserveRound);
+
+    const enemyProgress = scenario.otherSideForces.map((unit) => progress(unit.coordinate));
+    for (const patrolProgress of profile.patrolProgress) {
+      expect(
+        enemyProgress.some((enemy) => Math.abs(enemy - patrolProgress) <= 0.035),
+        `${territoryId} is missing its patrol at ${patrolProgress}`
+      ).toBe(true);
+    }
+
+    const visionTerrain = scenario.map.tiles.filter((tile) => (
+      tile.providesVisionBoost || tile.blocksVision
+    )).length / scenario.map.tiles.length;
+    expect(visionTerrain).toBeGreaterThan(0.12);
+    expect(visionTerrain).toBeLessThan(0.75);
   });
 
   it.each([

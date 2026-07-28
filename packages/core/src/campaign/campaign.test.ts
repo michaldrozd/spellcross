@@ -118,10 +118,6 @@ const makeTimedOutcomeRouteBundle = (): ContentBundle => {
   return bundle;
 };
 
-// This boss has no strength-neutral placement inside Commander's two-unit waves. Veteran remains
-// the deliberate campaign route for encountering it; additions to this list require design review.
-const COMMANDER_HOSTILE_EXCEPTIONS = ['breorn-titan'].sort();
-
 describe('campaign core', () => {
   it('creates a starter campaign with available territories and formations', () => {
     const state = createCampaign(starterBundle);
@@ -1129,11 +1125,10 @@ describe('campaign core', () => {
     expect(starterBundle.units).toHaveLength(80);
     const artifactHint = 'After editing packages/data, rebuild it first: pnpm --filter @spellcross/data build';
     expect(missingFrom(veteran.hostile, hostileIds), artifactHint).toEqual([]);
-    expect(missingFrom(commander.hostile, hostileIds), artifactHint).toEqual(COMMANDER_HOSTILE_EXCEPTIONS);
+    // The scaled late convoys field breorn-titan initially, making every hostile definition reachable on Commander.
+    expect(missingFrom(commander.hostile, hostileIds), artifactHint).toEqual([]);
     expect(missingFrom(story.hostile, hostileIds)).toEqual([
       'ash-crown-sovereign',
-      'black-angel',
-      'breorn-titan',
       'glass-regent',
       'signal-eater',
       'winged-fiend'
