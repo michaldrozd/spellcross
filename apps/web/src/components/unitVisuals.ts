@@ -10,6 +10,7 @@ const VEHICLE_DIRECTIONAL_SPRITES = {
   tank: 'tank_directional',
   apc: 'm113_apc',
   artillery: 'artillery_directional',
+  gepard: 'gepard_directional',
   supplyTruck: 'supply_truck_directional'
 } as const;
 
@@ -26,11 +27,9 @@ const OPPOSITE_DIRECTION_NAMES: Record<string, string> = {
 
 const VEHICLE_SHEET_DIRECTION_OVERRIDES: Record<string, Record<string, string>> = {
   m113_apc: {
-    ne: 'sw',
-    e: 'w',
-    se: 'nw',
+    ne: 'nw',
+    se: 'sw',
     sw: 'ne',
-    w: 'e',
     nw: 'se'
   },
   tank_directional: OPPOSITE_DIRECTION_NAMES,
@@ -53,6 +52,7 @@ export const UNIT_SHEET_DIRECTIONS = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw'
 export const UNIT_SHEET_FRAME_SIZE = 128;
 
 export const DIRECTIONAL_UNIT_ASSET_VERSION: Record<string, string> = {
+  gepard_directional: 'gepard-directional-20260727-1',
   light_infantry: 'light-infantry-generated-20260721-4',
   m113_apc: 'm113-generated-20260503-1',
   supply_truck_directional: 'supply-truck-20260722-1'
@@ -344,6 +344,7 @@ export function unitPortrait(unitType: string, definitionId: string, isFriendly:
 
 export const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
   artillery_directional: 0.93,
+  gepard_directional: 1,
   heavy_infantry: 0.92,
   light_infantry: 0.95,
   m113_apc: 1,
@@ -356,6 +357,7 @@ export const DIRECTIONAL_UNIT_ANCHOR_Y: Record<string, number> = {
 export const DIRECTIONAL_UNIT_SOURCE_HEIGHTS: Record<string, number> = {
   artillery_directional: 110,
   apc_directional: 88,
+  gepard_directional: 101,
   m113_apc: 121,
   supply_truck_directional: 104,
   tank_directional: 86
@@ -369,6 +371,7 @@ const DIRECTIONAL_UNIT_GROUND_BOTTOMS: Record<string, { idle: number; walk: Reco
 };
 
 const DIRECTIONAL_UNIT_ALPHA_BOTTOMS: Record<string, Record<string, number>> = {
+  gepard_directional: { n: 112, ne: 112, e: 108, se: 118, s: 111, sw: 118, w: 108, nw: 117 },
   m113_apc: { n: 121, ne: 126, e: 119, se: 125, s: 121, sw: 124, w: 119, nw: 126 },
   supply_truck_directional: { n: 123, ne: 123, e: 123, se: 123, s: 123, sw: 123, w: 123, nw: 123 }
 };
@@ -723,6 +726,7 @@ export function unitVisualHeight(tile: number, unitType: string, definitionId: s
     if (definitionId.includes('dire') || definitionId.includes('wolf')) return tile * 0.52;
     if (definitionId.includes('salamander')) return tile * 0.5;
     if (definitionId.includes('demon-engine')) return tile * 0.55;
+    if (directionalSprite === 'gepard_directional') return tile * 0.48;
     if (directionalSprite === 'm113_apc') return tile * 0.52;
     if (directionalSprite === 'apc_directional') return tile * 0.398;
     if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return tile * 0.58;
@@ -774,6 +778,7 @@ export function quantizeMovementOcclusionCoordinate(
 
 export function unitContactFootprint(tile: number, unitType: string, definitionId: string): UnitVisualFootprint {
   if (isSupportVehicleDefinition(unitType, definitionId)) return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.035 };
+  if (definitionId === 'gepard-aa') return { rx: tile * 0.19, ry: tile * 0.036, alpha: 0.4, y: -tile * 0.045 };
   if (unitType === 'vehicle') return { rx: tile * 0.31, ry: tile * 0.082, alpha: 0.48, y: tile * 0.035 };
   if (unitType === 'artillery') return { rx: tile * 0.3, ry: tile * 0.075, alpha: 0.4, y: tile * 0.06 };
   if (unitType === 'air') return { rx: tile * 0.22, ry: tile * 0.055, alpha: 0.12, y: tile * 0.08 };
@@ -798,6 +803,7 @@ export function directionalVehicleSprite(unitType: string, definitionId: string)
   if (unitType === 'artillery') return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   if (unitType !== 'vehicle') return undefined;
   if (definitionId.includes('heli') || definitionId.includes('apache') || definitionId.includes('chopper')) return undefined;
+  if (definitionId === 'gepard-aa') return VEHICLE_DIRECTIONAL_SPRITES.gepard;
   if (definitionId.includes('apc') || definitionId.includes('ifv') || definitionId.includes('m113')) return VEHICLE_DIRECTIONAL_SPRITES.apc;
   if (definitionId.includes('artillery') || definitionId.includes('mlrs') || definitionId.includes('howitzer')) return VEHICLE_DIRECTIONAL_SPRITES.artillery;
   return VEHICLE_DIRECTIONAL_SPRITES.tank;
@@ -805,7 +811,7 @@ export function directionalVehicleSprite(unitType: string, definitionId: string)
 
 export function battlefieldDirectionalSprite(unitType: string, definitionId: string) {
   const vehicleSprite = directionalVehicleSprite(unitType, definitionId);
-  if (definitionId === 'supply-truck') return vehicleSprite;
+  if (definitionId === 'supply-truck' || definitionId === 'gepard-aa') return vehicleSprite;
   if (rasterUnitOverride(definitionId)) return undefined;
   return DIRECTIONAL_UNIT_SPRITES[definitionId] ?? vehicleSprite;
 }

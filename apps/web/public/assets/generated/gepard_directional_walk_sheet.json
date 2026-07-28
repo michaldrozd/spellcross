@@ -1,0 +1,23 @@
+{
+  "unit": "gepard_directional",
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "frameCount": 4,
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "layout": "directions-columns-frames-rows",
+  "anchor": {
+    "x": 0.5,
+    "y": 1
+  },
+  "state": "walk",
+  "sheet": "gepard_directional_walk_sheet.png"
+}

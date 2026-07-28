@@ -1,0 +1,23 @@
+{
+  "unit": "gepard_directional",
+  "frameWidth": 128,
+  "frameHeight": 128,
+  "frameCount": 1,
+  "directions": [
+    "n",
+    "ne",
+    "e",
+    "se",
+    "s",
+    "sw",
+    "w",
+    "nw"
+  ],
+  "layout": "directions-columns-frames-rows",
+  "anchor": {
+    "x": 0.5,
+    "y": 1
+  },
+  "state": "idle",
+  "sheet": "gepard_directional_idle_sheet.png"
+}

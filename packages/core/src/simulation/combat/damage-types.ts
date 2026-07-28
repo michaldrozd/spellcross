@@ -2,24 +2,52 @@ import type { UnitInstance } from '../types.js';
 
 // Rock-paper-scissors combat depth (as in the original Spellcross): a weapon's effectiveness depends on
 // what it hits. Anti-tank rounds shred armor but waste on infantry; small arms mow down infantry but
-// ping off tanks; AA owns aircraft; etc. Kept as a compact damage-role × armor-class matrix so no
-// per-unit data is required — roles/classes are derived from weapon and unit identity.
+// ping off tanks; AA owns aircraft; etc.
 
 export type ArmorClass = 'infantry' | 'light' | 'heavy' | 'air' | 'structure';
 export type DamageRole = 'ap' | 'he' | 'autocannon' | 'smallarms' | 'aa' | 'arrow' | 'fire' | 'melee' | 'magic';
 
-const HEAVY = /tank|leopard|abrams|railgun|siege|golem|titan|breorn|demon-engine|paladin|spg|mlrs|death-knight/;
-const LIGHT_VEHICLE = /apc|humvee|jeep|bradley|ifv|m113|scout|avenger|gepard|truck|sky-lance|arachnoid/;
+const HEAVY_ARMOR_IDS = new Set([
+  'aegis-assault-tank',
+  'breorn-titan',
+  'death-knight',
+  'demon-engine',
+  'dread-fortress',
+  'glass-regent',
+  'ironroot-colossus',
+  'leopard-2',
+  'light-tank',
+  'mlrs-battery',
+  'paladin-acs',
+  'railgun-tank',
+  'siege-walker',
+  'spg-m109',
+  'stone-golem'
+]);
 
-export function unitArmorClass(unit: UnitInstance): ArmorClass {
+const STRUCTURE_ARMOR_IDS = new Set(['arrow-tower']);
+const SUPPORT_VEHICLE_IDS = new Set(['horizon-radar', 'supply-truck']);
+
+// These units use the vehicle movement model because of their footprint, not because they wear
+// mechanical armour. They intentionally remain vulnerable to anti-personnel and autocannon fire.
+const FLESH_LIGHT_ARMOR_IDS = new Set([
+  'arachnoid',
+  'ash-mammoth',
+  'dire-wolves',
+  'ogre-brute',
+  'salamander',
+  'slime-harvester',
+  'wolf-rider'
+]);
+
+export function unitArmorClass(unit: Pick<UnitInstance, 'definitionId' | 'unitType'>): ArmorClass {
   const id = unit.definitionId.toLowerCase();
   if (unit.unitType === 'air') return 'air';
-  if (unit.unitType === 'vehicle' || unit.unitType === 'artillery') {
-    if (HEAVY.test(id)) return 'heavy';
-    if (LIGHT_VEHICLE.test(id)) return 'light';
-    return 'light'; // flesh "vehicles" (wolves, ogre, salamander, wolf-rider) read as light armour
-  }
-  return 'infantry'; // infantry / support / hero
+  if (STRUCTURE_ARMOR_IDS.has(id)) return 'structure';
+  if (HEAVY_ARMOR_IDS.has(id)) return 'heavy';
+  if (FLESH_LIGHT_ARMOR_IDS.has(id) || SUPPORT_VEHICLE_IDS.has(id)) return 'light';
+  if (unit.unitType === 'vehicle' || unit.unitType === 'artillery') return 'light';
+  return 'infantry';
 }
 
 export function weaponDamageRole(weaponId: string): DamageRole {

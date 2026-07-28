@@ -307,6 +307,16 @@ describe('terrain and fog presentation', () => {
     expect(layers[0].alpha).toBeLessThan(layers[2].alpha);
     expect(TERRAIN_GRID_ALPHA).toBeLessThan(0.03);
   });
+
+  it('tucks the Gepard contact tracks under its lower battlefield silhouette', () => {
+    const tile = 56;
+    const gepard = unitContactFootprint(tile, 'vehicle', 'gepard-aa');
+    const genericTank = unitContactFootprint(tile, 'vehicle', 'leopard-2');
+
+    expect(gepard.rx).toBeLessThan(genericTank.rx);
+    expect(gepard.ry).toBeLessThan(genericTank.ry);
+    expect(gepard.y).toBeLessThan(0);
+  });
 });
 
 function measureCellBottoms(sheet: Awaited<ReturnType<typeof loadImage>>, rows: number) {
@@ -343,6 +353,7 @@ describe('unitVisualHeight', () => {
     const m113Height = unitVisualHeight(tile, 'vehicle', 'm113', 'm113_apc');
 
     expect(unitVisualHeight(tile, 'vehicle', 'leopard-2')).toBeLessThan(tile * 0.5);
+    expect(unitVisualHeight(tile, 'vehicle', 'gepard-aa', 'gepard_directional')).toBe(tile * 0.48);
     expect(m113Height).toBeLessThan(tile * 0.54);
     expect(unitVisualHeight(tile, 'support', 'supply-truck')).toBeLessThan(tile * 0.5);
     expect(m113Height).toBeGreaterThan(tile * 0.5);
@@ -422,6 +433,10 @@ describe('roster expansion visuals', () => {
   it('treats the counterbattery radar as a ground vehicle', () => {
     expect(isSupportVehicleDefinition('support', 'horizon-radar')).toBe(true);
     expect(isSupportVehicleDefinition('support', 'veil-magus')).toBe(false);
+  });
+
+  it('uses the dedicated directional Gepard art on the battlefield', () => {
+    expect(battlefieldDirectionalSprite('vehicle', 'gepard-aa')).toBe('gepard_directional');
   });
 });
 
@@ -723,7 +738,7 @@ describe('vehicle movement sheets', () => {
     }
   });
 
-  it('pins all eight M113 and supply-truck poses to unique visual headings', async () => {
+  it('pins all eight M113, Gepard, and supply-truck poses to unique visual headings', async () => {
     const screenVectors = [
       { name: 'n', x: 0, y: -1 },
       { name: 'ne', x: 1, y: -1 },
@@ -736,6 +751,7 @@ describe('vehicle movement sheets', () => {
     ];
     const vehicles = [
       { sprite: 'm113_apc', sheet: 'm113_apc_idle_sheet.png' },
+      { sprite: 'gepard_directional', sheet: 'gepard_directional_idle_sheet.png' },
       { sprite: 'supply_truck_directional', sheet: 'supply_truck_directional_idle_sheet.png' }
     ];
 
@@ -761,7 +777,7 @@ describe('vehicle movement sheets', () => {
     }
   });
 
-  it('keeps the authored nose marker on the leading side for east and west travel', async () => {
+  it('keeps M113 rear lamps trailing east and west travel', async () => {
     const hottestWarmMarkerX = (pixels: Uint8ClampedArray) => {
       let hottestScore = Number.NEGATIVE_INFINITY;
       let hottestX = -1;
@@ -776,26 +792,19 @@ describe('vehicle movement sheets', () => {
       }
       return hottestX;
     };
-    const vehicles = [
-      { sprite: 'm113_apc', sheet: 'm113_apc_idle_sheet.png' },
-      { sprite: 'supply_truck_directional', sheet: 'supply_truck_directional_idle_sheet.png' }
-    ];
+    const sheet = await loadImage(path.resolve(process.cwd(), 'public/assets/generated/m113_apc_idle_sheet.png'));
+    const canvas = createCanvas(128, 128);
+    const ctx = canvas.getContext('2d');
+    const rearLampForVector = (x: number) => {
+      const sheetDirection = vehicleSheetDirectionNameForScreenVector({ x, y: 0 }, 'm113_apc');
+      const column = APC_SHEET_DIRECTIONS.indexOf(sheetDirection);
+      ctx.clearRect(0, 0, 128, 128);
+      ctx.drawImage(sheet, column * 128, 0, 128, 128, 0, 0, 128, 128);
+      return hottestWarmMarkerX(ctx.getImageData(0, 0, 128, 128).data);
+    };
 
-    for (const vehicle of vehicles) {
-      const sheet = await loadImage(path.resolve(process.cwd(), `public/assets/generated/${vehicle.sheet}`));
-      const canvas = createCanvas(128, 128);
-      const ctx = canvas.getContext('2d');
-      const markerForVector = (x: number) => {
-        const sheetDirection = vehicleSheetDirectionNameForScreenVector({ x, y: 0 }, vehicle.sprite);
-        const column = APC_SHEET_DIRECTIONS.indexOf(sheetDirection);
-        ctx.clearRect(0, 0, 128, 128);
-        ctx.drawImage(sheet, column * 128, 0, 128, 128, 0, 0, 128, 128);
-        return hottestWarmMarkerX(ctx.getImageData(0, 0, 128, 128).data);
-      };
-
-      expect(markerForVector(1), `${vehicle.sprite}:east`).toBeGreaterThan(85);
-      expect(markerForVector(-1), `${vehicle.sprite}:west`).toBeLessThan(43);
-    }
+    expect(rearLampForVector(1), 'east travel').toBeLessThan(43);
+    expect(rearLampForVector(-1), 'west travel').toBeGreaterThan(85);
   });
 
   it('keeps M113 walk frames on a stable ground line', async () => {
@@ -936,10 +945,10 @@ describe('vehicleSheetDirectionNameForOrientation', () => {
     expect(vehicleSheetDirectionNameForOrientation(2, 'future_vehicle_directional')).toBe('ne');
   });
 
-  it('keeps legacy reversed vehicle sheets corrected', () => {
-    expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 0 }, 'm113_apc')).toBe('w');
-    expect(vehicleSheetDirectionNameForScreenVector({ x: -1, y: 0 }, 'm113_apc')).toBe('e');
-    expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 1 }, 'm113_apc')).toBe('nw');
+  it('maps authored vehicle sheets to their visible headings', () => {
+    expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 0 }, 'm113_apc')).toBe('e');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: -1, y: 0 }, 'm113_apc')).toBe('w');
+    expect(vehicleSheetDirectionNameForScreenVector({ x: 1, y: 1 }, 'm113_apc')).toBe('sw');
     expect(vehicleSheetDirectionNameForScreenVector({ x: -1, y: -1 }, 'm113_apc')).toBe('se');
     expect(vehicleSheetDirectionNameForScreenVector({ x: 0, y: -1 }, 'm113_apc')).toBe('n');
     expect(vehicleSheetDirectionNameForScreenVector({ x: 0, y: 1 }, 'm113_apc')).toBe('s');
@@ -948,11 +957,11 @@ describe('vehicleSheetDirectionNameForOrientation', () => {
   });
 
   it('maps M113 diagonal sheet cells to their visual facing', () => {
-    expect(vehicleSheetDirectionNameForOrientation(0, 'm113_apc')).toBe('nw');
-    expect(vehicleSheetDirectionNameForOrientation(1, 'm113_apc')).toBe('w');
-    expect(vehicleSheetDirectionNameForOrientation(2, 'm113_apc')).toBe('sw');
+    expect(vehicleSheetDirectionNameForOrientation(0, 'm113_apc')).toBe('sw');
+    expect(vehicleSheetDirectionNameForOrientation(1, 'm113_apc')).toBe('e');
+    expect(vehicleSheetDirectionNameForOrientation(2, 'm113_apc')).toBe('nw');
     expect(vehicleSheetDirectionNameForOrientation(3, 'm113_apc')).toBe('se');
-    expect(vehicleSheetDirectionNameForOrientation(4, 'm113_apc')).toBe('e');
+    expect(vehicleSheetDirectionNameForOrientation(4, 'm113_apc')).toBe('w');
     expect(vehicleSheetDirectionNameForOrientation(5, 'm113_apc')).toBe('ne');
     expect(vehicleSheetDirectionNameForOrientation(6, 'm113_apc')).toBe('s');
     expect(vehicleSheetDirectionNameForOrientation(7, 'm113_apc')).toBe('n');
