@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { retreatToHq, startBattle } from './helpers';
 
 test('ammo consumption and resupply on supply zones', async ({ page }) => {
@@ -16,11 +17,30 @@ test('ammo consumption and resupply on supply zones', async ({ page }) => {
   });
   expect(vehicle).not.toBeNull();
 
-  // The generated map keeps its destructible bridge span north of the deployment zone. Place the IFV
-  // beside it so this test exercises firing and resupply instead of spending many turns travelling.
-  await page.evaluate((unitId) => (window as any).__battleControl?.snapUnit?.(unitId, 14, 10), vehicle.id);
-  const attackRes = await page.evaluate(() => (window as any).__battleControl?.attackTile?.(15, 10));
+  const blocker = await page.evaluate((unitId) => {
+    const control = (window as any).__battleControl;
+    const units = control?.allyUnits?.() ?? [];
+    const vehicleUnit = units.find((unit: any) => unit.id === unitId);
+    if (!vehicleUnit) return null;
+    const occupied = new Set(units.map((unit: any) => `${unit.coord.q},${unit.coord.r}`));
+    const target = [
+      { q: vehicleUnit.coord.q, r: vehicleUnit.coord.r - 1 },
+      { q: vehicleUnit.coord.q + 1, r: vehicleUnit.coord.r },
+      { q: vehicleUnit.coord.q - 1, r: vehicleUnit.coord.r },
+      { q: vehicleUnit.coord.q, r: vehicleUnit.coord.r + 1 }
+    ].find((coordinate) => (
+      !occupied.has(`${coordinate.q},${coordinate.r}`)
+      && control?.tileAt?.(coordinate.q, coordinate.r)
+    ));
+    if (!target || !control.placeDestructibleVisionBlocker(target.q, target.r, 1)) return null;
+    return target;
+  }, vehicle.id);
+  expect(blocker).not.toBeNull();
+  const attackRes = await page.evaluate(({ q, r }) => (
+    (window as any).__battleControl?.attackTile?.(q, r)
+  ), blocker!);
   expect(attackRes?.success).toBeTruthy();
+  expect(attackRes?.attackerId).toBe(vehicle.id);
   const ammoAfter = attackRes?.ammoAfter as number;
   expect(ammoAfter).toBeLessThan(ammoMeta!.ammo as number);
 

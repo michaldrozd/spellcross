@@ -45,14 +45,14 @@ export const TACTICAL_MAP_SCALE_BANDS = {
     patrolProgress: [0.16, 0.36, 0.58, 0.8]
   },
   late: {
-    width: 50,
-    height: 64,
+    width: 60,
+    height: 70,
     deploymentWidth: 7,
     deploymentDepth: 5,
     maxCellsPerEnemy: 120,
-    sceneryDensity: 0.55,
-    reserveRound: 6,
-    travelDeadlineRound: 18,
+    sceneryDensity: 0.5,
+    reserveRound: 7,
+    travelDeadlineRound: 22,
     patrolProgress: [0.15, 0.34, 0.56, 0.79]
   }
 } as const;
@@ -69,6 +69,7 @@ interface CityConfig {
   difficulty: number; // 1-5, scales enemy roster
   rosterOffset?: number;
   scaleBand?: TacticalMapScaleBand;
+  specialistDeadlineRound?: number;
 }
 
 // --- deterministic RNG (mulberry32) so generated data is stable across reloads/saves/tests ---
@@ -623,10 +624,13 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
   const scaleProfile = cfg.scaleBand ? TACTICAL_MAP_SCALE_BANDS[cfg.scaleBand] : undefined;
   // objective anchor: a REACHABLE tile deep in enemy territory (top-right region)
   const deep = g.reachable.filter((c) => c.r <= cfg.height * 0.4 && c.q >= cfg.width * 0.45);
-  const convoyDestination = cfg.gameplay === 'convoy' && scaleProfile
+  const routeDestination = (
+    (cfg.gameplay === 'convoy' || cfg.gameplay === 'bridgehead')
+    && scaleProfile
+  )
     ? g.roadPath[Math.floor(g.roadPath.length * 0.86)]
     : undefined;
-  const anchor = convoyDestination
+  const anchor = routeDestination
     ?? (deep.length ? pickSpread(deep, 1, rng)[0] : g.otherSideZone[0])
     ?? { q: cfg.width - 2, r: 1 };
   // hold tile: the reachable tile nearest map centre (the centre itself is the impassable landmark).
@@ -774,7 +778,7 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
     if (!objective) throw new Error(`missing sabotage objective for ${id}`);
     objective.unitIds = [specialistId];
     objective.essential = true;
-    objective.deadlineRound = 10;
+    objective.deadlineRound = cfg.specialistDeadlineRound ?? 10;
     allianceForces = [
       ...(allianceForces ?? []),
       {
@@ -1099,12 +1103,16 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
   const alliedCoordinates = new Set((mission.allianceForces ?? []).map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`));
   const enemyArea = g.reachable.filter((c) => c.r <= cfg.height * 0.6 && !alliedCoordinates.has(`${c.q},${c.r}`));
   const fallbackEnemyArea = g.reachable.filter((c) => !alliedCoordinates.has(`${c.q},${c.r}`));
+  const protectedStart = [
+    ...(cfg.gameplay === 'bridgehead' ? g.allianceZone : []),
+    ...(mission.allianceForces ?? []).map((unit) => unit.coordinate)
+  ];
   const patrolArea = scaleProfile
     ? fallbackEnemyArea.filter((coordinate) => (
-        (mission.allianceForces ?? []).every((unit) => (
+        protectedStart.every((start) => (
           Math.max(
-            Math.abs(unit.coordinate.q - coordinate.q),
-            Math.abs(unit.coordinate.r - coordinate.r)
+            Math.abs(start.q - coordinate.q),
+            Math.abs(start.r - coordinate.r)
           ) > 6
         ))
       ))
@@ -1141,32 +1149,32 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
 const CITY_CONFIGS: CityConfig[] = [
   { territoryId: 'sector-paris', name: 'Paris Outskirts', brief: 'Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.', theme: 'urban', gameplay: 'evac', width: 30, height: 20, weather: 'clear', difficulty: 1 },
   { territoryId: 'sector-lyon', name: 'Lyon Industrial Zone', brief: 'Hold the factory strongpoint against the demonic raid on the arms works.', theme: 'industrial', gameplay: 'hold', width: 30, height: 20, weather: 'clear', difficulty: 1 },
-  { territoryId: 'sector-strasbourg', name: 'Strasbourg Crossing', brief: 'Force the Rhine: rout the bridge guard or plant charges before the assault window closes.', theme: 'river', gameplay: 'bridgehead', width: 32, height: 21, weather: 'clear', difficulty: 2 },
+  { territoryId: 'sector-strasbourg', name: 'Strasbourg Crossing', brief: 'Force the Rhine: rout the bridge guard or plant charges before the assault window closes.', theme: 'river', gameplay: 'bridgehead', width: 30, height: 54, weather: 'clear', difficulty: 2, scaleBand: 'early' },
   { territoryId: 'sector-munich', name: 'Munich Defensive Line', brief: 'Raid the forward line under cover of darkness and silence the enemy sorcery.', theme: 'forest', gameplay: 'raid-night', width: 32, height: 21, weather: 'night', difficulty: 2 },
   { territoryId: 'sector-zurich', name: 'Alpine Fortress', brief: 'Hold the mountain pass strongpoint while the bunkers are cleared.', theme: 'alpine', gameplay: 'hold', width: 32, height: 21, weather: 'clear', difficulty: 2 },
-  { territoryId: 'sector-vienna', name: 'Vienna Siege', brief: 'Break the siege of the old city: rout the besiegers and breach to the inner ring.', theme: 'oldtown', gameplay: 'bridgehead', width: 34, height: 22, weather: 'clear', difficulty: 3 },
+  { territoryId: 'sector-vienna', name: 'Vienna Siege', brief: 'Break the siege of the old city: rout the besiegers and breach to the inner ring.', theme: 'oldtown', gameplay: 'bridgehead', width: 30, height: 54, weather: 'clear', difficulty: 3, scaleBand: 'early' },
   { territoryId: 'sector-brussels', name: 'Brussels Command', brief: 'Reach the isolated reconnaissance team and bring it back before the headquarters perimeter falls.', theme: 'urban', gameplay: 'rescue', width: 30, height: 20, weather: 'clear', difficulty: 1 },
   { territoryId: 'sector-amsterdam', name: 'Amsterdam Harbor', brief: 'Escort a supply convoy through the fog-bound canals to the forward quay.', theme: 'canal', gameplay: 'convoy', width: 30, height: 54, weather: 'fog', difficulty: 2, scaleBand: 'early' },
   { territoryId: 'sector-copenhagen', name: 'Copenhagen Strait', brief: 'Hold the coastal strongpoint and deny the Baltic flanking approach.', theme: 'coast', gameplay: 'hold', width: 32, height: 21, weather: 'clear', difficulty: 2 },
   { territoryId: 'sector-prague', name: 'Prague Old Town', brief: 'Raid the old-town warren by night and disrupt the dark ritual.', theme: 'oldtown', gameplay: 'raid-night', width: 34, height: 22, weather: 'night', difficulty: 3 },
   { territoryId: 'sector-berlin', name: 'Dead Air Protocol', brief: 'Trace a phantom distress network through the ruins and silence the presence speaking through every abandoned radio.', theme: 'ruins', gameplay: 'spire', width: 36, height: 24, weather: 'fog', difficulty: 4 },
-  { territoryId: 'sector-warsaw', name: 'Warsaw Front', brief: 'Break the eastern line through the rubble and seize the far strongpoint.', theme: 'ruins', gameplay: 'bridgehead', width: 36, height: 24, weather: 'clear', difficulty: 4 },
+  { territoryId: 'sector-warsaw', name: 'Warsaw Front', brief: 'Break the eastern line through the rubble and seize the far strongpoint.', theme: 'ruins', gameplay: 'bridgehead', width: 40, height: 54, weather: 'clear', difficulty: 4, scaleBand: 'mid' },
   { territoryId: 'sector-krakow', name: 'The Glass Choir', brief: 'Enter the mirrored citadel, break its resonant ward, and hold the courtyard when the silent choir answers.', theme: 'oldtown', gameplay: 'spire', width: 36, height: 24, weather: 'fog', difficulty: 4 },
   { territoryId: 'sector-kyiv', name: 'Kyiv Siege', brief: 'Night raid through the ruined metropolis to silence the coven and hold the relay.', theme: 'ruins', gameplay: 'raid-night', width: 40, height: 26, weather: 'night', difficulty: 5 },
   { territoryId: 'sector-carpathian', name: 'Carpathian Pass', brief: 'Hold the high pass strongpoint and clear the patrol-ridden ridges.', theme: 'alpine', gameplay: 'hold', width: 36, height: 24, weather: 'clear', difficulty: 4 },
-  { territoryId: 'sector-blacksea', name: 'Black Sea Coast', brief: 'Push along the foggy coast, rout the shore-spawn and seize the far cape.', theme: 'coast', gameplay: 'bridgehead', width: 36, height: 24, weather: 'fog', difficulty: 4 },
+  { territoryId: 'sector-blacksea', name: 'Black Sea Coast', brief: 'Push along the foggy coast, rout the shore-spawn and seize the far cape.', theme: 'coast', gameplay: 'bridgehead', width: 40, height: 54, weather: 'fog', difficulty: 4, scaleBand: 'mid' },
   { territoryId: 'sector-rift', name: 'Operation Ash Crown', brief: 'Cross the burning scar, anchor the seal, and survive the self-crowned warden that rises from its final breach.', theme: 'rift', gameplay: 'spire', width: 40, height: 26, weather: 'fog', difficulty: 5 },
   { territoryId: 'sector-cinder-gate', name: 'Cinder Gate', brief: 'Cross the unstable passage, break the heat-scarred pylon ring, and anchor the first Shatterline foothold.', theme: 'rift', gameplay: 'spire', width: 38, height: 25, weather: 'fog', difficulty: 5, rosterOffset: 11 },
   { territoryId: 'sector-lantern-vault', name: 'Lantern Vault', brief: 'Reach the trapped survey team and escort its star charts out through the collapsing observatory galleries.', theme: 'ruins', gameplay: 'rescue', width: 37, height: 24, weather: 'clear', difficulty: 5, rosterOffset: 12 },
   { territoryId: 'sector-hollow-tide', name: 'Hollow Tide', brief: 'Raid the black shoreline, silence the tide-callers, and hold the stranded vanguard beacon through the mist.', theme: 'coast', gameplay: 'raid-night', width: 39, height: 25, weather: 'night', difficulty: 5, rosterOffset: 13 },
   { territoryId: 'sector-ashen-confluence', name: 'Ashen Confluence', brief: 'Escort the survey convoy across the joined fault line and align the echo beacon for optional fire support.', theme: 'rift', gameplay: 'convoy', width: 40, height: 54, weather: 'fog', difficulty: 5, rosterOffset: 11, scaleBand: 'mid' },
-  { territoryId: 'sector-sable-causeway', name: 'Sable Causeway', brief: 'Break the causeway guard, arm the ward towers, and keep the northern road from folding into the sea.', theme: 'coast', gameplay: 'bridgehead', width: 42, height: 25, weather: 'clear', difficulty: 5, rosterOffset: 12 },
+  { territoryId: 'sector-sable-causeway', name: 'Sable Causeway', brief: 'Break the causeway guard, arm the ward towers, and keep the northern road from folding into the sea.', theme: 'coast', gameplay: 'bridgehead', width: 60, height: 70, weather: 'clear', difficulty: 5, rosterOffset: 12, scaleBand: 'late', specialistDeadlineRound: 14 },
   { territoryId: 'sector-mnemonic-orchard', name: 'Mnemonic Orchard', brief: 'Raid the echoing forest by night, silence the signal mimics, and hold the root relay through their answer.', theme: 'forest', gameplay: 'raid-night', width: 39, height: 27, weather: 'night', difficulty: 5, rosterOffset: 13 },
   { territoryId: 'sector-thorn-engine', name: 'Thorn Engine', brief: 'Hold the regulator control ring while the field teams reverse the contraction pulling both fronts together.', theme: 'industrial', gameplay: 'hold', width: 42, height: 26, weather: 'fog', difficulty: 5, rosterOffset: 11 },
   { territoryId: 'sector-veil-heart', name: 'Veil Heart', brief: 'Enter the buried core, break its ritual guard, and survive the last horizon taking form around the heart.', theme: 'rift', gameplay: 'spire', width: 43, height: 28, weather: 'fog', difficulty: 5, rosterOffset: 12 },
   { territoryId: 'sector-quiet-meridian', name: 'Quiet Meridian', brief: 'Reach the stranded survey team and guide it through ruins collapsing behind the broken horizon.', theme: 'ruins', gameplay: 'rescue', width: 41, height: 27, weather: 'clear', difficulty: 5, rosterOffset: 13 },
-  { territoryId: 'sector-glass-wake', name: 'Glass Wake', brief: 'Break the shore guard and seize the last stable crossing before the reflected tide returns.', theme: 'coast', gameplay: 'bridgehead', width: 44, height: 27, weather: 'fog', difficulty: 5, rosterOffset: 11 },
-  { territoryId: 'sector-ash-compass', name: 'Ash Compass', brief: 'Escort the stabilizer convoy through a displaced forest whose paths turn with every signal pulse.', theme: 'forest', gameplay: 'convoy', width: 50, height: 64, weather: 'night', difficulty: 5, rosterOffset: 12, scaleBand: 'late' },
+  { territoryId: 'sector-glass-wake', name: 'Glass Wake', brief: 'Break the shore guard and seize the last stable crossing before the reflected tide returns.', theme: 'coast', gameplay: 'bridgehead', width: 60, height: 70, weather: 'fog', difficulty: 5, rosterOffset: 11, scaleBand: 'late' },
+  { territoryId: 'sector-ash-compass', name: 'Ash Compass', brief: 'Escort the stabilizer convoy through a displaced forest whose paths turn with every signal pulse.', theme: 'forest', gameplay: 'convoy', width: 60, height: 70, weather: 'night', difficulty: 5, rosterOffset: 12, scaleBand: 'late' },
   { territoryId: 'sector-dawn-anchor', name: 'Dawn Anchor', brief: 'Hold the final anchor while the return passage seals and the surviving Shatterline guard makes its last assault.', theme: 'rift', gameplay: 'hold', width: 45, height: 29, weather: 'clear', difficulty: 5, rosterOffset: 13 }
 ];
 

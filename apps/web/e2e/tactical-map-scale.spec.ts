@@ -1,5 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
+const LARGEST_AUTHORED_TERRITORIES = [
+  'sector-sable-causeway',
+  'sector-glass-wake',
+  'sector-ash-compass'
+] as const;
+
 async function waitForPresentedBattle(page: Page, territoryId: string) {
   await expect.poll(async () => page.locator('[data-testid="map-metrics"]').evaluate((metrics) => ({
     battleId: metrics.getAttribute('data-battle-id'),
@@ -18,9 +24,13 @@ async function waitForPresentedBattle(page: Page, territoryId: string) {
   }));
   expect(canvasSize.width).toBeGreaterThan(0);
   expect(canvasSize.height).toBeGreaterThan(0);
+  return page.locator('[data-testid="map-metrics"]').evaluate((element) => ({
+    width: Number(element.getAttribute('data-map-width')),
+    height: Number(element.getAttribute('data-map-height'))
+  }));
 }
 
-test('scaled convoy battlefields present and persist in all three save slots', async ({ page }) => {
+test('largest scaled battlefields present and persist in all three save slots', async ({ page }) => {
   const runtimeErrors: string[] = [];
   page.on('pageerror', (error) => runtimeErrors.push(error.message));
   page.on('console', (message) => {
@@ -33,6 +43,29 @@ test('scaled convoy battlefields present and persist in all three save slots', a
   await page.goto('/');
   await page.waitForFunction(() => Boolean((window as any).__campaignControl));
 
+  const largestCandidates: Array<{ territoryId: string; length: number }> = [];
+  for (const territoryId of LARGEST_AUTHORED_TERRITORIES) {
+    expect(await page.evaluate(() => (
+      (window as any).__campaignControl.newCampaign(1, 'veteran')
+    ))).toBe(true);
+    expect(await page.evaluate((candidate) => (
+      (window as any).__campaignControl.startBattleForValidation(candidate)
+    ), territoryId)).toBe(true);
+    expect(await waitForPresentedBattle(page, territoryId)).toEqual({ width: 60, height: 70 });
+    largestCandidates.push({
+      territoryId,
+      length: await page.evaluate(() => (
+        window.localStorage.getItem('spellcross:campaign-state:1')?.length ?? 0
+      ))
+    });
+  }
+  const largestTerritoryId = largestCandidates
+    .slice()
+    .sort((left, right) => right.length - left.length)[0]?.territoryId;
+  expect(largestTerritoryId).toBeDefined();
+  expect(Math.max(...largestCandidates.map(({ length }) => length)))
+    .toBeLessThanOrEqual(1_734_351);
+
   const slotPayloads: Array<{ slot: number; length: number }> = [];
   for (const slot of [1, 2, 3]) {
     expect(await page.evaluate((nextSlot) => (
@@ -43,15 +76,11 @@ test('scaled convoy battlefields present and persist in all three save slots', a
     ))).toBe(true);
     await waitForPresentedBattle(page, 'sector-paris');
 
-    expect(await page.evaluate(() => (
-      (window as any).__campaignControl.startBattleForValidation('sector-ash-compass')
-    ))).toBe(true);
-    await waitForPresentedBattle(page, 'sector-ash-compass');
-    const metrics = await page.locator('[data-testid="map-metrics"]').evaluate((element) => ({
-      width: Number(element.getAttribute('data-map-width')),
-      height: Number(element.getAttribute('data-map-height'))
-    }));
-    expect(metrics).toEqual({ width: 50, height: 64 });
+    expect(await page.evaluate((territoryId) => (
+      (window as any).__campaignControl.startBattleForValidation(territoryId)
+    ), largestTerritoryId)).toBe(true);
+    expect(await waitForPresentedBattle(page, largestTerritoryId!))
+      .toEqual({ width: 60, height: 70 });
 
     const length = await page.evaluate((savedSlot) => (
       window.localStorage.getItem(`spellcross:campaign-state:${savedSlot}`)?.length ?? 0

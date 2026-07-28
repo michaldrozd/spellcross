@@ -214,10 +214,10 @@ describe('specialist deadline objectives', () => {
       },
       {
         territoryId: 'sector-sable-causeway',
-        pathSteps: 22,
-        pathCost: 16,
-        earliestCompletionRound: 3,
-        deadlineRound: 10,
+        pathSteps: 44,
+        pathCost: 47,
+        earliestCompletionRound: 7,
+        deadlineRound: 14,
         marginRounds: 7
       },
       {

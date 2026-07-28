@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createCampaign,
+  evaluateBattleOutcome,
   serializeCampaignState,
   startBattleForTerritory
 } from './campaign.js';
@@ -18,8 +19,22 @@ import { isoDistance } from '../simulation/utils/grid-iso.js';
 const SCALED_CONVOYS = [
   ['sector-amsterdam', 1_620, 12],
   ['sector-ashen-confluence', 2_160, 15],
-  ['sector-ash-compass', 3_200, 18]
+  ['sector-ash-compass', 4_200, 22]
 ] as const;
+
+const SCALED_BRIDGEHEADS = [
+  ['sector-strasbourg', 1_620, 14],
+  ['sector-vienna', 1_620, 14],
+  ['sector-warsaw', 2_160, 18],
+  ['sector-blacksea', 2_160, 18],
+  ['sector-sable-causeway', 4_200, 35],
+  ['sector-glass-wake', 4_200, 35]
+] as const;
+
+const SCALED_OPERATION_IDS = [
+  ...SCALED_CONVOYS.map(([territoryId]) => territoryId),
+  ...SCALED_BRIDGEHEADS.map(([territoryId]) => territoryId)
+];
 
 function openBattle(territoryId: string) {
   const state = createCampaign(starterBundle, undefined, 'veteran');
@@ -119,7 +134,55 @@ describe('scaled convoy battlefields', () => {
     }
   );
 
-  it.each(SCALED_CONVOYS)(
+  it.each(SCALED_BRIDGEHEADS)(
+    'keeps %s charge-point and elimination routes viable in depth',
+    (territoryId, cells, enemyCount) => {
+      const { battle } = openBattle(territoryId);
+      const chargePoint = battle.scenario.objectives.find((candidate) => (
+        candidate.id === `${territoryId}-reach`
+      ));
+      const elimination = battle.scenario.objectives.find((candidate) => (
+        candidate.id === `${territoryId}-eliminate`
+      ));
+      if (!chargePoint?.target || !elimination) {
+        throw new Error(`missing bridgehead objectives for ${territoryId}`);
+      }
+
+      const routes = Array.from(battle.state.sides.alliance.units.values())
+        .filter((unit) => unit.stance !== 'destroyed' && !unit.embarkedOn)
+        .map((unit) => {
+          const actionPoints = unit.actionPoints;
+          unit.actionPoints = 10_000;
+          const route = planPathForUnitIso(battle.state, unit.id, chargePoint.target!);
+          unit.actionPoints = actionPoints;
+          return route;
+        })
+        .filter((route) => route.success)
+        .sort((left, right) => left.cost - right.cost);
+
+      expect(battle.state.map.tiles).toHaveLength(cells);
+      expect(battle.state.sides.otherSide.units.size).toBe(enemyCount);
+      expect(routes[0]?.path.length).toBeGreaterThan(25);
+      expect(chargePoint.deadlineRound).toBe(
+        territoryId === 'sector-sable-causeway' ? 14 : undefined
+      );
+      expect(elimination.turnLimit).toBeUndefined();
+      expect(elimination.deadlineRound).toBeUndefined();
+
+      battle.scenario.events = battle.scenario.events?.filter((event) => (
+        event.faction !== 'otherSide'
+      ));
+      for (const enemy of battle.state.sides.otherSide.units.values()) {
+        enemy.stance = 'destroyed';
+        enemy.currentHealth = 0;
+      }
+      expect(evaluateBattleOutcome(battle)).toBe(
+        territoryId === 'sector-sable-causeway' ? 'ongoing' : 'victory'
+      );
+    }
+  );
+
+  it.each(SCALED_OPERATION_IDS)(
     'executes legal enemy decisions on %s without map-scale stalls',
     (territoryId) => {
       const { battle } = openBattle(territoryId);
@@ -156,11 +219,22 @@ describe('scaled convoy battlefields', () => {
     }
   );
 
-  it('keeps the densest scaled operation inside one third of the storage origin', () => {
-    const { state, battle } = openBattle('sector-ash-compass');
-    const payloadLength = JSON.stringify(serializeCampaignState(state)).length;
+  it('keeps every largest scaled operation inside one third of the storage origin', () => {
+    const payloads = SCALED_OPERATION_IDS.map((territoryId) => {
+      const { state, battle } = openBattle(territoryId);
+      return {
+        territoryId,
+        cells: battle.state.map.tiles.length,
+        payloadLength: JSON.stringify(serializeCampaignState(state)).length
+      };
+    });
+    const largestMaps = payloads.filter(({ cells }) => cells === Math.max(
+      ...payloads.map((candidate) => candidate.cells)
+    ));
 
-    expect(battle.state.map.tiles).toHaveLength(3_200);
-    expect(payloadLength).toBeLessThanOrEqual(1_734_351);
+    expect(largestMaps).toHaveLength(3);
+    expect(largestMaps.every(({ cells }) => cells === 4_200)).toBe(true);
+    expect(Math.max(...payloads.map(({ payloadLength }) => payloadLength)))
+      .toBeLessThanOrEqual(1_734_351);
   });
 });

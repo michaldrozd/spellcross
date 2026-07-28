@@ -156,7 +156,7 @@ describe('Per-city battlefields', () => {
   it.each([
     ['sector-amsterdam', 'early', 14],
     ['sector-ashen-confluence', 'mid', 18],
-    ['sector-ash-compass', 'late', 27]
+    ['sector-ash-compass', 'late', 35]
   ] as const)('authors %s as a paced %s convoy battlefield', (territoryId, band, enemyCount) => {
     const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
     if (!scenario) throw new Error(`missing ${territoryId}`);
@@ -194,6 +194,61 @@ describe('Per-city battlefields', () => {
     expect(visionTerrain).toBeGreaterThan(0.12);
     expect(visionTerrain).toBeLessThan(0.75);
   });
+
+  it.each([
+    ['sector-strasbourg', 'early', 14, undefined],
+    ['sector-vienna', 'early', 14, undefined],
+    ['sector-warsaw', 'mid', 18, undefined],
+    ['sector-blacksea', 'mid', 18, undefined],
+    ['sector-sable-causeway', 'late', 35, 14],
+    ['sector-glass-wake', 'late', 35, undefined]
+  ] as const)(
+    'authors %s as a defended %s bridgehead',
+    (territoryId, band, enemyCount, specialistDeadlineRound) => {
+      const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
+      if (!scenario) throw new Error(`missing ${territoryId}`);
+      const profile = TACTICAL_MAP_SCALE_BANDS[band];
+      const chargePoint = scenario.objectives.find((objective) => objective.id === `${territoryId}-reach`);
+      const eliminate = scenario.objectives.find((objective) => objective.id === `${territoryId}-eliminate`);
+      const progress = (coordinate: { q: number; r: number }) => (
+        coordinate.q / Math.max(1, scenario.map.width - 1)
+        + 1 - coordinate.r / Math.max(1, scenario.map.height - 1)
+      ) / 2;
+
+      expect(scenario.map).toMatchObject({ width: profile.width, height: profile.height });
+      expect(scenario.startZones.alliance).toHaveLength(profile.deploymentWidth * profile.deploymentDepth);
+      expect(scenario.startZones.otherSide).toHaveLength(profile.deploymentWidth * profile.deploymentDepth);
+      expect(scenario.otherSideForces).toHaveLength(enemyCount);
+      expect(scenario.map.tiles.length / scenario.otherSideForces.length)
+        .toBeLessThanOrEqual(profile.maxCellsPerEnemy);
+      expect(chargePoint).toMatchObject({
+        kind: 'interact',
+        actionKey: 'plantCharges'
+      });
+      expect(chargePoint?.deadlineRound).toBe(specialistDeadlineRound);
+      expect(chargePoint?.target && progress(chargePoint.target)).toBeGreaterThan(0.72);
+      expect(eliminate).toMatchObject({ kind: 'eliminate' });
+      expect(eliminate?.turnLimit).toBeUndefined();
+      expect(eliminate?.deadlineRound).toBeUndefined();
+      expect(scenario.events?.[0]?.triggerRound).toBe(profile.reserveRound);
+
+      const enemyProgress = scenario.otherSideForces.map((unit) => progress(unit.coordinate));
+      for (const patrolProgress of profile.patrolProgress) {
+        expect(
+          enemyProgress.some((enemy) => Math.abs(enemy - patrolProgress) <= 0.035),
+          `${territoryId} is missing its patrol at ${patrolProgress}`
+        ).toBe(true);
+      }
+      for (const enemy of scenario.otherSideForces) {
+        expect(Math.min(...scenario.startZones.alliance.map((coordinate) => (
+          Math.max(
+            Math.abs(enemy.coordinate.q - coordinate.q),
+            Math.abs(enemy.coordinate.r - coordinate.r)
+          )
+        )))).toBeGreaterThan(6);
+      }
+    }
+  );
 
   it.each([
     ['sector-berlin', 'signalEaterAwakes', 'signal-eater'],
