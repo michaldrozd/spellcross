@@ -2710,6 +2710,7 @@ const BattleView: React.FC<{
         >
           <BattlefieldStage
             battleState={battle.state}
+            battleIdentity={battle.territoryId}
             onSelectUnit={(id) => {
               const unit = battle.state.sides.alliance.units.get(id);
               if (unit) handleSelect(unit);
@@ -3468,6 +3469,25 @@ export function App() {
         if (started) {
           setMode('battle');
         }
+        return started;
+      },
+      startBattleForValidation: (territoryId: string) => {
+        let started = false;
+        try {
+          mutate((state) => {
+            state.activeBattle = undefined;
+            state.lastOperationTurn = undefined;
+            const territory = state.territories.find((candidate) => candidate.id === territoryId);
+            if (!territory) return;
+            territory.status = 'available';
+            startBattleForTerritory(state, bundle, territory.id);
+            started = true;
+          });
+        } catch (err) {
+          reportBattleLaunchError(err);
+          return false;
+        }
+        if (started) setMode('battle');
         return started;
       },
       endTurn: (count = 1) => {

@@ -299,6 +299,7 @@ export function scenarioEventVisualStyle(kind: ScenarioEventVisualKind) {
 
 export interface BattlefieldStageProps {
   battleState: TacticalBattleState;
+  battleIdentity?: string;
   onSelectUnit?: (unitId: string) => void;
   onSelectTile?: (coordinate: HexCoordinate) => void;
   plannedPath?: HexCoordinate[];
@@ -1700,6 +1701,7 @@ function getPropAtlasTextures() {
 
 export function BattlefieldStage({
   battleState,
+  battleIdentity,
   onSelectUnit,
   onSelectTile,
   plannedPath,
@@ -4145,7 +4147,16 @@ export function BattlefieldStage({
       [3, 0]
     ];
 
-    const elements: JSX.Element[] = [];
+    const overlays: Array<{
+      q: number;
+      r: number;
+      isBlocked: boolean;
+      origin: { x: number; y: number };
+      shape: Array<{ x: number; y: number }>;
+      screenShape: Array<{ x: number; y: number }>;
+      style: ReturnType<typeof rangeOverlayStyle> | ReturnType<typeof blockedRangeOverlayStyle>;
+    }> = [];
+
     rangeOverlayCoords.forEach((key) => {
       const [qStr, rStr] = key.split(',');
       const q = Number(qStr);
@@ -4160,80 +4171,128 @@ export function BattlefieldStage({
       const elev = map.tiles[idx].elevation ?? 0;
       const avgHeight = ISO_MODE && geom ? geom.avgHeight : elev;
       const isBlocked = blockedRangeOverlayCoords?.has(key) === true;
+      const origin = {
+        x: p.x,
+        y: p.y - avgHeight * ELEV_Y_OFFSET
+      };
+      const s = (tileSize / 2) * 0.86;
+      const hw = (hexWidth / 2) * 0.86;
+      const shape = ISO_MODE && geom
+        ? geom.inset(0.86)
+        : [
+            { x: 0, y: -s },
+            { x: hw, y: -s / 2 },
+            { x: hw, y: s / 2 },
+            { x: 0, y: s },
+            { x: -hw, y: s / 2 },
+            { x: -hw, y: -s / 2 }
+          ];
 
-      elements.push(
-        <Graphics
-          key={`rng-${q}-${r}`}
-          x={p.x}
-          y={p.y - avgHeight * ELEV_Y_OFFSET}
-          draw={(g) => {
-            g.clear();
-            const style = isBlocked
-              ? blockedRangeOverlayStyle(externalTexturesAreColored)
-              : rangeOverlayStyle(externalTexturesAreColored);
-            if (ISO_MODE && geom) {
-              const shape = geom.inset(0.86);
+      overlays.push({
+        q,
+        r,
+        isBlocked,
+        origin,
+        shape,
+        screenShape: shape.map((point) => ({
+          x: origin.x + point.x,
+          y: origin.y + point.y
+        })),
+        style: isBlocked
+          ? blockedRangeOverlayStyle(externalTexturesAreColored)
+          : rangeOverlayStyle(externalTexturesAreColored)
+      });
+    });
+
+    return (
+      <Graphics
+        key="global-range-overlay"
+        draw={(g) => {
+          g.clear();
+
+          const overlaysFor = (isBlocked: boolean) => (
+            overlays.filter((overlay) => overlay.isBlocked === isBlocked)
+          );
+          // Styles are uniform per blocked class; split these batches if style gains a per-tile input.
+          const drawFills = (isBlocked: boolean) => {
+            const matchingOverlays = overlaysFor(isBlocked);
+            const style = matchingOverlays[0]?.style;
+            if (!style) return;
+            g.lineStyle(0, 0, 0);
+            g.beginFill(style.fill, style.fillAlpha);
+            matchingOverlays.forEach((overlay) => {
+              drawPoly(g as PixiGraphics, overlay.screenShape);
+            });
+            g.endFill();
+          };
+
+          drawFills(false);
+          drawFills(true);
+
+          if (!ISO_MODE) {
+            [false, true].forEach((isBlocked) => {
+              const matchingOverlays = overlaysFor(isBlocked);
+              const style = matchingOverlays[0]?.style;
+              if (!style) return;
+              g.lineStyle(2.2, style.shadow, style.shadowAlpha);
+              matchingOverlays.forEach((overlay) => {
+                drawPoly(g as PixiGraphics, overlay.screenShape);
+              });
+              g.lineStyle(1.05, style.edge, style.edgeAlpha);
+              matchingOverlays.forEach((overlay) => {
+                drawPoly(g as PixiGraphics, overlay.screenShape);
+              });
+            });
+            return;
+          }
+
+          const drawIsoEdges = (isBlocked: boolean, shadow: boolean) => {
+            const matchingOverlays = overlaysFor(isBlocked);
+            const style = matchingOverlays[0]?.style;
+            if (!style) return;
+            g.lineStyle(
+              shadow ? 2.4 : 1.15,
+              shadow ? style.shadow : style.edge,
+              shadow ? style.shadowAlpha : style.edgeAlpha
+            );
+            matchingOverlays.forEach(({ q, r, screenShape }) => {
               const matchesNeighbor = (dq: number, dr: number) => {
                 const neighborKey = `${q + dq},${r + dr}`;
                 return rangeOverlayCoords.has(neighborKey) &&
                   (blockedRangeOverlayCoords?.has(neighborKey) === true) === isBlocked;
               };
-              g.beginFill(style.fill, style.fillAlpha);
-              drawPoly(g as PixiGraphics, shape);
-              g.endFill();
-              g.lineStyle(2.4, style.shadow, style.shadowAlpha);
               edges.forEach(([aIdx, bIdx], edgeIndex) => {
                 const d = edgeDirs[edgeIndex];
                 if (matchesNeighbor(d.dq, d.dr)) return;
-                g.moveTo(shape[aIdx].x, shape[aIdx].y);
-                g.lineTo(shape[bIdx].x, shape[bIdx].y);
+                g.moveTo(screenShape[aIdx].x, screenShape[aIdx].y);
+                g.lineTo(screenShape[bIdx].x, screenShape[bIdx].y);
               });
-              g.lineStyle(1.15, style.edge, style.edgeAlpha);
-              edges.forEach(([aIdx, bIdx], edgeIndex) => {
-                const d = edgeDirs[edgeIndex];
-                if (matchesNeighbor(d.dq, d.dr)) return;
-                g.moveTo(shape[aIdx].x, shape[aIdx].y);
-                g.lineTo(shape[bIdx].x, shape[bIdx].y);
-              });
-              if (isBlocked) {
-                g.lineStyle(0.9, 0xffbd84, 0.52);
-                g.moveTo(shape[3].x * 0.58, shape[3].y * 0.58);
-                g.lineTo(shape[1].x * 0.58, shape[1].y * 0.58);
-                g.moveTo(shape[0].x * 0.42, shape[0].y * 0.42);
-                g.lineTo(shape[2].x * 0.42, shape[2].y * 0.42);
-              } else if ((q * 7 + r * 11) % 3 === 0) {
-                g.lineStyle(0.8, 0xe8e0a1, 0.42);
-                g.moveTo(shape[3].x * 0.36, shape[3].y * 0.36);
-                g.lineTo(shape[1].x * 0.56, shape[1].y * 0.56);
-              }
-              return;
+            });
+          };
+
+          drawIsoEdges(false, true);
+          drawIsoEdges(true, true);
+          drawIsoEdges(false, false);
+          drawIsoEdges(true, false);
+
+          g.lineStyle(0.9, 0xffbd84, 0.52);
+          overlaysFor(true).forEach(({ origin, shape }) => {
+            g.moveTo(origin.x + shape[3].x * 0.58, origin.y + shape[3].y * 0.58);
+            g.lineTo(origin.x + shape[1].x * 0.58, origin.y + shape[1].y * 0.58);
+            g.moveTo(origin.x + shape[0].x * 0.42, origin.y + shape[0].y * 0.42);
+            g.lineTo(origin.x + shape[2].x * 0.42, origin.y + shape[2].y * 0.42);
+          });
+
+          g.lineStyle(0.8, 0xe8e0a1, 0.42);
+          overlaysFor(false).forEach(({ q, r, origin, shape }) => {
+            if ((q * 7 + r * 11) % 3 === 0) {
+              g.moveTo(origin.x + shape[3].x * 0.36, origin.y + shape[3].y * 0.36);
+              g.lineTo(origin.x + shape[1].x * 0.56, origin.y + shape[1].y * 0.56);
             }
-
-            const s = (tileSize / 2) * 0.86;
-            const hw = (hexWidth / 2) * 0.86;
-            const pts = [
-              { x: 0, y: -s },
-              { x: hw, y: -s / 2 },
-              { x: hw, y: s / 2 },
-              { x: 0, y: s },
-              { x: -hw, y: s / 2 },
-              { x: -hw, y: -s / 2 }
-            ];
-            g.beginFill(style.fill, style.fillAlpha);
-            g.moveTo(pts[0].x, pts[0].y);
-            for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y);
-            g.closePath();
-            g.endFill();
-            g.lineStyle(2.2, style.shadow, style.shadowAlpha);
-            drawPoly(g as PixiGraphics, pts);
-            g.lineStyle(1.05, style.edge, style.edgeAlpha);
-            drawPoly(g as PixiGraphics, pts);
-          }}
-        />
-      );
-    });
-
-    return elements;
+          });
+        }}
+      />
+    );
   }, [rangeOverlayCoords, blockedRangeOverlayCoords, map.width, map.height, map.tiles, visibleTiles, externalTexturesAreColored, topGeomFor]);
 
   const attackRangeOverlays = useMemo(() => {
@@ -8197,6 +8256,36 @@ export function BattlefieldStage({
     </>
   );
 
+  const presentationMetricsRef = useRef<HTMLDivElement | null>(null);
+  const pendingPresentationFrameRef = useRef<number | null>(null);
+  const presentationIdentity = battleIdentity ?? map.id;
+  const presentationIdentityRef = useRef(presentationIdentity);
+  presentationIdentityRef.current = presentationIdentity;
+  const drawPresentationSentinel = useCallback((g: PixiGraphics) => {
+    g.clear();
+    g.beginFill(0xffffff, 0);
+    g.drawRect(0, 0, 1, 1);
+    g.endFill();
+
+    if (pendingPresentationFrameRef.current !== null) {
+      cancelAnimationFrame(pendingPresentationFrameRef.current);
+    }
+    const pendingIdentity = presentationIdentity;
+    pendingPresentationFrameRef.current = requestAnimationFrame(() => {
+      pendingPresentationFrameRef.current = requestAnimationFrame(() => {
+        if (presentationIdentityRef.current === pendingIdentity) {
+          presentationMetricsRef.current?.setAttribute('data-presented-battle-id', pendingIdentity);
+        }
+        pendingPresentationFrameRef.current = null;
+      });
+    });
+  }, [presentationIdentity]);
+  useEffect(() => () => {
+    if (pendingPresentationFrameRef.current !== null) {
+      cancelAnimationFrame(pendingPresentationFrameRef.current);
+    }
+  }, []);
+
   // Memoized: @pixi/react re-runs a Graphics draw callback whenever its identity changes, and these
   // two rebuild their whole geometry — inline closures re-tessellated them on every render tick.
   const drawOverlayMask = useCallback((g: PixiGraphics) => {
@@ -8377,8 +8466,11 @@ export function BattlefieldStage({
       />
       {/* Hidden map metrics for E2E assertions */}
       <div data-testid="map-metrics" style={{ display: 'none' }}
+           ref={presentationMetricsRef}
            data-map-width={map.width}
            data-map-height={map.height}
+           data-battle-id={battleIdentity}
+           data-presented-battle-id=""
       />
       <div
         data-testid="battlefield-render-profile"
@@ -8573,6 +8665,7 @@ export function BattlefieldStage({
             <Graphics draw={drawMinimap} />
           </Container>
         )}
+        <Graphics draw={drawPresentationSentinel} eventMode="none" />
 
       </Stage>
       )}
