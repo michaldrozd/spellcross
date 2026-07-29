@@ -17,8 +17,21 @@ test('a deciding shell reveals the localized outcome only when its impact lands'
     const defender = loaded.loaded.find((unit: any) => unit.definitionId === 'ironroot-colossus');
     if (!attacker || !defender) return null;
 
-    control.snapUnit(attacker.id, 8, 8);
-    control.snapUnit(defender.id, 10, 8);
+    const mapMetrics = document.querySelector('[data-testid="map-metrics"]');
+    const mapWidth = Number(mapMetrics?.getAttribute('data-map-width'));
+    const mapHeight = Number(mapMetrics?.getAttribute('data-map-height'));
+    const firingLane = Array.from({ length: mapHeight }, (_, r) => (
+      Array.from({ length: Math.max(0, mapWidth - 2) }, (_unused, q) => (
+        [{ q, r }, { q: q + 1, r }, { q: q + 2, r }]
+      ))
+    )).flat().find((lane) => lane.every((coordinate) => {
+      const tile = control.tileAt(coordinate.q, coordinate.r);
+      return tile?.passable && !tile.blocksVision;
+    }));
+    if (!firingLane) return null;
+
+    control.snapUnit(attacker.id, firingLane[0].q, firingLane[0].r);
+    control.snapUnit(defender.id, firingLane[2].q, firingLane[2].r);
     control.setActionPoints(attacker.id, 99);
     control.setHealth(defender.id, 1);
     control.revealAll();
@@ -77,15 +90,51 @@ test('hidden AI fire uses a generic phase notice without exposing its source', a
     const attacker = loaded.loaded.find((unit: any) => unit.definitionId === 'ironroot-colossus');
     if (!attacker || !defender) return null;
 
-    control.snapUnit(defender.id, 10, 8);
-    control.snapUnit(attacker.id, 8, 8);
+    const attackerDefinition = control.rosterDefinitions()
+      .find((definition: any) => definition.id === attacker.definitionId);
+    const mapMetrics = document.querySelector('[data-testid="map-metrics"]');
+    const mapWidth = Number(mapMetrics?.getAttribute('data-map-width'));
+    const mapHeight = Number(mapMetrics?.getAttribute('data-map-height'));
+    if (!attackerDefinition?.maxRange || !Number.isInteger(mapWidth) || !Number.isInteger(mapHeight)) {
+      return null;
+    }
+
+    let hiddenLane;
+    for (let separation = attackerDefinition.maxRange; separation > 0 && !hiddenLane; separation -= 1) {
+      for (let r = 0; r < mapHeight && !hiddenLane; r += 1) {
+        for (let q = 0; q + separation < mapWidth && !hiddenLane; q += 1) {
+          const lane = Array.from({ length: separation + 1 }, (_unused, offset) => ({ q: q + offset, r }));
+          if (!lane.every((coordinate) => {
+            const tile = control.tileAt(coordinate.q, coordinate.r);
+            return tile?.passable && !tile.blocksVision;
+          })) continue;
+
+          control.snapUnit(defender.id, lane[0].q, lane[0].r);
+          control.snapUnit(attacker.id, lane[separation].q, lane[separation].r);
+          control.forceAllianceTurn();
+          const sourceVisible = control.enemyUnits()
+            .find((unit: any) => unit.id === attacker.id)?.visible;
+          if (!sourceVisible) hiddenLane = lane;
+        }
+      }
+    }
+    if (!hiddenLane) return null;
+
     control.setActionPoints(attacker.id, 99);
-    control.setAllianceVision([{ q: 10, r: 8 }]);
     control.clearScriptedEvents();
-    return { attackerId: attacker.id };
+    return {
+      attackerId: attacker.id,
+      sourceVisible: control.enemyUnits().find((unit: any) => unit.id === attacker.id)?.visible,
+      distance: hiddenLane.length - 1,
+      attackerRange: attackerDefinition.maxRange
+    };
   });
 
-  expect(setup?.attackerId).toBeTruthy();
+  expect(setup).toMatchObject({
+    sourceVisible: false
+  });
+  expect(setup!.attackerId).toBeTruthy();
+  expect(setup!.distance).toBeLessThanOrEqual(setup!.attackerRange);
   await page.evaluate(() => {
     const qaWindow = window as any;
     qaWindow.__phaseNoticeTexts = [];
@@ -127,8 +176,21 @@ test('reduced motion reveals a deciding kill log and outcome together', async ({
     const defender = loaded.loaded.find((unit: any) => unit.definitionId === 'ironroot-colossus');
     if (!attacker || !defender) return null;
 
-    control.snapUnit(attacker.id, 8, 8);
-    control.snapUnit(defender.id, 10, 8);
+    const mapMetrics = document.querySelector('[data-testid="map-metrics"]');
+    const mapWidth = Number(mapMetrics?.getAttribute('data-map-width'));
+    const mapHeight = Number(mapMetrics?.getAttribute('data-map-height'));
+    const firingLane = Array.from({ length: mapHeight }, (_, r) => (
+      Array.from({ length: Math.max(0, mapWidth - 2) }, (_unused, q) => (
+        [{ q, r }, { q: q + 1, r }, { q: q + 2, r }]
+      ))
+    )).flat().find((lane) => lane.every((coordinate) => {
+      const tile = control.tileAt(coordinate.q, coordinate.r);
+      return tile?.passable && !tile.blocksVision;
+    }));
+    if (!firingLane) return null;
+
+    control.snapUnit(attacker.id, firingLane[0].q, firingLane[0].r);
+    control.snapUnit(defender.id, firingLane[2].q, firingLane[2].r);
     control.setActionPoints(attacker.id, 99);
     control.setHealth(defender.id, 1);
     control.revealAll();
@@ -136,13 +198,32 @@ test('reduced motion reveals a deciding kill log and outcome together', async ({
       { id: 'eliminate', kind: 'eliminate', description: 'Destroy all hostile units.' }
     ]);
     control.clearScriptedEvents();
+    const qaWindow = window as any;
+    qaWindow.__reducedMotionPhaseNoticeTexts = [];
+    const recordNotice = () => {
+      const text = document.querySelector('.battle-phase-notice')?.textContent?.trim();
+      if (text && !qaWindow.__reducedMotionPhaseNoticeTexts.includes(text)) {
+        qaWindow.__reducedMotionPhaseNoticeTexts.push(text);
+      }
+    };
+    qaWindow.__reducedMotionPhaseNoticeObserver = new MutationObserver(recordNotice);
+    qaWindow.__reducedMotionPhaseNoticeObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
     const attack = control.attackUnitWith(attacker.id, defender.id, 'howitzer');
-    control.resolveOutcome();
     return { attack };
   });
 
   expect(setup).toMatchObject({ attack: { success: true, weaponId: 'howitzer' } });
-  await expect(page.locator('.battle-phase-notice')).toContainText(/Hit Confirmed|Zásah potvrdený/);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__reducedMotionPhaseNoticeTexts as string[]
+  ))).toEqual(expect.arrayContaining([
+    expect.stringMatching(/Hit Confirmed|Zásah potvrdený/)
+  ]));
+  await page.evaluate(() => (window as any).__reducedMotionPhaseNoticeObserver.disconnect());
+  await page.evaluate(() => (window as any).__battleControl.resolveOutcome());
   await expect(page.locator('.log-entries')).toContainText(/Destroyed|Zničené/);
   await expect(page.locator('.battle-outcome-overlay')).toBeVisible();
 });

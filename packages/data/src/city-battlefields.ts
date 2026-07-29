@@ -636,12 +636,53 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
   const scaleProfile = cfg.scaleBand ? TACTICAL_MAP_SCALE_BANDS[cfg.scaleBand] : undefined;
   // objective anchor: a REACHABLE tile deep in enemy territory (top-right region)
   const deep = g.reachable.filter((c) => c.r <= cfg.height * 0.4 && c.q >= cfg.width * 0.45);
-  const routeDestination = (
-    (cfg.gameplay === 'convoy' || cfg.gameplay === 'bridgehead')
-    && scaleProfile
-  )
-    ? g.roadPath[Math.floor(g.roadPath.length * 0.86)]
+  const evacuationDestination = cfg.gameplay === 'evac' && scaleProfile
+    ? nearestCoordinates(
+        g.reachable.filter((coordinate) => (
+          g.map.tiles[coordinate.r * cfg.width + coordinate.q].cover >= 2
+        )),
+        { q: cfg.width * 0.77, r: cfg.height * 0.81 },
+        1
+      )[0]
     : undefined;
+  if (evacuationDestination) {
+    const evacuationClearing = new Set<string>();
+    for (let r = evacuationDestination.r - 1; r <= evacuationDestination.r + 1; r += 1) {
+      for (let q = evacuationDestination.q - 1; q <= evacuationDestination.q + 1; q += 1) {
+        evacuationClearing.add(`${q},${r}`);
+      }
+    }
+    for (let offset = 2; offset <= 6; offset += 1) {
+      evacuationClearing.add(`${evacuationDestination.q - offset},${evacuationDestination.r - offset}`);
+      evacuationClearing.add(`${evacuationDestination.q - offset + 1},${evacuationDestination.r - offset}`);
+    }
+    for (const key of evacuationClearing) {
+      const [q, r] = key.split(',').map(Number);
+      if (!inB(q, r, cfg.width, cfg.height)) continue;
+      const index = r * cfg.width + q;
+      g.map.tiles[index] = {
+        ...g.map.tiles[index],
+        terrain: 'road',
+        cover: q === evacuationDestination.q && r === evacuationDestination.r ? 2 : 1,
+        movementCostModifier: 0.8,
+        passable: true,
+        blocksVision: false,
+        destructible: false
+      };
+    }
+    g.map.props = g.map.props?.filter((prop) => (
+      (prop.tiles?.length ? prop.tiles : [prop.coordinate]).every((coordinate) => (
+        !evacuationClearing.has(`${coordinate.q},${coordinate.r}`)
+      ))
+    ));
+  }
+  const routeDestination = evacuationDestination
+    ?? (
+      (cfg.gameplay === 'convoy' || cfg.gameplay === 'bridgehead')
+      && scaleProfile
+        ? g.roadPath[Math.floor(g.roadPath.length * 0.86)]
+        : undefined
+    );
   const anchor = routeDestination
     ?? (deep.length ? pickSpread(deep, 1, rng)[0] : g.otherSideZone[0])
     ?? { q: cfg.width - 2, r: 1 };
@@ -985,15 +1026,34 @@ function buildEvents(
   const occupied = new Set(
     [...otherSideForces, ...(allianceForces ?? [])].map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`)
   );
+  const protectedReserveStarts = cfg.gameplay === 'evac'
+    ? [
+        ...g.allianceZone,
+        ...mission.objectives.flatMap((objective) => objective.target ? [objective.target] : [])
+      ]
+    : [];
   const edgePool = [
     ...g.otherSideZone,
     ...g.reachable.filter((c) => c.q >= cfg.width * 0.68 || c.r <= cfg.height * 0.24)
   ].filter((c, index, all) => (
     !occupied.has(`${c.q},${c.r}`)
+    && protectedReserveStarts.every((start) => (
+      Math.max(Math.abs(start.q - c.q), Math.abs(start.r - c.r)) > 10
+    ))
     && all.findIndex((candidate) => candidate.q === c.q && candidate.r === c.r) === index
   ));
   const signature = SIGNATURE_EVENTS[cfg.territoryId];
-  const spots = pickSpread(edgePool.length ? edgePool : g.reachable, 4 + (signature?.reinforcements.length ?? 0), rng);
+  const reservePool = edgePool.length
+    ? edgePool
+    : g.reachable.filter((coordinate) => (
+        protectedReserveStarts.every((start) => (
+          Math.max(
+            Math.abs(start.q - coordinate.q),
+            Math.abs(start.r - coordinate.r)
+          ) > 10
+        ))
+      ));
+  const spots = pickSpread(reservePool, 4 + (signature?.reinforcements.length ?? 0), rng);
   const reserveSpots = spots.slice(0, 4);
   const reserveOffset = Math.ceil(roster.length / 2);
   const reinforcements: ScenarioUnit[] = reserveSpots.map((coordinate, index) => ({
@@ -1132,18 +1192,23 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
       || cfg.gameplay === 'raid-night'
       || cfg.gameplay === 'spire'
       || cfg.gameplay === 'rescue'
+      || cfg.gameplay === 'evac'
         ? g.allianceZone
         : []
     ),
-    ...(mission.allianceForces ?? []).map((unit) => unit.coordinate)
+    ...(mission.allianceForces ?? []).map((unit) => unit.coordinate),
+    ...(cfg.gameplay === 'evac'
+      ? mission.objectives.flatMap((objective) => objective.target ? [objective.target] : [])
+      : [])
   ];
+  const protectedStartDistance = cfg.gameplay === 'evac' ? 10 : 6;
   const patrolArea = scaleProfile
     ? fallbackEnemyArea.filter((coordinate) => (
         protectedStart.every((start) => (
           Math.max(
             Math.abs(start.q - coordinate.q),
             Math.abs(start.r - coordinate.r)
-          ) > 6
+          ) > protectedStartDistance
         ))
       ))
     : [];
@@ -1177,7 +1242,7 @@ function buildScenario(cfg: CityConfig): TacticalScenario {
 
 // Each sector has a distinct theme, size, weather and mission profile tuned to its role.
 const CITY_CONFIGS: CityConfig[] = [
-  { territoryId: 'sector-paris', name: 'Paris Outskirts', brief: 'Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.', theme: 'urban', gameplay: 'evac', width: 30, height: 20, weather: 'clear', difficulty: 1 },
+  { territoryId: 'sector-paris', name: 'Paris Outskirts', brief: 'Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.', theme: 'urban', gameplay: 'evac', width: 30, height: 54, weather: 'clear', difficulty: 1, scaleBand: 'early' },
   { territoryId: 'sector-lyon', name: 'Lyon Industrial Zone', brief: 'Hold the factory strongpoint against the demonic raid on the arms works.', theme: 'industrial', gameplay: 'hold', width: 30, height: 54, weather: 'clear', difficulty: 1, scaleBand: 'early' },
   { territoryId: 'sector-strasbourg', name: 'Strasbourg Crossing', brief: 'Force the Rhine: rout the bridge guard or plant charges before the assault window closes.', theme: 'river', gameplay: 'bridgehead', width: 30, height: 54, weather: 'clear', difficulty: 2, scaleBand: 'early' },
   { territoryId: 'sector-munich', name: 'Munich Defensive Line', brief: 'Raid the forward line under cover of darkness and silence the enemy sorcery.', theme: 'forest', gameplay: 'raid-night', width: 30, height: 54, weather: 'night', difficulty: 2, scaleBand: 'early' },

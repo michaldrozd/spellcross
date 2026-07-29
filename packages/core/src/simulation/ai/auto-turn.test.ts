@@ -222,18 +222,126 @@ describe('Auto Turn (computer plays the player side)', () => {
     expect(approach).toMatchObject({
       type: 'move',
       path: [
-        { q: 1, r: 0 },
-        { q: 2, r: 0 },
-        objective
+        { q: 1, r: 0 }
       ]
     });
     if (approach.type !== 'move') throw new Error('expected objective move');
     expect(new TurnProcessor(state).moveUnit(approach).success).toBe(true);
+    expect(ally.coordinate).toEqual({ q: 1, r: 0 });
+
+    ally.actionPoints = ally.maxActionPoints;
+    const nextStep = decideNextAIAction(state, 'alliance', options);
+    expect(nextStep).toMatchObject({
+      type: 'move',
+      path: [{ q: 2, r: 0 }]
+    });
+    if (nextStep.type !== 'move') throw new Error('expected next objective step');
+    expect(new TurnProcessor(state).moveUnit(nextStep).success).toBe(true);
+    ally.actionPoints = ally.maxActionPoints;
+    const arrival = decideNextAIAction(state, 'alliance', options);
+    if (arrival.type !== 'move') throw new Error('expected objective arrival');
+    expect(new TurnProcessor(state).moveUnit(arrival).success).toBe(true);
     expect(ally.coordinate).toEqual(objective);
 
     const holding = decideNextAIAction(state, 'alliance', options);
     expect(holding.type).not.toBe('move');
     expect(ally.coordinate).toEqual(objective);
+  });
+
+  it('advances a named objective unit before unrelated attacks, then lets its screen engage', () => {
+    const state = createBattleState({
+      map: makeMap(9, 3),
+      sides: [
+        {
+          faction: 'alliance',
+          units: [
+            rifleman('runner', 'alliance', 0, 0),
+            rifleman('screen', 'alliance', 0, 2)
+          ]
+        },
+        { faction: 'otherSide', units: [dummy('foe', 4, 2)] }
+      ]
+    });
+    const runner = Array.from(state.sides.alliance.units.values())
+      .find((unit) => unit.definitionId === 'runner')!;
+    const screen = Array.from(state.sides.alliance.units.values())
+      .find((unit) => unit.definitionId === 'screen')!;
+    const foe = Array.from(state.sides.otherSide.units.values())[0];
+    const objective = { q: 8, r: 0 };
+    const options = {
+      objectiveTargets: [objective],
+      reachTargets: [objective],
+      objectiveUnitIds: new Set([runner.id]),
+      aggression: 0.85,
+      difficulty: 'hard' as const,
+      visibleEnemyIds: new Set([foe.id])
+    };
+
+    const advance = decideNextAIAction(state, 'alliance', options);
+    expect(advance).toMatchObject({
+      type: 'move',
+      unitId: runner.id
+    });
+    if (advance.type !== 'move') throw new Error('expected objective advance');
+    expect(new TurnProcessor(state).moveUnit(advance).success).toBe(true);
+    expect(runner.actionPoints).toBeLessThan(runner.maxActionPoints);
+
+    const engagement = decideNextAIAction(state, 'alliance', options);
+    expect(engagement).toMatchObject({
+      type: 'attack',
+      attackerId: screen.id,
+      defenderId: foe.id
+    });
+  });
+
+  it('keeps attack-first behavior when no unit is designated to move', () => {
+    const objective = { q: 8, r: 0 };
+    const state = createBattleState({
+      map: makeMap(9, 3),
+      sides: [
+        { faction: 'alliance', units: [rifleman('holder', 'alliance', 0, 2)] },
+        { faction: 'otherSide', units: [dummy('foe', 4, 2)] }
+      ]
+    });
+    const holder = Array.from(state.sides.alliance.units.values())[0];
+    const foe = Array.from(state.sides.otherSide.units.values())[0];
+
+    expect(decideNextAIAction(state, 'alliance', {
+      objectiveTargets: [objective],
+      aggression: 0.85,
+      difficulty: 'hard',
+      visibleEnemyIds: new Set([foe.id])
+    })).toMatchObject({
+      type: 'attack',
+      attackerId: holder.id,
+      defenderId: foe.id
+    });
+  });
+
+  it('clears a visible enemy from a named objective before advancing', () => {
+    const objective = { q: 4, r: 0 };
+    const state = createBattleState({
+      map: makeMap(7, 1),
+      sides: [
+        { faction: 'alliance', units: [rifleman('runner', 'alliance', 1, 0)] },
+        { faction: 'otherSide', units: [dummy('occupier', objective.q, objective.r)] }
+      ]
+    });
+    const runner = Array.from(state.sides.alliance.units.values())[0];
+    const occupier = Array.from(state.sides.otherSide.units.values())[0];
+
+    expect(decideNextAIAction(state, 'alliance', {
+      objectiveTargets: [objective],
+      reachTargets: [objective],
+      objectiveUnitIds: new Set([runner.id]),
+      aggression: 0.85,
+      difficulty: 'hard',
+      visibleEnemyIds: new Set([occupier.id])
+    })).toMatchObject({
+      type: 'attack',
+      attackerId: runner.id,
+      defenderId: occupier.id
+    });
   });
 
   it('respects fog of war: never fires at an enemy outside the visible set, but does when it is visible', () => {

@@ -495,6 +495,11 @@ export function decideNextAIAction(
   units = units.filter((unit) => unit.stance !== 'routed');
   if (units.length === 0) return { type: 'endTurn' };
 
+  const objectiveGoals = options.objectiveTargets ?? [];
+  const contestTargets = objectiveGoals.flatMap((goal) => (
+    attackEnemies.filter((enemy) => coordinateKey(enemy.coordinate) === coordinateKey(goal))
+  ));
+
   // 0) Fallback/retreat for fragile units
   for (const u of units) {
     const lowHealth = u.currentHealth <= u.stats.maxHealth * (aggression > 0.7 ? 0.25 : 0.35);
@@ -520,16 +525,92 @@ export function decideNextAIAction(
     }
   }
 
-  // Objective contesting: if the opponent is occupying an objective tile, focus fire
-  const contestTargets: UnitInstance[] = [];
-  const objectiveTargets = options.objectiveTargets ?? [];
-  for (const obj of objectiveTargets) {
-    for (const enemy of attackEnemies) {
-      if (coordinateKey(enemy.coordinate) === coordinateKey(obj)) {
-        contestTargets.push(enemy);
+  if (
+    !skipAttacks
+    && options.objectiveUnitIds
+    && options.objectiveUnitIds.size > 0
+    && contestTargets.length > 0
+  ) {
+    let contestAttack: { attackerId: string; defenderId: string; weaponId: string; score: number } | null = null;
+    for (const unit of units) {
+      const shot = bestAttackFromHere(state, unit, contestTargets);
+      if (shot && (!contestAttack || shot.score > contestAttack.score)) {
+        contestAttack = {
+          attackerId: unit.id,
+          defenderId: shot.defenderId,
+          weaponId: shot.weaponId,
+          score: shot.score
+        };
       }
     }
+    if (contestAttack) {
+      return {
+        type: 'attack',
+        attackerId: contestAttack.attackerId,
+        defenderId: contestAttack.defenderId,
+        weaponId: contestAttack.weaponId
+      };
+    }
   }
+
+  if (
+    options.objectiveUnitIds
+    && objectiveGoals.length > 0
+    && contestTargets.length === 0
+  ) {
+    let objectiveAdvance: { unitId: string; path: HexCoordinate[]; score: number } | null = null;
+    for (const unit of units) {
+      if (!options.objectiveUnitIds.has(unit.id)) continue;
+      if (unit.actionPoints < unit.maxActionPoints) continue;
+      for (const goal of objectiveGoals) {
+        if (coordinateKey(unit.coordinate) === coordinateKey(goal)) continue;
+        const nearestEnemy = enemiesAll.slice().sort((left, right) => (
+          isoDistance(unit.coordinate, left.coordinate) - isoDistance(unit.coordinate, right.coordinate)
+        ))[0];
+        const path = buildThreatAwarePathToward(state, unit, goal, {
+          flankTarget: nearestEnemy,
+          threatWeight,
+          flankWeight,
+          maxStepBonus: maxStepBonus + (maxRange(unit) >= 6 ? 1 : 0),
+          attackEnemies
+        });
+        const avoidedAt = path.findIndex((step) => options.avoidTiles?.has(coordinateKey(step)));
+        // A key mover scouts one tile at a time so the screen can react before the next push.
+        // Spending its full movement allowance here makes protected units outrun their escort.
+        const usablePath = (avoidedAt === -1 ? path : path.slice(0, avoidedAt)).slice(0, 1);
+        if (usablePath.length === 0) continue;
+        const destination = usablePath[usablePath.length - 1];
+        const progress = isoDistance(unit.coordinate, goal) - isoDistance(destination, goal);
+        if (progress <= 0) continue;
+        const score = progress * 12 - usablePath.reduce(
+          (total, step) => total + computeTileThreat(state, unit.faction, step, unit) * threatWeight,
+          0
+        );
+        if (!objectiveAdvance || score > objectiveAdvance.score) {
+          objectiveAdvance = { unitId: unit.id, path: usablePath, score };
+        }
+      }
+    }
+    if (objectiveAdvance) {
+      return {
+        type: 'move',
+        unitId: objectiveAdvance.unitId,
+        path: objectiveAdvance.path
+      };
+    }
+  }
+  // A required mover advances one tile per turn so its escort can screen before it pushes again.
+  // Re-selecting it on every decision makes key units outrun the force and turns protection into luck.
+  const committedObjectiveUnitIds = new Set(
+    options.objectiveUnitIds
+      ? units
+          .filter((unit) => (
+            options.objectiveUnitIds!.has(unit.id)
+            && unit.actionPoints < unit.maxActionPoints
+          ))
+          .map((unit) => unit.id)
+      : []
+  );
 
   // 1) Global best immediate attack among all units (prioritizing objective occupiers and flanks)
   let bestAttack:
@@ -538,6 +619,7 @@ export function decideNextAIAction(
   if (!skipAttacks) {
     for (const u of units) {
       if (u.stance === 'routed') continue; // routed units cannot attack — exclude from attack selection
+      if (committedObjectiveUnitIds.has(u.id)) continue;
       // Fast lane: shoot occupying enemies first. Only propose shots the executor will accept —
       // an unaffordable/out-of-range "attack" here gets rejected and benches the unit for the turn.
       if (canAffordAttack(u)) {
@@ -602,7 +684,6 @@ export function decideNextAIAction(
   }
 
   // 2) Otherwise, plan a (possibly multi-step) threat-aware path toward objectives or nearest enemy
-  const objectiveGoals = objectiveTargets;
   const holdGoals = options.holdTargets ?? [];
   const reachGoals = options.reachTargets ?? [];
   const defendBias = options.defendBias ?? false;
@@ -625,6 +706,7 @@ export function decideNextAIAction(
   let bestMove: { unitId: string; path: HexCoordinate[]; score: number } | null = null;
   for (const u of units) {
     if (u.id === anchoredHolderId) continue;
+    if (committedObjectiveUnitIds.has(u.id)) continue;
     // supply role: a support truck resupplies an adjacent low-ammo ally, else moves toward one
     if (isSupplyUnit(u)) {
       const supply = findSupplyTarget(state, u);

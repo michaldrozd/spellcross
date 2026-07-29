@@ -153,6 +153,84 @@ describe('Per-city battlefields', () => {
     expect(scenario?.objectives.filter((objective) => objective.unitIds?.includes('sector-amsterdam-convoy')).map((objective) => objective.kind).sort()).toEqual(['protect', 'reach']);
   });
 
+  it('authors Paris as a protected early evacuation route', () => {
+    const territoryId = 'sector-paris';
+    const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
+    if (!scenario) throw new Error(`missing ${territoryId}`);
+    const profile = TACTICAL_MAP_SCALE_BANDS.early;
+    const reach = scenario.objectives.find((objective) => objective.id === `${territoryId}-reach`);
+    const protect = scenario.objectives.find((objective) => objective.id === `${territoryId}-protect`);
+    const reserve = scenario.events?.find((event) => event.id === `${territoryId}-reserve-wave`);
+    if (!reach?.target || !protect) throw new Error(`missing ${territoryId} objectives`);
+    const progress = (coordinate: { q: number; r: number }) => (
+      coordinate.q / Math.max(1, scenario.map.width - 1)
+      + 1 - coordinate.r / Math.max(1, scenario.map.height - 1)
+    ) / 2;
+
+    expect(scenario.map).toMatchObject({ width: profile.width, height: profile.height });
+    expect(scenario.map.tiles).toHaveLength(profile.width * profile.height);
+    expect(scenario.startZones.alliance).toHaveLength(
+      profile.deploymentWidth * profile.deploymentDepth
+    );
+    expect(scenario.startZones.otherSide).toHaveLength(
+      profile.deploymentWidth * profile.deploymentDepth
+    );
+    expect(scenario.otherSideForces).toHaveLength(14);
+    expect(scenario.map.tiles.length / scenario.otherSideForces.length)
+      .toBeLessThanOrEqual(profile.maxCellsPerEnemy);
+    expect(scenario.startZones.alliance.length / scenario.otherSideForces.length)
+      .toBeGreaterThanOrEqual(1.4);
+    expect(scenario.objectives.map((objective) => objective.kind).sort())
+      .toEqual(['protect', 'reach']);
+    expect(reach).toMatchObject({
+      kind: 'reach',
+      unitIds: ['captain']
+    });
+    expect(protect).toMatchObject({
+      kind: 'protect',
+      unitIds: ['captain']
+    });
+    expect(progress(reach.target)).toBeGreaterThan(0.45);
+    const extractionTile = scenario.map.tiles[
+      reach.target.r * scenario.map.width + reach.target.q
+    ];
+    expect(extractionTile).toMatchObject({
+      terrain: 'road',
+      cover: 2,
+      movementCostModifier: 0.8,
+      passable: true,
+      blocksVision: false,
+      destructible: false
+    });
+    expect(reach.essential).not.toBe(true);
+    expect(reach.turnLimit).toBeUndefined();
+    expect(reach.deadlineRound).toBeUndefined();
+    expect(protect.essential).not.toBe(true);
+    expect(protect.turnLimit).toBeUndefined();
+    expect(protect.deadlineRound).toBeUndefined();
+    expect(reserve?.triggerRound).toBe(profile.reserveRound);
+    expect(reserve?.reinforcements).toHaveLength(4);
+    for (const reinforcement of reserve?.reinforcements ?? []) {
+      expect(Math.max(
+        Math.abs(reinforcement.coordinate.q - reach.target.q),
+        Math.abs(reinforcement.coordinate.r - reach.target.r)
+      )).toBeGreaterThan(10);
+    }
+
+    for (const enemy of scenario.otherSideForces) {
+      expect(Math.min(...scenario.startZones.alliance.map((coordinate) => (
+        Math.max(
+          Math.abs(enemy.coordinate.q - coordinate.q),
+          Math.abs(enemy.coordinate.r - coordinate.r)
+        )
+      )))).toBeGreaterThan(10);
+      expect(Math.max(
+        Math.abs(enemy.coordinate.q - reach.target.q),
+        Math.abs(enemy.coordinate.r - reach.target.r)
+      )).toBeGreaterThan(10);
+    }
+  });
+
   it.each([
     ['sector-amsterdam', 'early', 14],
     ['sector-ashen-confluence', 'mid', 18],

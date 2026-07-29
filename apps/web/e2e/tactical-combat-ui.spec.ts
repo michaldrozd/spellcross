@@ -70,14 +70,69 @@ test('UI-driven tactical play: embark, move, disembark, attack, AI reacts', asyn
   // Put one foe into the local fire lane, acquire it on the battlefield, then fire from the command panel.
   const targetEnemy = await page.evaluate(() => (window as any).__battleControl?.enemyUnits?.()?.[0] ?? null);
   expect(targetEnemy).not.toBeNull();
-  await page.evaluate(({ enemyId, carrierId }) => {
+  const firingSetup = await page.evaluate(({ enemyId, carrierId }) => {
     const control = (window as any).__battleControl;
-    control?.snapUnit?.(enemyId, 2, 19);
-    control?.forceAllianceTurn?.();
+    const carrierPosition = control.allyPositions().find((position: any) => position.id === carrierId);
+    const carrierUnit = control.allyUnits().find((unit: any) => unit.id === carrierId);
+    const carrierDefinition = control.rosterDefinitions()
+      .find((definition: any) => definition.id === carrierUnit?.definitionId);
+    const mapMetrics = document.querySelector('[data-testid="map-metrics"]');
+    const mapWidth = Number(mapMetrics?.getAttribute('data-map-width'));
+    const mapHeight = Number(mapMetrics?.getAttribute('data-map-height'));
+    if (
+      !carrierPosition
+      || !carrierDefinition?.maxRange
+      || !Number.isInteger(mapWidth)
+      || !Number.isInteger(mapHeight)
+    ) return null;
+
+    const occupied = new Set([
+      ...control.allyUnits(),
+      ...control.enemyUnits().filter((unit: any) => unit.id !== enemyId)
+    ].map((unit: any) => `${unit.coord.q},${unit.coord.r}`));
+    const distance = (coordinate: { q: number; r: number }) => Math.max(
+      Math.abs(carrierPosition.q - coordinate.q),
+      Math.abs(carrierPosition.r - coordinate.r),
+      Math.abs(
+        carrierPosition.q + carrierPosition.r
+        - coordinate.q - coordinate.r
+      )
+    );
+    const candidates = Array.from({ length: mapHeight }, (_, r) => (
+      Array.from({ length: mapWidth }, (_unused, q) => ({ q, r }))
+    )).flat()
+      .filter((coordinate) => {
+        const tile = control.tileAt(coordinate.q, coordinate.r);
+        const separation = distance(coordinate);
+        return (
+          separation > 0
+          && separation <= carrierDefinition.maxRange
+          && tile?.passable
+          && !occupied.has(`${coordinate.q},${coordinate.r}`)
+        );
+      })
+      .sort((left, right) => distance(right) - distance(left));
+
+    const targetCoordinate = candidates.find((coordinate) => {
+      control.snapUnit(enemyId, coordinate.q, coordinate.r);
+      control.forceAllianceTurn();
+      return control.enemyUnits().find((unit: any) => unit.id === enemyId)?.visible;
+    });
+    if (!targetCoordinate) return null;
+
     const alternate = control?.allyUnits?.().find((unit: any) => unit.id !== carrierId);
     if (alternate) control?.selectUnit?.(alternate.id);
+    return {
+      carrierPosition,
+      targetCoordinate,
+      distance: distance(targetCoordinate),
+      maxRange: carrierDefinition.maxRange,
+      targetVisible: control.enemyUnits().find((unit: any) => unit.id === enemyId)?.visible
+    };
   }, { enemyId: targetEnemy.id, carrierId: carrier.id });
-  await clickBattleTile(page, carrier.coord.q, carrier.coord.r);
+  expect(firingSetup).toMatchObject({ targetVisible: true });
+  expect(firingSetup!.distance).toBeLessThanOrEqual(firingSetup!.maxRange);
+  await clickBattleTile(page, firingSetup!.carrierPosition.q, firingSetup!.carrierPosition.r);
   await expect.poll(async () => page.evaluate(() => (window as any).__battleControl?.selectionState?.().selectedUnitId ?? null)).toBe(carrier.id);
   const targetReady = await page.evaluate((enemyId) => (window as any).__battleControl?.targetEnemy?.(enemyId) ?? false, targetEnemy.id);
   expect(targetReady).toBeTruthy();

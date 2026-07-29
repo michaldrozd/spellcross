@@ -6,8 +6,12 @@ import {
 } from 'vitest';
 
 import {
+  CAMPAIGN_DIFFICULTY_RULES,
   createCampaign,
   evaluateBattleOutcome,
+  getEnemyActionBudget,
+  getEnemyDecisionBudget,
+  getEnemyDifficultyTier,
   isObjectiveMet,
   performObjectiveAction,
   processTacticalEvents,
@@ -25,12 +29,19 @@ import {
   findPathOnMapIso,
   planPathForUnitIso
 } from '../simulation/pathfinding/iso-pathfinder.js';
+import {
+  canAffordMovementCost,
+  movementMultiplierForStance
+} from '../simulation/pathfinding/movement.js';
 import { TurnProcessor } from '../simulation/systems/turn-processor.js';
 import type {
   FactionId,
   TacticalBattleState
 } from '../simulation/types.js';
-import { isoDistance } from '../simulation/utils/grid-iso.js';
+import {
+  isoDistance,
+  isoNeighbors
+} from '../simulation/utils/grid-iso.js';
 
 const SCALED_CONVOYS = [
   ['sector-amsterdam', 1_620, 12],
@@ -73,7 +84,12 @@ const SCALED_RESCUES = [
   ['sector-quiet-meridian', 2_160, 18]
 ] as const;
 
+const SCALED_EVACUATIONS = [
+  ['sector-paris', 1_620, 14]
+] as const;
+
 const SCALED_OPERATION_IDS = [
+  ...SCALED_EVACUATIONS.map(([territoryId]) => territoryId),
   ...SCALED_CONVOYS.map(([territoryId]) => territoryId),
   ...SCALED_BRIDGEHEADS.map(([territoryId]) => territoryId),
   ...SCALED_HOLD_LINES.map(([territoryId]) => territoryId),
@@ -81,8 +97,11 @@ const SCALED_OPERATION_IDS = [
   ...SCALED_RESCUES.map(([territoryId]) => territoryId)
 ];
 
-function openBattle(territoryId: string) {
-  const state = createCampaign(starterBundle, undefined, 'veteran');
+function openBattle(
+  territoryId: string,
+  difficulty: 'commander' | 'veteran' = 'veteran'
+) {
+  const state = createCampaign(starterBundle, undefined, difficulty);
   const territory = state.territories.find((candidate) => candidate.id === territoryId);
   if (!territory) throw new Error(`missing ${territoryId}`);
   territory.status = 'available';
@@ -139,15 +158,24 @@ function visibleEnemyIds(state: TacticalBattleState, faction: FactionId = 'other
 function runAiPhase(
   battle: ActiveBattle,
   faction: FactionId,
-  options: AIContextOptions
+  options: AIContextOptions,
+  limits: {
+    endTurn?: boolean;
+    maxAttacks?: number;
+    maxDecisions?: number;
+    random?: () => number;
+  } = {}
 ) {
-  const processor = new TurnProcessor(battle.state, { random: () => 0.5 });
+  const processor = new TurnProcessor(battle.state, {
+    random: limits.random ?? (() => 0.5)
+  });
   const failedUnitIds = new Set<string>();
   const visitedTiles = new Map<string, Set<string>>();
   let executedActions = 0;
+  let executedAttacks = 0;
   let outcome: ReturnType<typeof evaluateBattleOutcome> = 'ongoing';
 
-  for (let decision = 0; decision < 80; decision += 1) {
+  for (let decision = 0; decision < (limits.maxDecisions ?? 80); decision += 1) {
     const action = decideNextAIAction(battle.state, faction, {
       ...options,
       excludeUnitIds: failedUnitIds,
@@ -177,15 +205,70 @@ function runAiPhase(
       continue;
     }
     executedActions += 1;
+    if (action.type === 'attack' || action.type === 'suppress') {
+      executedAttacks += 1;
+    }
     outcome = evaluateBattleOutcome(battle);
-    if (outcome !== 'ongoing') break;
+    if (
+      outcome !== 'ongoing'
+      || (
+        limits.maxAttacks !== undefined
+        && executedAttacks >= limits.maxAttacks
+      )
+    ) break;
   }
 
-  if (outcome === 'ongoing' && battle.state.activeFaction === faction) processor.endTurn();
+  if (
+    limits.endTurn !== false
+    && outcome === 'ongoing'
+    && battle.state.activeFaction === faction
+  ) processor.endTurn();
   return executedActions;
 }
 
 describe('scaled battlefields', () => {
+  it.each(SCALED_EVACUATIONS)(
+    'keeps %s captain extraction viable in depth',
+    (territoryId, cells, enemyCount) => {
+      const { battle } = openBattle(territoryId);
+      const captain = battle.state.sides.alliance.units.get(battle.deployment.captain);
+      const reach = battle.scenario.objectives.find((objective) => (
+        objective.id === `${territoryId}-reach`
+      ));
+      const protect = battle.scenario.objectives.find((objective) => (
+        objective.id === `${territoryId}-protect`
+      ));
+      if (!captain || !reach?.target || !protect) {
+        throw new Error(`missing evacuation objectives for ${territoryId}`);
+      }
+
+      const actionPoints = captain.actionPoints;
+      captain.actionPoints = 10_000;
+      const route = planPathForUnitIso(battle.state, captain.id, reach.target);
+      captain.actionPoints = actionPoints;
+      expect(battle.state.map.tiles).toHaveLength(cells);
+      expect(battle.state.sides.otherSide.units.size).toBe(enemyCount);
+      expect(route.success).toBe(true);
+      expect(route.path.length).toBeGreaterThan(20);
+      expect(battle.scenario.objectives.map((objective) => objective.kind).sort())
+        .toEqual(['protect', 'reach']);
+      expect(reach).toMatchObject({
+        kind: 'reach',
+        unitIds: ['captain']
+      });
+      expect(protect).toMatchObject({
+        kind: 'protect',
+        unitIds: ['captain']
+      });
+      expect(reach.essential).not.toBe(true);
+      expect(reach.turnLimit).toBeUndefined();
+      expect(reach.deadlineRound).toBeUndefined();
+      expect(protect.essential).not.toBe(true);
+      expect(protect.turnLimit).toBeUndefined();
+      expect(protect.deadlineRound).toBeUndefined();
+    }
+  );
+
   it.each(SCALED_CONVOYS)(
     'keeps %s travel meaningful and inside its authored deadline',
     (territoryId, cells, deadlineRound) => {
@@ -569,6 +652,200 @@ describe('scaled battlefields', () => {
       .filter((unit) => unit.stance !== 'destroyed').length).toBeGreaterThan(0);
     random.mockRestore();
   }, 15_000);
+
+  it.each(['commander', 'veteran'] as const)(
+    'supports a complete escorted Paris evacuation on %s',
+    (campaignDifficulty) => {
+      let randomState = campaignDifficulty === 'veteran' ? 3 : 0x63d83595;
+      const battleRandom = () => {
+        randomState |= 0;
+        randomState = (randomState + 0x6d2b79f5) | 0;
+        let mixed = Math.imul(randomState ^ (randomState >>> 15), 1 | randomState);
+        mixed = (mixed + Math.imul(mixed ^ (mixed >>> 7), 61 | mixed)) ^ mixed;
+        return ((mixed ^ (mixed >>> 14)) >>> 0) / 4294967296;
+      };
+      const random = vi.spyOn(Math, 'random').mockImplementation(battleRandom);
+      const territoryId = 'sector-paris';
+      const { state, battle } = openBattle(territoryId, campaignDifficulty);
+      const difficultyRules = CAMPAIGN_DIFFICULTY_RULES[campaignDifficulty];
+      const captain = battle.state.sides.alliance.units.get(battle.deployment.captain);
+      const reach = battle.scenario.objectives.find((objective) => (
+        objective.id === `${territoryId}-reach`
+      ));
+      if (!captain || !reach?.target) throw new Error('missing Paris captain');
+      const escortRally = {
+        q: reach.target.q - 4,
+        r: reach.target.r - 4
+      };
+
+      let executedActions = 0;
+      for (let round = 0; round < 24; round += 1) {
+        if (evaluateBattleOutcome(battle) !== 'ongoing') break;
+        const targetOccupied = Object.values(battle.state.sides).some((side) => (
+          Array.from(side.units.values()).some((unit) => (
+            unit.id !== captain.id
+            && unit.stance !== 'destroyed'
+            && unit.coordinate.q === reach.target!.q
+            && unit.coordinate.r === reach.target!.r
+          ))
+        ));
+        if (
+          captain.coordinate.q !== reach.target.q
+          || captain.coordinate.r !== reach.target.r
+        ) {
+          const occupied = new Set(Object.values(battle.state.sides).flatMap((side) => (
+            Array.from(side.units.values())
+              .filter((unit) => unit.id !== captain.id && unit.stance !== 'destroyed')
+              .map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`)
+          )));
+          const movementTargets = targetOccupied
+            ? isoNeighbors(battle.state.map, reach.target).filter((coordinate) => (
+                !occupied.has(`${coordinate.q},${coordinate.r}`)
+              ))
+            : [reach.target];
+          const availableActionPoints = captain.actionPoints;
+          captain.actionPoints = 10_000;
+          const fullRoute = movementTargets
+            .map((target) => planPathForUnitIso(battle.state, captain.id, target))
+            .filter((route) => route.success)
+            .sort((left, right) => left.cost - right.cost)[0];
+          captain.actionPoints = availableActionPoints;
+          expect(fullRoute?.success).toBe(true);
+          if (!fullRoute) throw new Error('missing Paris escort route');
+
+          const weatherMultiplier = battle.state.weather === 'fog'
+            ? 1.2
+            : battle.state.weather === 'night' ? 1.1 : 1;
+          const movementMultiplier =
+            movementMultiplierForStance(captain.stance) * weatherMultiplier;
+          let routeCost = 0;
+          const affordablePath: typeof fullRoute.path = [];
+          for (const [index, coordinate] of fullRoute.path.entries()) {
+            if (affordablePath.length >= 1) break;
+            const tile = battle.state.map.tiles[
+              coordinate.r * battle.state.map.width + coordinate.q
+            ];
+            const nextCost = routeCost + tile.movementCostModifier * movementMultiplier;
+            if (!canAffordMovementCost(nextCost, availableActionPoints, index + 1)) {
+              break;
+            }
+            routeCost = nextCost;
+            affordablePath.push(coordinate);
+          }
+          if (affordablePath.length > 0) {
+            const move = new TurnProcessor(battle.state, { random: battleRandom })
+              .moveUnit({ unitId: captain.id, path: affordablePath });
+            expect(move.success).toBe(true);
+            executedActions += 1;
+          }
+        }
+        if (evaluateBattleOutcome(battle) !== 'ongoing') break;
+
+        const contestProcessor = new TurnProcessor(battle.state, { random: battleRandom });
+        for (let attack = 0; attack < 20; attack += 1) {
+          const occupier = Array.from(battle.state.sides.otherSide.units.values())
+            .find((unit) => (
+              unit.stance !== 'destroyed'
+              && unit.coordinate.q === reach.target!.q
+              && unit.coordinate.r === reach.target!.r
+            ));
+          if (!occupier || !visibleEnemyIds(battle.state, 'alliance').has(occupier.id)) {
+            break;
+          }
+          const contestAction = decideNextAIAction(battle.state, 'alliance', {
+            objectiveTargets: [reach.target],
+            objectiveUnitIds: new Set([captain.id]),
+            aggression: difficultyRules.playerAutoAggression,
+            difficulty: difficultyRules.playerAutoDifficulty,
+            allowDemolition: false,
+            visibleEnemyIds: visibleEnemyIds(battle.state, 'alliance')
+          });
+          if (
+            (contestAction.type !== 'attack' && contestAction.type !== 'suppress')
+            || contestAction.defenderId !== occupier.id
+          ) break;
+          const execution = executeAiAction(contestProcessor, contestAction);
+          expect(execution.success).toBe(true);
+          executedActions += 1;
+        }
+        const captainActionPoints = captain.actionPoints;
+        captain.actionPoints = 0;
+        executedActions += runAiPhase(battle, 'alliance', {
+          objectiveTargets: [escortRally],
+          reachTargets: [escortRally],
+          defendBias: false,
+          aggression: difficultyRules.playerAutoAggression,
+          difficulty: difficultyRules.playerAutoDifficulty,
+          allowDemolition: false
+        }, {
+          endTurn: false,
+          random: battleRandom
+        });
+        captain.actionPoints = captainActionPoints;
+        if (evaluateBattleOutcome(battle) !== 'ongoing') break;
+
+        const objectiveClear = Array.from(battle.state.sides.otherSide.units.values())
+          .every((unit) => (
+            unit.stance === 'destroyed'
+            || unit.coordinate.q !== reach.target!.q
+            || unit.coordinate.r !== reach.target!.r
+          ));
+        if (
+          objectiveClear
+          && captain.actionPoints > 0
+          && isoDistance(captain.coordinate, reach.target) === 1
+          && (
+            captain.coordinate.q !== reach.target.q
+            || captain.coordinate.r !== reach.target.r
+          )
+        ) {
+          const finalStep = planPathForUnitIso(battle.state, captain.id, reach.target);
+          if (finalStep.success && finalStep.path.length > 0) {
+            const move = contestProcessor.moveUnit({
+              unitId: captain.id,
+              path: finalStep.path.slice(0, 1)
+            });
+            expect(move.success).toBe(true);
+            executedActions += 1;
+          }
+        }
+
+        if (
+          evaluateBattleOutcome(battle) === 'ongoing'
+          && battle.state.activeFaction === 'alliance'
+        ) {
+          new TurnProcessor(battle.state, { random: battleRandom }).endTurn();
+        }
+        if (evaluateBattleOutcome(battle) !== 'ongoing') break;
+
+        const activeEnemies = Array.from(battle.state.sides.otherSide.units.values())
+          .filter((unit) => unit.stance !== 'destroyed').length;
+        executedActions += runAiPhase(battle, 'otherSide', {
+          objectiveTargets: [reach.target],
+          defendBias: true,
+          difficulty: getEnemyDifficultyTier(campaignDifficulty, 1),
+          allowDemolition: true
+        }, {
+          maxAttacks: getEnemyActionBudget(campaignDifficulty, activeEnemies),
+          maxDecisions: getEnemyDecisionBudget(campaignDifficulty, activeEnemies),
+          random: battleRandom
+        });
+        processTacticalEvents(state, starterBundle);
+        if (evaluateBattleOutcome(battle) !== 'ongoing') break;
+      }
+
+      random.mockRestore();
+      expect(evaluateBattleOutcome(battle)).toBe('victory');
+      expect(captain.stance).not.toBe('destroyed');
+      expect(captain.currentHealth).toBeGreaterThan(campaignDifficulty === 'veteran' ? 80 : 100);
+      expect(captain.coordinate).toEqual(reach.target);
+      expect(isObjectiveMet(reach, battle)).toBe(true);
+      expect(Array.from(battle.state.sides.otherSide.units.values())
+        .filter((unit) => unit.stance !== 'destroyed').length).toBeGreaterThan(0);
+      expect(executedActions).toBeGreaterThan(0);
+    },
+    15_000
+  );
 
   it.each(SCALED_OPERATION_IDS)(
     'executes legal enemy decisions on %s without map-scale stalls',

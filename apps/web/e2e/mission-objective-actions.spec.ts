@@ -116,6 +116,22 @@ test('Ashen Confluence beacon calls in one Thunderhead battery without ending th
 
   const action = page.getByRole('button', { name: /^Align echo beacon$/i });
   await expect(action).toBeEnabled();
+  await page.evaluate(() => {
+    const qaWindow = window as any;
+    qaWindow.__objectivePhaseNoticeTexts = [];
+    const recordNotice = () => {
+      const text = document.querySelector('.battle-phase-notice')?.textContent?.trim();
+      if (text && !qaWindow.__objectivePhaseNoticeTexts.includes(text)) {
+        qaWindow.__objectivePhaseNoticeTexts.push(text);
+      }
+    };
+    qaWindow.__objectivePhaseNoticeObserver = new MutationObserver(recordNotice);
+    qaWindow.__objectivePhaseNoticeObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true
+    });
+  });
   await action.click();
 
   await expect.poll(async () => page.evaluate(() => (
@@ -128,7 +144,12 @@ test('Ashen Confluence beacon calls in one Thunderhead battery without ending th
   ), setup!.objectiveId)).toBe(true);
   expect(await page.evaluate(() => (window as any).__battleControl.allyUnits().length))
     .toBe(setup!.allianceBefore + 1);
-  await expect(page.locator('.battle-phase-notice')).toContainText(/Echo Battery On Target/i);
+  await expect.poll(() => page.evaluate(() => (
+    (window as any).__objectivePhaseNoticeTexts as string[]
+  ))).toEqual(expect.arrayContaining([
+    expect.stringMatching(/Echo Battery On Target/i)
+  ]));
+  await page.evaluate(() => (window as any).__objectivePhaseNoticeObserver.disconnect());
   await expect(page.locator('.battle-outcome-overlay')).not.toBeVisible();
 });
 
@@ -179,32 +200,53 @@ test('Auto Turn ignores an absent optional specialist and advances on the requir
     const loaded = control.loadDefinitions(['heavy-infantry', 'dread-fortress']);
     const ally = loaded.loaded?.find((unit: any) => unit.faction === 'alliance');
     const enemy = loaded.loaded?.find((unit: any) => unit.faction === 'otherSide');
-    if (!loaded.success || !originalReach?.target || !ally || !enemy) {
+    const allyDefinition = control.rosterDefinitions()
+      .find((definition: any) => definition.id === ally?.definitionId);
+    if (!loaded.success || !originalReach?.target || !ally || !enemy || !allyDefinition?.maxRange) {
       return { error: 'scenario setup failed', loaded, objectives: control.objectives() };
     }
 
-    const axialDistance = (a: any, b: any) => (
-      Math.abs(a.q - b.q) + Math.abs(a.r - b.r) + Math.abs((a.q - b.q) + (a.r - b.r))
-    ) / 2;
+    const isoDistance = (a: any, b: any) => (
+      Math.max(Math.abs(a.q - b.q), Math.abs(a.r - b.r))
+    );
     const towardGoal = {
       q: originalReach.target.q - ally.q,
       r: originalReach.target.r - ally.r
     };
-    const battlefieldTiles = Array.from({ length: 20 }, (_, r) => (
-      Array.from({ length: 30 }, (_unused, q) => ({ q, r }))
+    const mapMetrics = document.querySelector('[data-testid="map-metrics"]');
+    const mapWidth = Number(mapMetrics?.getAttribute('data-map-width'));
+    const mapHeight = Number(mapMetrics?.getAttribute('data-map-height'));
+    if (!Number.isInteger(mapWidth) || !Number.isInteger(mapHeight)) {
+      return { error: 'map metrics unavailable' };
+    }
+    const occupied = new Set([
+      ...control.allyUnits(),
+      ...control.enemyUnits()
+    ].map((unit: any) => `${unit.coord.q},${unit.coord.r}`));
+    const battlefieldTiles = Array.from({ length: mapHeight }, (_, r) => (
+      Array.from({ length: mapWidth }, (_unused, q) => ({ q, r }))
     )).flat();
     const enemyCandidates = battlefieldTiles
       .map((tile) => ({
         tile,
+        terrain: control.tileAt(tile.q, tile.r),
         path: control.pathForUnit(ally.id, tile.q, tile.r),
         projection: (tile.q - ally.q) * towardGoal.q + (tile.r - ally.r) * towardGoal.r
       }))
-      .filter((candidate) => candidate.path.success && candidate.path.cost >= 4);
-    const enemyTile = enemyCandidates
-      .sort((a, b) => a.projection - b.projection || b.path.cost - a.path.cost)[0]?.tile;
-    if (!enemyTile) return { error: 'no enemy tile', ally, target: originalReach.target };
+      .filter((candidate) => (
+        candidate.terrain?.passable
+        && !occupied.has(`${candidate.tile.q},${candidate.tile.r}`)
+        && candidate.path.success
+        && candidate.path.cost >= 4
+        && isoDistance(ally, candidate.tile) > allyDefinition.maxRange
+      ));
+    const enemyChoice = enemyCandidates
+      .sort((a, b) => a.projection - b.projection || b.path.cost - a.path.cost)[0];
+    if (!enemyChoice) return { error: 'no enemy tile', ally, target: originalReach.target };
+    const enemyTile = enemyChoice.tile;
 
     control.snapUnit(enemy.id, enemyTile.q, enemyTile.r);
+    control.setActionPoints(enemy.id, 0);
     control.replaceObjectives([
       {
         id: 'required-evac',
@@ -228,13 +270,22 @@ test('Auto Turn ignores an absent optional specialist and advances on the requir
     return {
       allyId: ally.id,
       target: originalReach.target,
-      before: axialDistance(ally, originalReach.target),
-      enemyTile
+      before: isoDistance(ally, originalReach.target),
+      beforeCoordinate: { q: ally.q, r: ally.r },
+      enemyTile,
+      enemyTilePathCost: enemyChoice.path.cost,
+      enemyTilePassable: enemyChoice.terrain.passable,
+      enemyTileOccupiedBeforeSnap: occupied.has(`${enemyTile.q},${enemyTile.r}`)
     };
   });
   expect(setup).not.toBeNull();
   expect(setup).not.toHaveProperty('error');
   if (!setup || 'error' in setup) throw new Error(JSON.stringify(setup));
+  expect(setup).toMatchObject({
+    enemyTilePassable: true,
+    enemyTileOccupiedBeforeSnap: false
+  });
+  expect(setup.enemyTilePathCost).toBeGreaterThanOrEqual(4);
 
   await page.getByRole('button', { name: /^Auto Turn$/i }).click();
   await expect(page.locator('.auto-turn-banner')).not.toBeVisible({ timeout: 20_000 });
@@ -245,14 +296,14 @@ test('Auto Turn ignores an absent optional specialist and advances on the requir
     return {
       q: unit.q,
       r: unit.r,
-      distance: (
-        Math.abs(unit.q - target.q)
-        + Math.abs(unit.r - target.r)
-        + Math.abs((unit.q - target.q) + (unit.r - target.r))
-      ) / 2
+      distance: Math.max(
+        Math.abs(unit.q - target.q),
+        Math.abs(unit.r - target.r)
+      )
     };
   }, setup!);
   expect(after).not.toBeNull();
+  expect({ q: after!.q, r: after!.r }).not.toEqual(setup.beforeCoordinate);
   expect(after!.distance, JSON.stringify({ setup, after })).toBeLessThan(setup!.before);
   expect({ q: after!.q, r: after!.r }).not.toEqual(setup!.enemyTile);
 });

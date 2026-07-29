@@ -181,6 +181,60 @@ test('scaled simple assaults present their early and mid mission shapes', async 
   expect(runtimeErrors).toEqual([]);
 });
 
+test('scaled Paris evacuation presents its protected captain route', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+
+  await page.goto('/');
+  await page.waitForFunction(() => Boolean((window as any).__campaignControl));
+  expect(await page.evaluate(() => (
+    (window as any).__campaignControl.newCampaign(1, 'veteran')
+  ))).toBe(true);
+  expect(await page.evaluate(() => (
+    (window as any).__campaignControl.startBattleForValidation('sector-paris')
+  ))).toBe(true);
+  expect(await waitForPresentedBattle(page, 'sector-paris')).toEqual({
+    width: 30,
+    height: 54
+  });
+
+  const mission = await page.evaluate(() => {
+    const control = (window as any).__battleControl;
+    const objectives = control.objectives();
+    const reach = objectives.find((objective: any) => objective.kind === 'reach');
+    const protect = objectives.find((objective: any) => objective.kind === 'protect');
+    const captainId = reach?.eligibleUnitIds?.[0];
+    return {
+      enemyCount: control.enemyUnits().length,
+      captain: control.allyUnits().find((unit: any) => unit.id === captainId),
+      reach,
+      protect
+    };
+  });
+
+  expect(mission.enemyCount).toBe(14);
+  expect(mission.captain).toMatchObject({
+    definitionId: 'john-alexander',
+    stance: 'ready'
+  });
+  expect(mission.captain.health).toBeGreaterThan(0);
+  expect(mission.reach).toMatchObject({
+    kind: 'reach',
+    essential: false,
+    deadlineRound: undefined
+  });
+  expect(mission.protect).toMatchObject({
+    kind: 'protect',
+    eligibleUnitIds: [mission.captain.id],
+    essential: false,
+    deadlineRound: undefined
+  });
+  expect(runtimeErrors).toEqual([]);
+});
+
 test('scaled rescue corridors present their protected teams and mission contracts', async ({ page }) => {
   const runtimeErrors: string[] = [];
   page.on('pageerror', (error) => runtimeErrors.push(error.message));
