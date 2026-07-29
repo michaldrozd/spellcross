@@ -341,6 +341,81 @@ describe('Per-city battlefields', () => {
   );
 
   it.each([
+    ['sector-munich', 'early', 14],
+    ['sector-prague', 'early', 14],
+    ['sector-berlin', 'mid', 18],
+    ['sector-krakow', 'mid', 18],
+    ['sector-kyiv', 'mid', 18],
+    ['sector-cinder-gate', 'mid', 18],
+    ['sector-hollow-tide', 'mid', 18],
+    ['sector-veil-heart', 'mid', 18]
+  ] as const)(
+    'authors %s as a deep %s assault without instant-loss conditions',
+    (territoryId, band, enemyCount) => {
+      const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
+      if (!scenario) throw new Error(`missing ${territoryId}`);
+      const profile = TACTICAL_MAP_SCALE_BANDS[band];
+      const eliminate = scenario.objectives.find((objective) => objective.id === `${territoryId}-eliminate`);
+      const hold = scenario.objectives.find((objective) => objective.id === `${territoryId}-hold`);
+      const reserve = scenario.events?.find((event) => event.id === `${territoryId}-reserve-wave`);
+      const progress = (coordinate: { q: number; r: number }) => (
+        coordinate.q / Math.max(1, scenario.map.width - 1)
+        + 1 - coordinate.r / Math.max(1, scenario.map.height - 1)
+      ) / 2;
+      const deploymentRatio = scenario.startZones.alliance.length
+        / scenario.otherSideForces.length;
+
+      expect(scenario.map).toMatchObject({ width: profile.width, height: profile.height });
+      expect(scenario.map.tiles).toHaveLength(profile.width * profile.height);
+      expect(scenario.startZones.alliance).toHaveLength(
+        profile.deploymentWidth * profile.deploymentDepth
+      );
+      expect(scenario.startZones.otherSide).toHaveLength(
+        profile.deploymentWidth * profile.deploymentDepth
+      );
+      expect(scenario.otherSideForces).toHaveLength(enemyCount);
+      expect(scenario.map.tiles.length / scenario.otherSideForces.length)
+        .toBeLessThanOrEqual(profile.maxCellsPerEnemy);
+      expect(deploymentRatio).toBeGreaterThanOrEqual(1.33);
+      expect(deploymentRatio).toBeLessThanOrEqual(1.43);
+      expect(scenario.objectives.map((objective) => objective.kind).sort())
+        .toEqual(['eliminate', 'hold']);
+      expect(eliminate).toMatchObject({ kind: 'eliminate' });
+      expect(hold).toMatchObject({ kind: 'hold', turnLimit: 3 });
+      expect(hold?.target).toBeDefined();
+      expect(Math.abs(hold!.target!.q / scenario.map.width - 0.5)).toBeLessThan(0.08);
+      expect(Math.abs(hold!.target!.r / scenario.map.height - 0.5)).toBeLessThan(0.08);
+      expect(scenario.objectives.some((objective) => (
+        objective.kind === 'protect'
+        || objective.essential
+        || objective.deadlineRound !== undefined
+        || (
+          (objective.kind === 'reach' || objective.kind === 'interact')
+          && objective.turnLimit !== undefined
+        )
+      ))).toBe(false);
+      expect(reserve?.triggerRound).toBe(profile.reserveRound);
+      expect(reserve?.reinforcements).toHaveLength(4);
+
+      const enemyProgress = scenario.otherSideForces.map((unit) => progress(unit.coordinate));
+      for (const patrolProgress of profile.patrolProgress) {
+        expect(
+          enemyProgress.some((enemy) => Math.abs(enemy - patrolProgress) <= 0.035),
+          `${territoryId} is missing its patrol at ${patrolProgress}`
+        ).toBe(true);
+      }
+      for (const enemy of scenario.otherSideForces) {
+        expect(Math.min(...scenario.startZones.alliance.map((coordinate) => (
+          Math.max(
+            Math.abs(enemy.coordinate.q - coordinate.q),
+            Math.abs(enemy.coordinate.r - coordinate.r)
+          )
+        )))).toBeGreaterThan(6);
+      }
+    }
+  );
+
+  it.each([
     ['sector-berlin', 'signalEaterAwakes', 'signal-eater'],
     ['sector-krakow', 'glassChoirMarches', 'glass-regent'],
     ['sector-rift', 'ashCrownDescends', 'ash-crown-sovereign'],

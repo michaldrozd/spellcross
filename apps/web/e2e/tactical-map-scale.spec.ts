@@ -8,6 +8,13 @@ const LARGEST_AUTHORED_TERRITORIES = [
   'sector-dawn-anchor'
 ] as const;
 
+const LARGEST_PERSISTED_TERRITORY = 'sector-ash-compass';
+
+const SIMPLE_ASSAULT_SAMPLES = [
+  { territoryId: 'sector-munich', width: 30, height: 54, enemyCount: 14 },
+  { territoryId: 'sector-veil-heart', width: 40, height: 54, enemyCount: 18 }
+] as const;
+
 async function waitForPresentedBattle(page: Page, territoryId: string) {
   await expect.poll(async () => page.locator('[data-testid="map-metrics"]').evaluate((metrics) => ({
     battleId: metrics.getAttribute('data-battle-id'),
@@ -32,7 +39,7 @@ async function waitForPresentedBattle(page: Page, territoryId: string) {
   }));
 }
 
-test('largest scaled battlefields present and persist in all three save slots', async ({ page }) => {
+test('largest scaled battlefields present within the per-slot budget', async ({ page }) => {
   const runtimeErrors: string[] = [];
   page.on('pageerror', (error) => runtimeErrors.push(error.message));
   page.on('console', (message) => {
@@ -64,24 +71,41 @@ test('largest scaled battlefields present and persist in all three save slots', 
   const largestTerritoryId = largestCandidates
     .slice()
     .sort((left, right) => right.length - left.length)[0]?.territoryId;
-  expect(largestTerritoryId).toBeDefined();
+  expect(largestTerritoryId).toBe(LARGEST_PERSISTED_TERRITORY);
   expect(Math.max(...largestCandidates.map(({ length }) => length)))
     .toBeLessThanOrEqual(1_734_351);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('largest persisted battlefield survives all three save slots', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+    if (message.type() === 'warning' && message.text().includes('Failed to persist campaign')) {
+      runtimeErrors.push(message.text());
+    }
+  });
+
+  await page.goto('/');
+  await page.waitForFunction(() => Boolean((window as any).__campaignControl));
 
   const slotPayloads: Array<{ slot: number; length: number }> = [];
   for (const slot of [1, 2, 3]) {
     expect(await page.evaluate((nextSlot) => (
       (window as any).__campaignControl.newCampaign(nextSlot, 'veteran')
     ), slot)).toBe(true);
-    expect(await page.evaluate(() => (
-      (window as any).__campaignControl.startBattleForValidation('sector-paris')
-    ))).toBe(true);
-    await waitForPresentedBattle(page, 'sector-paris');
+    if (slot === 1) {
+      expect(await page.evaluate(() => (
+        (window as any).__campaignControl.startBattleForValidation('sector-paris')
+      ))).toBe(true);
+      await waitForPresentedBattle(page, 'sector-paris');
+    }
 
     expect(await page.evaluate((territoryId) => (
       (window as any).__campaignControl.startBattleForValidation(territoryId)
-    ), largestTerritoryId)).toBe(true);
-    expect(await waitForPresentedBattle(page, largestTerritoryId!))
+    ), LARGEST_PERSISTED_TERRITORY)).toBe(true);
+    expect(await waitForPresentedBattle(page, LARGEST_PERSISTED_TERRITORY))
       .toEqual({ width: 60, height: 70 });
 
     const length = await page.evaluate((savedSlot) => (
@@ -103,5 +127,50 @@ test('largest scaled battlefields present and persist in all three save slots', 
   ]);
   expect(slotPayloads.reduce((sum, slot) => sum + slot.length, 0)).toBeLessThan(5_241_856);
   expect(new Set(slotPayloads.map((slot) => slot.length)).size).toBe(1);
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('scaled simple assaults present their early and mid mission shapes', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+
+  await page.goto('/');
+  await page.waitForFunction(() => Boolean((window as any).__campaignControl));
+
+  for (const sample of SIMPLE_ASSAULT_SAMPLES) {
+    expect(await page.evaluate(() => (
+      (window as any).__campaignControl.newCampaign(1, 'veteran')
+    ))).toBe(true);
+    expect(await page.evaluate((territoryId) => (
+      (window as any).__campaignControl.startBattleForValidation(territoryId)
+    ), sample.territoryId)).toBe(true);
+    expect(await waitForPresentedBattle(page, sample.territoryId)).toEqual({
+      width: sample.width,
+      height: sample.height
+    });
+
+    const mission = await page.evaluate(() => {
+      const control = (window as any).__battleControl;
+      const objectives = control.objectives();
+      return {
+        enemyCount: control.enemyUnits().length,
+        objectives: objectives.map((objective: any) => ({
+          kind: objective.kind,
+          deadlineRound: objective.deadlineRound,
+          essential: objective.essential
+        }))
+      };
+    });
+    expect(mission.enemyCount).toBe(sample.enemyCount);
+    expect(mission.objectives.map((objective) => objective.kind).sort())
+      .toEqual(['eliminate', 'hold']);
+    expect(mission.objectives.some((objective) => (
+      objective.essential || objective.deadlineRound !== undefined
+    ))).toBe(false);
+  }
+
   expect(runtimeErrors).toEqual([]);
 });

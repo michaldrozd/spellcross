@@ -40,10 +40,22 @@ const SCALED_HOLD_LINES = [
   ['sector-dawn-anchor', 4_200, 35]
 ] as const;
 
+const SCALED_SIMPLE_ASSAULTS = [
+  ['sector-munich', 1_620, 14],
+  ['sector-prague', 1_620, 14],
+  ['sector-berlin', 2_160, 18],
+  ['sector-krakow', 2_160, 18],
+  ['sector-kyiv', 2_160, 18],
+  ['sector-cinder-gate', 2_160, 18],
+  ['sector-hollow-tide', 2_160, 18],
+  ['sector-veil-heart', 2_160, 18]
+] as const;
+
 const SCALED_OPERATION_IDS = [
   ...SCALED_CONVOYS.map(([territoryId]) => territoryId),
   ...SCALED_BRIDGEHEADS.map(([territoryId]) => territoryId),
-  ...SCALED_HOLD_LINES.map(([territoryId]) => territoryId)
+  ...SCALED_HOLD_LINES.map(([territoryId]) => territoryId),
+  ...SCALED_SIMPLE_ASSAULTS.map(([territoryId]) => territoryId)
 ];
 
 function openBattle(territoryId: string) {
@@ -179,9 +191,10 @@ describe('scaled battlefields', () => {
       expect(elimination.turnLimit).toBeUndefined();
       expect(elimination.deadlineRound).toBeUndefined();
 
-      battle.scenario.events = battle.scenario.events?.filter((event) => (
-        event.faction !== 'otherSide'
-      ));
+      battle.scenario = {
+        ...battle.scenario,
+        events: battle.scenario.events?.filter((event) => event.faction !== 'otherSide')
+      };
       for (const enemy of battle.state.sides.otherSide.units.values()) {
         enemy.stance = 'destroyed';
         enemy.currentHealth = 0;
@@ -242,6 +255,62 @@ describe('scaled battlefields', () => {
       captain.currentHealth = 0;
       captain.stance = 'destroyed';
       expect(evaluateBattleOutcome(battle)).toBe('defeat');
+    }
+  );
+
+  it.each(SCALED_SIMPLE_ASSAULTS)(
+    'keeps %s a deep assault without an instant-loss condition',
+    (territoryId, cells, enemyCount) => {
+      const { battle } = openBattle(territoryId);
+      const hold = battle.scenario.objectives.find((candidate) => (
+        candidate.id === `${territoryId}-hold`
+      ));
+      const eliminate = battle.scenario.objectives.find((candidate) => (
+        candidate.id === `${territoryId}-eliminate`
+      ));
+      if (!hold?.target || !eliminate) {
+        throw new Error(`missing assault objectives for ${territoryId}`);
+      }
+
+      const routes = Array.from(battle.state.sides.alliance.units.values())
+        .filter((unit) => unit.stance !== 'destroyed' && !unit.embarkedOn)
+        .map((unit) => {
+          const actionPoints = unit.actionPoints;
+          unit.actionPoints = 10_000;
+          const route = planPathForUnitIso(battle.state, unit.id, hold.target!);
+          unit.actionPoints = actionPoints;
+          return route;
+        })
+        .filter((route) => route.success)
+        .sort((left, right) => left.cost - right.cost);
+
+      expect(battle.state.map.tiles).toHaveLength(cells);
+      expect(battle.state.sides.otherSide.units.size).toBe(enemyCount);
+      expect(routes.length).toBeGreaterThanOrEqual(4);
+      expect(routes[0]?.path.length).toBeGreaterThan(20);
+      expect(battle.scenario.objectives.map((objective) => objective.kind).sort())
+        .toEqual(['eliminate', 'hold']);
+      expect(hold).toMatchObject({ kind: 'hold', turnLimit: 3 });
+      expect(eliminate).toMatchObject({ kind: 'eliminate' });
+      expect(battle.scenario.objectives.some((objective) => (
+        objective.kind === 'protect'
+        || objective.essential
+        || objective.deadlineRound !== undefined
+        || (
+          (objective.kind === 'reach' || objective.kind === 'interact')
+          && objective.turnLimit !== undefined
+        )
+      ))).toBe(false);
+
+      battle.scenario = {
+        ...battle.scenario,
+        events: battle.scenario.events?.filter((event) => event.faction !== 'otherSide')
+      };
+      for (const enemy of battle.state.sides.otherSide.units.values()) {
+        enemy.stance = 'destroyed';
+        enemy.currentHealth = 0;
+      }
+      expect(evaluateBattleOutcome(battle)).toBe('victory');
     }
   );
 

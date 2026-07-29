@@ -1,7 +1,6 @@
+import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-
-import { expect, test } from '@playwright/test';
 
 import { startBattle } from './helpers';
 
@@ -63,6 +62,11 @@ test('an archive event updates the objective panel, battlefield, and combat log 
     id: 'sector-lantern-vault-reserve-wave',
     effects: [expect.objectContaining({ kind: 'revealObjective' })]
   })]);
+  await expect(page.locator('.battle-phase-notice')).toContainText(/Archive Signal Restored/i);
+  await expect.poll(async () => page.evaluate(() => (
+    (window as any).__battleControl.activeScenarioEventEffects()
+      .filter((effect: any) => effect.kind === 'revealObjective').length
+  ))).toBeGreaterThan(0);
 
   const revealed = await page.evaluate(() => (
     (window as any).__battleControl.objectives()
@@ -70,15 +74,6 @@ test('an archive event updates the objective panel, battlefield, and combat log 
   ));
   expect(revealed).toMatchObject({ kind: 'reach', optional: true });
   expect(revealed.target).toEqual(authoredTarget);
-  await page.evaluate((target) => (
-    (window as any).__battleCamera.centerOnCoord(target.q, target.r)
-  ), revealed.target);
-  await page.waitForTimeout(180);
-  await expect(page.locator('.battle-phase-notice')).toContainText(/Archive Signal Restored/i);
-  await expect.poll(async () => page.evaluate(() => (
-    (window as any).__battleControl.activeScenarioEventEffects()
-      .filter((effect: any) => effect.kind === 'revealObjective').length
-  ))).toBeGreaterThan(0);
   await page.screenshot({
     path: '/tmp/spellcross-tactical-event-effects-desktop.png'
   });
@@ -147,7 +142,10 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
           ));
           control.snapUnit(unit.id, pulse.coordinates[0].q, pulse.coordinates[0].r);
           control.selectUnit(unit.id);
-          return control.allyUnits().find((candidate: any) => candidate.id === unit.id);
+          return {
+            coordinate: pulse.coordinates[0],
+            unit: control.allyUnits().find((candidate: any) => candidate.id === unit.id)
+          };
         })
       : null;
     const terrainBefore = scenario.kind === 'transformTerrain'
@@ -161,6 +159,13 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
           return { coordinate, tile: control.tileAt(coordinate.q, coordinate.r) };
         })
       : null;
+    const focusCoordinate = terrainBefore?.coordinate ?? pressureBefore?.coordinate;
+    if (!focusCoordinate) throw new Error(`missing event focus for ${scenario.territoryId}`);
+    await page.evaluate((target) => (
+      (window as any).__battleCamera.centerOnCoord(target.q, target.r)
+    ), focusCoordinate);
+    await page.waitForTimeout(180);
+
     let effect;
     if (scenario.kind === 'transformTerrain') {
       const prepared = await page.evaluate(() => {
@@ -191,6 +196,10 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
         (window as any).__battleControl.runScriptedEventsAtRound(round)
       ), scenario.round);
       effect = triggered[0]?.effects.find((candidate: any) => candidate.kind === scenario.kind);
+      await expect.poll(async () => page.evaluate((kind) => (
+        (window as any).__battleControl.activeScenarioEventEffects()
+          .filter((candidate: any) => candidate.kind === kind).length
+      ), scenario.kind)).toBeGreaterThan(0);
     }
     expect(effect?.coordinates.length).toBeGreaterThan(0);
     if (terrainBefore) {
@@ -204,22 +213,14 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
         blocksVision: false
       });
     }
-    await page.evaluate((target) => (
-      (window as any).__battleCamera.centerOnCoord(target.q, target.r)
-    ), effect.coordinates[0]);
-    await page.waitForTimeout(180);
     if (pressureBefore) {
       const pressureAfter = await page.evaluate((unitId) => (
         (window as any).__battleControl.allyUnits()
           .find((candidate: any) => candidate.id === unitId)
-      ), pressureBefore.id);
-      expect(pressureAfter.health).toBe(Math.max(1, pressureBefore.health - 12));
-      expect(pressureAfter.morale).toBe(Math.max(0, pressureBefore.morale - 18));
+      ), pressureBefore.unit.id);
+      expect(pressureAfter.health).toBe(Math.max(1, pressureBefore.unit.health - 12));
+      expect(pressureAfter.morale).toBe(Math.max(0, pressureBefore.unit.morale - 18));
     }
-    await expect.poll(async () => page.evaluate((kind) => (
-      (window as any).__battleControl.activeScenarioEventEffects()
-        .filter((candidate: any) => candidate.kind === kind).length
-    ), scenario.kind)).toBeGreaterThan(0);
     await page.screenshot({ path: scenario.screenshot });
     await expect(page.locator('.log-entries')).toContainText(scenario.log);
   }
