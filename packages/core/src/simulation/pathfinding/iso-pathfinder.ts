@@ -4,7 +4,10 @@ import type {
   TacticalBattleState,
   UnitInstance
 } from '../types.js';
-import { movementMultiplierForStance } from './movement.js';
+import {
+  canAffordMovementCost,
+  movementMultiplierForStance
+} from './movement.js';
 import type { PathfindingOptions, PathResult } from './types.js';
 import { isoDistance, isoNeighbors } from '../utils/grid-iso.js';
 import { getTile, coordinateKey as hexKey } from '../utils/grid.js';
@@ -13,6 +16,7 @@ interface NodeRecord {
   coordinate: HexCoordinate;
   costFromStart: number;
   estimatedTotalCost: number;
+  stepsFromStart: number;
   parent?: NodeRecord;
 }
 
@@ -59,7 +63,12 @@ export function findPathOnMapIso(
   minStepCost *= movementMultiplier;
 
   const openSet: NodeRecord[] = [
-    { coordinate: start, costFromStart: 0, estimatedTotalCost: isoDistance(start, goal) * minStepCost }
+    {
+      coordinate: start,
+      costFromStart: 0,
+      estimatedTotalCost: isoDistance(start, goal) * minStepCost,
+      stepsFromStart: 0
+    }
   ];
   const closedSet = new Set<string>();
   const nodeLookup = new Map<string, NodeRecord>();
@@ -107,7 +116,8 @@ export function findPathOnMapIso(
       // the planner.
       const movementCost = tileB.movementCostModifier * movementMultiplier;
       const tentativeCost = current.costFromStart + movementCost;
-      if (tentativeCost > maxCost) continue;
+      const tentativeSteps = current.stepsFromStart + 1;
+      if (!canAffordMovementCost(tentativeCost, maxCost, tentativeSteps)) continue;
 
       const heuristic = isoDistance(neighbor, goal) * minStepCost;
       const existing = nodeLookup.get(neighborKey);
@@ -117,6 +127,7 @@ export function findPathOnMapIso(
           coordinate: neighbor,
           costFromStart: tentativeCost,
           estimatedTotalCost: tentativeCost + heuristic,
+          stepsFromStart: tentativeSteps,
           parent: current
         };
         nodeLookup.set(neighborKey, rec);
@@ -126,6 +137,7 @@ export function findPathOnMapIso(
         // entry go stale after a second improvement
         existing.costFromStart = tentativeCost;
         existing.estimatedTotalCost = tentativeCost + heuristic;
+        existing.stepsFromStart = tentativeSteps;
         existing.parent = current;
       }
     }

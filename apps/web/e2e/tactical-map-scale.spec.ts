@@ -15,6 +15,12 @@ const SIMPLE_ASSAULT_SAMPLES = [
   { territoryId: 'sector-veil-heart', width: 40, height: 54, enemyCount: 18 }
 ] as const;
 
+const RESCUE_SAMPLES = [
+  { territoryId: 'sector-brussels', width: 30, height: 54, enemyCount: 14 },
+  { territoryId: 'sector-lantern-vault', width: 40, height: 54, enemyCount: 18 },
+  { territoryId: 'sector-quiet-meridian', width: 40, height: 54, enemyCount: 18 }
+] as const;
+
 async function waitForPresentedBattle(page: Page, territoryId: string) {
   await expect.poll(async () => page.locator('[data-testid="map-metrics"]').evaluate((metrics) => ({
     battleId: metrics.getAttribute('data-battle-id'),
@@ -170,6 +176,73 @@ test('scaled simple assaults present their early and mid mission shapes', async 
     expect(mission.objectives.some((objective) => (
       objective.essential || objective.deadlineRound !== undefined
     ))).toBe(false);
+  }
+
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('scaled rescue corridors present their protected teams and mission contracts', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+
+  await page.goto('/');
+  await page.waitForFunction(() => Boolean((window as any).__campaignControl));
+
+  for (const sample of RESCUE_SAMPLES) {
+    expect(await page.evaluate(() => (
+      (window as any).__campaignControl.newCampaign(1, 'veteran')
+    ))).toBe(true);
+    expect(await page.evaluate((territoryId) => (
+      (window as any).__campaignControl.startBattleForValidation(territoryId)
+    ), sample.territoryId)).toBe(true);
+    expect(await waitForPresentedBattle(page, sample.territoryId)).toEqual({
+      width: sample.width,
+      height: sample.height
+    });
+
+    const mission = await page.evaluate(() => {
+      const control = (window as any).__battleControl;
+      const objectives = control.objectives();
+      const reach = objectives.find((objective: any) => objective.kind === 'reach');
+      const protect = objectives.find((objective: any) => objective.kind === 'protect');
+      const interaction = objectives.find((objective: any) => (
+        objective.kind === 'interact' && !objective.optional
+      ));
+      const rescueUnitId = reach?.eligibleUnitIds?.[0];
+      return {
+        enemyCount: control.enemyUnits().length,
+        rescue: control.allyUnits().find((unit: any) => unit.id === rescueUnitId),
+        reach,
+        protect,
+        interaction
+      };
+    });
+
+    expect(mission.enemyCount).toBe(sample.enemyCount);
+    expect(mission.rescue).toMatchObject({
+      definitionId: 'rangers',
+      stance: 'ready'
+    });
+    expect(mission.rescue.health).toBeGreaterThan(0);
+    expect(mission.reach).toMatchObject({ kind: 'reach' });
+    expect(mission.reach.deadlineRound).toBeUndefined();
+    expect(mission.protect).toMatchObject({
+      kind: 'protect',
+      eligibleUnitIds: [mission.rescue.id]
+    });
+    if (sample.territoryId === 'sector-lantern-vault') {
+      expect(mission.interaction).toMatchObject({
+        eligibleUnitIds: [mission.rescue.id],
+        essential: true,
+        deadlineRound: 7,
+        actionPoints: 2
+      });
+    } else {
+      expect(mission.interaction).toBeUndefined();
+    }
   }
 
   expect(runtimeErrors).toEqual([]);

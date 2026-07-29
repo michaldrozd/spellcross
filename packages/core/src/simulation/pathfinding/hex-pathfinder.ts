@@ -4,7 +4,10 @@ import type {
   TacticalBattleState,
   UnitInstance
 } from '../types.js';
-import { movementMultiplierForStance } from './movement.js';
+import {
+  canAffordMovementCost,
+  movementMultiplierForStance
+} from './movement.js';
 import type { PathfindingOptions, PathResult } from './types.js';
 import { axialDistance, coordinateKey, getNeighbors, getTile } from '../utils/grid.js';
 
@@ -12,6 +15,7 @@ interface NodeRecord {
   coordinate: HexCoordinate;
   costFromStart: number;
   estimatedTotalCost: number;
+  stepsFromStart: number;
   parent?: NodeRecord;
 }
 
@@ -61,7 +65,8 @@ export function findPathOnMap(
     {
       coordinate: start,
       costFromStart: 0,
-      estimatedTotalCost: axialDistance(start, goal) * minStepCost
+      estimatedTotalCost: axialDistance(start, goal) * minStepCost,
+      stepsFromStart: 0
     }
   ];
   const closedSet = new Set<string>();
@@ -115,8 +120,9 @@ export function findPathOnMap(
 
       const movementCost = tile.movementCostModifier * movementMultiplier;
       const tentativeCost = current.costFromStart + movementCost;
+      const tentativeSteps = current.stepsFromStart + 1;
 
-      if (tentativeCost > maxCost) {
+      if (!canAffordMovementCost(tentativeCost, maxCost, tentativeSteps)) {
         continue;
       }
 
@@ -128,6 +134,7 @@ export function findPathOnMap(
           coordinate: neighbor,
           costFromStart: tentativeCost,
           estimatedTotalCost: tentativeCost + heuristic,
+          stepsFromStart: tentativeSteps,
           parent: current
         };
         nodeLookup.set(neighborKey, record);
@@ -137,6 +144,7 @@ export function findPathOnMap(
         // entry go stale after a second improvement
         existing.costFromStart = tentativeCost;
         existing.estimatedTotalCost = tentativeCost + heuristic;
+        existing.stepsFromStart = tentativeSteps;
         existing.parent = current;
       }
     }

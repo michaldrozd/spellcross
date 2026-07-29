@@ -41,14 +41,18 @@ test('an archive event updates the objective panel, battlefield, and combat log 
   await page.waitForFunction(() => Boolean((window as any).__battleCamera?.centerOnCoord));
   await page.evaluate(() => (window as any).__battleControl.revealAll());
 
-  const authoredTarget = await page.evaluate(() => {
+  const authoredEvent = await page.evaluate(() => {
     const event = (window as any).__battleControl.scriptedEvents()
       .find((candidate: any) => candidate.id === 'sector-lantern-vault-reserve-wave');
-    return event.effects.find((effect: any) => effect.kind === 'revealObjective').objective.target;
+    return {
+      target: event.effects.find((effect: any) => effect.kind === 'revealObjective').objective.target,
+      triggerRound: event.triggerRound
+    };
   });
+  expect(authoredEvent.triggerRound).toBe(5);
   await page.evaluate((target) => (
     (window as any).__battleCamera.centerOnCoord(target.q, target.r)
-  ), authoredTarget);
+  ), authoredEvent.target);
   await page.waitForTimeout(120);
   await page.screenshot({
     path: '/tmp/spellcross-tactical-event-effects-before.png'
@@ -57,7 +61,9 @@ test('an archive event updates the objective panel, battlefield, and combat log 
   const before = await page.evaluate(() => (window as any).__battleControl.objectives());
   expect(before.some((objective: any) => objective.id === 'sector-lantern-vault-chart-cache')).toBe(false);
 
-  const triggered = await page.evaluate(() => (window as any).__battleControl.runScriptedEventsAtRound(3));
+  const triggered = await page.evaluate((round) => (
+    (window as any).__battleControl.runScriptedEventsAtRound(round)
+  ), authoredEvent.triggerRound);
   expect(triggered).toEqual([expect.objectContaining({
     id: 'sector-lantern-vault-reserve-wave',
     effects: [expect.objectContaining({ kind: 'revealObjective' })]
@@ -73,7 +79,7 @@ test('an archive event updates the objective panel, battlefield, and combat log 
       .find((objective: any) => objective.id === 'sector-lantern-vault-chart-cache')
   ));
   expect(revealed).toMatchObject({ kind: 'reach', optional: true });
-  expect(revealed.target).toEqual(authoredTarget);
+  expect(revealed.target).toEqual(authoredEvent.target);
   await page.screenshot({
     path: '/tmp/spellcross-tactical-event-effects-desktop.png'
   });

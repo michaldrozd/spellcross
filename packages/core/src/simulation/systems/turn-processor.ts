@@ -23,7 +23,11 @@ import {
   hasWeaponLineOfFire,
   spendAmmo
 } from '../combat/combat-resolver.js';
-import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
+import { canUnitEnterTerrain } from '../pathfinding/hex-pathfinder.js';
+import {
+  canAffordMovementCost,
+  movementMultiplierForStance
+} from '../pathfinding/movement.js';
 import type { AttackMode, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { isoDistance } from '../utils/grid-iso.js';
 import { isIsoNeighbor, isoDirectionIndex } from '../utils/grid-iso.js';
@@ -304,9 +308,9 @@ export class TurnProcessor {
     const from = { ...unit.coordinate };
     let origin = { ...unit.coordinate };
     const visited = new Set<string>([coordinateKey(origin)]);
-    const movementMultiplier = movementMultiplierForStance(unit.stance);
     const weather = this.#state.weather;
     const weatherMoveMod = weather === 'fog' ? 1.2 : weather === 'night' ? 1.1 : 1;
+    const movementMultiplier = movementMultiplierForStance(unit.stance) * weatherMoveMod;
 
     // First pass: validate path and compute total cost
     let accumulatedCost = 0;
@@ -335,12 +339,12 @@ export class TurnProcessor {
         return { success: false, error: 'Routed units must retreat from the nearest enemy', errorKey: 'routedMustRetreat' };
       }
 
-      accumulatedCost += tile.movementCostModifier * movementMultiplier * weatherMoveMod;
+      accumulatedCost += tile.movementCostModifier * movementMultiplier;
       origin = { ...step };
       visited.add(coordinateKey(origin));
     }
 
-    if (accumulatedCost > unit.actionPoints) {
+    if (!canAffordMovementCost(accumulatedCost, unit.actionPoints, input.path.length)) {
       return { success: false, error: 'Not enough action points', errorKey: 'notEnoughActionPoints' };
     }
 
@@ -359,7 +363,7 @@ export class TurnProcessor {
     const reactedThisMove = new Set<string>();
     for (const step of input.path) {
       const tile = getTile(this.#state.map, step)!;
-      const stepCost = tile.movementCostModifier * movementMultiplier * weatherMoveMod;
+      const stepCost = tile.movementCostModifier * movementMultiplier;
       const previous = { ...origin };
 
       // advance to step
@@ -382,7 +386,7 @@ export class TurnProcessor {
     }
 
     // movement completed
-    unit.actionPoints -= accumulatedCost;
+    unit.actionPoints = Math.max(0, unit.actionPoints - accumulatedCost);
     this.#state.timeline.push({
       kind: 'unit:moved',
       unitId: unit.id,

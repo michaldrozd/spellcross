@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 
 import { createBattleState } from '../game-state.js';
 import type { CreateBattleStateOptions } from '../game-state.js';
-import { planPathForUnit } from './hex-pathfinder.js';
+import {
+  findPathOnMap,
+  planPathForUnit
+} from './hex-pathfinder.js';
 
 const plainTile = {
   terrain: 'plain',
@@ -191,5 +194,38 @@ describe('planPathForUnit', () => {
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it('keeps exact decimal AP routes reachable without admitting a real overrun', () => {
+    const decimalTile = {
+      ...plainTile,
+      movementCostModifier: 0.1
+    };
+    const map = {
+      id: 'hex-decimal-map',
+      width: 4,
+      height: 1,
+      tiles: Array.from({ length: 4 }, () => decimalTile)
+    };
+
+    expect(findPathOnMap(
+      map,
+      { q: 0, r: 0 },
+      { q: 3, r: 0 },
+      { maxCost: 0.3 }
+    )).toMatchObject({
+      success: true,
+      path: [
+        { q: 1, r: 0 },
+        { q: 2, r: 0 },
+        { q: 3, r: 0 }
+      ]
+    });
+    expect(findPathOnMap(
+      map,
+      { q: 0, r: 0 },
+      { q: 3, r: 0 },
+      { maxCost: 0.299 }
+    ).success).toBe(false);
   });
 });

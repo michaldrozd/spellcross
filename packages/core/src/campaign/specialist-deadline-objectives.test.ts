@@ -207,7 +207,7 @@ describe('specialist deadline objectives', () => {
       {
         territoryId: 'sector-lantern-vault',
         pathSteps: 5,
-        pathCost: 4.4,
+        pathCost: 5.2,
         earliestCompletionRound: 1,
         deadlineRound: 7,
         marginRounds: 6

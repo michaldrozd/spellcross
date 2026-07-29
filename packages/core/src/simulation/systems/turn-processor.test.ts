@@ -84,6 +84,75 @@ describe('TurnProcessor.moveUnit', () => {
     expect(unit?.orientation).toBe(6);
   });
 
+  it('accepts an exact-AP route with decimal terrain costs', () => {
+    const decimalTile = {
+      ...plainTile,
+      movementCostModifier: 0.1
+    };
+    const state = createBattleState({
+      ...baseSpec,
+      map: {
+        id: 'decimal-cost-map',
+        width: 4,
+        height: 1,
+        tiles: Array.from({ length: 4 }, () => decimalTile)
+      }
+    });
+    const processor = new TurnProcessor(state);
+    const unitId = Array.from(state.sides.alliance.units.keys())[0];
+    const unit = state.sides.alliance.units.get(unitId)!;
+    unit.actionPoints = 0.3;
+
+    const result = processor.moveUnit({
+      unitId,
+      path: [
+        { q: 1, r: 0 },
+        { q: 2, r: 0 },
+        { q: 3, r: 0 }
+      ]
+    });
+
+    expect(result.success).toBe(true);
+    expect(unit.coordinate).toEqual({ q: 3, r: 0 });
+    expect(unit.actionPoints).toBe(0);
+  });
+
+  it('still rejects a decimal-cost route that is genuinely over budget', () => {
+    const decimalTile = {
+      ...plainTile,
+      movementCostModifier: 0.1
+    };
+    const state = createBattleState({
+      ...baseSpec,
+      map: {
+        id: 'decimal-cost-map',
+        width: 4,
+        height: 1,
+        tiles: Array.from({ length: 4 }, () => decimalTile)
+      }
+    });
+    const processor = new TurnProcessor(state);
+    const unitId = Array.from(state.sides.alliance.units.keys())[0];
+    const unit = state.sides.alliance.units.get(unitId)!;
+    unit.actionPoints = 0.299;
+
+    const result = processor.moveUnit({
+      unitId,
+      path: [
+        { q: 1, r: 0 },
+        { q: 2, r: 0 },
+        { q: 3, r: 0 }
+      ]
+    });
+
+    expect(result).toMatchObject({
+      success: false,
+      errorKey: 'notEnoughActionPoints'
+    });
+    expect(unit.coordinate).toEqual({ q: 0, r: 0 });
+    expect(unit.actionPoints).toBe(0.299);
+  });
+
   it('rejects paths that include occupied tiles', () => {
     const state = createBattleState({
       ...baseSpec,

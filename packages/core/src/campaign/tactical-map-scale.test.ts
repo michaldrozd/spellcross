@@ -1,19 +1,35 @@
-import { describe, expect, it } from 'vitest';
+import {
+  describe,
+  expect,
+  it,
+  vi
+} from 'vitest';
 
 import {
   createCampaign,
   evaluateBattleOutcome,
+  isObjectiveMet,
+  performObjectiveAction,
+  processTacticalEvents,
   serializeCampaignState,
-  startBattleForTerritory
+  startBattleForTerritory,
+  type ActiveBattle
 } from './campaign.js';
 import { starterBundle } from '../../../data/src/index.js';
 import {
   decideNextAIAction,
+  type AIContextOptions,
   type AIImmediateAction
 } from '../simulation/ai/baseline-ai.js';
-import { planPathForUnitIso } from '../simulation/pathfinding/iso-pathfinder.js';
+import {
+  findPathOnMapIso,
+  planPathForUnitIso
+} from '../simulation/pathfinding/iso-pathfinder.js';
 import { TurnProcessor } from '../simulation/systems/turn-processor.js';
-import type { TacticalBattleState } from '../simulation/types.js';
+import type {
+  FactionId,
+  TacticalBattleState
+} from '../simulation/types.js';
 import { isoDistance } from '../simulation/utils/grid-iso.js';
 
 const SCALED_CONVOYS = [
@@ -51,11 +67,18 @@ const SCALED_SIMPLE_ASSAULTS = [
   ['sector-veil-heart', 2_160, 18]
 ] as const;
 
+const SCALED_RESCUES = [
+  ['sector-brussels', 1_620, 14],
+  ['sector-lantern-vault', 2_160, 18],
+  ['sector-quiet-meridian', 2_160, 18]
+] as const;
+
 const SCALED_OPERATION_IDS = [
   ...SCALED_CONVOYS.map(([territoryId]) => territoryId),
   ...SCALED_BRIDGEHEADS.map(([territoryId]) => territoryId),
   ...SCALED_HOLD_LINES.map(([territoryId]) => territoryId),
-  ...SCALED_SIMPLE_ASSAULTS.map(([territoryId]) => territoryId)
+  ...SCALED_SIMPLE_ASSAULTS.map(([territoryId]) => territoryId),
+  ...SCALED_RESCUES.map(([territoryId]) => territoryId)
 ];
 
 function openBattle(territoryId: string) {
@@ -99,10 +122,11 @@ function executeAiAction(processor: TurnProcessor, action: AIImmediateAction) {
   }
 }
 
-function visibleEnemyIds(state: TacticalBattleState) {
-  const visible = state.vision.otherSide.visibleTiles;
+function visibleEnemyIds(state: TacticalBattleState, faction: FactionId = 'otherSide') {
+  const opponent = faction === 'alliance' ? 'otherSide' : 'alliance';
+  const visible = state.vision[faction].visibleTiles;
   return new Set(
-    Array.from(state.sides.alliance.units.values())
+    Array.from(state.sides[opponent].units.values())
       .filter((unit) => (
         unit.stance !== 'destroyed'
         && !unit.embarkedOn
@@ -110,6 +134,53 @@ function visibleEnemyIds(state: TacticalBattleState) {
       ))
       .map((unit) => unit.id)
   );
+}
+
+function runAiPhase(
+  battle: ActiveBattle,
+  faction: FactionId,
+  options: AIContextOptions
+) {
+  const processor = new TurnProcessor(battle.state, { random: () => 0.5 });
+  const failedUnitIds = new Set<string>();
+  const visitedTiles = new Map<string, Set<string>>();
+  let executedActions = 0;
+
+  for (let decision = 0; decision < 80; decision += 1) {
+    const action = decideNextAIAction(battle.state, faction, {
+      ...options,
+      excludeUnitIds: failedUnitIds,
+      visibleEnemyIds: visibleEnemyIds(battle.state, faction)
+    });
+    if (action.type === 'endTurn') break;
+
+    if (action.type === 'move') {
+      const mover = battle.state.sides[faction].units.get(action.unitId);
+      const destination = action.path[action.path.length - 1];
+      const visited = visitedTiles.get(action.unitId) ?? new Set<string>();
+      if (mover) visited.add(`${mover.coordinate.q},${mover.coordinate.r}`);
+      if (destination && visited.has(`${destination.q},${destination.r}`)) {
+        failedUnitIds.add(action.unitId);
+        continue;
+      }
+      if (destination) visited.add(`${destination.q},${destination.r}`);
+      visitedTiles.set(action.unitId, visited);
+    }
+
+    const execution = executeAiAction(processor, action);
+    if (!execution.success) {
+      if ('unitId' in action) failedUnitIds.add(action.unitId);
+      else if ('attackerId' in action) failedUnitIds.add(action.attackerId);
+      else if ('supplierId' in action) failedUnitIds.add(action.supplierId);
+      else if ('medicId' in action) failedUnitIds.add(action.medicId);
+      continue;
+    }
+    executedActions += 1;
+    if (evaluateBattleOutcome(battle) === 'defeat') break;
+  }
+
+  if (battle.state.activeFaction === faction) processor.endTurn();
+  return executedActions;
 }
 
 describe('scaled battlefields', () => {
@@ -314,6 +385,234 @@ describe('scaled battlefields', () => {
     }
   );
 
+  it.each(SCALED_RESCUES)(
+    'keeps %s approach and extraction routes viable in depth',
+    (territoryId, cells, enemyCount) => {
+      const { battle } = openBattle(territoryId);
+      const rescueRosterId = `${territoryId}-pilot`;
+      const rescue = battle.state.sides.alliance.units.get(battle.deployment[rescueRosterId]);
+      const reach = battle.scenario.objectives.find((objective) => (
+        objective.id === `${territoryId}-reach`
+      ));
+      const protect = battle.scenario.objectives.find((objective) => (
+        objective.id === `${territoryId}-protect`
+      ));
+      if (!rescue || !reach?.target || !protect) {
+        throw new Error(`missing rescue objectives for ${territoryId}`);
+      }
+
+      const approachRoutes = Array.from(battle.state.sides.alliance.units.values())
+        .filter((unit) => unit.id !== rescue.id)
+        .flatMap((unit) => {
+          const actionPoints = unit.actionPoints;
+          unit.actionPoints = 10_000;
+          const routes = battle.state.map.tiles.flatMap((_tile, index) => {
+            const coordinate = {
+              q: index % battle.state.map.width,
+              r: Math.floor(index / battle.state.map.width)
+            };
+            if (isoDistance(coordinate, rescue.coordinate) > 1) return [];
+            const route = planPathForUnitIso(battle.state, unit.id, coordinate);
+            return route.success ? [route] : [];
+          });
+          unit.actionPoints = actionPoints;
+          return routes;
+        })
+        .sort((left, right) => left.cost - right.cost);
+      const extractionRoute = findPathOnMapIso(
+        battle.state.map,
+        rescue.coordinate,
+        reach.target,
+        { unitType: rescue.unitType }
+      );
+
+      expect(battle.state.map.tiles).toHaveLength(cells);
+      expect(battle.state.sides.otherSide.units.size).toBe(enemyCount);
+      expect(approachRoutes[0]?.path.length).toBeGreaterThan(18);
+      expect(extractionRoute.success).toBe(true);
+      expect(extractionRoute.path.length).toBeGreaterThanOrEqual(20);
+      expect(reach).toMatchObject({
+        kind: 'reach',
+        unitIds: [rescueRosterId]
+      });
+      expect(protect).toMatchObject({
+        kind: 'protect',
+        unitIds: [rescueRosterId]
+      });
+      expect(reach.turnLimit).toBeUndefined();
+      expect(reach.deadlineRound).toBeUndefined();
+
+      const interaction = battle.scenario.objectives.find((objective) => (
+        objective.kind === 'interact' && !objective.optional
+      ));
+      if (territoryId === 'sector-lantern-vault') {
+        expect(interaction).toMatchObject({
+          unitIds: [rescueRosterId],
+          essential: true,
+          deadlineRound: 7,
+          actionPoints: 2
+        });
+      } else {
+        expect(interaction).toBeUndefined();
+      }
+    }
+  );
+
+  it.each(SCALED_RESCUES)(
+    'lets %s complete its rescue objectives while defenders remain',
+    (territoryId) => {
+      const sourceScenario = starterBundle.scenarios.find((scenario) => (
+        scenario.id === `city-${territoryId}`
+      ));
+      const scenarioBefore = JSON.stringify(sourceScenario);
+      const { battle } = openBattle(territoryId);
+      const rescueRosterId = `${territoryId}-pilot`;
+      const rescue = battle.state.sides.alliance.units.get(battle.deployment[rescueRosterId]);
+      const reach = battle.scenario.objectives.find((objective) => (
+        objective.id === `${territoryId}-reach`
+      ));
+      if (!rescue || !reach?.target) throw new Error(`missing rescue team for ${territoryId}`);
+
+      const interaction = battle.scenario.objectives.find((objective) => (
+        objective.kind === 'interact' && !objective.optional
+      ));
+      if (interaction?.target) {
+        rescue.coordinate = { ...interaction.target };
+        expect(performObjectiveAction(battle, rescue.id, interaction.id).success).toBe(true);
+      }
+
+      rescue.coordinate = { ...reach.target };
+      const defendersBefore = Array.from(battle.state.sides.otherSide.units.values())
+        .filter((unit) => unit.stance !== 'destroyed').length;
+      expect(evaluateBattleOutcome(battle)).toBe('ongoing');
+      const processor = new TurnProcessor(battle.state, { random: () => 0.5 });
+      processor.endTurn();
+      processor.endTurn();
+
+      expect(evaluateBattleOutcome(battle)).toBe('victory');
+      expect(isObjectiveMet(reach, battle)).toBe(true);
+      expect(Array.from(battle.state.sides.otherSide.units.values())
+        .filter((unit) => unit.stance !== 'destroyed')).toHaveLength(defendersBefore);
+      expect(JSON.stringify(sourceScenario)).toBe(scenarioBefore);
+    }
+  );
+
+  it.each(SCALED_RESCUES)(
+    'fails %s when its protected rescue team is lost',
+    (territoryId) => {
+      const { battle } = openBattle(territoryId);
+      const rescue = battle.state.sides.alliance.units.get(
+        battle.deployment[`${territoryId}-pilot`]
+      );
+      if (!rescue) throw new Error(`missing rescue team for ${territoryId}`);
+
+      rescue.currentHealth = 0;
+      rescue.stance = 'destroyed';
+      expect(evaluateBattleOutcome(battle)).toBe('defeat');
+    }
+  );
+
+  it('preserves the Lantern Vault specialist deadline on the enlarged map', () => {
+    const { battle } = openBattle('sector-lantern-vault');
+    const objective = battle.scenario.objectives.find((candidate) => (
+      candidate.id === 'sector-lantern-vault-calibrate-prism'
+    ));
+    if (!objective?.deadlineRound) throw new Error('missing Lantern Vault deadline');
+
+    battle.state.round = objective.deadlineRound + 1;
+    expect(evaluateBattleOutcome(battle)).toBe('defeat');
+  });
+
+  it('keeps the Brussels rescue team alive through a complete Veteran operation', () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const territoryId = 'sector-brussels';
+    const { state, battle } = openBattle(territoryId);
+    const rescue = battle.state.sides.alliance.units.get(
+      battle.deployment[`${territoryId}-pilot`]
+    );
+    const reach = battle.scenario.objectives.find((objective) => (
+      objective.id === `${territoryId}-reach`
+    ));
+    if (!rescue || !reach?.target) throw new Error('missing Brussels rescue team');
+
+    for (let round = 0; round < 24; round += 1) {
+      runAiPhase(battle, 'alliance', {
+        objectiveTargets: [reach.target],
+        reachTargets: [reach.target],
+        objectiveUnitIds: new Set([rescue.id]),
+        defendBias: false,
+        aggression: 0.85,
+        difficulty: 'hard',
+        allowDemolition: false
+      });
+      if (evaluateBattleOutcome(battle) === 'defeat') break;
+
+      runAiPhase(battle, 'otherSide', {
+        objectiveTargets: [reach.target],
+        defendBias: true,
+        aggression: 0.6,
+        difficulty: 'hard',
+        allowDemolition: true
+      });
+      processTacticalEvents(state, starterBundle);
+      if (evaluateBattleOutcome(battle) !== 'ongoing') break;
+    }
+
+    expect(evaluateBattleOutcome(battle)).toBe('victory');
+    expect(rescue.stance).not.toBe('destroyed');
+    expect(rescue.currentHealth).toBeGreaterThan(0);
+
+    for (let travelRound = 0; travelRound < 8; travelRound += 1) {
+      if (
+        rescue.coordinate.q === reach.target.q
+        && rescue.coordinate.r === reach.target.r
+      ) break;
+
+      const actionPoints = rescue.actionPoints;
+      rescue.actionPoints = 10_000;
+      const fullRoute = planPathForUnitIso(battle.state, rescue.id, reach.target);
+      rescue.actionPoints = actionPoints;
+      expect(fullRoute.success).toBe(true);
+
+      let routeCost = 0;
+      const affordablePath = [];
+      for (const coordinate of fullRoute.path) {
+        const tile = battle.state.map.tiles[
+          coordinate.r * battle.state.map.width + coordinate.q
+        ];
+        if (routeCost + tile.movementCostModifier > rescue.actionPoints + Number.EPSILON) {
+          break;
+        }
+        routeCost += tile.movementCostModifier;
+        affordablePath.push(coordinate);
+      }
+      expect(affordablePath.length).toBeGreaterThan(0);
+      const processor = new TurnProcessor(battle.state, { random: () => 0.5 });
+      expect(processor.moveUnit({
+        unitId: rescue.id,
+        path: affordablePath
+      }).success).toBe(true);
+
+      if (
+        rescue.coordinate.q !== reach.target.q
+        || rescue.coordinate.r !== reach.target.r
+      ) {
+        processor.endTurn();
+        processor.endTurn();
+      }
+    }
+
+    expect(rescue.coordinate).toEqual(reach.target);
+    evaluateBattleOutcome(battle);
+    const processor = new TurnProcessor(battle.state, { random: () => 0.5 });
+    processor.endTurn();
+    processor.endTurn();
+    expect(isObjectiveMet(reach, battle)).toBe(true);
+    expect(evaluateBattleOutcome(battle)).toBe('victory');
+    expect(rescue.stance).not.toBe('destroyed');
+    random.mockRestore();
+  }, 15_000);
+
   it.each(SCALED_OPERATION_IDS)(
     'executes legal enemy decisions on %s without map-scale stalls',
     (territoryId) => {
@@ -343,7 +642,10 @@ describe('scaled battlefields', () => {
         if (action.type === 'endTurn') break;
 
         const execution = executeAiAction(processor, action);
-        expect(execution.success, `${territoryId} rejected ${JSON.stringify(action)}`).toBe(true);
+        expect(
+          execution.success,
+          `${territoryId} rejected ${JSON.stringify(action)} with ${JSON.stringify(execution)}`
+        ).toBe(true);
         executedActions += 1;
       }
 

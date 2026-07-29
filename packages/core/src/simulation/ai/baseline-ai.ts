@@ -11,7 +11,11 @@ import {
   SUPPRESSIVE_MORALE_FACTOR,
   SUPPRESSIVE_MISS_MORALE_DAMAGE
 } from '../combat/combat-resolver.js';
-import { canUnitEnterTerrain, movementMultiplierForStance } from '../pathfinding/hex-pathfinder.js';
+import { canUnitEnterTerrain } from '../pathfinding/hex-pathfinder.js';
+import {
+  canAffordMovementCost,
+  movementMultiplierForStance
+} from '../pathfinding/movement.js';
 import { canDigIn, canRally } from '../systems/morale.js';
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance } from '../types.js';
 import { isIsoNeighbor, isoDirectionIndex, isoDistance, isoNeighbors } from '../utils/grid-iso.js';
@@ -187,7 +191,7 @@ function tryFallbackStep(
     if (!tile || !canUnitEnterTerrain(unit.unitType, tile)) continue;
     // a step the executor would reject (occupied / too expensive) benches the unit for the turn
     if (occ.has(coordinateKey(n))) continue;
-    if (tile.movementCostModifier * mult > unit.actionPoints) continue;
+    if (!canAffordMovementCost(tile.movementCostModifier * mult, unit.actionPoints)) continue;
     // increase distance from nearest enemy
     const currentNearest = awayFrom.reduce((min, foe) => Math.min(min, isoDistance(unit.coordinate, foe.coordinate)), Infinity);
     const afterNearest = awayFrom.reduce((min, foe) => Math.min(min, isoDistance(n, foe.coordinate)), Infinity);
@@ -231,6 +235,7 @@ function buildThreatAwarePathToward(
   const maxStepsCap = (scouting ? 5 : 2) + (opts.maxStepBonus ?? 0);
 
   const path: HexCoordinate[] = [];
+  let spentActionPoints = 0;
   let ap = unit.actionPoints;
   let current = unit.coordinate;
   const visited = new Set<string>([coordinateKey(current)]);
@@ -247,7 +252,11 @@ function buildThreatAwarePathToward(
       const tile = getTile(state.map, n);
       if (!tile || !canUnitEnterTerrain(unit.unitType, tile)) continue;
       const cost = tile.movementCostModifier * mult;
-      if (cost > ap) continue;
+      if (!canAffordMovementCost(
+        spentActionPoints + cost,
+        unit.actionPoints,
+        path.length + 1
+      )) continue;
 
       const distGain = baseDist - isoDistance(n, goal);
       const threat = computeTileThreat(state, unit.faction, n, unit);
@@ -284,7 +293,8 @@ function buildThreatAwarePathToward(
 
     // commit step
     path.push(best.step);
-    ap -= best.cost;
+    spentActionPoints += best.cost;
+    ap = Math.max(0, unit.actionPoints - spentActionPoints);
     current = best.step;
     visited.add(coordinateKey(current));
 

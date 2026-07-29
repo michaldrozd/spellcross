@@ -124,6 +124,81 @@ describe('Auto Turn (computer plays the player side)', () => {
     expect(minDistToEnemies(state)).toBeLessThan(distStart); // closed the gap on turn one
   });
 
+  it('uses an exactly affordable decimal-cost advance that the executor accepts', () => {
+    const decimalTile = {
+      ...plain,
+      movementCostModifier: 0.1
+    };
+    const state = createBattleState({
+      map: {
+        id: 'decimal-advance',
+        width: 5,
+        height: 1,
+        tiles: Array.from({ length: 5 }, () => decimalTile)
+      },
+      sides: [
+        { faction: 'alliance', units: [rifleman('ally', 'alliance', 0, 0)] },
+        { faction: 'otherSide', units: [dummy('foe', 4, 0)] }
+      ]
+    });
+    const ally = Array.from(state.sides.alliance.units.values())[0];
+    ally.actionPoints = 0.3;
+
+    const action = decideNextAIAction(state, 'alliance', {
+      aggression: 0.85,
+      difficulty: 'hard',
+      visibleEnemyIds: new Set()
+    });
+    expect(action).toMatchObject({
+      type: 'move',
+      path: [
+        { q: 1, r: 0 },
+        { q: 2, r: 0 },
+        { q: 3, r: 0 }
+      ]
+    });
+    if (action.type !== 'move') throw new Error('expected exact-AP move');
+    expect(new TurnProcessor(state).moveUnit(action).success).toBe(true);
+    expect(ally.coordinate).toEqual({ q: 3, r: 0 });
+    expect(ally.actionPoints).toBe(0);
+  });
+
+  it('uses an exactly affordable decimal-cost fallback step', () => {
+    const decimalTile = {
+      ...plain,
+      movementCostModifier: 0.3
+    };
+    const state = createBattleState({
+      map: {
+        id: 'decimal-fallback',
+        width: 5,
+        height: 1,
+        tiles: Array.from({ length: 5 }, () => decimalTile)
+      },
+      sides: [
+        { faction: 'alliance', units: [rifleman('ally', 'alliance', 2, 0)] },
+        { faction: 'otherSide', units: [dummy('foe', 3, 0)] }
+      ]
+    });
+    const ally = Array.from(state.sides.alliance.units.values())[0];
+    ally.actionPoints = 0.3;
+    ally.currentHealth = 10;
+
+    const action = decideNextAIAction(state, 'alliance', {
+      aggression: 0.85,
+      difficulty: 'hard',
+      visibleEnemyIds: new Set()
+    });
+    expect(action).toMatchObject({
+      type: 'move',
+      path: [{ q: 1, r: 0 }]
+    });
+    if (action.type !== 'move') throw new Error('expected exact-AP fallback');
+    expect(new TurnProcessor(state).moveUnit(action).success).toBe(true);
+    expect(ally.coordinate).toEqual({ q: 1, r: 0 });
+    expect(ally.actionPoints).toBe(0);
+  });
+
   it('respects fog of war: never fires at an enemy outside the visible set, but does when it is visible', () => {
     const fogSpec: CreateBattleStateOptions = {
       map: makeMap(8, 3),
