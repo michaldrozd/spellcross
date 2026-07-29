@@ -199,6 +199,43 @@ describe('Auto Turn (computer plays the player side)', () => {
     expect(ally.actionPoints).toBe(0);
   });
 
+  it('stops on an objective and does not route away after occupying it', () => {
+    const state = createBattleState({
+      map: makeMap(5, 1),
+      sides: [
+        { faction: 'alliance', units: [rifleman('ally', 'alliance', 0, 0)] },
+        { faction: 'otherSide', units: [] }
+      ]
+    });
+    const ally = Array.from(state.sides.alliance.units.values())[0];
+    const objective = { q: 3, r: 0 };
+    const options = {
+      objectiveTargets: [objective],
+      reachTargets: [objective],
+      objectiveUnitIds: new Set([ally.id]),
+      aggression: 0.85,
+      difficulty: 'hard' as const,
+      visibleEnemyIds: new Set<string>()
+    };
+
+    const approach = decideNextAIAction(state, 'alliance', options);
+    expect(approach).toMatchObject({
+      type: 'move',
+      path: [
+        { q: 1, r: 0 },
+        { q: 2, r: 0 },
+        objective
+      ]
+    });
+    if (approach.type !== 'move') throw new Error('expected objective move');
+    expect(new TurnProcessor(state).moveUnit(approach).success).toBe(true);
+    expect(ally.coordinate).toEqual(objective);
+
+    const holding = decideNextAIAction(state, 'alliance', options);
+    expect(holding.type).not.toBe('move');
+    expect(ally.coordinate).toEqual(objective);
+  });
+
   it('respects fog of war: never fires at an enemy outside the visible set, but does when it is visible', () => {
     const fogSpec: CreateBattleStateOptions = {
       map: makeMap(8, 3),

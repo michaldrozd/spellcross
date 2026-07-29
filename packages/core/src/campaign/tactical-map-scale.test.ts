@@ -145,6 +145,7 @@ function runAiPhase(
   const failedUnitIds = new Set<string>();
   const visitedTiles = new Map<string, Set<string>>();
   let executedActions = 0;
+  let outcome: ReturnType<typeof evaluateBattleOutcome> = 'ongoing';
 
   for (let decision = 0; decision < 80; decision += 1) {
     const action = decideNextAIAction(battle.state, faction, {
@@ -176,10 +177,11 @@ function runAiPhase(
       continue;
     }
     executedActions += 1;
-    if (evaluateBattleOutcome(battle) === 'defeat') break;
+    outcome = evaluateBattleOutcome(battle);
+    if (outcome !== 'ongoing') break;
   }
 
-  if (battle.state.activeFaction === faction) processor.endTurn();
+  if (outcome === 'ongoing' && battle.state.activeFaction === faction) processor.endTurn();
   return executedActions;
 }
 
@@ -545,7 +547,7 @@ describe('scaled battlefields', () => {
         difficulty: 'hard',
         allowDemolition: false
       });
-      if (evaluateBattleOutcome(battle) === 'defeat') break;
+      if (evaluateBattleOutcome(battle) !== 'ongoing') break;
 
       runAiPhase(battle, 'otherSide', {
         objectiveTargets: [reach.target],
@@ -561,55 +563,10 @@ describe('scaled battlefields', () => {
     expect(evaluateBattleOutcome(battle)).toBe('victory');
     expect(rescue.stance).not.toBe('destroyed');
     expect(rescue.currentHealth).toBeGreaterThan(0);
-
-    for (let travelRound = 0; travelRound < 8; travelRound += 1) {
-      if (
-        rescue.coordinate.q === reach.target.q
-        && rescue.coordinate.r === reach.target.r
-      ) break;
-
-      const actionPoints = rescue.actionPoints;
-      rescue.actionPoints = 10_000;
-      const fullRoute = planPathForUnitIso(battle.state, rescue.id, reach.target);
-      rescue.actionPoints = actionPoints;
-      expect(fullRoute.success).toBe(true);
-
-      let routeCost = 0;
-      const affordablePath = [];
-      for (const coordinate of fullRoute.path) {
-        const tile = battle.state.map.tiles[
-          coordinate.r * battle.state.map.width + coordinate.q
-        ];
-        if (routeCost + tile.movementCostModifier > rescue.actionPoints + Number.EPSILON) {
-          break;
-        }
-        routeCost += tile.movementCostModifier;
-        affordablePath.push(coordinate);
-      }
-      expect(affordablePath.length).toBeGreaterThan(0);
-      const processor = new TurnProcessor(battle.state, { random: () => 0.5 });
-      expect(processor.moveUnit({
-        unitId: rescue.id,
-        path: affordablePath
-      }).success).toBe(true);
-
-      if (
-        rescue.coordinate.q !== reach.target.q
-        || rescue.coordinate.r !== reach.target.r
-      ) {
-        processor.endTurn();
-        processor.endTurn();
-      }
-    }
-
     expect(rescue.coordinate).toEqual(reach.target);
-    evaluateBattleOutcome(battle);
-    const processor = new TurnProcessor(battle.state, { random: () => 0.5 });
-    processor.endTurn();
-    processor.endTurn();
     expect(isObjectiveMet(reach, battle)).toBe(true);
-    expect(evaluateBattleOutcome(battle)).toBe('victory');
-    expect(rescue.stance).not.toBe('destroyed');
+    expect(Array.from(battle.state.sides.otherSide.units.values())
+      .filter((unit) => unit.stance !== 'destroyed').length).toBeGreaterThan(0);
     random.mockRestore();
   }, 15_000);
 

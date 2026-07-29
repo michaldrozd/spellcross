@@ -219,6 +219,7 @@ function buildThreatAwarePathToward(
     attackEnemies?: UnitInstance[];
   }
 ): HexCoordinate[] {
+  if (coordinateKey(unit.coordinate) === coordinateKey(goal)) return [];
   const occ = occupiedSet(state);
   // Match moveUnit's per-step cost, which multiplies by weather (fog 1.2 / night 1.1). Without this
   // the AI plans paths up to its AP that the executor then rejects as too expensive on fog/night maps.
@@ -297,6 +298,7 @@ function buildThreatAwarePathToward(
     ap = Math.max(0, unit.actionPoints - spentActionPoints);
     current = best.step;
     visited.add(coordinateKey(current));
+    if (coordinateKey(current) === coordinateKey(goal)) break;
 
     // if we still have enough AP to attack from here and a viable shot exists, stop moving
     if (ap >= 2) {
