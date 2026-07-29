@@ -251,6 +251,96 @@ describe('Per-city battlefields', () => {
   );
 
   it.each([
+    ['sector-lyon', 'early', 14],
+    ['sector-zurich', 'early', 14],
+    ['sector-copenhagen', 'early', 14],
+    ['sector-carpathian', 'mid', 18],
+    ['sector-thorn-engine', 'lateHold', 35],
+    ['sector-dawn-anchor', 'lateHold', 35]
+  ] as const)(
+    'authors %s as a defended %s hold line',
+    (territoryId, band, enemyCount) => {
+      const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
+      if (!scenario) throw new Error(`missing ${territoryId}`);
+      const profile = TACTICAL_MAP_SCALE_BANDS[band];
+      const hold = scenario.objectives.find((objective) => objective.id === `${territoryId}-hold`);
+      const protect = scenario.objectives.find((objective) => objective.id === `${territoryId}-protect`);
+      const reserve = scenario.events?.find((event) => event.id === `${territoryId}-reserve-wave`);
+      const progress = (coordinate: { q: number; r: number }) => (
+        coordinate.q / Math.max(1, scenario.map.width - 1)
+        + 1 - coordinate.r / Math.max(1, scenario.map.height - 1)
+      ) / 2;
+      const deploymentRatio = scenario.startZones.alliance.length
+        / scenario.otherSideForces.length;
+
+      expect(scenario.map).toMatchObject({ width: profile.width, height: profile.height });
+      expect(scenario.startZones.alliance).toHaveLength(
+        profile.deploymentWidth * profile.deploymentDepth
+      );
+      expect(scenario.startZones.otherSide).toHaveLength(
+        profile.deploymentWidth * profile.deploymentDepth
+      );
+      expect(scenario.otherSideForces).toHaveLength(enemyCount);
+      expect(scenario.map.tiles.length / scenario.otherSideForces.length)
+        .toBeLessThanOrEqual(profile.maxCellsPerEnemy);
+      expect(deploymentRatio).toBeGreaterThanOrEqual(1.09);
+      expect(deploymentRatio).toBeLessThanOrEqual(2.4);
+      expect(hold).toMatchObject({
+        kind: 'hold',
+        turnLimit: 3
+      });
+      expect(hold?.deadlineRound).toBeUndefined();
+      expect(hold?.target).toBeDefined();
+      expect(Math.abs(hold!.target!.q / scenario.map.width - 0.5)).toBeLessThan(0.08);
+      expect(Math.abs(hold!.target!.r / scenario.map.height - 0.5)).toBeLessThan(0.08);
+      expect(protect).toMatchObject({
+        kind: 'protect',
+        unitIds: ['captain']
+      });
+      expect(scenario.objectives.some((objective) => (
+        (objective.kind === 'reach' || objective.kind === 'interact')
+        && objective.deadlineRound !== undefined
+      ))).toBe(false);
+      expect(reserve?.triggerRound).toBe(profile.reserveRound);
+      expect(reserve?.reinforcements).toHaveLength(4);
+
+      const occupied = new Set([
+        ...scenario.otherSideForces.map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`),
+        ...(scenario.allianceForces ?? []).map((unit) => `${unit.coordinate.q},${unit.coordinate.r}`)
+      ]);
+      for (const reinforcement of reserve?.reinforcements ?? []) {
+        const coordinate = reinforcement.coordinate;
+        expect(inBounds(
+          coordinate.q,
+          coordinate.r,
+          scenario.map.width,
+          scenario.map.height
+        )).toBe(true);
+        expect(
+          scenario.map.tiles[coordinate.r * scenario.map.width + coordinate.q]?.passable
+        ).toBe(true);
+        expect(occupied.has(`${coordinate.q},${coordinate.r}`)).toBe(false);
+      }
+
+      const enemyProgress = scenario.otherSideForces.map((unit) => progress(unit.coordinate));
+      for (const patrolProgress of profile.patrolProgress) {
+        expect(
+          enemyProgress.some((enemy) => Math.abs(enemy - patrolProgress) <= 0.035),
+          `${territoryId} is missing its patrol at ${patrolProgress}`
+        ).toBe(true);
+      }
+      for (const enemy of scenario.otherSideForces) {
+        expect(Math.min(...scenario.startZones.alliance.map((coordinate) => (
+          Math.max(
+            Math.abs(enemy.coordinate.q - coordinate.q),
+            Math.abs(enemy.coordinate.r - coordinate.r)
+          )
+        )))).toBeGreaterThan(6);
+      }
+    }
+  );
+
+  it.each([
     ['sector-berlin', 'signalEaterAwakes', 'signal-eater'],
     ['sector-krakow', 'glassChoirMarches', 'glass-regent'],
     ['sector-rift', 'ashCrownDescends', 'ash-crown-sovereign'],

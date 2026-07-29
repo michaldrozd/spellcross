@@ -3,7 +3,9 @@ import { expect, test, type Page } from '@playwright/test';
 const LARGEST_AUTHORED_TERRITORIES = [
   'sector-sable-causeway',
   'sector-glass-wake',
-  'sector-ash-compass'
+  'sector-ash-compass',
+  'sector-thorn-engine',
+  'sector-dawn-anchor'
 ] as const;
 
 async function waitForPresentedBattle(page: Page, territoryId: string) {

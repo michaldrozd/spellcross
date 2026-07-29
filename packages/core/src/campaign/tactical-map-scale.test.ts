@@ -31,9 +31,19 @@ const SCALED_BRIDGEHEADS = [
   ['sector-glass-wake', 4_200, 35]
 ] as const;
 
+const SCALED_HOLD_LINES = [
+  ['sector-lyon', 1_620, 14],
+  ['sector-zurich', 1_620, 14],
+  ['sector-copenhagen', 1_620, 14],
+  ['sector-carpathian', 2_160, 18],
+  ['sector-thorn-engine', 4_200, 35],
+  ['sector-dawn-anchor', 4_200, 35]
+] as const;
+
 const SCALED_OPERATION_IDS = [
   ...SCALED_CONVOYS.map(([territoryId]) => territoryId),
-  ...SCALED_BRIDGEHEADS.map(([territoryId]) => territoryId)
+  ...SCALED_BRIDGEHEADS.map(([territoryId]) => territoryId),
+  ...SCALED_HOLD_LINES.map(([territoryId]) => territoryId)
 ];
 
 function openBattle(territoryId: string) {
@@ -90,7 +100,7 @@ function visibleEnemyIds(state: TacticalBattleState) {
   );
 }
 
-describe('scaled convoy battlefields', () => {
+describe('scaled battlefields', () => {
   it.each(SCALED_CONVOYS)(
     'keeps %s travel meaningful and inside its authored deadline',
     (territoryId, cells, deadlineRound) => {
@@ -182,6 +192,59 @@ describe('scaled convoy battlefields', () => {
     }
   );
 
+  it.each(SCALED_HOLD_LINES)(
+    'keeps %s central strongpoint and captain protection viable in depth',
+    (territoryId, cells, enemyCount) => {
+      const { battle } = openBattle(territoryId);
+      const hold = battle.scenario.objectives.find((candidate) => (
+        candidate.id === `${territoryId}-hold`
+      ));
+      const protect = battle.scenario.objectives.find((candidate) => (
+        candidate.id === `${territoryId}-protect`
+      ));
+      if (!hold?.target || !protect) {
+        throw new Error(`missing hold objectives for ${territoryId}`);
+      }
+
+      const routes = Array.from(battle.state.sides.alliance.units.values())
+        .filter((unit) => unit.stance !== 'destroyed' && !unit.embarkedOn)
+        .map((unit) => {
+          const actionPoints = unit.actionPoints;
+          unit.actionPoints = 10_000;
+          const route = planPathForUnitIso(battle.state, unit.id, hold.target!);
+          unit.actionPoints = actionPoints;
+          return route;
+        })
+        .filter((route) => route.success)
+        .sort((left, right) => left.cost - right.cost);
+
+      expect(battle.state.map.tiles).toHaveLength(cells);
+      expect(battle.state.sides.otherSide.units.size).toBe(enemyCount);
+      expect(routes.length).toBeGreaterThanOrEqual(4);
+      expect(routes[0]?.path.length).toBeGreaterThan(20);
+      expect(hold).toMatchObject({
+        kind: 'hold',
+        turnLimit: 3
+      });
+      expect(hold.deadlineRound).toBeUndefined();
+      expect(protect).toMatchObject({
+        kind: 'protect',
+        unitIds: ['captain']
+      });
+      expect(battle.scenario.objectives.some((objective) => (
+        (objective.kind === 'reach' || objective.kind === 'interact')
+        && objective.deadlineRound !== undefined
+      ))).toBe(false);
+
+      const captainId = battle.deployment.captain;
+      const captain = battle.state.sides.alliance.units.get(captainId);
+      if (!captain) throw new Error(`captain was not deployed in ${territoryId}`);
+      captain.currentHealth = 0;
+      captain.stance = 'destroyed';
+      expect(evaluateBattleOutcome(battle)).toBe('defeat');
+    }
+  );
+
   it.each(SCALED_OPERATION_IDS)(
     'executes legal enemy decisions on %s without map-scale stalls',
     (territoryId) => {
@@ -232,7 +295,7 @@ describe('scaled convoy battlefields', () => {
       ...payloads.map((candidate) => candidate.cells)
     ));
 
-    expect(largestMaps).toHaveLength(3);
+    expect(largestMaps).toHaveLength(5);
     expect(largestMaps.every(({ cells }) => cells === 4_200)).toBe(true);
     expect(Math.max(...payloads.map(({ payloadLength }) => payloadLength)))
       .toBeLessThanOrEqual(1_734_351);
