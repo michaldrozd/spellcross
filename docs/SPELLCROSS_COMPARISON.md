@@ -3,7 +3,26 @@
 This document tracks the current implementation against the design anchors in
 `MANUAL.cz.md`, `DESCRIPTION.sk.md`, and `project_spec.md`.
 
-Last reviewed: 2026-07-20.
+Last reviewed: 2026-07-30.
+
+## Measured Parity
+
+Counts are read from `packages/data/src`; the original's figures come from the
+75 `M*.DTA` mission files of the installed 1998 game.
+
+| Metric | Remake | Original |
+| --- | --- | --- |
+| Campaign operations | 29 | 61 |
+| Unit definitions | 80 (38 Alliance, 42 Other Side), all reachable | — |
+| Research nodes | 51 | — |
+| Objective family combinations | 8 across 29 operations | 6 families |
+| Outcome-dependent branches | 2 | 25 |
+| Battlefield cells | min 1,620, median 2,160, max 4,200 | min 1,620, median 4,200, max 12,600 |
+
+Every operation now matches or exceeds the original's *smallest* battlefield.
+The median does not: a typical original mission is still about twice the area of
+a typical one here, and 5 of 29 reach the original's median. Operation count and
+branch density are the two rows where the original remains clearly ahead.
 
 ## Current State
 
@@ -19,7 +38,7 @@ Last reviewed: 2026-07-20.
 
 Implemented:
 
-- Europe campaign map with 17 main sectors and generated counteroffensive sectors.
+- Europe campaign map with 29 sectors across two acts, plus generated counteroffensive sectors.
 - One battlefield operation per strategic turn, so the war clock, recruitment, and research pacing cannot be bypassed.
 - Money, research, and strategic points.
 - Strategic point conversion to money and research.
@@ -29,21 +48,20 @@ Implemented:
 - Research queue with one active project at a time.
 - Research unlocks and stat bonuses for existing and newly deployed units.
 - Formation bonuses applied when building a battle side.
+- Persistent officer corps with six recruitable profiles and four progression ranks, assignable to fielded units.
+- Researched equipment doctrine with three slots — offense, protection, mobility — offering four trade-off choices each.
 - Three save slots with serialized campaign/battle state and confirmed save deletion.
 - Victory, defeat, retreat, rewards, unlocks, and terminal campaign outcome.
 
 Partially implemented or simplified:
 
 - Formations exist mechanically, but formation management UI is still lightweight.
-- Commanders exist as hero units and aura effects, but there is no full officer attachment system.
 - Resource economy is fixed per sector and event, not a full depletion model.
-- Unit upgrades are represented through research and tier/refill behavior, not a detailed equipment workshop.
 
 Missing or deferred:
 
 - Resource allocation slider.
 - Blind research.
-- Full officer attachment system.
 - Full-motion story interludes or cutscenes.
 - Limited save/ironman rules.
 
@@ -59,7 +77,8 @@ Implemented:
 - Threat previews for risky movement.
 - Hover and target preview with hit chance, expected damage, and lethal indication.
 - Supply trucks, field medics, transports, embark/disembark, supply zones, and pickups.
-- Objectives: eliminate, reach, protect, and hold.
+- Objectives: eliminate, reach, protect, and hold, combined into eight distinct mission shapes.
+- Required specialist interactions with their own completion deadlines, where losing the specialist is an authored failure.
 - Scenario-authored reserve events triggered by battle round or enemy attrition.
 - Difficulty-scaled reinforcement waves: none on Story, two units on Commander, three on Veteran,
   and four on Veteran in the hardest sectors.
@@ -74,6 +93,11 @@ Partially implemented or simplified:
 - Tactical events currently spawn units and messages; object, dialogue, and cutscene actions remain future extensions.
 
 ## Units
+
+Eighty definitions ship — 38 Alliance and 42 Other Side. Every one is reachable
+from campaign content: the 42 hostiles are fielded by scenario forces or reserve
+events, and the 38 Alliance units are obtainable from the starting force or a
+research unlock. The lists below name the core roles rather than the full roster.
 
 Alliance roles represented:
 
