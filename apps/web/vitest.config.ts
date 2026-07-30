@@ -12,7 +12,8 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@spellcross/data': resolveFromRoot('../../packages/data/src/index.ts')
+      '@spellcross/data': resolveFromRoot('../../packages/data/src/index.ts'),
+      '@spellcross/core': resolveFromRoot('../../packages/core/src/index.ts')
     }
   },
   test: {
