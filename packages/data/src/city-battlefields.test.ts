@@ -592,6 +592,154 @@ describe('Per-city battlefields', () => {
   );
 
   it.each([
+    ['sector-rift', ['eliminate', 'hold', 'interact']],
+    ['sector-mnemonic-orchard', ['eliminate', 'hold', 'interact', 'protect']]
+  ] as const)(
+    'authors %s as a full-size compound assault',
+    (territoryId, objectiveKinds) => {
+      const scenario = cityScenarios.find((candidate) => candidate.id === `city-${territoryId}`);
+      if (!scenario) throw new Error(`missing ${territoryId}`);
+      const profile = TACTICAL_MAP_SCALE_BANDS.mid;
+      const hold = scenario.objectives.find((objective) => (
+        objective.id === `${territoryId}-hold`
+      ));
+      const interaction = scenario.objectives.find((objective) => (
+        objective.kind === 'interact'
+      ));
+      const reserve = scenario.events?.find((event) => (
+        event.id === `${territoryId}-reserve-wave`
+      ));
+      if (!hold?.target || !interaction?.target || !reserve) {
+        throw new Error(`missing ${territoryId} compound contract`);
+      }
+
+      expect(scenario.map).toMatchObject({
+        width: profile.width,
+        height: profile.height
+      });
+      expect(scenario.map.tiles).toHaveLength(profile.width * profile.height);
+      expect(scenario.startZones.alliance).toHaveLength(
+        profile.deploymentWidth * profile.deploymentDepth
+      );
+      expect(scenario.startZones.otherSide).toHaveLength(
+        profile.deploymentWidth * profile.deploymentDepth
+      );
+      expect(scenario.otherSideForces).toHaveLength(18);
+      expect(scenario.map.tiles.length / scenario.otherSideForces.length)
+        .toBeLessThanOrEqual(profile.maxCellsPerEnemy);
+      expect(scenario.startZones.alliance.length / scenario.otherSideForces.length)
+        .toBeGreaterThanOrEqual(1.33);
+      expect(scenario.objectives.map((objective) => objective.kind).sort())
+        .toEqual([...objectiveKinds].sort());
+      expect(hold).toMatchObject({ kind: 'hold', turnLimit: 3 });
+      expect(Math.abs(hold.target.q / scenario.map.width - 0.5)).toBeLessThan(0.08);
+      expect(Math.abs(hold.target.r / scenario.map.height - 0.5)).toBeLessThan(0.08);
+      expect(reserve.triggerRound).toBe(profile.reserveRound);
+      expect(reserve.reinforcements).toHaveLength(4);
+
+      if (territoryId === 'sector-rift') {
+        const signature = scenario.events?.find((event) => (
+          event.id === `${territoryId}-signature-wave`
+        ));
+        const wardReward = scenario.events?.find((event) => (
+          event.triggerObjectiveId === interaction.id
+        ));
+        expect(interaction).toMatchObject({
+          optional: true,
+          actionKey: 'disruptWard',
+          actionPoints: 2
+        });
+        expect(signature).toMatchObject({
+          triggerRound: profile.reserveRound + 2,
+          triggerAfterEventId: reserve.id,
+          triggerEnemyRemaining: 0
+        });
+        expect(signature?.reinforcements).toHaveLength(4);
+        expect(signature?.reinforcements[0]?.definitionId).toBe('ash-crown-sovereign');
+        expect(wardReward).toMatchObject({
+          faction: 'alliance',
+          reinforcements: [{
+            definitionId: 'rangers'
+          }]
+        });
+      } else {
+        const specialistId = `${territoryId}-psi-specialist`;
+        const specialist = scenario.allianceForces?.find((unit) => (
+          unit.id === specialistId
+        ));
+        const protect = scenario.objectives.find((objective) => (
+          objective.kind === 'protect'
+        ));
+        const pressure = reserve.effects?.find((effect) => (
+          effect.kind === 'pressurePulse'
+        ));
+        expect(specialist).toMatchObject({
+          definitionId: 'psi-corps',
+          isKey: true
+        });
+        expect(interaction).toMatchObject({
+          unitIds: [specialistId],
+          essential: true,
+          deadlineRound: 9,
+          actionKey: 'groundMemoryLattice',
+          actionPoints: 3
+        });
+        expect(protect).toMatchObject({
+          unitIds: [specialistId]
+        });
+        expect(scenario.map.tiles[
+          interaction.target.r * scenario.map.width + interaction.target.q
+        ]).toMatchObject({
+          terrain: 'plain',
+          cover: 2,
+          movementCostModifier: 1,
+          passable: true,
+          blocksVision: false
+        });
+        expect(scenario.map.props?.every((prop) => (
+          (prop.tiles?.length ? prop.tiles : [prop.coordinate]).every((coordinate) => (
+            Math.abs(coordinate.q - interaction.target!.q) > 1
+            || Math.abs(coordinate.r - interaction.target!.r) > 1
+          ))
+        ))).toBe(true);
+        expect(pressure).toMatchObject({
+          targetFaction: 'alliance',
+          healthDamage: 12,
+          moraleDamage: 18
+        });
+        if (!pressure || pressure.kind !== 'pressurePulse') {
+          throw new Error('missing Mnemonic Orchard pressure pulse');
+        }
+        expect(pressure.coordinates).toHaveLength(6);
+        expect(pressure.coordinates.every((coordinate) => (
+          inBounds(
+            coordinate.q,
+            coordinate.r,
+            scenario.map.width,
+            scenario.map.height
+          )
+          && scenario.map.tiles[
+            coordinate.r * scenario.map.width + coordinate.q
+          ]?.passable
+        ))).toBe(true);
+      }
+
+      const protectedCoordinates = [
+        ...scenario.startZones.alliance,
+        ...(scenario.allianceForces ?? []).map((unit) => unit.coordinate)
+      ];
+      for (const enemy of scenario.otherSideForces) {
+        expect(Math.min(...protectedCoordinates.map((coordinate) => (
+          Math.max(
+            Math.abs(enemy.coordinate.q - coordinate.q),
+            Math.abs(enemy.coordinate.r - coordinate.r)
+          )
+        )))).toBeGreaterThan(6);
+      }
+    }
+  );
+
+  it.each([
     ['sector-berlin', 'signalEaterAwakes', 'signal-eater'],
     ['sector-krakow', 'glassChoirMarches', 'glass-regent'],
     ['sector-rift', 'ashCrownDescends', 'ash-crown-sovereign'],

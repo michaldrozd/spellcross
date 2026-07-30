@@ -123,7 +123,6 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
     },
     {
       territoryId: 'sector-mnemonic-orchard',
-      round: 2,
       kind: 'pressurePulse',
       log: 'The Orchard Remembers',
       screenshot: '/tmp/spellcross-tactical-event-effects-pressure.png'
@@ -150,6 +149,7 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
           control.selectUnit(unit.id);
           return {
             coordinate: pulse.coordinates[0],
+            triggerRound: event.triggerRound,
             unit: control.allyUnits().find((candidate: any) => candidate.id === unit.id)
           };
         })
@@ -198,9 +198,12 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
         return active ? { ...active, coordinates: [active.coordinate] } : undefined;
       });
     } else {
+      if (!pressureBefore?.triggerRound) {
+        throw new Error(`missing event round for ${scenario.territoryId}`);
+      }
       const triggered = await page.evaluate((round) => (
         (window as any).__battleControl.runScriptedEventsAtRound(round)
-      ), scenario.round);
+      ), pressureBefore.triggerRound);
       effect = triggered[0]?.effects.find((candidate: any) => candidate.kind === scenario.kind);
       await expect.poll(async () => page.evaluate((kind) => (
         (window as any).__battleControl.activeScenarioEventEffects()

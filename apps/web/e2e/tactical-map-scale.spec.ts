@@ -21,6 +21,14 @@ const RESCUE_SAMPLES = [
   { territoryId: 'sector-quiet-meridian', width: 40, height: 54, enemyCount: 18 }
 ] as const;
 
+const COMPOUND_ASSAULT_SAMPLES = [
+  { territoryId: 'sector-rift', objectiveKinds: ['eliminate', 'hold', 'interact'] },
+  {
+    territoryId: 'sector-mnemonic-orchard',
+    objectiveKinds: ['eliminate', 'hold', 'interact', 'protect']
+  }
+] as const;
+
 async function waitForPresentedBattle(page: Page, territoryId: string) {
   await expect.poll(async () => page.locator('[data-testid="map-metrics"]').evaluate((metrics) => ({
     battleId: metrics.getAttribute('data-battle-id'),
@@ -176,6 +184,104 @@ test('scaled simple assaults present their early and mid mission shapes', async 
     expect(mission.objectives.some((objective) => (
       objective.essential || objective.deadlineRound !== undefined
     ))).toBe(false);
+  }
+
+  expect(runtimeErrors).toEqual([]);
+});
+
+test('scaled compound assaults present their complete objective and event contracts', async ({ page }) => {
+  const runtimeErrors: string[] = [];
+  page.on('pageerror', (error) => runtimeErrors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') runtimeErrors.push(message.text());
+  });
+
+  await page.goto('/');
+  await page.waitForFunction(() => Boolean((window as any).__campaignControl));
+
+  for (const sample of COMPOUND_ASSAULT_SAMPLES) {
+    expect(await page.evaluate(() => (
+      (window as any).__campaignControl.newCampaign(1, 'veteran')
+    ))).toBe(true);
+    expect(await page.evaluate((territoryId) => (
+      (window as any).__campaignControl.startBattleForValidation(territoryId)
+    ), sample.territoryId)).toBe(true);
+    expect(await waitForPresentedBattle(page, sample.territoryId)).toEqual({
+      width: 40,
+      height: 54
+    });
+
+    const mission = await page.evaluate(() => {
+      const control = (window as any).__battleControl;
+      const objectives = control.objectives();
+      const interaction = objectives.find((objective: any) => objective.kind === 'interact');
+      const protect = objectives.find((objective: any) => objective.kind === 'protect');
+      const specialistId = interaction?.eligibleUnitIds?.[0];
+      return {
+        enemyCount: control.enemyUnits().length,
+        objectives,
+        interaction,
+        protect,
+        specialist: control.allyUnits().find((unit: any) => unit.id === specialistId),
+        events: control.scriptedEvents()
+      };
+    });
+
+    expect(mission.enemyCount).toBe(18);
+    expect(mission.objectives.map((objective: any) => objective.kind).sort())
+      .toEqual([...sample.objectiveKinds].sort());
+    expect(mission.events.find((event: any) => (
+      event.id === `${sample.territoryId}-reserve-wave`
+    ))).toMatchObject({
+      triggerRound: 5,
+      faction: 'otherSide',
+      reinforcements: expect.arrayContaining([
+        expect.objectContaining({ definitionId: expect.any(String) })
+      ])
+    });
+
+    if (sample.territoryId === 'sector-rift') {
+      expect(mission.interaction).toMatchObject({
+        optional: true,
+        actionPoints: 2
+      });
+      expect(mission.events.find((event: any) => (
+        event.id === 'sector-rift-signature-wave'
+      ))).toMatchObject({
+        triggerRound: 7,
+        triggerAfterEventId: 'sector-rift-reserve-wave',
+        triggerEnemyRemaining: 0,
+        reinforcements: expect.arrayContaining([
+          expect.objectContaining({ definitionId: 'ash-crown-sovereign' })
+        ])
+      });
+    } else {
+      expect(mission.interaction).toMatchObject({
+        essential: true,
+        deadlineRound: 9,
+        actionPoints: 3
+      });
+      expect(mission.specialist).toMatchObject({
+        definitionId: 'psi-corps',
+        stance: 'ready'
+      });
+      expect(mission.protect).toMatchObject({
+        eligibleUnitIds: [mission.specialist.id]
+      });
+      expect(mission.events[0]?.effects).toEqual([
+        expect.objectContaining({
+          kind: 'pressurePulse',
+          coordinates: expect.arrayContaining([
+            expect.objectContaining({
+              q: expect.any(Number),
+              r: expect.any(Number)
+            })
+          ]),
+          healthDamage: 12,
+          moraleDamage: 18
+        })
+      ]);
+    }
   }
 
   expect(runtimeErrors).toEqual([]);

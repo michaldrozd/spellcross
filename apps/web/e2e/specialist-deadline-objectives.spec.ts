@@ -156,15 +156,44 @@ test('Auto Turn moves the assigned specialist and refuses an in-range regular sq
 test('a missed deadline and a lost specialist each fail the operation immediately', async ({ page }) => {
   await startBattle(page, 'sector-mnemonic-orchard');
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
-  const deadline = await page.evaluate(() => (
-    (window as any).__battleControl.objectives().find((candidate: any) => candidate.essential)
-  ));
-  expect(deadline).toMatchObject({ deadlineRound: 9, completed: false });
+  const deadline = await page.evaluate(() => {
+    const control = (window as any).__battleControl;
+    const objective = control.objectives().find((candidate: any) => candidate.essential);
+    const specialistId = objective?.eligibleUnitIds?.[0];
+    const metrics = document.querySelector('[data-testid="map-metrics"]');
+    return {
+      objective,
+      protect: control.objectives().find((candidate: any) => (
+        candidate.kind === 'protect'
+        && candidate.eligibleUnitIds?.includes(specialistId)
+      )),
+      specialist: control.allyUnits().find((candidate: any) => (
+        candidate.id === specialistId
+      )),
+      map: {
+        width: Number(metrics?.getAttribute('data-map-width')),
+        height: Number(metrics?.getAttribute('data-map-height'))
+      }
+    };
+  });
+  expect(deadline.map).toEqual({ width: 40, height: 54 });
+  expect(deadline.objective).toMatchObject({
+    deadlineRound: 9,
+    completed: false,
+    actionPoints: 3
+  });
+  expect(deadline.specialist).toMatchObject({
+    definitionId: 'psi-corps',
+    stance: 'ready'
+  });
+  expect(deadline.protect).toMatchObject({
+    eligibleUnitIds: [deadline.specialist.id]
+  });
   await expect(page.locator('.objective-hud')).toContainText('Critical');
   await expect(page.locator('.objective-hud')).toContainText('Action required by round 9');
   await page.evaluate((round) => (
     (window as any).__battleControl.setBattleRound(round + 1)
-  ), deadline.deadlineRound);
+  ), deadline.objective.deadlineRound);
   await expect(page.locator('.battle-outcome-overlay')).toContainText(/Mission Failed/i);
   await page.screenshot({ path: '/tmp/spellcross-specialist-deadline-failed.png' });
 

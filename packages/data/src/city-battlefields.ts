@@ -691,6 +691,33 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
   const hold = g.reachable.slice().sort((a, b) =>
     (Math.abs(a.q - cx) + Math.abs(a.r - cy)) - (Math.abs(b.q - cx) + Math.abs(b.r - cy))
   )[0] ?? { q: Math.floor(cx), r: Math.floor(cy) };
+  if (id === 'sector-mnemonic-orchard' && scaleProfile) {
+    const latticeClearing = new Set<string>();
+    for (let r = hold.r - 1; r <= hold.r + 1; r += 1) {
+      for (let q = hold.q - 1; q <= hold.q + 1; q += 1) {
+        if (inB(q, r, cfg.width, cfg.height)) latticeClearing.add(`${q},${r}`);
+      }
+    }
+    for (const key of latticeClearing) {
+      const [q, r] = key.split(',').map(Number);
+      const index = r * cfg.width + q;
+      g.map.tiles[index] = {
+        ...g.map.tiles[index],
+        terrain: 'plain',
+        cover: q === hold.q && r === hold.r ? 2 : 1,
+        movementCostModifier: 1,
+        passable: true,
+        providesVisionBoost: false,
+        blocksVision: false,
+        destructible: false
+      };
+    }
+    g.map.props = g.map.props?.filter((prop) => (
+      (prop.tiles?.length ? prop.tiles : [prop.coordinate]).every((coordinate) => (
+        !latticeClearing.has(`${coordinate.q},${coordinate.r}`)
+      ))
+    ));
+  }
   const objs: TacticalObjective[] = [];
   let allianceForces: ScenarioUnit[] | undefined;
   switch (cfg.gameplay) {
@@ -1258,13 +1285,13 @@ const CITY_CONFIGS: CityConfig[] = [
   { territoryId: 'sector-kyiv', name: 'Kyiv Siege', brief: 'Night raid through the ruined metropolis to silence the coven and hold the relay.', theme: 'ruins', gameplay: 'raid-night', width: 40, height: 54, weather: 'night', difficulty: 5, scaleBand: 'mid' },
   { territoryId: 'sector-carpathian', name: 'Carpathian Pass', brief: 'Hold the high pass strongpoint and clear the patrol-ridden ridges.', theme: 'alpine', gameplay: 'hold', width: 40, height: 54, weather: 'clear', difficulty: 4, scaleBand: 'mid' },
   { territoryId: 'sector-blacksea', name: 'Black Sea Coast', brief: 'Push along the foggy coast, rout the shore-spawn and seize the far cape.', theme: 'coast', gameplay: 'bridgehead', width: 40, height: 54, weather: 'fog', difficulty: 4, scaleBand: 'mid' },
-  { territoryId: 'sector-rift', name: 'Operation Ash Crown', brief: 'Cross the burning scar, anchor the seal, and survive the self-crowned warden that rises from its final breach.', theme: 'rift', gameplay: 'spire', width: 40, height: 26, weather: 'fog', difficulty: 5 },
+  { territoryId: 'sector-rift', name: 'Operation Ash Crown', brief: 'Cross the burning scar, anchor the seal, and survive the self-crowned warden that rises from its final breach.', theme: 'rift', gameplay: 'spire', width: 40, height: 54, weather: 'fog', difficulty: 5, scaleBand: 'mid' },
   { territoryId: 'sector-cinder-gate', name: 'Cinder Gate', brief: 'Cross the unstable passage, break the heat-scarred pylon ring, and anchor the first Shatterline foothold.', theme: 'rift', gameplay: 'spire', width: 40, height: 54, weather: 'fog', difficulty: 5, rosterOffset: 11, scaleBand: 'mid' },
   { territoryId: 'sector-lantern-vault', name: 'Lantern Vault', brief: 'Reach the trapped survey team and escort its star charts out through the collapsing observatory galleries.', theme: 'ruins', gameplay: 'rescue', width: 40, height: 54, weather: 'clear', difficulty: 5, rosterOffset: 12, scaleBand: 'mid', specialistDeadlineRound: 7 },
   { territoryId: 'sector-hollow-tide', name: 'Hollow Tide', brief: 'Raid the black shoreline, silence the tide-callers, and hold the stranded vanguard beacon through the mist.', theme: 'coast', gameplay: 'raid-night', width: 40, height: 54, weather: 'night', difficulty: 5, rosterOffset: 13, scaleBand: 'mid' },
   { territoryId: 'sector-ashen-confluence', name: 'Ashen Confluence', brief: 'Escort the survey convoy across the joined fault line and align the echo beacon for optional fire support.', theme: 'rift', gameplay: 'convoy', width: 40, height: 54, weather: 'fog', difficulty: 5, rosterOffset: 11, scaleBand: 'mid' },
   { territoryId: 'sector-sable-causeway', name: 'Sable Causeway', brief: 'Break the causeway guard, arm the ward towers, and keep the northern road from folding into the sea.', theme: 'coast', gameplay: 'bridgehead', width: 60, height: 70, weather: 'clear', difficulty: 5, rosterOffset: 12, scaleBand: 'late', specialistDeadlineRound: 14 },
-  { territoryId: 'sector-mnemonic-orchard', name: 'Mnemonic Orchard', brief: 'Raid the echoing forest by night, silence the signal mimics, and hold the root relay through their answer.', theme: 'forest', gameplay: 'raid-night', width: 39, height: 27, weather: 'night', difficulty: 5, rosterOffset: 13 },
+  { territoryId: 'sector-mnemonic-orchard', name: 'Mnemonic Orchard', brief: 'Raid the echoing forest by night, silence the signal mimics, and hold the root relay through their answer.', theme: 'forest', gameplay: 'raid-night', width: 40, height: 54, weather: 'night', difficulty: 5, rosterOffset: 13, scaleBand: 'mid' },
   { territoryId: 'sector-thorn-engine', name: 'Thorn Engine', brief: 'Hold the regulator control ring while the field teams reverse the contraction pulling both fronts together.', theme: 'industrial', gameplay: 'hold', width: 60, height: 70, weather: 'fog', difficulty: 5, rosterOffset: 11, scaleBand: 'lateHold' },
   { territoryId: 'sector-veil-heart', name: 'Veil Heart', brief: 'Enter the buried core, break its ritual guard, and survive the last horizon taking form around the heart.', theme: 'rift', gameplay: 'spire', width: 40, height: 54, weather: 'fog', difficulty: 5, rosterOffset: 12, scaleBand: 'mid' },
   { territoryId: 'sector-quiet-meridian', name: 'Quiet Meridian', brief: 'Reach the stranded survey team and guide it through ruins collapsing behind the broken horizon.', theme: 'ruins', gameplay: 'rescue', width: 40, height: 54, weather: 'clear', difficulty: 5, rosterOffset: 13, scaleBand: 'mid' },

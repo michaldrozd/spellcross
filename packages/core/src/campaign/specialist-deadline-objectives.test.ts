@@ -222,8 +222,8 @@ describe('specialist deadline objectives', () => {
       },
       {
         territoryId: 'sector-mnemonic-orchard',
-        pathSteps: 9,
-        pathCost: 9.9,
+        pathSteps: 10,
+        pathCost: 11,
         earliestCompletionRound: 3,
         deadlineRound: 9,
         marginRounds: 6

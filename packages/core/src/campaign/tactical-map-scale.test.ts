@@ -88,13 +88,19 @@ const SCALED_EVACUATIONS = [
   ['sector-paris', 1_620, 14]
 ] as const;
 
+const SCALED_COMPOUND_ASSAULTS = [
+  ['sector-rift', 2_160, 18],
+  ['sector-mnemonic-orchard', 2_160, 18]
+] as const;
+
 const SCALED_OPERATION_IDS = [
   ...SCALED_EVACUATIONS.map(([territoryId]) => territoryId),
   ...SCALED_CONVOYS.map(([territoryId]) => territoryId),
   ...SCALED_BRIDGEHEADS.map(([territoryId]) => territoryId),
   ...SCALED_HOLD_LINES.map(([territoryId]) => territoryId),
   ...SCALED_SIMPLE_ASSAULTS.map(([territoryId]) => territoryId),
-  ...SCALED_RESCUES.map(([territoryId]) => territoryId)
+  ...SCALED_RESCUES.map(([territoryId]) => territoryId),
+  ...SCALED_COMPOUND_ASSAULTS.map(([territoryId]) => territoryId)
 ];
 
 function openBattle(
@@ -467,6 +473,137 @@ describe('scaled battlefields', () => {
         enemy.currentHealth = 0;
       }
       expect(evaluateBattleOutcome(battle)).toBe('victory');
+    }
+  );
+
+  it.each(SCALED_COMPOUND_ASSAULTS)(
+    'keeps %s compound objectives and staged events viable in depth',
+    (territoryId, cells, enemyCount) => {
+      const { battle } = openBattle(territoryId);
+      const hold = battle.scenario.objectives.find((objective) => (
+        objective.id === `${territoryId}-hold`
+      ));
+      const interaction = battle.scenario.objectives.find((objective) => (
+        objective.kind === 'interact'
+      ));
+      const reserve = battle.scenario.events?.find((event) => (
+        event.id === `${territoryId}-reserve-wave`
+      ));
+      if (!hold?.target || !interaction?.target || !reserve) {
+        throw new Error(`missing compound operation contract for ${territoryId}`);
+      }
+
+      const missionForceIds = new Set(
+        (battle.scenario.allianceForces ?? [])
+          .map((unit) => battle.deployment[unit.id])
+          .filter((unitId): unitId is string => Boolean(unitId))
+      );
+      const routes = Array.from(battle.state.sides.alliance.units.values())
+        .filter((unit) => (
+          unit.stance !== 'destroyed'
+          && !unit.embarkedOn
+          && !missionForceIds.has(unit.id)
+        ))
+        .map((unit) => {
+          const actionPoints = unit.actionPoints;
+          unit.actionPoints = 10_000;
+          const route = planPathForUnitIso(battle.state, unit.id, hold.target!);
+          unit.actionPoints = actionPoints;
+          return route;
+        })
+        .filter((route) => route.success)
+        .sort((left, right) => left.cost - right.cost);
+
+      expect(battle.state.map.tiles).toHaveLength(cells);
+      expect(battle.state.sides.otherSide.units.size).toBe(enemyCount);
+      expect(routes.length).toBeGreaterThanOrEqual(
+        territoryId === 'sector-mnemonic-orchard' ? 5 : 4
+      );
+      expect(routes[0]?.path.length).toBeGreaterThan(20);
+      expect(hold).toMatchObject({ kind: 'hold', turnLimit: 3 });
+      expect(reserve).toMatchObject({
+        triggerRound: 5,
+        faction: 'otherSide'
+      });
+      expect(reserve.reinforcements).toHaveLength(4);
+
+      if (territoryId === 'sector-rift') {
+        const signature = battle.scenario.events?.find((event) => (
+          event.id === `${territoryId}-signature-wave`
+        ));
+        const wardReward = battle.scenario.events?.find((event) => (
+          event.triggerObjectiveId === interaction.id
+        ));
+        expect(battle.scenario.objectives.map((objective) => objective.kind).sort())
+          .toEqual(['eliminate', 'hold', 'interact']);
+        expect(interaction).toMatchObject({
+          optional: true,
+          actionKey: 'disruptWard',
+          actionPoints: 2
+        });
+        expect(signature).toMatchObject({
+          triggerRound: 7,
+          triggerAfterEventId: reserve.id,
+          triggerEnemyRemaining: 0
+        });
+        expect(signature?.reinforcements).toHaveLength(4);
+        expect(signature?.reinforcements[0]?.definitionId).toBe('ash-crown-sovereign');
+        expect(wardReward).toMatchObject({
+          faction: 'alliance',
+          reinforcements: [{
+            definitionId: 'rangers'
+          }]
+        });
+      } else {
+        const specialistId = `${territoryId}-psi-specialist`;
+        const specialist = battle.state.sides.alliance.units.get(
+          battle.deployment[specialistId]
+        );
+        const protect = battle.scenario.objectives.find((objective) => (
+          objective.kind === 'protect'
+        ));
+        const pressure = reserve.effects?.find((effect) => (
+          effect.kind === 'pressurePulse'
+        ));
+        if (!specialist) throw new Error('missing Mnemonic Orchard PSI specialist');
+        const actionPoints = specialist.actionPoints;
+        specialist.actionPoints = 10_000;
+        const specialistRoute = planPathForUnitIso(
+          battle.state,
+          specialist.id,
+          interaction.target
+        );
+        specialist.actionPoints = actionPoints;
+        expect(battle.scenario.objectives.map((objective) => objective.kind).sort())
+          .toEqual(['eliminate', 'hold', 'interact', 'protect']);
+        expect(specialistRoute.success).toBe(true);
+        expect(battle.state.map.tiles[
+          interaction.target.r * battle.state.map.width + interaction.target.q
+        ]).toMatchObject({
+          terrain: 'plain',
+          passable: true,
+          blocksVision: false
+        });
+        expect(interaction).toMatchObject({
+          unitIds: [specialistId],
+          essential: true,
+          deadlineRound: 9,
+          actionKey: 'groundMemoryLattice',
+          actionPoints: 3
+        });
+        expect(protect).toMatchObject({
+          unitIds: [specialistId]
+        });
+        expect(pressure).toMatchObject({
+          targetFaction: 'alliance',
+          healthDamage: 12,
+          moraleDamage: 18
+        });
+        if (!pressure || pressure.kind !== 'pressurePulse') {
+          throw new Error('missing Mnemonic Orchard pressure pulse');
+        }
+        expect(pressure.coordinates).toHaveLength(6);
+      }
     }
   );
 
