@@ -4904,9 +4904,9 @@ header.app-header {
 
   .battle-bottom-bar {
     display: block;
-    height: 208px;
-    min-height: 208px;
-    max-height: 208px;
+    height: 220px;
+    min-height: 220px;
+    max-height: 220px;
     padding: 0.46rem 7.9rem 0.38rem 0.38rem;
     overflow: hidden;
   }
@@ -4957,11 +4957,11 @@ header.app-header {
   }
 
   .unit-readout {
-    font-size: 0.48rem;
+    font-size: 0.55rem;
   }
 
   .unit-readout strong {
-    font-size: 0.54rem;
+    font-size: 0.6rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -4976,13 +4976,13 @@ header.app-header {
   .unit-card .unit-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.14rem 0.7rem;
-    font-size: 0.58rem;
+    font-size: 0.6rem;
   }
 
   .unit-card .unit-stats strong {
     margin-bottom: 0.08rem;
     overflow: hidden;
-    font-size: 0.64rem;
+    font-size: 0.68rem;
     text-overflow: ellipsis;
   }
 
@@ -4999,7 +4999,7 @@ header.app-header {
   .unit-armory {
     margin-top: 0;
     padding-top: 0.2rem;
-    font-size: 0.48rem;
+    font-size: 0.52rem;
   }
 
   .unit-armory-top {
@@ -5023,9 +5023,9 @@ header.app-header {
   }
 
   .unit-actions button {
-    min-height: 26px;
+    min-height: 32px;
     padding: 0.2rem 0.35rem;
-    font-size: 0.54rem;
+    font-size: 0.58rem;
   }
 
   .battle-controls {
@@ -5035,7 +5035,7 @@ header.app-header {
     z-index: 2;
     align-self: auto;
     width: 118px;
-    grid-auto-rows: 34px;
+    grid-auto-rows: 42px;
     gap: 4px;
     padding: 1.02rem 0.38rem 0.38rem;
   }
@@ -5044,13 +5044,14 @@ header.app-header {
     top: 0.25rem;
     left: 0.4rem;
     right: 0.4rem;
-    font-size: 0.52rem;
+    font-size: 0.58rem;
   }
 
   .battle-controls button {
-    min-height: 32px;
+    min-height: 40px;
     padding: 0.18rem 0.2rem;
-    font-size: 0.5rem;
+    font-size: 0.58rem;
+    overflow-wrap: anywhere;
   }
 
   .unit-card.target-card .fire-control {
