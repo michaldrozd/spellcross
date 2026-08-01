@@ -77,6 +77,19 @@ async function expectOpeningFormationCentered(page: Page, width: number, height:
   expect(formation!.documentWidth).toBe(width);
 }
 
+async function expectRangeLegendClearOfObjectives(page: Page) {
+  const [objective, legend, deck] = await Promise.all([
+    page.locator('.objective-hud').boundingBox(),
+    page.locator('.battle-mode-badge').boundingBox(),
+    page.locator('.battle-bottom-bar').boundingBox()
+  ]);
+  expect(objective).not.toBeNull();
+  expect(legend).not.toBeNull();
+  expect(deck).not.toBeNull();
+  expect(legend!.y).toBeGreaterThanOrEqual(objective!.y + objective!.height);
+  expect(legend!.y + legend!.height).toBeLessThanOrEqual(deck!.y);
+}
+
 test('battle HUD keeps unit, log, and command panels in one aligned deck', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await startBattle(page);
@@ -99,6 +112,15 @@ test('battle HUD keeps unit, log, and command panels in one aligned deck', async
   await expect(page.locator('.selected-unit-card')).not.toHaveClass(/empty/);
   await expectBottomDeckAligned(page, 12);
   const selectedDesktopDeck = await bottomDeckBox(page);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('.battle-controls > button').first().click();
+  await expect(page.locator('.battle-mode-badge')).toBeVisible();
+  await expectRangeLegendClearOfObjectives(page);
+  expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('sk'))).toBe('sk');
+  await expectRangeLegendClearOfObjectives(page);
+  expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('en'))).toBe('en');
+  await page.locator('.battle-controls > button').first().click();
 
   await page.setViewportSize({ width: 1005, height: 411 });
   await expectBottomDeckAligned(page, 12);

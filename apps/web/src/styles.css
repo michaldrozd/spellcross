@@ -4863,6 +4863,12 @@ header.app-header {
     display: none;
   }
 
+  .battle-ui-layer:has(.objective-hud) .battle-mode-badge {
+    top: auto;
+    right: 0.5rem;
+    bottom: 14.25rem;
+  }
+
   .objective-action {
     min-width: 4.8rem;
     padding-inline: 0.3rem;
