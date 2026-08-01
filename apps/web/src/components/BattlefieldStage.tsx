@@ -2152,24 +2152,29 @@ export function BattlefieldStage({
     };
   }, []);
 
-  // Auto-center camera on the friendly deploy area at start (the only lit region under fog — centring on
-  // the map middle would just frame darkness). Keep enough of the surrounding approach in view to orient
-  // the player without shrinking units and terrain into a small island inside the HUD.
+  // Auto-center camera on the friendly formation at start (the only lit region under fog — centring on
+  // the map middle would just frame darkness). Using the whole formation keeps every deployed unit in
+  // view even when roster iteration begins at an edge of the deployment line.
   const didAutoCenterRef = useRef(false);
   useEffect(() => {
     if (didAutoCenterRef.current) return;
-    let friendly: UnitInstance | undefined;
+    const formation: Array<{ x: number; y: number }> = [];
     for (const side of Object.values(battleState.sides)) {
       for (const u of side.units.values()) {
-        if (u.faction === viewerFaction) { friendly = u; break; }
+        if (u.faction !== viewerFaction || u.stance === 'destroyed' || u.embarkedOn) continue;
+        const p = toScreen(u.coordinate);
+        formation.push({ x: p.x + (ISO_MODE ? isoBaseX : 0), y: p.y });
       }
-      if (friendly) break;
     }
-    if (friendly) {
-      const p = toScreen(friendly.coordinate);
-      setFollowTargetPx({ x: p.x + (ISO_MODE ? isoBaseX : 0), y: p.y });
-      didAutoCenterRef.current = true;
-    }
+    if (formation.length === 0) return;
+    setFollowTargetPx(formation.reduce(
+      (center, position) => ({
+        x: center.x + position.x / formation.length,
+        y: center.y + position.y / formation.length
+      }),
+      { x: 0, y: 0 }
+    ));
+    didAutoCenterRef.current = true;
   }, [battleState.sides, isoBaseX, viewerFaction]);
 
   useEffect(() => {
