@@ -34,7 +34,7 @@ body {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
+  align-items: safe center;
   justify-content: center;
   overflow-y: auto;
   padding: 1.5rem;
@@ -594,7 +594,10 @@ body {
 
 @media (max-width: 620px) {
   .main-menu { padding: 1rem; }
-  .menu-logo h1 { font-size: clamp(2rem, 12vw, 3rem); }
+  .menu-logo h1 {
+    font-size: clamp(2rem, 10vw, 3rem);
+    letter-spacing: 0.22em;
+  }
   .menu-subtitle { font-size: 0.82rem; letter-spacing: 0.32em; }
   .menu-buttons { width: min(320px, 100%); }
   .difficulty-options { grid-template-columns: 1fr; }
