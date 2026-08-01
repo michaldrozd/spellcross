@@ -2,8 +2,6 @@ import { expect, test } from '@playwright/test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { startFreshCampaign } from './helpers';
-
 const researchLocaleKeys = (language: 'en' | 'sk') => {
   const locale = JSON.parse(
     readFileSync(resolve(process.cwd(), `apps/web/src/i18n/locales/${language}/research.json`), 'utf8')
@@ -21,14 +19,36 @@ test('research expansion has exact English and Slovak content parity', () => {
   expect(english.map((entry) => entry.split(':', 1)[0])).toEqual(slovak.map((entry) => entry.split(':', 1)[0]));
 });
 
-test('all nine research tiers remain usable at 390px', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await startFreshCampaign(page);
-  await page.getByRole('button', { name: /Research/i }).click();
+test('all research content remains readable across desktop and phone in both languages', async ({ page }) => {
+  const layouts = [
+    { language: 'en', width: 1440, height: 900 },
+    { language: 'sk', width: 1440, height: 900 },
+    { language: 'en', width: 390, height: 844 },
+    { language: 'sk', width: 390, height: 844 },
+  ] as const;
 
-  await expect(page.locator('.research-card')).toHaveCount(51);
-  await expect(page.locator('.research-column-tier-9')).toBeAttached();
-  await page.locator('.research-column-tier-9').scrollIntoViewIfNeeded();
-  await expect(page.locator('.research-column-tier-9 .research-card')).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  for (const layout of layouts) {
+    await page.setViewportSize({ width: layout.width, height: layout.height });
+    await page.goto('/');
+    await page.evaluate((language) => window.localStorage.setItem('spellcross:lang', language), layout.language);
+    await page.reload();
+    await page.waitForFunction(() => Boolean((window as any).__campaignControl));
+    await page.evaluate(() => (window as any).__campaignControl.newCampaign(1));
+    await page.locator('.hq-tabs .tab').nth(2).click();
+
+    await expect(page.locator('.research-card')).toHaveCount(51);
+    await expect(page.locator('.research-column-tier-9')).toBeAttached();
+    await page.locator('.research-column-tier-9').scrollIntoViewIfNeeded();
+    await expect(page.locator('.research-column-tier-9 .research-card')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth), `${layout.language} ${layout.width}px page width`)
+      .toBe(layout.width);
+
+    const clippedCopy = await page.locator('.research-card p, .research-requirements b, .research-focus strong')
+      .evaluateAll((elements) => elements.flatMap((element) => {
+        const horizontal = element.scrollWidth > element.clientWidth + 1;
+        const vertical = element.scrollHeight > element.clientHeight + 1;
+        return horizontal || vertical ? [(element.textContent ?? '').trim()] : [];
+      }));
+    expect(clippedCopy, `${layout.language} ${layout.width}px clipped research copy`).toEqual([]);
+  }
 });

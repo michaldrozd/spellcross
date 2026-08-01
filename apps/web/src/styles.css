@@ -3092,12 +3092,11 @@ body {
 }
 
 .research-focus strong {
-  overflow: hidden;
   color: #d7dcc9;
   font-size: 0.68rem;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .research-focus-recon::before,
@@ -3383,11 +3382,7 @@ body {
 }
 
 .research-card p {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
   margin: 0 0 0.5rem;
-  overflow: hidden;
   color: #d0dad4;
   font-size: 0.76rem;
   line-height: 1.36;
@@ -3399,11 +3394,6 @@ body {
   padding: 0.16rem 0.22rem;
   background: rgba(2, 5, 5, 0.34);
   box-shadow: inset 0 0 0 1px rgba(202, 213, 180, 0.035);
-}
-
-.research-card.locked-node p,
-.research-card.waiting-node p {
-  -webkit-line-clamp: 3;
 }
 
 .research-requirements {
@@ -3422,11 +3412,10 @@ body {
 }
 
 .research-requirements b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: #e0d18e;
   font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .research-cost {
