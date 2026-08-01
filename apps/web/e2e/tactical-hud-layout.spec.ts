@@ -38,9 +38,62 @@ async function bottomDeckBox(page: Page) {
   return box!;
 }
 
+async function openingFormationMetrics(page: Page) {
+  return page.evaluate(() => {
+    const camera = (window as any).__battleCamera;
+    const allies = (window as any).__battleControl?.allyPositions?.() ?? [];
+    if (!camera || allies.length === 0) return null;
+    const positions = allies.map(({ q, r }: { q: number; r: number }) => camera.screenForCoord(q, r));
+    return {
+      centroid: positions.reduce(
+        (center: { x: number; y: number }, position: { x: number; y: number }) => ({
+          x: center.x + position.x / positions.length,
+          y: center.y + position.y / positions.length
+        }),
+        { x: 0, y: 0 }
+      ),
+      left: Math.min(...positions.map(({ x }: { x: number }) => x)),
+      right: Math.max(...positions.map(({ x }: { x: number }) => x)),
+      top: Math.min(...positions.map(({ y }: { y: number }) => y)),
+      bottom: Math.max(...positions.map(({ y }: { y: number }) => y)),
+      documentWidth: document.documentElement.scrollWidth
+    };
+  });
+}
+
+async function expectOpeningFormationCentered(page: Page, width: number, height: number) {
+  await expect.poll(async () => {
+    const formation = await openingFormationMetrics(page);
+    return formation ? Math.abs(formation.centroid.x - width / 2) : Number.POSITIVE_INFINITY;
+  }).toBeLessThanOrEqual(1);
+  const formation = await openingFormationMetrics(page);
+  expect(formation).not.toBeNull();
+
+  expect(Math.abs(formation!.centroid.y - height * 0.41)).toBeLessThanOrEqual(20);
+  expect(formation!.left).toBeGreaterThanOrEqual(0);
+  expect(formation!.right).toBeLessThanOrEqual(width);
+  expect(formation!.top).toBeGreaterThanOrEqual(0);
+  expect(formation!.bottom).toBeLessThanOrEqual(height);
+  expect(formation!.documentWidth).toBe(width);
+}
+
 test('battle HUD keeps unit, log, and command panels in one aligned deck', async ({ page }) => {
   await page.setViewportSize({ width: 1920, height: 1080 });
   await startBattle(page);
+  for (const viewport of [
+    { width: 1920, height: 1080 },
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 },
+    { width: 390, height: 844 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await expectOpeningFormationCentered(page, viewport.width, viewport.height);
+  }
+  expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('sk'))).toBe('sk');
+  await expectOpeningFormationCentered(page, 390, 844);
+  expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('en'))).toBe('en');
+  await page.setViewportSize({ width: 1920, height: 1080 });
+  await expectOpeningFormationCentered(page, 1920, 1080);
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
 
   await expect(page.locator('.selected-unit-card')).not.toHaveClass(/empty/);
