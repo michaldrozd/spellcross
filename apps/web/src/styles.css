@@ -4832,6 +4832,61 @@ header.app-header {
   }
 }
 
+@media (min-width: 760px) and (max-width: 900px) {
+  .unit-details {
+    grid-template-columns: 76px minmax(155px, 1fr) minmax(84px, 0.6fr);
+    gap: 0.35rem;
+    font-size: 0.68rem;
+  }
+
+  .unit-monitor {
+    min-height: 0;
+    gap: 0.24rem;
+  }
+
+  .unit-scope {
+    min-height: 50px;
+    height: 64px;
+  }
+
+  .unit-scope-portrait {
+    min-height: 46px;
+    padding: 2px;
+  }
+
+  .unit-readout {
+    font-size: 0.56rem;
+  }
+
+  .unit-readout strong {
+    overflow: hidden;
+    font-size: 0.62rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .unit-card .unit-stats,
+  .unit-status {
+    padding: 0.3rem 0.36rem;
+  }
+
+  .unit-card .unit-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.12rem 0.45rem;
+    font-size: 0.62rem;
+  }
+
+  .unit-stats p,
+  .unit-status p {
+    margin: 0.1rem 0;
+    padding-bottom: 0.2rem;
+  }
+
+  .unit-tags {
+    display: none;
+  }
+}
+
 @media (max-width: 600px) {
   .battle-top-bar {
     padding: 0.42rem 0.62rem 0.58rem;

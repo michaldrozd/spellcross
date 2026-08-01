@@ -38,6 +38,29 @@ async function bottomDeckBox(page: Page) {
   return box!;
 }
 
+async function expectSelectedUnitVitalsVisible(page: Page) {
+  const metrics = await page.evaluate(() => {
+    const card = document.querySelector('.selected-unit-card')?.getBoundingClientRect();
+    const monitor = document.querySelector('.unit-monitor')?.getBoundingClientRect();
+    const stats = document.querySelector('.selected-unit-card .unit-stats')?.getBoundingClientRect();
+    const status = document.querySelector('.selected-unit-card .unit-status')?.getBoundingClientRect();
+    if (!card || !monitor || !stats || !status) return null;
+    return {
+      card: { top: card.top, bottom: card.bottom },
+      monitor: { top: monitor.top, bottom: monitor.bottom, width: monitor.width },
+      stats: { top: stats.top, bottom: stats.bottom },
+      status: { top: status.top, bottom: status.bottom }
+    };
+  });
+
+  expect(metrics).not.toBeNull();
+  for (const panel of [metrics!.monitor, metrics!.stats, metrics!.status]) {
+    expect(panel.top).toBeGreaterThanOrEqual(metrics!.card.top);
+    expect(panel.bottom).toBeLessThanOrEqual(metrics!.card.bottom);
+  }
+  expect(metrics!.monitor.width).toBeLessThan(120);
+}
+
 async function openingFormationMetrics(page: Page) {
   return page.evaluate(() => {
     const camera = (window as any).__battleCamera;
@@ -121,6 +144,18 @@ test('battle HUD keeps unit, log, and command panels in one aligned deck', async
   await expectRangeLegendClearOfObjectives(page);
   expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('en'))).toBe('en');
   await page.locator('.battle-controls > button').first().click();
+
+  for (const viewport of [
+    { width: 844, height: 390 },
+    { width: 800, height: 600 }
+  ]) {
+    await page.setViewportSize(viewport);
+    await expectBottomDeckAligned(page, 12);
+    await expectSelectedUnitVitalsVisible(page);
+    expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('sk'))).toBe('sk');
+    await expectSelectedUnitVitalsVisible(page);
+    expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('en'))).toBe('en');
+  }
 
   await page.setViewportSize({ width: 1005, height: 411 });
   await expectBottomDeckAligned(page, 12);
