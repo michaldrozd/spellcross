@@ -4071,6 +4071,7 @@ header.app-header {
   line-height: 1.05;
   text-transform: uppercase;
   white-space: normal;
+  overflow-wrap: anywhere;
   box-shadow: inset 1px 1px 0 rgba(238, 226, 179, 0.17), inset -1px -1px 0 rgba(0, 0, 0, 0.52);
 }
 
