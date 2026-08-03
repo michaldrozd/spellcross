@@ -1,5 +1,5 @@
 import type { CampaignDifficulty } from '@spellcross/core';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { setAppLanguage, SUPPORTED_LANGUAGES } from '../i18n/index.js';
@@ -32,8 +32,18 @@ interface AudioPreferences {
   ambience: number;
 }
 
+type MenuPanel = 'slots' | 'settings' | 'manual';
+
 const AUDIO_PREFERENCES_KEY = 'spellcross:audio';
 const CAMPAIGN_DIFFICULTIES = ['story', 'commander', 'veteran'] as const;
+const MODAL_FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'a[href]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
 const DEFAULT_AUDIO_PREFERENCES: AudioPreferences = {
   enabled: true,
   master: 0.7,
@@ -69,8 +79,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   const [selectedSlot, setSelectedSlot] = useState(currentSlot);
   const [selectedDifficulty, setSelectedDifficulty] = useState<CampaignDifficulty>('commander');
   const [pendingDeleteSlot, setPendingDeleteSlot] = useState<number | null>(null);
-  const [activePanel, setActivePanel] = useState<'slots' | 'settings' | 'manual' | null>(null);
+  const [activePanel, setActivePanel] = useState<MenuPanel | null>(null);
   const [audioPreferences, setAudioPreferences] = useState(loadAudioPreferences);
+  const activeDialogRef = useRef<HTMLDivElement>(null);
+  const panelTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const deleteConfirmRef = useRef<HTMLButtonElement | null>(null);
+  const deleteFocusTargetRef = useRef<'delete' | 'slot' | null>(null);
 
   useEffect(() => {
     AudioManager.setEnabled(audioPreferences.enabled);
@@ -81,12 +95,69 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
   useEffect(() => {
     if (!activePanel) return;
-    const closePanel = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setActivePanel(null);
+    const dialog = activeDialogRef.current;
+    if (!dialog) return;
+
+    const focusableControls = () => Array.from(
+      dialog.querySelectorAll<HTMLElement>(MODAL_FOCUSABLE_SELECTOR),
+    );
+    focusableControls()[0]?.focus();
+
+    const handlePanelKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setActivePanel(null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const controls = focusableControls();
+      const firstControl = controls[0];
+      const lastControl = controls.at(-1);
+      if (!firstControl || !lastControl) return;
+
+      const activeElement = document.activeElement;
+      if (event.shiftKey && (activeElement === firstControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        lastControl.focus();
+      } else if (!event.shiftKey && (activeElement === lastControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        firstControl.focus();
+      }
     };
-    window.addEventListener('keydown', closePanel);
-    return () => window.removeEventListener('keydown', closePanel);
+    window.addEventListener('keydown', handlePanelKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handlePanelKeyDown);
+      if (panelTriggerRef.current?.isConnected) panelTriggerRef.current.focus();
+      panelTriggerRef.current = null;
+    };
   }, [activePanel]);
+
+  useEffect(() => {
+    if (pendingDeleteSlot !== null) {
+      deleteConfirmRef.current?.focus();
+      return;
+    }
+
+    if (deleteFocusTargetRef.current === 'delete') {
+      activeDialogRef.current
+        ?.querySelector<HTMLButtonElement>('.slot-actions > .menu-btn-danger')
+        ?.focus();
+    } else if (deleteFocusTargetRef.current === 'slot') {
+      activeDialogRef.current
+        ?.querySelectorAll<HTMLButtonElement>('.slot-item')[selectedSlot - 1]
+        ?.focus();
+    }
+    deleteFocusTargetRef.current = null;
+  }, [pendingDeleteSlot, selectedSlot]);
+
+  const openPanel = (
+    panel: MenuPanel,
+    trigger: HTMLButtonElement,
+  ) => {
+    panelTriggerRef.current = trigger;
+    setActivePanel(panel);
+  };
 
   const updateAudioPreferences = (next: AudioPreferences) => {
     setAudioPreferences(next);
@@ -180,18 +251,18 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
           <button
             className="menu-btn"
-            onClick={() => setActivePanel('slots')}
+            onClick={(event) => openPanel('slots', event.currentTarget)}
           >
             <span className="btn-icon">📋</span>
             {hasAnySave ? t('buttons.loadGame') : t('buttons.newGame')}
           </button>
 
-          <button className="menu-btn" onClick={() => setActivePanel('settings')}>
+          <button className="menu-btn" onClick={(event) => openPanel('settings', event.currentTarget)}>
             <span className="btn-icon">⚙</span>
             {t('buttons.settings')}
           </button>
 
-          <button className="menu-btn" onClick={() => setActivePanel('manual')}>
+          <button className="menu-btn" onClick={(event) => openPanel('manual', event.currentTarget)}>
             <span className="btn-icon">📖</span>
             {t('buttons.manual')}
           </button>
@@ -204,7 +275,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       </div>
 
       {activePanel === 'slots' && (
-        <div className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="slot-modal-title">
+        <div ref={activeDialogRef} className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="slot-modal-title">
           <div className="slot-modal-content slot-campaign-content">
             <h2 id="slot-modal-title">{t('slotModal.title')}</h2>
             <div className="slot-list">
@@ -293,15 +364,23 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                 <div className="slot-delete-confirm" role="alert">
                   <span>{t('slotModal.deleteWarning', { slot: selectedSlot })}</span>
                   <button
+                    ref={deleteConfirmRef}
                     className="menu-btn menu-btn-danger"
                     onClick={() => {
+                      deleteFocusTargetRef.current = 'slot';
                       onDeleteSave(selectedSlot);
                       setPendingDeleteSlot(null);
                     }}
                   >
                     {t('slotModal.confirmDelete')}
                   </button>
-                  <button className="menu-btn menu-btn-secondary" onClick={() => setPendingDeleteSlot(null)}>
+                  <button
+                    className="menu-btn menu-btn-secondary"
+                    onClick={() => {
+                      deleteFocusTargetRef.current = 'delete';
+                      setPendingDeleteSlot(null);
+                    }}
+                  >
                     {t('slotModal.cancel')}
                   </button>
                 </div>
@@ -312,7 +391,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       )}
 
       {activePanel === 'settings' && (
-        <div className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
+        <div ref={activeDialogRef} className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title">
           <div className="slot-modal-content menu-modal-content">
             <button className="modal-close" aria-label={t('slotModal.back')} onClick={() => setActivePanel(null)}>×</button>
             <div className="menu-modal-heading">
@@ -363,7 +442,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       )}
 
       {activePanel === 'manual' && (
-        <div className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="manual-modal-title">
+        <div ref={activeDialogRef} className="slot-modal" role="dialog" aria-modal="true" aria-labelledby="manual-modal-title">
           <div className="slot-modal-content menu-modal-content manual-content">
             <button className="modal-close" aria-label={t('slotModal.back')} onClick={() => setActivePanel(null)}>×</button>
             <div className="menu-modal-heading">

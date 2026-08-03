@@ -72,6 +72,47 @@ describe('MainMenu', () => {
     expect(container.querySelector('[role="dialog"]')).toBeNull();
   });
 
+  it('contains modal focus and returns it to the opening control', () => {
+    const buttons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'));
+    const settings = buttons().find(button => button.textContent?.includes('Settings'))!;
+    settings.focus();
+    act(() => settings.click());
+
+    let dialog = container.querySelector<HTMLElement>('[role="dialog"]')!;
+    const settingsClose = dialog.querySelector<HTMLButtonElement>('.modal-close')!;
+    const settingsBack = dialog.querySelector<HTMLButtonElement>('.modal-back')!;
+    expect(document.activeElement).toBe(settingsClose);
+
+    settingsBack.focus();
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' })));
+    expect(document.activeElement).toBe(settingsClose);
+
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(settings);
+
+    const manual = buttons().find(button => button.textContent?.includes('Manual'))!;
+    act(() => manual.click());
+    dialog = container.querySelector<HTMLElement>('[role="dialog"]')!;
+    const manualClose = dialog.querySelector<HTMLButtonElement>('.modal-close')!;
+    expect(document.activeElement).toBe(manualClose);
+    act(() => manualClose.click());
+    expect(document.activeElement).toBe(manual);
+
+    const newGame = buttons().find(button => button.textContent?.includes('New Game'))!;
+    act(() => newGame.click());
+    dialog = container.querySelector<HTMLElement>('[role="dialog"]')!;
+    const firstSlot = dialog.querySelector<HTMLButtonElement>('.slot-item')!;
+    const slotBack = dialog.querySelector<HTMLButtonElement>('.slot-actions .menu-btn-secondary')!;
+    expect(document.activeElement).toBe(firstSlot);
+
+    slotBack.focus();
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' })));
+    expect(document.activeElement).toBe(firstSlot);
+    act(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })));
+    expect(document.activeElement).toBe(newGame);
+  });
+
   it('starts an empty slot with the selected campaign difficulty', () => {
     clickButton('New Game');
     const commander = container.querySelector<HTMLButtonElement>('.difficulty-option.commander');
@@ -134,9 +175,26 @@ describe('MainMenu', () => {
     });
 
     clickButton('Load Game');
-    clickButton('Delete');
+    const deleteButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Delete'))!;
+    act(() => deleteButton.click());
     expect(onDeleteSave).not.toHaveBeenCalled();
-    clickButton('Confirm delete');
+    const confirmDelete = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Confirm delete'))!;
+    const cancelDelete = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Cancel'))!;
+    expect(document.activeElement).toBe(confirmDelete);
+
+    act(() => cancelDelete.click());
+    const restoredDelete = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Delete'))!;
+    expect(document.activeElement).toBe(restoredDelete);
+    act(() => restoredDelete.click());
+    const restoredConfirm = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Confirm delete'))!;
+    expect(document.activeElement).toBe(restoredConfirm);
+    act(() => restoredConfirm.click());
     expect(onDeleteSave).toHaveBeenCalledWith(1);
+    expect(document.activeElement).toBe(container.querySelector('.slot-item'));
   });
 });

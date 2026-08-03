@@ -186,6 +186,12 @@ body {
   box-shadow: 0 0 20px rgba(212, 165, 32, 0.2);
 }
 
+.main-menu button:focus-visible,
+.main-menu input:focus-visible {
+  outline: 2px solid #f8d56b;
+  outline-offset: 3px;
+}
+
 .menu-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
