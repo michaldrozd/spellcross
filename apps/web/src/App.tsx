@@ -53,6 +53,7 @@ import {
   refillUnit,
   retreatFromBattle,
   serializeCampaignState,
+  sensorVisionRange,
   startBattleForTerritory,
   startResearch,
   setUnitFormation,
@@ -417,6 +418,10 @@ function formatBattleEvent(event: BattleEvent, battleState: TacticalBattleState)
       return i18n.t('log:dugIn', { unit: unitDisplayName(event.unitId, battleState), level: event.level });
     case 'unit:rallied':
       return i18n.t('log:rallied', { unit: unitDisplayName(event.unitId, battleState), morale: event.morale });
+    case 'unit:sensor-mode':
+      return i18n.t(event.deployed ? 'log:sensorDeployed' : 'log:sensorPacked', {
+        unit: unitDisplayName(event.unitId, battleState)
+      });
     case 'unit:level':
       return i18n.t('log:levelUp', { unit: unitDisplayName(event.unitId, battleState), level: event.level });
     case 'reinforcements:arrived':
@@ -724,6 +729,7 @@ const BattleView: React.FC<{
   const moveFailureText = (reason?: string) => {
     if (reason === 'unreachable') return t('battle:reject.unreachable');
     if (reason === 'unit_not_found') return t('battle:reject.noSelectedUnit');
+    if (reason === 'sensor_deployed') return t('errors:deployedSensorCannotMove');
     return reason ?? t('battle:reject.moveBlocked');
   };
   const describeMoveRejection = (unitId: string, target: HexCoordinate, fallback = t('battle:reject.moveBlocked')) => {
@@ -1256,6 +1262,7 @@ const BattleView: React.FC<{
         }
         return count;
       },
+      visibleTileCount: () => battle.state.vision.alliance.visibleTiles.size,
       revealAll: () => {
         const allTiles = new Set(map.tiles.map((_, index) => index));
         battle.state.vision.alliance.visibleTiles = allTiles;
@@ -1428,7 +1435,9 @@ const BattleView: React.FC<{
           carrying: u.carrying,
           cap: u.stats.transportCapacity ?? 0,
           supply: isSupplyUnit(u),
-          weapons: Object.keys(u.stats.weaponRanges)
+          weapons: Object.keys(u.stats.weaponRanges),
+          sensorDeployed: Boolean(u.sensorDeployed),
+          sensorVision: sensorVisionRange(u)
         }));
       },
       enemyUnits: () => {
@@ -1533,6 +1542,12 @@ const BattleView: React.FC<{
       rally: (unitId: string) => {
         const proc = new TurnProcessor(battle.state);
         const res = proc.rally(unitId);
+        persist();
+        return res;
+      },
+      setSensorDeployment: (unitId: string, deployed: boolean) => {
+        const proc = new TurnProcessor(battle.state);
+        const res = proc.setSensorDeployment(unitId, deployed);
         persist();
         return res;
       },
@@ -2906,11 +2921,15 @@ const BattleView: React.FC<{
                               {tile?.blocksVision && <span className="badge badge-conceal">{t('battle:panel.concealed')}</span>}
                               {unit.statusEffects.has('overwatch') && <span className="badge">{t('battle:panel.overwatch')}</span>}
                               {(unit.entrench ?? 0) > 0 && <span className="badge">{t('battle:panel.dugIn')}</span>}
+                              {unit.sensorDeployed && <span className="badge badge-sensor">{t('actions:sensor.deployedStatus')}</span>}
                             </div>
                           </>
                         );
                       })()}
                       {carrier && <p>{t('battle:panel.cargo')} {unit.carrying?.length ?? 0}/{unit.stats.transportCapacity}</p>}
+                      {unit.stats.sensorDeployment && (
+                        <p>{t('actions:sensor.rangeLabel')} <b>{sensorVisionRange(unit)}</b></p>
+                      )}
                     </div>
                     <div className="unit-armory">
                       <p className="unit-armory-top">
@@ -2967,6 +2986,17 @@ const BattleView: React.FC<{
                               return;
                             }
                             AudioManager.play('turnStart');
+                            persist();
+                          }}
+                          onSetSensorDeployment={(deployed) => {
+                            const proc = new TurnProcessor(battle.state);
+                            const res = proc.setSensorDeployment(unit.id, deployed);
+                            if (!res.success) {
+                              AudioManager.play('error');
+                              showToast(res.errorKey ? t(`errors:${res.errorKey}`) : t('errors:sensorModeUnavailable'), 'error');
+                              return;
+                            }
+                            AudioManager.play('objective');
                             persist();
                           }}
                         />

@@ -84,12 +84,12 @@ Implemented:
   and four on Veteran in the hardest sectors.
 - Dedicated rescue and convoy operations with key units that must reach extraction or delivery zones alive.
 - Retreat rules that can destroy deployed units outside the start zone.
+- Mobile radar deployment: packing and deploying consumes the unit's remaining turn, deployed sensors gain long-range vision and cannot move, and the mode persists with the battle.
 
 Partially implemented or simplified:
 
 - Opportunity fire does not yet use a separate initiative contest.
 - Attack categories are broad unit classes rather than a deep armor/light/heavy/object matrix.
-- Radar deploy/pack behavior is not implemented.
 - Tactical events currently spawn units and messages; object, dialogue, and cutscene actions remain future extensions.
 
 ## Units
@@ -144,7 +144,7 @@ Still open:
 ## Best Next Improvements
 
 1. Extend tactical event actions with object state changes, map dialogue, and forced-retreat phases.
-2. Give caster, monster, radar, and commander units more distinct active abilities.
+2. Give caster, monster, and commander units more distinct active abilities.
 3. Expand formation and officer management in the strategic UI.
 4. Add more scenario-specific story flavor without copying original text.
 5. Keep splitting the renderer into smaller modules as visual systems stabilize.

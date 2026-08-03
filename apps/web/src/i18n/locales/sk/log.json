@@ -6,6 +6,8 @@
   "suppressed": "Potlačenie: {{attacker}} → {{defender}} (-{{morale}} morálky)",
   "dugIn": "Zakopanie: {{unit}} (stupeň {{level}})",
   "rallied": "Zomknutie: {{unit}} (morálka {{morale}})",
+  "sensorDeployed": "Rozvinutie senzora: {{unit}}",
+  "sensorPacked": "Zbalenie senzora: {{unit}}",
   "destroyed": "Zničené: {{unit}}",
   "xpGained": "Skúsenosti: {{unit}}",
   "tileDestroyed": "Zničené políčko na {{q}},{{r}}",

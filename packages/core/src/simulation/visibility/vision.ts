@@ -1,5 +1,6 @@
 import type { BattlefieldMap, FactionId, HexCoordinate, TacticalBattleState } from '../types.js';
 import { isUnitDetected } from './stealth.js';
+import { sensorVisionRange } from '../systems/sensor-deployment.js';
 import { isoLine, isoWithinRange } from '../utils/grid-iso.js';
 import { getTile, isWithinBounds, tileIndex } from '../utils/grid.js';
 
@@ -20,6 +21,7 @@ const DEFAULT_RANGE_MODIFIER = ({
 }) => unitVision + (tileProvidesBoost ? 1 : 0) + (elevation >= 1 ? 1 : 0);
 
 const MAX_VISION_RANGE = 10;
+const MAX_DEPLOYED_SENSOR_RANGE = 14;
 function tileBlocksVision(map: BattlefieldMap, coordinate: HexCoordinate): boolean {
   const tile = getTile(map, coordinate);
   if (!tile) {
@@ -47,12 +49,13 @@ export function hasLineOfSight(map: BattlefieldMap, from: HexCoordinate, to: Hex
 function computeVisibleTilesForUnit(
   state: TacticalBattleState,
   unitCoordinate: HexCoordinate,
-  visionRange: number
+  visionRange: number,
+  maximumRange = MAX_VISION_RANGE
 ): Set<number> {
   const result = new Set<number>();
   // Floor to an integer: night/fog penalties can make the range fractional, which would corrupt the
   // tile enumeration. Vision/range/movement all share the same iso (Chebyshev) geometry now.
-  const boundedRange = Math.max(0, Math.floor(Math.min(visionRange, MAX_VISION_RANGE)));
+  const boundedRange = Math.max(0, Math.floor(Math.min(visionRange, maximumRange)));
   const candidates = isoWithinRange(unitCoordinate, boundedRange);
 
   for (const candidate of candidates) {
@@ -107,13 +110,16 @@ export function updateFactionVision(
     const unitTile = getTile(state.map, unit.coordinate);
     const providesBoost = unitTile?.providesVisionBoost ?? false;
     const range = rangeModifier({
-      unitVision: unit.stats.vision,
+      unitVision: sensorVisionRange(unit),
       tileProvidesBoost: providesBoost,
       elevation: unitTile?.elevation ?? 0
     }) - weatherPenalty;
     // General tile visibility uses the unit's full effective range. Stealth is a SEPARATE check below
     // (isUnitDetected) — it must not shrink how far everyone can see the ground.
-    const unitVisibleTiles = computeVisibleTilesForUnit(state, unit.coordinate, range);
+    const maximumRange = unit.sensorDeployed && unit.stats.sensorDeployment
+      ? MAX_DEPLOYED_SENSOR_RANGE
+      : MAX_VISION_RANGE;
+    const unitVisibleTiles = computeVisibleTilesForUnit(state, unit.coordinate, range, maximumRange);
     for (const tile of unitVisibleTiles) {
       visibleTiles.add(tile);
     }

@@ -6,6 +6,8 @@
   "suppressed": "Suppression: {{attacker}} → {{defender}} (-{{morale}} morale)",
   "dugIn": "Entrenched: {{unit}} (level {{level}})",
   "rallied": "Rallied: {{unit}} (morale {{morale}})",
+  "sensorDeployed": "Sensor deployed: {{unit}}",
+  "sensorPacked": "Sensor packed: {{unit}}",
   "destroyed": "Destroyed: {{unit}}",
   "xpGained": "XP gained: {{unit}}",
   "tileDestroyed": "Tile destroyed at {{q}},{{r}}",

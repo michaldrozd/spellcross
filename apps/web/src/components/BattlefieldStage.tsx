@@ -6745,6 +6745,13 @@ export function BattlefieldStage({
 
                 // stance ring — pulse it so a pinned/routed unit draws the eye
                 const stance = unit.stance;
+                if (unit.sensorDeployed) {
+                  const sensorPulse = prefersReducedMotion ? 0.7 : 0.58 + Math.sin(now / 360) * 0.16;
+                  g.lineStyle(1.4, 0x72d9c9, sensorPulse);
+                  g.drawEllipse(0, tileSize * 0.02, tileSize * 0.4, tileSize * 0.17);
+                  g.lineStyle(1, 0xc8fff3, sensorPulse * 0.72);
+                  g.drawCircle(0, tileSize * 0.02, tileSize * 0.2);
+                }
                 if (stance === 'suppressed' || stance === 'routed') {
                   const ringA = 0.55 + Math.sin(now / 200) * 0.35;
                   g.lineStyle(2, stance === 'routed' ? 0xff2d55 : 0xffc107, ringA);

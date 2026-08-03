@@ -41,6 +41,7 @@ export const rosterExpansionUnits: UnitData[] = [
     id: 'horizon-radar', name: 'Horizon Counterbattery Radar', faction: 'alliance', type: 'support', role: 'recon', cost: 125,
     stats: {
       maxHealth: 60, mobility: 8, vision: 12, armor: 2, morale: 75,
+      sensorDeployment: { mobileVision: 5 },
       weaponRanges: {}, weaponPower: {}, weaponAccuracy: {}
     }
   },

@@ -137,4 +137,31 @@ describe('updateFactionVision', () => {
     updateFactionVision(state, 'otherSide');
     expect(state.vision.otherSide.visibleTiles.size).toBe(0);
   });
+
+  it('reserves extended vision for deployed sensors', () => {
+    const tiles: typeof plainTile[] = Array.from({ length: 14 }, () => plainTile);
+    const state = createBattleState({
+      map: { id: 'sensor-range', width: 14, height: 1, tiles },
+      sides: [
+        { faction: 'alliance', units: [{
+          definition: { id: 'observer', faction: 'alliance', name: 'Observer', type: 'support',
+            stats: { maxHealth: 10, mobility: 4, vision: 12, armor: 0, morale: 60, weaponRanges: {}, weaponPower: {}, weaponAccuracy: {} } },
+          coordinate: { q: 0, r: 0 }
+        }] },
+        { faction: 'otherSide', units: [] }
+      ]
+    });
+    const observer = state.sides.alliance.units.values().next().value;
+    if (!observer) throw new Error('expected observer');
+
+    updateFactionVision(state, 'alliance');
+    expect(state.vision.alliance.visibleTiles.has(10)).toBe(true);
+    expect(state.vision.alliance.visibleTiles.has(11)).toBe(false);
+
+    observer.stats.sensorDeployment = { mobileVision: 5 };
+    observer.sensorDeployed = true;
+    updateFactionVision(state, 'alliance');
+    expect(state.vision.alliance.visibleTiles.has(12)).toBe(true);
+    expect(state.vision.alliance.visibleTiles.has(13)).toBe(false);
+  });
 });

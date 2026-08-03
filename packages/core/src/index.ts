@@ -1,6 +1,7 @@
 export * from './simulation/game-state.js';
 export * from './simulation/systems/turn-processor.js';
 export * from './simulation/systems/morale.js';
+export * from './simulation/systems/sensor-deployment.js';
 export * from './simulation/types.js';
 export * from './simulation/pathfinding/types.js';
 export { movementMultiplierForStance } from './simulation/pathfinding/movement.js';

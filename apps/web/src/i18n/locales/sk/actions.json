@@ -35,6 +35,7 @@
     "reasonSelectUnit": "Vyber jednotku",
     "reasonNeedsAp": "Vyžaduje 2 AP",
     "reasonNoAmmo": "Bez munície",
+    "reasonNoWeapon": "Jednotka nemá zbraň",
     "reasonSuppressed": "Jednotka pritlačená k zemi",
     "reasonAlreadyActed": "Už konala",
     "tooltip": "Za 2 AP pripraví paľbu na reakciu"
@@ -54,6 +55,17 @@
     "reasonNeedsAp": "Žiadne akčné body",
     "reasonEnemyClose": "Nepriateľ je príliš blízko",
     "tooltip": "Minie všetky zostávajúce AP a obnoví 8 morálky"
+  },
+  "sensor": {
+    "deployLabel": "Rozvinúť radar",
+    "packLabel": "Zbaliť radar",
+    "deployedStatus": "Radar rozvinutý",
+    "rangeLabel": "Dosah senzora",
+    "reasonNeedsAp": "Žiadne akčné body",
+    "reasonMoved": "Po presune sa radar nedá rozvinúť",
+    "reasonUnavailable": "Režim senzora nie je dostupný",
+    "deployTooltip": "Minie všetky zostávajúce AP a rozšíri dosah senzora",
+    "packTooltip": "Minie všetky zostávajúce AP; pohyb bude možný v ďalšom ťahu"
   },
   "suppress": {
     "label": "Potlačiť",

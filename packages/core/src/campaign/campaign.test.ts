@@ -1266,6 +1266,28 @@ describe('campaign core', () => {
     expect(restoredUnit?.idleEntrenchedTurns).toBe(0);
   });
 
+  it('adds radar deployment data to legacy in-progress battles', () => {
+    const state = createCampaign(starterBundle);
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-lyon');
+    const [unit] = battle.state.sides.alliance.units.values();
+    const radar = starterBundle.units.find((definition) => definition.id === 'horizon-radar');
+    if (!unit || !radar) throw new Error('expected a deployed unit and radar definition');
+    unit.definitionId = radar.id;
+    unit.stats = structuredClone(radar.stats);
+
+    const snapshot = JSON.parse(JSON.stringify(serializeCampaignState(state)));
+    const serializedUnit = snapshot.activeBattle.state.sides.alliance.units.v.find(
+      ([id]: [string, unknown]) => id === unit.id
+    )[1];
+    delete serializedUnit.stats.sensorDeployment;
+    delete serializedUnit.sensorDeployed;
+
+    const restored = hydrateCampaignState(starterBundle, snapshot);
+    const restoredUnit = restored.activeBattle?.state.sides.alliance.units.get(unit.id);
+    expect(restoredUnit?.stats.sensorDeployment).toEqual({ mobileVision: 5 });
+    expect(restoredUnit?.sensorDeployed).toBe(false);
+  });
+
   it('converts strategic points at the documented ratios', () => {
     const state = createCampaign(starterBundle);
     state.resources.strategic = 20;

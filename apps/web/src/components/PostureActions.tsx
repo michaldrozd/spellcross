@@ -1,4 +1,4 @@
-import { canDigIn, canRally, entrenchmentCap } from '@spellcross/core';
+import { canDigIn, canRally, entrenchmentCap, isDeployableSensor } from '@spellcross/core';
 import type { TacticalBattleState, UnitInstance } from '@spellcross/core';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -8,12 +8,19 @@ interface Props {
   unit: UnitInstance;
   onDigIn: () => void;
   onRally: () => void;
+  onSetSensorDeployment: (deployed: boolean) => void;
 }
 
-export const PostureActions: React.FC<Props> = ({ battleState, unit, onDigIn, onRally }) => {
+export const PostureActions: React.FC<Props> = ({ battleState, unit, onDigIn, onRally, onSetSensorDeployment }) => {
   const { t } = useTranslation('actions');
   const digInDisabled = !canDigIn(unit);
   const rallyDisabled = !canRally(battleState, unit);
+  const deployableSensor = isDeployableSensor(unit);
+  const sensorDisabled = unit.actionPoints <= 0
+    || unit.stance === 'destroyed'
+    || unit.stance === 'routed'
+    || Boolean(unit.embarkedOn)
+    || (!unit.sensorDeployed && Boolean(unit.movedThisRound));
 
   const digInReason = unit.unitType === 'air'
     ? t('digIn.reasonAir')
@@ -36,6 +43,23 @@ export const PostureActions: React.FC<Props> = ({ battleState, unit, onDigIn, on
 
   return (
     <>
+      {deployableSensor && (
+        <button
+          className="sm-btn posture-action sensor-action"
+          disabled={sensorDisabled}
+          aria-pressed={Boolean(unit.sensorDeployed)}
+          onClick={() => onSetSensorDeployment(!unit.sensorDeployed)}
+          title={sensorDisabled
+            ? unit.movedThisRound && !unit.sensorDeployed
+              ? t('sensor.reasonMoved')
+              : unit.actionPoints <= 0
+                ? t('sensor.reasonNeedsAp')
+                : t('sensor.reasonUnavailable')
+            : unit.sensorDeployed ? t('sensor.packTooltip') : t('sensor.deployTooltip')}
+        >
+          {unit.sensorDeployed ? t('sensor.packLabel') : t('sensor.deployLabel')}
+        </button>
+      )}
       <button
         className="sm-btn posture-action"
         disabled={digInDisabled}

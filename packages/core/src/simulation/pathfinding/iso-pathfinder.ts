@@ -159,6 +159,9 @@ export function planPathForUnitIso(
   if (!unit) {
     return { success: false, path: [], cost: 0, reason: 'unit_not_found' };
   }
+  if (unit.sensorDeployed) {
+    return { success: false, path: [], cost: 0, reason: 'sensor_deployed' };
+  }
 
   const start = unit.coordinate;
   const occupation = new Set<string>();
