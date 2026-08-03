@@ -672,7 +672,20 @@ const StrategicMapView: React.FC<{
               <g
                 key={t.id}
                 className={`territory-marker territory-${t.status} ${isSelected ? 'selected' : ''}`}
+                role="button"
+                tabIndex={0}
+                aria-pressed={isSelected}
+                aria-label={`${t.name}, ${translate(`hq:status.${t.status}`)}${
+                  t.remainingTimer != null
+                    ? `, ${translate('hq:territory.turnsBadge', { turns: t.remainingTimer })}`
+                    : ''
+                }`}
                 onClick={() => onSelectTerritory(t.id)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  event.preventDefault();
+                  onSelectTerritory(t.id);
+                }}
               >
                 <circle
                   cx={t.mapPosition.x}

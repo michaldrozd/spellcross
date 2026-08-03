@@ -1741,6 +1741,8 @@ body {
 
 .strategic-map-svg .territory-hit-area {
   pointer-events: all;
+  stroke: transparent;
+  stroke-width: 0.2px;
 }
 
 .strategic-map-svg .territory-node {
@@ -1806,6 +1808,22 @@ body {
   opacity: 0.95;
   stroke: #f8fafc;
   stroke-width: 0.45;
+}
+
+.strategic-map-svg .territory-marker:focus {
+  outline: none;
+}
+
+.strategic-map-svg .territory-marker:focus-visible .territory-hit-area {
+  fill: rgba(248, 213, 107, 0.12);
+  stroke: #f8d56b;
+  stroke-width: 0.34px;
+}
+
+.strategic-map-svg .territory-marker:focus-visible .territory-node {
+  stroke: #ffffff;
+  stroke-width: 0.55px;
+  filter: drop-shadow(0 0 0.85px rgba(248, 213, 107, 0.92));
 }
 
 /* Pulse animation for available territories */

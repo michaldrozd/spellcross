@@ -75,4 +75,33 @@ test('loads strategic view', async ({ page }) => {
   await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
   await expect(page.getByRole('button', { name: /OPS\s+Territories/i })).toBeVisible();
   await expect(page.locator('.strategic-map-svg')).toBeVisible();
+
+  const paris = page.locator('.territory-marker').filter({ hasText: 'Paris' });
+  const lyon = page.locator('.territory-marker').filter({ hasText: 'Lyon' });
+  await expect(paris).toHaveRole('button');
+  await expect(paris).toHaveAttribute('aria-pressed', 'true');
+  await expect(paris).toHaveAttribute('aria-label', /Paris Outskirts, Available, 5 TURNS/i);
+
+  await page.getByRole('button', { name: /European Front/i }).focus();
+  await page.keyboard.press('Tab');
+  await expect(paris).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(lyon).toBeFocused();
+  await expect.poll(() => lyon.locator('.territory-hit-area').evaluate((node) => {
+    const style = getComputedStyle(node);
+    return { stroke: style.stroke, strokeWidth: style.strokeWidth };
+  })).toEqual({ stroke: 'rgb(248, 213, 107)', strokeWidth: '0.34px' });
+  await page.keyboard.press('Enter');
+  await expect(lyon).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('heading', { name: /Lyon Industrial Zone/i })).toBeVisible();
+
+  await page.evaluate(() => window.localStorage.setItem('spellcross:lang', 'sk'));
+  await page.reload();
+  await page.getByRole('button', { name: /Pokračovať/i }).click();
+  const brussels = page.locator('.territory-marker').filter({ hasText: 'Brusel' });
+  await expect(brussels).toHaveAttribute('aria-label', /Bruselské velenie, Dostupné, 5 KÔL/i);
+  await brussels.focus();
+  await page.keyboard.press('Space');
+  await expect(brussels).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('heading', { name: /Bruselské velenie/i })).toBeVisible();
 });
