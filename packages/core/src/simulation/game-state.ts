@@ -51,7 +51,8 @@ export function createUnitInstance(
     entrench: 0,
     movedThisRound: false,
     dugInThisRound: false,
-    idleEntrenchedTurns: 0
+    idleEntrenchedTurns: 0,
+    sensorDeployed: definition.stats.sensorDeployment ? false : undefined
   };
 }
 

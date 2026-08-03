@@ -14,5 +14,8 @@
   },
   "peerDependencies": {
     "eslint": "^8.56.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.3"
   }
 }

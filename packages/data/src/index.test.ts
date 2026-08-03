@@ -536,6 +536,7 @@ describe('data bundle', () => {
     expect(tempest.stats.weaponRanges['counterbattery-shell']).toBeGreaterThan(thunderhead.stats.weaponRanges.howitzer);
     expect(tempest.stats.weaponTargets?.['counterbattery-shell']).toEqual(['vehicle', 'artillery', 'support']);
     expect(radar.stats.vision).toBe(12);
+    expect(radar.stats.sensorDeployment).toEqual({ mobileVision: 5 });
     expect(radar.stats.ammoCapacity).toBeUndefined();
     expect(Object.keys(radar.stats.weaponRanges)).toHaveLength(0);
   });

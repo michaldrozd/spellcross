@@ -131,6 +131,9 @@ export interface UnitStatsData {
   transportCapacity?: number;
   stealth?: number; // stealth rating - harder to detect (used by Hell Riders)
   fear?: number; // supernatural dread: saps morale of nearby mundane enemies (undead, demons, the titan)
+  sensorDeployment?: {
+    mobileVision: number;
+  };
   weaponRanges: Record<string, number>;
   weaponPower: Record<string, number>;
   weaponAccuracy: Record<string, number>;
@@ -425,6 +428,9 @@ const unitStatsSchema = z.object({
   transportCapacity: z.number().int().nonnegative().optional(),
   stealth: z.number().int().nonnegative().optional(),
   fear: z.number().int().nonnegative().optional(),
+  sensorDeployment: z.object({
+    mobileVision: z.number().int().positive()
+  }).optional(),
   weaponRanges: z.record(z.string(), z.number().int().nonnegative()),
   weaponPower: z.record(z.string(), z.number().nonnegative()),
   weaponAccuracy: z.record(z.string(), z.number().min(0).max(1)),

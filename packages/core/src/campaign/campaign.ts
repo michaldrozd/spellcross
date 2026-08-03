@@ -2918,12 +2918,18 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     activeBattle.completedObjectiveIds ??= [];
     const hasCumulativeDeploymentExperience = activeBattle.deploymentExperience != null;
     const deploymentExperience = { ...(activeBattle.deploymentExperience ?? {}) };
+    const unitDefinitions = new Map(bundle.units.map((definition) => [definition.id, definition]));
     for (const side of Object.values(activeBattle.state.sides)) {
       for (const unit of side.units.values()) {
         unit.experience = Math.max(0, Number.isFinite(unit.experience) ? unit.experience : 0);
         unit.level = experienceLevelFor(unit.experience);
         unit.careerProgression = true;
         unit.dugInThisRound ??= false;
+        const sensorDeployment = unitDefinitions.get(unit.definitionId)?.stats.sensorDeployment;
+        if (sensorDeployment) {
+          unit.stats.sensorDeployment ??= { ...sensorDeployment };
+          unit.sensorDeployed ??= false;
+        }
         unit.idleEntrenchedTurns = Math.max(
           0,
           Number.isFinite(unit.idleEntrenchedTurns) ? unit.idleEntrenchedTurns ?? 0 : 0

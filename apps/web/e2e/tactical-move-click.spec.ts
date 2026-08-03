@@ -719,7 +719,26 @@ test('diagonal isometric movement tiles can be planned and committed by clicking
     return page.evaluate(() => (window as any).__battleControl?.planningState?.() ?? null);
   }).toMatchObject({ plannedDestination: setup!.target });
 
-  await page.mouse.click(targetPoint!.x, targetPoint!.y);
+  let commitPoint = targetPoint!;
+  let stableSamples = 0;
+  await expect.poll(async () => {
+    const nextPoint = await page.evaluate(({ q, r }) => {
+      const canvas = document.querySelector('canvas');
+      const camera = (window as any).__battleCamera;
+      if (!canvas || !camera) return null;
+      const screen = camera.screenForCoord(q, r);
+      const rect = canvas.getBoundingClientRect();
+      return { x: rect.left + screen.x, y: rect.top + screen.y };
+    }, setup!.target);
+    if (!nextPoint) return 0;
+    stableSamples = Math.hypot(nextPoint.x - commitPoint.x, nextPoint.y - commitPoint.y) < 0.5
+      ? stableSamples + 1
+      : 0;
+    commitPoint = nextPoint;
+    return stableSamples;
+  }, { intervals: [50], timeout: 2_000 }).toBeGreaterThanOrEqual(3);
+
+  await page.mouse.click(commitPoint.x, commitPoint.y);
   await expect.poll(async () => {
     return page.evaluate((unitId) => {
       const unit = ((window as any).__battleControl?.allyUnits?.() ?? []).find((candidate: any) => candidate.id === unitId);

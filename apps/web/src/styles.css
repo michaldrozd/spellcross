@@ -1741,6 +1741,8 @@ body {
 
 .strategic-map-svg .territory-hit-area {
   pointer-events: all;
+  stroke: transparent;
+  stroke-width: 0.2px;
 }
 
 .strategic-map-svg .territory-node {
@@ -1806,6 +1808,22 @@ body {
   opacity: 0.95;
   stroke: #f8fafc;
   stroke-width: 0.45;
+}
+
+.strategic-map-svg .territory-marker:focus {
+  outline: none;
+}
+
+.strategic-map-svg .territory-marker:focus-visible .territory-hit-area {
+  fill: rgba(248, 213, 107, 0.12);
+  stroke: #f8d56b;
+  stroke-width: 0.34px;
+}
+
+.strategic-map-svg .territory-marker:focus-visible .territory-node {
+  stroke: #ffffff;
+  stroke-width: 0.55px;
+  filter: drop-shadow(0 0 0.85px rgba(248, 213, 107, 0.92));
 }
 
 /* Pulse animation for available territories */
@@ -4283,6 +4301,7 @@ header.app-header {
 }
 .unit-tags .badge-cover { color: #bfe6a8; background: rgba(60, 110, 48, 0.4); border-color: rgba(127, 208, 122, 0.55); }
 .unit-tags .badge-conceal { color: #a8dccf; background: rgba(40, 92, 84, 0.42); border-color: rgba(90, 169, 199, 0.5); }
+.unit-tags .badge-sensor { color: #bff7eb; background: rgba(26, 91, 82, 0.48); border-color: rgba(114, 217, 201, 0.64); }
 
 .unit-card.target-card {
   background:
@@ -4584,6 +4603,12 @@ header.app-header {
   border-color: #667765 #202a22 #111711 #4b5b4a;
   background: linear-gradient(180deg, #334436, #18221a);
   color: #c8d7bd;
+}
+
+.unit-actions .sensor-action[aria-pressed="true"] {
+  border-color: #9be9d8 #2c5e55 #132f2b #65b6a7;
+  background: linear-gradient(180deg, #31645b, #173b35);
+  color: #d8fff6;
 }
 
 .battle-log-panel {

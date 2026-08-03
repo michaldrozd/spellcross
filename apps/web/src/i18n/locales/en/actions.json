@@ -35,6 +35,7 @@
     "reasonSelectUnit": "Select a unit",
     "reasonNeedsAp": "Needs 2 AP",
     "reasonNoAmmo": "No ammo",
+    "reasonNoWeapon": "Unit has no weapon",
     "reasonSuppressed": "Unit suppressed",
     "reasonAlreadyActed": "Already acted",
     "tooltip": "Spend 2 AP to prepare reaction fire"
@@ -54,6 +55,17 @@
     "reasonNeedsAp": "No action points",
     "reasonEnemyClose": "Enemy too close",
     "tooltip": "Spend all remaining AP to restore 8 morale"
+  },
+  "sensor": {
+    "deployLabel": "Deploy radar",
+    "packLabel": "Pack radar",
+    "deployedStatus": "Radar deployed",
+    "rangeLabel": "Sensor range",
+    "reasonNeedsAp": "No action points",
+    "reasonMoved": "Cannot deploy after moving",
+    "reasonUnavailable": "Sensor mode unavailable",
+    "deployTooltip": "Spend all remaining AP to extend sensor range",
+    "packTooltip": "Spend all remaining AP to lower the array; movement resumes next turn"
   },
   "suppress": {
     "label": "Suppress",

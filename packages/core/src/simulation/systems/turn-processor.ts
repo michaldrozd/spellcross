@@ -8,6 +8,7 @@ import {
   RALLY_MORALE_GAIN,
   stanceForMorale
 } from './morale.js';
+import { isDeployableSensor } from './sensor-deployment.js';
 import {
   canAffordAttack,
   calculateAttackRange,
@@ -293,6 +294,9 @@ export class TurnProcessor {
 
     if (!unit) {
       return { success: false, error: `Unit ${input.unitId} not found`, errorKey: 'unitNotFound' };
+    }
+    if (unit.sensorDeployed && input.path.length > 0) {
+      return { success: false, error: 'Deployed sensors cannot move', errorKey: 'deployedSensorCannotMove' };
     }
 
     const occupied = new Set<string>();
@@ -581,12 +585,41 @@ export class TurnProcessor {
     if (!unit) return { success: false, error: 'Unit not found', errorKey: 'unitNotFound' };
     if (unit.stance === 'routed') return { success: false, error: 'Routed units cannot set overwatch', errorKey: 'routedCannotOverwatch' };
     if (unit.stance === 'suppressed') return { success: false, error: 'Suppressed units cannot set overwatch', errorKey: 'suppressedCannotOverwatch' };
+    if (Object.keys(unit.stats.weaponRanges).length === 0) return { success: false, error: 'Unit has no weapon for overwatch', errorKey: 'unitCannotOverwatch' };
     if (!canAffordAttack(unit)) return { success: false, error: 'Not enough AP for overwatch', errorKey: 'notEnoughApOverwatch' };
     if (unit.currentAmmo !== Infinity && unit.currentAmmo <= 0) return { success: false, error: 'No ammo', errorKey: 'noAmmo' };
     unit.statusEffects.add('overwatch');
     unit.actionPoints -= 2;
     this.#state.timeline.push({ kind: 'unit:xp', unitId: unit.id, amount: 0, reason: 'hit' });
     return { success: true };
+  }
+
+  setSensorDeployment(unitId: string, deployed: boolean): ActionResult {
+    const side = this.#state.sides[this.#state.activeFaction];
+    const unit = side.units.get(unitId);
+    if (!unit) return { success: false, error: 'Unit not found', errorKey: 'unitNotFound' };
+    if (!isDeployableSensor(unit)) return { success: false, error: 'Unit has no deployable sensor', errorKey: 'unitCannotDeploySensor' };
+    if (unit.stance === 'destroyed' || unit.stance === 'routed' || unit.embarkedOn) {
+      return { success: false, error: 'Unit cannot change sensor mode', errorKey: 'sensorModeUnavailable' };
+    }
+    if (unit.sensorDeployed === deployed) {
+      return { success: false, error: 'Sensor is already in that mode', errorKey: 'sensorModeUnchanged' };
+    }
+    if (deployed && unit.movedThisRound) {
+      return { success: false, error: 'Sensor cannot deploy after moving', errorKey: 'movedCannotDeploySensor' };
+    }
+    if (unit.actionPoints <= 0) {
+      return { success: false, error: 'No action points to change sensor mode', errorKey: 'notEnoughApSensorMode' };
+    }
+
+    unit.sensorDeployed = deployed;
+    unit.actionPoints = 0;
+    unit.entrench = 0;
+    unit.dugInThisRound = false;
+    unit.idleEntrenchedTurns = 0;
+    this.#state.timeline.push({ kind: 'unit:sensor-mode', unitId: unit.id, deployed });
+    updateFactionVision(this.#state, unit.faction);
+    return { success: true, events: this.#state.timeline };
   }
 
   digIn(unitId: string): ActionResult {
@@ -648,6 +681,7 @@ export class TurnProcessor {
       return { success: false, error: 'Carrier full', errorKey: 'carrierFull' };
     }
     if (passenger.embarkedOn) return { success: false, error: 'Passenger already embarked', errorKey: 'passengerAlreadyEmbarked' };
+    if (passenger.sensorDeployed) return { success: false, error: 'Pack the sensor before embarking', errorKey: 'deployedSensorCannotEmbark' };
     if (passenger.unitType !== 'infantry' && passenger.unitType !== 'support' && passenger.unitType !== 'hero') {
       return { success: false, error: 'Only infantry/support can embark', errorKey: 'onlyInfantrySupportEmbark' };
     }

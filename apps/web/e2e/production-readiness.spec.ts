@@ -115,10 +115,70 @@ test('Alliance artillery moves, exposes its range and produces live indirect-fir
   const radar = radarFormation.loaded.find((unit: any) => unit.definitionId === 'horizon-radar');
   const radarState = await page.evaluate((unitId) => {
     const control = (window as any).__battleControl;
+    control.forceAllianceTurn();
     control.selectUnit(unitId);
     return control.allyUnits().find((unit: any) => unit.id === unitId);
   }, radar.id);
   expect(radarState.supply).toBe(false);
   expect(radarState.weapons).toEqual([]);
+  expect(radarState.sensorDeployed).toBe(false);
+  expect(radarState.sensorVision).toBe(5);
   await expect(page.getByRole('button', { name: /^Supply$/i })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /^Overwatch$/i })).toBeDisabled();
+
+  const mobileVisionTiles = await page.evaluate(() => (window as any).__battleControl.visibleTileCount());
+  const deployRadar = page.getByRole('button', { name: /^Deploy radar$/i });
+  await expect(deployRadar).toHaveAttribute('aria-pressed', 'false');
+  await deployRadar.click();
+
+  const deployedState = await page.evaluate(({ unitId, q, r }) => {
+    const control = (window as any).__battleControl;
+    return {
+      unit: control.allyUnits().find((candidate: any) => candidate.id === unitId),
+      visibleTiles: control.visibleTileCount(),
+      path: control.pathForUnit(unitId, q + 1, r),
+      move: control.moveUnitPath(unitId, [{ q: q + 1, r }])
+    };
+  }, { unitId: radar.id, q: radarState.coord.q, r: radarState.coord.r });
+  expect(deployedState.unit).toMatchObject({ sensorDeployed: true, sensorVision: 12, ap: 0 });
+  expect(deployedState.visibleTiles).toBeGreaterThan(mobileVisionTiles);
+  expect(deployedState.path).toMatchObject({ success: false, reason: 'sensor_deployed' });
+  expect(deployedState.move).toMatchObject({ success: false, errorKey: 'deployedSensorCannotMove' });
+  await expect(page.getByText('Radar deployed', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Pack radar$/i })).toHaveAttribute('aria-pressed', 'true');
+
+  await page.reload();
+  await page.getByRole('button', { name: /Continue/i }).click();
+  await page.waitForFunction(() => Boolean((window as any).__battleControl));
+  const restoredRadarId = await page.evaluate(() => {
+    const control = (window as any).__battleControl;
+    const restored = control.allyUnits().find((unit: any) => unit.definitionId === 'horizon-radar');
+    control.selectUnit(restored.id);
+    return restored.id;
+  });
+  await expect(page.getByRole('button', { name: /^Pack radar$/i })).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => (window as any).__battleControl.forceAllianceTurn());
+  await page.getByRole('button', { name: /^Pack radar$/i }).click();
+  const packedState = await page.evaluate((unitId) => (
+    (window as any).__battleControl.allyUnits().find((unit: any) => unit.id === unitId)
+  ), restoredRadarId);
+  expect(packedState).toMatchObject({ sensorDeployed: false, sensorVision: 5, ap: 0 });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.localStorage.setItem('spellcross:lang', 'sk'));
+  await page.reload();
+  await page.getByRole('button', { name: /Pokračovať/i }).click();
+  await page.waitForFunction(() => Boolean((window as any).__battleControl));
+  await page.evaluate(() => {
+    const control = (window as any).__battleControl;
+    const restored = control.allyUnits().find((unit: any) => unit.definitionId === 'horizon-radar');
+    control.selectUnit(restored.id);
+    control.forceAllianceTurn();
+  });
+  const slovakDeploy = page.getByRole('button', { name: /^Rozvinúť radar$/i });
+  await expect(slovakDeploy).toBeVisible();
+  await slovakDeploy.click();
+  await expect(page.getByText('Dosah senzora 12', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: /^Zbaliť radar$/i })).toHaveAttribute('aria-pressed', 'true');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });

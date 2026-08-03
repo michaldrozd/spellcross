@@ -151,6 +151,9 @@ export interface UnitStats {
   fear?: number; // supernatural dread radius; saps morale of nearby mundane enemies
   concealmentBonus?: number; // bonus to stealth in cover
   overwatchAccuracyBonus?: number;
+  sensorDeployment?: {
+    mobileVision: number;
+  };
 }
 
 export interface UnitDefinition {
@@ -189,6 +192,7 @@ export interface UnitInstance {
   movedThisRound?: boolean; // set to true when unit moves during its own turn
   dugInThisRound?: boolean; // prevents a manual dig-in order from also receiving the passive end-turn gain
   idleEntrenchedTurns?: number; // consecutive untouched turns spent at the unit type's entrenchment cap
+  sensorDeployed?: boolean;
 }
 
 export interface SideState {
@@ -293,6 +297,11 @@ export type BattleEvent =
       kind: 'unit:rallied';
       unitId: string;
       morale: number;
+    }
+  | {
+      kind: 'unit:sensor-mode';
+      unitId: string;
+      deployed: boolean;
     }
   | {
       kind: 'unit:level';
