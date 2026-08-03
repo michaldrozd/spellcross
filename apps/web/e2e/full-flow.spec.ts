@@ -43,7 +43,24 @@ test('research, battle entry, retreat, and autosave', async ({ page }) => {
   // Retreat back to strategic
   const retreatButton = page.getByRole('button', { name: /^Retreat$/ });
   await retreatButton.waitFor({ state: 'visible' });
-  await retreatButton.click();
+  await retreatButton.focus();
+  await page.keyboard.press('Enter');
+  let retreatDialog = page.getByRole('alertdialog', { name: /Confirm tactical retreat/i });
+  const cancelRetreat = retreatDialog.getByRole('button', { name: /^Cancel$/i });
+  const confirmRetreat = retreatDialog.getByRole('button', { name: /^Confirm Retreat$/i });
+  await expect(cancelRetreat).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(confirmRetreat).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(cancelRetreat).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(retreatDialog).toBeHidden();
+  await expect(retreatButton).toBeFocused();
+  await page.keyboard.press('Enter');
+  retreatDialog = page.getByRole('alertdialog', { name: /Confirm tactical retreat/i });
+  await retreatDialog.getByRole('button', { name: /^Cancel$/i }).click();
+  await expect(retreatButton).toBeFocused();
+  await page.keyboard.press('Enter');
   await page.getByRole('button', { name: /^Confirm Retreat$/ }).click();
   await expect(page.getByRole('heading', { name: /Field HQ/i })).toBeVisible();
 

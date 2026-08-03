@@ -114,6 +114,7 @@ const CAMPAIGN_SCHEMA_KEY = 'spellcross:campaign-schema';
 const CAMPAIGN_SCHEMA_VERSION = '2026-07-20-operation-cycle';
 const FOOT_STEP_DURATION_MS = 240;
 const VEHICLE_STEP_DURATION_MS = 420;
+const BATTLE_DIALOG_FOCUSABLE_SELECTOR = 'button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const compactNumber = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1).replace(/\.0$/, '');
 const displayActionPoints = (n: number) => String(Math.max(0, Math.floor(n)));
 const orientationForStep = (from: HexCoordinate, to: HexCoordinate) => {
@@ -593,6 +594,9 @@ const BattleView: React.FC<{
   const [invalidMoveFeedback, setInvalidMoveFeedback] = useState<{ coordinate: HexCoordinate; time: number; message: string } | null>(null);
   const [riskyMove, setRiskyMove] = useState<{ unitId: string; target: HexCoordinate; unitName: string; lethal: boolean } | null>(null);
   const [retreatConfirmOpen, setRetreatConfirmOpen] = useState(false);
+  const battleDialogRef = useRef<HTMLDivElement>(null);
+  const battleDialogTriggerRef = useRef<HTMLElement | null>(null);
+  const activeBattleDialog = riskyMove ? 'risky' : retreatConfirmOpen ? 'retreat' : null;
   const [combatNotices, setCombatNotices] = useState<Array<{ id: number; message: string }>>([]);
   const [phaseNotice, setPhaseNotice] = useState<{ id: number; title: string; detail: string; tone: 'enemy' | 'alliance'; duration: number } | null>(null);
   const [pendingAttack, setPendingAttack] = useState<{ id: string; time: number } | null>(null);
@@ -604,6 +608,49 @@ const BattleView: React.FC<{
   // runs when the player dismisses the card via Continue.
   const [battleOutcome, setBattleOutcome] = useState<BattleOutcomeData | null>(null);
   const outcomeShownRef = useRef(false);
+
+  useEffect(() => {
+    if (!activeBattleDialog) return;
+    const dialog = battleDialogRef.current;
+    if (!dialog) return;
+
+    const focusableControls = () => Array.from(
+      dialog.querySelectorAll<HTMLElement>(BATTLE_DIALOG_FOCUSABLE_SELECTOR),
+    );
+    (dialog.querySelector<HTMLElement>('.risky-move-cancel') ?? focusableControls()[0])?.focus();
+
+    const handleDialogKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        if (activeBattleDialog === 'risky') setRiskyMove(null);
+        else setRetreatConfirmOpen(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      event.stopPropagation();
+
+      const controls = focusableControls();
+      const firstControl = controls[0];
+      const lastControl = controls.at(-1);
+      if (!firstControl || !lastControl) return;
+
+      const activeElement = document.activeElement;
+      if (event.shiftKey && (activeElement === firstControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        lastControl.focus();
+      } else if (!event.shiftKey && (activeElement === lastControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        firstControl.focus();
+      }
+    };
+    dialog.addEventListener('keydown', handleDialogKeyDown);
+    return () => {
+      dialog.removeEventListener('keydown', handleDialogKeyDown);
+      if (battleDialogTriggerRef.current?.isConnected) battleDialogTriggerRef.current.focus();
+      battleDialogTriggerRef.current = null;
+    };
+  }, [activeBattleDialog]);
   const [viewport, setViewport] = useState({ width: window.innerWidth, height: window.innerHeight });
   useEffect(() => {
     const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
@@ -1979,6 +2026,7 @@ const BattleView: React.FC<{
         const lethal = unit.currentHealth <= worstTileDamage;
         if (lowHp || lethal) {
           const def = bundle.units.find((d) => d.id === unit.definitionId);
+          battleDialogTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
           setRiskyMove({ unitId, target, unitName: localizedUnitName(unit.definitionId, def?.name ?? unit.definitionId), lethal });
           return false;
         }
@@ -2785,7 +2833,7 @@ const BattleView: React.FC<{
           </div>
         ) : null}
         {riskyMove ? (
-          <div className="risky-move-backdrop" role="alertdialog" aria-label={t('battle:risky.ariaLabel')}>
+          <div ref={battleDialogRef} className="risky-move-backdrop" role="alertdialog" aria-modal="true" aria-label={t('battle:risky.ariaLabel')}>
             <div className="risky-move-dialog">
               <strong>{t('battle:risky.title')}</strong>
               <p>
@@ -2812,7 +2860,7 @@ const BattleView: React.FC<{
           </div>
         ) : null}
         {retreatConfirmOpen ? (
-          <div className="risky-move-backdrop" role="alertdialog" aria-label={t('battle:retreat.ariaLabel')}>
+          <div ref={battleDialogRef} className="risky-move-backdrop" role="alertdialog" aria-modal="true" aria-label={t('battle:retreat.ariaLabel')}>
             <div className="risky-move-dialog retreat-confirm-dialog">
               <strong>{t('battle:retreat.title')}</strong>
               <p>{t('battle:retreat.losses', { count: retreatForecast.lostUnitIds.length })}</p>
@@ -3310,10 +3358,11 @@ const BattleView: React.FC<{
             <button
               className="secondary-btn"
               disabled={!!autoTurnPhase}
-              onClick={() => {
+              onClick={(event) => {
                 // Retreating mid-CPU-turn unmounts the view under a still-running async battle loop
                 // (which keeps mutating state and playing sounds over the strategic screen).
                 if (autoTurnPhase || autoTurnBusyRef.current || enemyTurnBusyRef.current) return;
+                battleDialogTriggerRef.current = event.currentTarget;
                 setRetreatConfirmOpen(true);
               }}
             >
