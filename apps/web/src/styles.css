@@ -6240,6 +6240,11 @@ button:disabled {
   line-height: 1;
 }
 
+.hq-modal button:focus-visible {
+  outline: 2px solid #f8d56b;
+  outline-offset: 3px;
+}
+
 .operation-dossier {
   flex: none;
   padding: 0.76rem 1rem 0.82rem;

@@ -8,8 +8,10 @@ import { startFreshCampaign } from './helpers';
 async function openParisPlanner(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: /Territories/i }).click();
   await page.getByText(/^Paris$/).click({ force: true });
-  await page.getByRole('button', { name: /Launch Attack/i }).click();
+  const launchButton = page.getByRole('button', { name: /Launch Attack/i });
+  await launchButton.click();
   await expect(page.getByRole('dialog', { name: /Paris Outskirts/i })).toBeVisible();
+  return launchButton;
 }
 
 function localeServiceKeys(language: 'en' | 'sk') {
@@ -72,7 +74,21 @@ test('officer corps copy has exact English and Slovak key parity', () => {
 
 test('visible operation planner deploys only the confirmed roster and pins the commander', async ({ page }) => {
   await startFreshCampaign(page, 1);
-  await openParisPlanner(page);
+  const launchButton = await openParisPlanner(page);
+  let planner = page.getByRole('dialog', { name: /Paris Outskirts/i });
+  const plannerClose = planner.locator('.hq-modal-close');
+  const deploymentConfirm = planner.getByRole('button', { name: /Confirm Deployment/i });
+  await expect(plannerClose).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(deploymentConfirm).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(plannerClose).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(planner).toBeHidden();
+  await expect(launchButton).toBeFocused();
+  await launchButton.click();
+  planner = page.getByRole('dialog', { name: /Paris Outskirts/i });
+  await expect(planner).toBeVisible();
 
   const commander = page.locator('.deployment-unit.required').filter({ hasText: /Captain John Alexander/i });
   await expect(commander).toHaveAttribute('aria-pressed', 'true');
@@ -199,8 +215,20 @@ test('unit service and research switching execute their visible exact previews',
   });
   await page.getByRole('button', { name: /Army \(/i }).click();
   const infantryRow = page.locator('.unit-row').filter({ hasText: /Light Infantry/i }).first();
-  await infantryRow.getByRole('button', { name: /Service/i }).click();
+  const serviceButton = infantryRow.getByRole('button', { name: /Service/i });
+  await serviceButton.click();
   const serviceDialog = page.getByRole('dialog', { name: /Light Infantry/i });
+  const serviceClose = serviceDialog.locator('.hq-modal-close');
+  const serviceFooterClose = serviceDialog.locator('.hq-modal-footer').getByRole('button', { name: /^Close$/i });
+  await expect(serviceClose).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(serviceFooterClose).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(serviceClose).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(serviceDialog).toBeHidden();
+  await expect(serviceButton).toBeFocused();
+  await serviceButton.click();
   await expect(serviceDialog).toContainText(/2\/100 HP/i);
   await serviceDialog.locator('.service-options').first().locator('button').nth(1).click();
   await serviceDialog.locator('.service-rearm-options').getByRole('button', { name: /Ranger Recon/i }).click();

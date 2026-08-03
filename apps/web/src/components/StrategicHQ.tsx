@@ -1,7 +1,7 @@
 import type { CampaignDifficulty, CampaignState } from '@spellcross/core';
 import type { EquipmentCategory } from '@spellcross/data';
 import type { TFunction } from 'i18next';
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { clearToasts } from './Toast.js';
@@ -205,6 +205,16 @@ function signedCommandValue(value: number) {
 
 const recruitFilters = ['all', 'infantry', 'vehicle', 'artillery', 'air', 'support', 'hero'] as const;
 type RecruitFilter = (typeof recruitFilters)[number];
+type HQModal = 'planner' | 'service';
+
+const HQ_MODAL_FOCUSABLE_SELECTOR = [
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'a[href]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
 
 function defaultDeploymentSelection(plan: OperationPlan) {
   const selected = [...plan.requiredUnitIds];
@@ -936,6 +946,51 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
   const [selectedDeploymentIds, setSelectedDeploymentIds] = useState<string[]>([]);
   const [serviceUnitId, setServiceUnitId] = useState<string | null>(null);
   const [equipmentCategory, setEquipmentCategory] = useState<EquipmentCategory>('offense');
+  const activeDialogRef = useRef<HTMLElement>(null);
+  const modalTriggerRef = useRef<HTMLElement | null>(null);
+  const activeModal: HQModal | null = planningTerritoryId ? 'planner' : serviceUnitId ? 'service' : null;
+
+  useEffect(() => {
+    if (!activeModal) return;
+    const dialog = activeDialogRef.current;
+    if (!dialog) return;
+
+    const focusableControls = () => Array.from(
+      dialog.querySelectorAll<HTMLElement>(HQ_MODAL_FOCUSABLE_SELECTOR),
+    );
+    focusableControls()[0]?.focus();
+
+    const handleModalKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        if (activeModal === 'planner') setPlanningTerritoryId(null);
+        else setServiceUnitId(null);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const controls = focusableControls();
+      const firstControl = controls[0];
+      const lastControl = controls.at(-1);
+      if (!firstControl || !lastControl) return;
+
+      const activeElement = document.activeElement;
+      if (event.shiftKey && (activeElement === firstControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        lastControl.focus();
+      } else if (!event.shiftKey && (activeElement === lastControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        firstControl.focus();
+      }
+    };
+    window.addEventListener('keydown', handleModalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleModalKeyDown);
+      if (modalTriggerRef.current?.isConnected) modalTriggerRef.current.focus();
+      modalTriggerRef.current = null;
+    };
+  }, [activeModal]);
+
   const switchTab = (tab: 'map' | 'army' | 'research') => {
     clearToasts();
     setActiveTab(tab);
@@ -946,9 +1001,14 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
   const openDeploymentPlanner = (territoryId: string) => {
     const plan = operationPlans[territoryId];
     if (!plan) return;
+    modalTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     AudioManager.play('briefing');
     setSelectedDeploymentIds(defaultDeploymentSelection(plan));
     setPlanningTerritoryId(territoryId);
+  };
+  const openUnitService = (unitId: string, trigger: HTMLButtonElement) => {
+    modalTriggerRef.current = trigger;
+    setServiceUnitId(unitId);
   };
   const applyFormationToDeployment = (formation: FormationSummary) => {
     if (!planningTerritoryId) return;
@@ -1493,7 +1553,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                                 ))}
                               </select>
                             </label>
-                            <button className="unit-service-btn" onClick={() => setServiceUnitId(u.id)}>{t('army.service')}</button>
+                            <button className="unit-service-btn" onClick={(event) => openUnitService(u.id, event.currentTarget)}>{t('army.service')}</button>
                             {u.unitType !== 'hero' && (
                               <button onClick={() => onDismiss(u.id)}>{t('army.dismiss')}</button>
                             )}
@@ -1711,6 +1771,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
       {planningTerritory && planningPlan && (
         <div className="hq-modal-backdrop" role="presentation">
           <section
+            ref={activeDialogRef}
             className="hq-modal deployment-planner"
             role="dialog"
             aria-modal="true"
@@ -1887,6 +1948,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
       {serviceUnit && (
         <div className="hq-modal-backdrop" role="presentation">
           <section
+            ref={activeDialogRef}
             className="hq-modal unit-service-modal"
             role="dialog"
             aria-modal="true"
