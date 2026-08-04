@@ -644,9 +644,9 @@ const BattleView: React.FC<{
         firstControl.focus();
       }
     };
-    dialog.addEventListener('keydown', handleDialogKeyDown);
+    window.addEventListener('keydown', handleDialogKeyDown, true);
     return () => {
-      dialog.removeEventListener('keydown', handleDialogKeyDown);
+      window.removeEventListener('keydown', handleDialogKeyDown, true);
       if (battleDialogTriggerRef.current?.isConnected) battleDialogTriggerRef.current.focus();
       battleDialogTriggerRef.current = null;
     };

@@ -49,10 +49,16 @@ test('research, battle entry, retreat, and autosave', async ({ page }) => {
   const cancelRetreat = retreatDialog.getByRole('button', { name: /^Cancel$/i });
   const confirmRetreat = retreatDialog.getByRole('button', { name: /^Confirm Retreat$/i });
   await expect(cancelRetreat).toBeFocused();
+  await retreatDialog.locator('strong').first().click();
+  await expect(page.locator('body')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(confirmRetreat).toBeFocused();
+  await retreatDialog.locator('strong').first().click();
+  await expect(page.locator('body')).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(cancelRetreat).toBeFocused();
+  await retreatDialog.locator('strong').first().click();
+  await expect(page.locator('body')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(retreatDialog).toBeHidden();
   await expect(retreatButton).toBeFocused();

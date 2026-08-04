@@ -48,10 +48,16 @@ test('overwatch UI shows status after preparing reaction fire', async ({ page })
   const cancelMove = warning.getByRole('button', { name: /^Cancel$/i });
   const confirmMove = warning.getByRole('button', { name: /^Move Anyway$/i });
   await expect(cancelMove).toBeFocused();
+  await warning.locator('strong').first().click();
+  await expect(page.locator('body')).toBeFocused();
   await page.keyboard.press('Tab');
   await expect(confirmMove).toBeFocused();
+  await warning.locator('strong').first().click();
+  await expect(page.locator('body')).toBeFocused();
   await page.keyboard.press('Shift+Tab');
   await expect(cancelMove).toBeFocused();
+  await warning.locator('strong').first().click();
+  await expect(page.locator('body')).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(warning).toBeHidden();
   await expect(rangeButton).toBeFocused();
