@@ -37,6 +37,17 @@ test('operation dossier carries briefing, battle mood, and specific victory debr
 
   const outcome = page.locator('.battle-outcome-card');
   await expect(outcome).toBeVisible();
+  const outcomeDialog = page.getByRole('dialog', { name: /Sector Secured/i });
+  const continueButton = outcomeDialog.locator('.battle-outcome-continue');
+  await expect(outcomeDialog).toHaveAttribute('aria-modal', 'true');
+  await expect(continueButton).toBeFocused();
+  await outcome.locator('.battle-outcome-stamp').click();
+  await expect(page.locator('body')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(continueButton).toBeFocused();
+  await outcome.locator('.battle-outcome-stamp').click();
+  await page.keyboard.press('Shift+Tab');
+  await expect(continueButton).toBeFocused();
   await expect(outcome).toContainText('OPERATION DEBRIEF');
   await expect(outcome).toContainText('The last train cleared the perimeter under its own power');
   expect(await page.evaluate(() => (window as any).__battleControl.audioState())).toEqual({

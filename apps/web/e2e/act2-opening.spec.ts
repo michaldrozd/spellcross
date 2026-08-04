@@ -59,9 +59,19 @@ async function openMigratedActTwo(page: Page, slot: number) {
   await page.reload();
   await page.locator('.menu-buttons .menu-btn-primary').click();
   await expect(page.getByRole('heading', { name: 'CAMPAIGN WON' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Continue to Act II' })).toBeVisible();
+  const outcomeDialog = page.getByRole('dialog', { name: 'CAMPAIGN WON' });
+  const continueButton = outcomeDialog.getByRole('button', { name: 'Continue to Act II' });
+  await expect(outcomeDialog).toHaveAttribute('aria-modal', 'true');
+  await expect(continueButton).toBeFocused();
+  await outcomeDialog.getByRole('heading').click();
+  await expect(page.locator('body')).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(continueButton).toBeFocused();
+  await outcomeDialog.getByRole('heading').click();
+  await page.keyboard.press('Shift+Tab');
+  await expect(outcomeDialog.getByRole('button', { name: 'Main Menu' })).toBeFocused();
   await expect(page.locator('.gameover-summary')).toContainText('17/29');
-  await page.getByRole('button', { name: 'Continue to Act II' }).click();
+  await continueButton.click();
 
   await expect(page.locator('.gameover-overlay')).toHaveCount(0);
   await expect(page.locator('.territory-act-banner')).toContainText('ACT II');

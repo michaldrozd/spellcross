@@ -596,6 +596,7 @@ const BattleView: React.FC<{
   const [retreatConfirmOpen, setRetreatConfirmOpen] = useState(false);
   const battleDialogRef = useRef<HTMLDivElement>(null);
   const battleDialogTriggerRef = useRef<HTMLElement | null>(null);
+  const battleOutcomeDialogRef = useRef<HTMLDivElement>(null);
   const activeBattleDialog = riskyMove ? 'risky' : retreatConfirmOpen ? 'retreat' : null;
   const [combatNotices, setCombatNotices] = useState<Array<{ id: number; message: string }>>([]);
   const [phaseNotice, setPhaseNotice] = useState<{ id: number; title: string; detail: string; tone: 'enemy' | 'alliance'; duration: number } | null>(null);
@@ -2759,6 +2760,37 @@ const BattleView: React.FC<{
     battleLogNow,
     battlePresentationEnabled
   ) ? battleOutcome : null;
+  useEffect(() => {
+    if (!visibleBattleOutcome) return;
+    const dialog = battleOutcomeDialogRef.current;
+    if (!dialog) return;
+
+    const focusableControls = () => Array.from(
+      dialog.querySelectorAll<HTMLElement>(BATTLE_DIALOG_FOCUSABLE_SELECTOR),
+    );
+    focusableControls()[0]?.focus();
+
+    const handleOutcomeKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      event.stopPropagation();
+
+      const controls = focusableControls();
+      const firstControl = controls[0];
+      const lastControl = controls.at(-1);
+      if (!firstControl || !lastControl) return;
+
+      const activeElement = document.activeElement;
+      if (event.shiftKey && (activeElement === firstControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        lastControl.focus();
+      } else if (!event.shiftKey && (activeElement === lastControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        firstControl.focus();
+      }
+    };
+    window.addEventListener('keydown', handleOutcomeKeyDown, true);
+    return () => window.removeEventListener('keydown', handleOutcomeKeyDown, true);
+  }, [visibleBattleOutcome]);
   return (
     <div className="battle-screen">
       <div className="battle-map-layer">
@@ -3383,9 +3415,15 @@ const BattleView: React.FC<{
         <div className="battle-presentation-input-guard" aria-hidden="true" />
       ) : null}
       {visibleBattleOutcome ? (
-        <div className={`battle-outcome-overlay ${visibleBattleOutcome.status}`}>
+        <div
+          ref={battleOutcomeDialogRef}
+          className={`battle-outcome-overlay ${visibleBattleOutcome.status}`}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="battle-outcome-title"
+        >
           <div className="battle-outcome-card">
-            <div className="battle-outcome-stamp">
+            <div id="battle-outcome-title" className="battle-outcome-stamp">
               {visibleBattleOutcome.status === 'victory' ? t('battle:outcome.sectorSecured') : t('battle:outcome.missionFailed')}
             </div>
             <p className="battle-outcome-sector">
@@ -3464,9 +3502,45 @@ export function App() {
   const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
   const [savedSlots, setSavedSlots] = useState<(SaveSlot | null)[]>(() => loadAllSummaries());
   const [campaignOutcomeDismissed, setCampaignOutcomeDismissed] = useState(false);
+  const campaignOutcomeDialogRef = useRef<HTMLDivElement>(null);
+  const availableActTwo = campaign.outcome === 'victory'
+    && campaign.territories.some((territory) => territory.act === 2 && territory.status === 'available');
+  const showCampaignOutcome = Boolean(campaign.outcome)
+    && !(availableActTwo && campaignOutcomeDismissed);
   useEffect(() => {
     setCampaignOutcomeDismissed(false);
   }, [campaign.outcome, slot]);
+  useEffect(() => {
+    if (mode !== 'strategic' || !showCampaignOutcome) return;
+    const dialog = campaignOutcomeDialogRef.current;
+    if (!dialog) return;
+
+    const focusableControls = () => Array.from(
+      dialog.querySelectorAll<HTMLElement>(BATTLE_DIALOG_FOCUSABLE_SELECTOR),
+    );
+    focusableControls()[0]?.focus();
+
+    const handleOutcomeKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab') return;
+      event.stopPropagation();
+
+      const controls = focusableControls();
+      const firstControl = controls[0];
+      const lastControl = controls.at(-1);
+      if (!firstControl || !lastControl) return;
+
+      const activeElement = document.activeElement;
+      if (event.shiftKey && (activeElement === firstControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        lastControl.focus();
+      } else if (!event.shiftKey && (activeElement === lastControl || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        firstControl.focus();
+      }
+    };
+    window.addEventListener('keydown', handleOutcomeKeyDown, true);
+    return () => window.removeEventListener('keydown', handleOutcomeKeyDown, true);
+  }, [mode, showCampaignOutcome]);
   // Campaign-end sting. Ref-guarded so the frequent strategic re-renders can't re-trigger it.
   const campaignOutcomeStingRef = useRef<string | null>(null);
   useEffect(() => {
@@ -3899,17 +3973,19 @@ export function App() {
       localizedTerritoryBrief(territory)
     )
   ]));
-  const availableActTwo = campaign.outcome === 'victory'
-    && campaign.territories.some((territory) => territory.act === 2 && territory.status === 'available');
-  const showCampaignOutcome = Boolean(campaign.outcome)
-    && !(availableActTwo && campaignOutcomeDismissed);
   return (
     <>
       <ToastContainer />
       {showCampaignOutcome ? (
-        <div className="gameover-overlay">
+        <div
+          ref={campaignOutcomeDialogRef}
+          className="gameover-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="campaign-outcome-title"
+        >
           <div className={`gameover-panel ${campaign.outcome}`}>
-            <h1>{campaign.outcome === 'victory' ? t('campaign:gameover.won') : t('campaign:gameover.lost')}</h1>
+            <h1 id="campaign-outcome-title">{campaign.outcome === 'victory' ? t('campaign:gameover.won') : t('campaign:gameover.lost')}</h1>
             <p className="gameover-flavor">
               {campaign.outcome === 'victory'
                 ? t(availableActTwo ? 'campaign:gameover.actTwoUnlockedFlavor' : 'campaign:gameover.victoryFlavor')

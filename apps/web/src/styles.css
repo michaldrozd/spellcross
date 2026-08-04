@@ -4041,6 +4041,12 @@ header.app-header {
 
 .battle-outcome-continue { width: 100%; margin-top: 0.2rem; }
 
+.battle-outcome-continue:focus-visible,
+.gameover-actions button:focus-visible {
+  outline: 2px solid #f8d56b;
+  outline-offset: 3px;
+}
+
 .battle-controls {
   position: relative;
   z-index: 1;
