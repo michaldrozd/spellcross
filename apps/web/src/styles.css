@@ -6976,3 +6976,22 @@ button:disabled {
     grid-column: 1 / -1;
   }
 }
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .deployment-planner {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .deployment-planner .deployment-roster {
+    flex: none;
+    overflow-y: visible;
+  }
+
+  .deployment-planner .hq-modal-footer {
+    position: sticky;
+    z-index: 2;
+    bottom: 0;
+    flex: none;
+  }
+}

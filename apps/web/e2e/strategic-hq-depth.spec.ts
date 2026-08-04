@@ -90,6 +90,31 @@ test('visible operation planner deploys only the confirmed roster and pins the c
   planner = page.getByRole('dialog', { name: /Paris Outskirts/i });
   await expect(planner).toBeVisible();
 
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect.poll(() => planner.evaluate((element) => getComputedStyle(element).overflowY)).toBe('auto');
+  const lastDeploymentUnit = planner.locator('button.deployment-unit').last();
+  await lastDeploymentUnit.scrollIntoViewIfNeeded();
+  const shortViewportGeometry = await planner.evaluate((element) => {
+    const unit = element.querySelector<HTMLElement>('button.deployment-unit:last-of-type');
+    const footer = element.querySelector<HTMLElement>('.hq-modal-footer');
+    if (!unit || !footer) return null;
+    const plannerRect = element.getBoundingClientRect();
+    const unitRect = unit.getBoundingClientRect();
+    const footerRect = footer.getBoundingClientRect();
+    return {
+      scrollTop: element.scrollTop,
+      unitTop: unitRect.top,
+      unitBottom: unitRect.bottom,
+      visibleTop: plannerRect.top,
+      visibleBottom: Math.min(plannerRect.bottom, footerRect.top)
+    };
+  });
+  expect(shortViewportGeometry).not.toBeNull();
+  expect(shortViewportGeometry!.scrollTop).toBeGreaterThan(0);
+  expect(shortViewportGeometry!.unitTop).toBeGreaterThanOrEqual(shortViewportGeometry!.visibleTop - 1);
+  expect(shortViewportGeometry!.unitBottom).toBeLessThanOrEqual(shortViewportGeometry!.visibleBottom + 1);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   const commander = page.locator('.deployment-unit.required').filter({ hasText: /Captain John Alexander/i });
   await expect(commander).toHaveAttribute('aria-pressed', 'true');
   await commander.click();
