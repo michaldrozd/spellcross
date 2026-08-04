@@ -671,6 +671,33 @@ body {
   font-weight: 700;
 }
 
+.persistence-warning {
+  position: fixed;
+  top: max(0.75rem, env(safe-area-inset-top));
+  left: 50%;
+  z-index: 10001;
+  display: grid;
+  gap: 0.22rem;
+  width: min(600px, calc(100vw - 1.5rem));
+  padding: 0.7rem 0.85rem;
+  color: #f2e4b4;
+  font-family: "Courier New", monospace;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  border: 2px solid #a57836;
+  background: rgba(24, 17, 8, 0.97);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.68);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.persistence-warning strong {
+  color: #ffd96d;
+  font-size: 0.84rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .battle-input-alert {
   position: absolute;
   top: 4.6rem;

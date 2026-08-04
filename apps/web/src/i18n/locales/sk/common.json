@@ -38,6 +38,10 @@
     "water": "Voda"
   },
   "resetLocalState": "Resetovať lokálny stav",
+  "persistenceWarning": {
+    "title": "Uloženie nie je úplné",
+    "detail": "Posledná akcia je iba v tejto karte. Uvoľni úložisko prehliadača a ďalším rozkazom skús uloženie znova."
+  },
   "runtimeFault": {
     "title": "Chyba behu",
     "detail": "Taktický vykresľovač neočakávane zastal. Resetuj lokálny stav a znova načítaj stránku, potom spusti bitku znova."

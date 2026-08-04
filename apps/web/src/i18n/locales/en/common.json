@@ -38,6 +38,10 @@
     "water": "Water"
   },
   "resetLocalState": "Reset Local State",
+  "persistenceWarning": {
+    "title": "Save incomplete",
+    "detail": "Your latest action is only in this tab. Free browser storage, then issue another order to retry saving."
+  },
   "runtimeFault": {
     "title": "Runtime fault",
     "detail": "The tactical renderer stopped unexpectedly. Reset local state and reload, then launch the battle again."

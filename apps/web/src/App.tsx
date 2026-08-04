@@ -231,6 +231,7 @@ function useCampaign() {
   if (!ref.current) ref.current = loadSavedCampaign(slot);
   const [, rerender] = useState(0);
   const [summary, setSummary] = useState<SlotSummary | null>(() => loadSummary(slot));
+  const [persistenceFailed, setPersistenceFailed] = useState(false);
   const updateSummary = useCallback(() => {
     const state = ref.current!;
     const next: SlotSummary = {
@@ -241,21 +242,24 @@ function useCampaign() {
       updated: Date.now(),
       activeBattle: Boolean(state.activeBattle)
     };
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(`${CAMPAIGN_SUMMARY_KEY}:${slotRef.current}`, JSON.stringify(next));
-    }
     setSummary(next);
+    return next;
   }, []);
   const persist = useCallback(() => {
+    const nextSummary = updateSummary();
+    let stored = true;
     if (typeof window !== 'undefined') {
       try {
         window.localStorage.setItem(`${CAMPAIGN_STORAGE_KEY}:${slotRef.current}`, JSON.stringify(serializeCampaignState(ref.current!)));
+        window.localStorage.setItem(`${CAMPAIGN_SUMMARY_KEY}:${slotRef.current}`, JSON.stringify(nextSummary));
       } catch (err) {
         console.warn('Failed to persist campaign', err);
+        stored = false;
       }
     }
-    updateSummary();
+    setPersistenceFailed(!stored);
     rerender((n) => n + 1);
+    return stored;
   }, [updateSummary]);
   const mutate = useCallback((fn: (state: CampaignState) => void) => {
     fn(ref.current!);
@@ -276,7 +280,7 @@ function useCampaign() {
     rerender((n) => n + 1);
     return ref.current;
   }, []);
-  return { campaign: ref.current!, mutate, persist, reset, slot, changeSlot, summary };
+  return { campaign: ref.current!, mutate, persist, reset, slot, changeSlot, summary, persistenceFailed };
 }
 // Localization lookups for static content-bundle data (unit/research/territory/scenario/objective
 // names+text). Content stays English/id-stable in packages/data; the display layer prefers the active
@@ -3497,7 +3501,13 @@ function deleteSavedCampaign(slot: number) {
 }
 export function App() {
   const { t } = useTranslation(['common', 'campaign']);
-  const { campaign, mutate, persist, reset, slot, changeSlot } = useCampaign();
+  const { campaign, mutate, persist, reset, slot, changeSlot, persistenceFailed } = useCampaign();
+  const persistenceWarning = persistenceFailed ? (
+    <div className="persistence-warning" role="alert">
+      <strong>{t('common:persistenceWarning.title')}</strong>
+      <span>{t('common:persistenceWarning.detail')}</span>
+    </div>
+  ) : null;
   const dismissPopups = () => mutate((s) => { s.popups = []; });
   const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
   const [savedSlots, setSavedSlots] = useState<(SaveSlot | null)[]>(() => loadAllSummaries());
@@ -3753,6 +3763,7 @@ export function App() {
     return (
       <>
         <ToastContainer />
+        {persistenceWarning}
         <MainMenu
           onNewGame={handleNewGame}
           onContinue={handleContinue}
@@ -3768,6 +3779,7 @@ export function App() {
     return (
       <>
         <ToastContainer />
+        {persistenceWarning}
         <BattleView
           campaign={campaign}
           onVictory={() => setMode('strategic')}
@@ -3976,6 +3988,7 @@ export function App() {
   return (
     <>
       <ToastContainer />
+      {persistenceWarning}
       {showCampaignOutcome ? (
         <div
           ref={campaignOutcomeDialogRef}
