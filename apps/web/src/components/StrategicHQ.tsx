@@ -410,6 +410,25 @@ const StrategicMapView: React.FC<{
   const [mapAct, setMapAct] = useState<1 | 2>(() => (
     selectedAct === 2 && actTwoUnlocked ? 2 : actTwoUnlocked ? 2 : 1
   ));
+  const mapSvgRef = useRef<SVGSVGElement>(null);
+  const [territoryHitRadius, setTerritoryHitRadius] = useState(3.2);
+  useEffect(() => {
+    const map = mapSvgRef.current;
+    if (!map || typeof ResizeObserver === 'undefined') return;
+
+    const updateHitRadius = () => {
+      const bounds = map.getBoundingClientRect();
+      const renderedScale = Math.min(bounds.width / 100, bounds.height / 80);
+      if (renderedScale <= 0) return;
+      const nextRadius = Math.max(3.2, 12.1 / renderedScale);
+      setTerritoryHitRadius((current) => Math.abs(current - nextRadius) < 0.001 ? current : nextRadius);
+    };
+
+    updateHitRadius();
+    const observer = new ResizeObserver(updateHitRadius);
+    observer.observe(map);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     if (!actTwoUnlocked && mapAct === 2) setMapAct(1);
   }, [actTwoUnlocked, mapAct]);
@@ -524,6 +543,7 @@ const StrategicMapView: React.FC<{
           </button>
         </div>
         <svg
+          ref={mapSvgRef}
           viewBox="0 0 100 80"
           className="strategic-map-svg"
           preserveAspectRatio="xMidYMid meet"
@@ -682,6 +702,7 @@ const StrategicMapView: React.FC<{
               <g
                 key={t.id}
                 className={`territory-marker territory-${t.status} ${isSelected ? 'selected' : ''}`}
+                data-territory-id={t.id}
                 role="button"
                 tabIndex={0}
                 aria-pressed={isSelected}
@@ -700,7 +721,7 @@ const StrategicMapView: React.FC<{
                 <circle
                   cx={t.mapPosition.x}
                   cy={t.mapPosition.y}
-                  r="3.2"
+                  r={territoryHitRadius}
                   fill="transparent"
                   className="territory-hit-area"
                 />
@@ -1420,6 +1441,10 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                         {officer.status === 'available' && (
                           <button
                             className="officer-recruit"
+                            aria-label={t(officer.canRecruit ? 'army.recruitOfficerFor' : 'army.recruitOfficerShortFor', {
+                              officer: officer.name,
+                              cost: officer.recruitCost
+                            })}
                             disabled={!officer.canRecruit}
                             onClick={() => onRecruitOfficer(officer.profileId)}
                           >
@@ -1515,6 +1540,14 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                     {units.map((u) => {
                       const healthPercent = Math.max(0, Math.min(100, Math.round((u.currentHealth / u.maxHealth) * 100)));
                       const readinessKey = healthPercent < 55 ? 'damaged' : u.experience >= 60 ? 'veteran' : 'ready';
+                      const matchingUnits = army.filter((candidate) => candidate.definitionId === u.definitionId);
+                      const accessibleUnitName = matchingUnits.length > 1
+                        ? t('army.unitOccurrence', {
+                            unit: u.name,
+                            index: matchingUnits.findIndex((candidate) => candidate.id === u.id) + 1,
+                            count: matchingUnits.length
+                          })
+                        : u.name;
                       return (
                         <div key={u.id} className={`unit-row unit-row-${u.unitType} unit-row-section-${section} ${healthPercent < 70 ? 'unit-row-damaged' : ''}`}>
                           <div className={`roster-token roster-token-${u.unitType}`}>
@@ -1537,7 +1570,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                             <label className="formation-assignment">
                               <span>{t('army.formation')}</span>
                               <select
-                                aria-label={t('army.assignFormationFor', { unit: u.name })}
+                                aria-label={t('army.assignFormationFor', { unit: accessibleUnitName })}
                                 value={u.formationId ?? ''}
                                 onChange={(event) => onSetFormation(u.id, event.target.value || undefined)}
                               >
@@ -1553,9 +1586,20 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                                 ))}
                               </select>
                             </label>
-                            <button className="unit-service-btn" onClick={(event) => openUnitService(u.id, event.currentTarget)}>{t('army.service')}</button>
+                            <button
+                              className="unit-service-btn"
+                              aria-label={t('army.serviceUnit', { unit: accessibleUnitName })}
+                              onClick={(event) => openUnitService(u.id, event.currentTarget)}
+                            >
+                              {t('army.service')}
+                            </button>
                             {u.unitType !== 'hero' && (
-                              <button onClick={() => onDismiss(u.id)}>{t('army.dismiss')}</button>
+                              <button
+                                aria-label={t('army.dismissUnit', { unit: accessibleUnitName })}
+                                onClick={() => onDismiss(u.id)}
+                              >
+                                {t('army.dismiss')}
+                              </button>
                             )}
                           </div>
                         </div>
@@ -1731,6 +1775,9 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                           ) : isPaused ? (
                             <button
                               className="research-btn research-resume-btn"
+                              aria-label={currentResearch
+                                ? t('research.pauseCurrentToResumeFor', { project: topic.name, count: pausedRemaining })
+                                : t('research.resumeProjectFor', { project: topic.name, count: pausedRemaining })}
                               disabled={!!currentResearch}
                               onClick={() => onResearch(topic.id)}
                             >
@@ -1741,6 +1788,14 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                           ) : (
                             <button
                               className="research-btn"
+                              aria-label={isLocked
+                                ? t('research.lockedProjectBy', {
+                                    project: topic.name,
+                                    list: missingRequirements.map((id) => researchById.get(id)?.name ?? id).join(' / ')
+                                  })
+                                : isRecommended
+                                  ? t('research.queuePriorityProjectFor', { project: topic.name })
+                                  : t('research.queueProjectFor', { project: topic.name })}
                               disabled={!!currentResearch || isLocked}
                               onClick={() => onResearch(topic.id)}
                             >

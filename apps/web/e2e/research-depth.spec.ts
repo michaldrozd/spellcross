@@ -50,5 +50,18 @@ test('all research content remains readable across desktop and phone in both lan
         return horizontal || vertical ? [(element.textContent ?? '').trim()] : [];
       }));
     expect(clippedCopy, `${layout.language} ${layout.width}px clipped research copy`).toEqual([]);
+
+    const projectActions = await page.locator('.research-card button').evaluateAll((buttons) => buttons.map((button) => ({
+      label: button.getAttribute('aria-label') ?? '',
+      project: button.closest('.research-card')?.querySelector('h4')?.textContent?.trim() ?? '',
+    })));
+    expect(
+      projectActions.filter(({ label, project }) => !label || !project || !label.includes(project)),
+      `${layout.language} ${layout.width}px contextual research action names`
+    ).toEqual([]);
+    expect(
+      new Set(projectActions.map(({ label }) => label)).size,
+      `${layout.language} ${layout.width}px unique research action names`
+    ).toBe(projectActions.length);
   }
 });

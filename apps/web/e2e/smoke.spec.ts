@@ -40,33 +40,77 @@ test('loads strategic view', async ({ page }) => {
         ?.closest('.territory-marker')?.getAttribute('aria-label');
       return { bounds, center, expectedOwner, actualOwner };
     });
-    let minimumCenterDistance = Infinity;
-    for (let first = 0; first < measured.length; first += 1) {
-      for (let second = first + 1; second < measured.length; second += 1) {
-        minimumCenterDistance = Math.min(
-          minimumCenterDistance,
-          Math.hypot(
-            measured[first].center.x - measured[second].center.x,
-            measured[first].center.y - measured[second].center.y,
-          ),
-        );
+    const overlays = [...document.querySelectorAll('.map-theater-switch, .map-status-strip, .map-legend')]
+      .map((element) => element.getBoundingClientRect());
+    let overlayOverlapCount = 0;
+    for (let first = 0; first < overlays.length; first += 1) {
+      for (let second = first + 1; second < overlays.length; second += 1) {
+        if (overlays[first].right > overlays[second].left && overlays[first].left < overlays[second].right
+          && overlays[first].bottom > overlays[second].top && overlays[first].top < overlays[second].bottom) {
+          overlayOverlapCount += 1;
+        }
       }
     }
+    const overlapsOverlay = (element: Element) => {
+      const bounds = element.getBoundingClientRect();
+      return overlays.some((overlay) => bounds.right > overlay.left && bounds.left < overlay.right
+        && bounds.bottom > overlay.top && bounds.top < overlay.bottom);
+    };
     return {
       documentWidth: document.documentElement.scrollWidth,
       minimumWidth: Math.min(...measured.map(({ bounds }) => bounds.width)),
       minimumHeight: Math.min(...measured.map(({ bounds }) => bounds.height)),
-      minimumCenterDistance,
       wrongCenterOwnerCount: measured.filter(({ expectedOwner, actualOwner }) => expectedOwner !== actualOwner).length,
+      labelOverlayOverlapCount: [...document.querySelectorAll('.territory-name')].filter(overlapsOverlay).length,
+      targetOverlayOverlapCount: targets.filter(overlapsOverlay).length,
+      overlayOverlapCount,
+      hitRadius: Number(targets[0]?.getAttribute('r') ?? 0),
     };
   });
 
-  const expectMapTargets = async (documentWidth: number) => {
-    await expect.poll(() => strategicMapTargetMetrics().then((metrics) => metrics.documentWidth)).toBe(documentWidth);
-    await expect.poll(() => strategicMapTargetMetrics().then((metrics) => metrics.minimumWidth)).toBeGreaterThanOrEqual(24);
-    await expect.poll(() => strategicMapTargetMetrics().then((metrics) => metrics.minimumHeight)).toBeGreaterThanOrEqual(24);
-    await expect.poll(() => strategicMapTargetMetrics().then((metrics) => metrics.minimumCenterDistance)).toBeGreaterThanOrEqual(24);
-    await expect.poll(() => strategicMapTargetMetrics().then((metrics) => metrics.wrongCenterOwnerCount)).toBe(0);
+  const expectMapTargets = async (documentWidth: number, checkOverlays = false) => {
+    await expect.poll(async () => {
+      const metrics = await strategicMapTargetMetrics();
+      return {
+        documentWidth: metrics.documentWidth,
+        targetsMeetMinimum: metrics.minimumWidth >= 24 && metrics.minimumHeight >= 24,
+        wrongCenterOwnerCount: metrics.wrongCenterOwnerCount,
+        labelOverlayOverlapCount: checkOverlays ? metrics.labelOverlayOverlapCount : 0,
+        targetOverlayOverlapCount: checkOverlays ? metrics.targetOverlayOverlapCount : 0,
+        overlayOverlapCount: checkOverlays ? metrics.overlayOverlapCount : 0,
+        desktopRadiusUnchanged: checkOverlays || Math.abs(metrics.hitRadius - 3.2) < 0.001,
+      };
+    }).toEqual({
+      documentWidth,
+      targetsMeetMinimum: true,
+      wrongCenterOwnerCount: 0,
+      labelOverlayOverlapCount: 0,
+      targetOverlayOverlapCount: 0,
+      overlayOverlapCount: 0,
+      desktopRadiusUnchanged: true,
+    });
+  };
+
+  const expectMobileMapLayouts = async () => {
+    const layouts = [
+      { width: 320, height: 568 },
+      { width: 360, height: 800 },
+      { width: 375, height: 667 },
+      { width: 390, height: 844 },
+      { width: 390, height: 844, rootFontSize: 24 },
+    ];
+    for (const layout of layouts) {
+      await page.setViewportSize({ width: layout.width, height: layout.height });
+      await page.evaluate((rootFontSize) => {
+        if (rootFontSize) document.documentElement.style.fontSize = `${rootFontSize}px`;
+        else document.documentElement.style.removeProperty('font-size');
+      }, layout.rootFontSize);
+      await page.locator('.strategic-map-svg').scrollIntoViewIfNeeded();
+      await expectMapTargets(layout.width, true);
+    }
+    await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('.strategic-map-svg').scrollIntoViewIfNeeded();
   };
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -135,9 +179,8 @@ test('loads strategic view', async ({ page }) => {
   await expect(lyon).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByRole('heading', { name: /Lyon Industrial Zone/i })).toBeVisible();
 
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('.strategic-map-svg').scrollIntoViewIfNeeded();
-  await expectMapTargets(390);
+  await expectMobileMapLayouts();
+  await expectMapTargets(390, true);
   const vienna = page.locator('.territory-marker').filter({ hasText: 'Vienna' });
   const krakow = page.locator('.territory-marker').filter({ hasText: 'Krakow' });
   await vienna.locator('.territory-hit-area').click();
@@ -148,8 +191,8 @@ test('loads strategic view', async ({ page }) => {
   await page.evaluate(() => window.localStorage.setItem('spellcross:lang', 'sk'));
   await page.reload();
   await page.getByRole('button', { name: /Pokračovať/i }).click();
-  await page.locator('.strategic-map-svg').scrollIntoViewIfNeeded();
-  await expectMapTargets(390);
+  await expectMobileMapLayouts();
+  await expectMapTargets(390, true);
   const viennaSk = page.locator('.territory-marker').filter({ hasText: 'Viedeň' });
   const krakowSk = page.locator('.territory-marker').filter({ hasText: 'Krakov' });
   await viennaSk.locator('.territory-hit-area').click();

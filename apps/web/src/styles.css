@@ -1947,6 +1947,7 @@ body {
   border-radius: 2px;
   font-size: 0.75rem;
   z-index: 2;
+  pointer-events: none;
   box-shadow: inset 1px 1px 0 rgba(226, 213, 164, 0.08), 0 10px 20px rgba(0,0,0,0.28);
 }
 
@@ -5518,10 +5519,12 @@ header.app-header {
   }
 
   .strategic-map-container {
-    width: calc(100% + 0.9rem);
-    margin-inline: -0.45rem;
-    height: clamp(330px, 96vw, 410px);
-    min-height: 330px;
+    display: grid;
+    grid-template-rows: auto auto auto auto;
+    width: 100%;
+    margin-inline: 0;
+    height: auto;
+    min-height: 0;
     border-width: 2px;
   }
 
@@ -5540,6 +5543,14 @@ header.app-header {
     font-size: 1.16px;
   }
 
+  .strategic-map-svg {
+    grid-row: 3;
+    grid-column: 1;
+    height: auto;
+    aspect-ratio: 5 / 4;
+    min-height: 0;
+  }
+
   .map-status-strip,
   .map-legend {
     left: 0.55rem;
@@ -5547,9 +5558,16 @@ header.app-header {
   }
 
   .map-theater-switch {
-    top: 0.55rem;
+    position: relative;
+    grid-row: 1;
+    grid-column: 1;
+    top: auto;
+    left: auto;
+    right: auto;
+    transform: none;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: calc(100% - 1.1rem);
+    width: auto;
+    margin: 0.55rem 0.55rem 0;
   }
 
   .map-theater-switch span {
@@ -5564,7 +5582,13 @@ header.app-header {
   }
 
   .map-status-strip {
-    top: 3rem;
+    position: relative;
+    grid-row: 2;
+    grid-column: 1;
+    top: auto;
+    left: auto;
+    right: auto;
+    margin: 0.38rem 0.55rem 0;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.3rem;
     font-size: 0.58rem;
@@ -5575,6 +5599,13 @@ header.app-header {
   }
 
   .map-legend {
+    position: relative;
+    grid-row: 4;
+    grid-column: 1;
+    bottom: auto;
+    left: auto;
+    right: auto;
+    margin: 0.38rem 0.55rem 0.55rem;
     flex-wrap: wrap;
     gap: 0.38rem;
     font-size: 0.58rem;
