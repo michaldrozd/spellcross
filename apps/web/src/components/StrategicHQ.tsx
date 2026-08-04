@@ -623,11 +623,11 @@ const StrategicMapView: React.FC<{
               ].map(([name, x, y]) => (
                 <circle key={name} cx={x} cy={y} r="0.45" fill="#1b2422" opacity="0.7" />
               ))}
-              <text x="20" y="48" className="region-label">{translate('hq:region.france')}</text>
+              <text x="20" y="50" className="region-label">{translate('hq:region.france')}</text>
               <text x="42" y="41" className="region-label">{translate('hq:region.germany')}</text>
-              <text x="54" y="57" className="region-label">{translate('hq:region.austria')}</text>
+              <text x="53" y="59" className="region-label">{translate('hq:region.austria')}</text>
               <text x="69" y="35" className="region-label">{translate('hq:region.poland')}</text>
-              <text x="76" y="58" className="region-label">{translate('hq:region.ukraine')}</text>
+              <text x="76" y="62" className="region-label">{translate('hq:region.ukraine')}</text>
             </g>
           ) : (
             <g className="shatterline-cartography">

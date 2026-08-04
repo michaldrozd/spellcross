@@ -2104,7 +2104,7 @@ body {
 
 .territory-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(6em, 100%), 1fr));
   gap: 0.45rem;
 }
 
@@ -5430,9 +5430,10 @@ header.app-header {
 
   .hq-title .back-btn {
     grid-area: menu;
-    min-width: 68px;
+    min-width: max-content;
     padding: 0.42rem 0.48rem;
     font-size: 0.68rem;
+    white-space: nowrap;
   }
 
   .hq-title h1 {
@@ -5440,7 +5441,7 @@ header.app-header {
     font-size: 1.26rem;
     line-height: 1;
     letter-spacing: 0.08em;
-    white-space: nowrap;
+    white-space: normal;
   }
 
   .turn-info {

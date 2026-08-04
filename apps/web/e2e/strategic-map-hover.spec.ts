@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('strategic map marker hover does not flicker', async ({ page }) => {
+test('strategic map marker remains the pointer target on hover', async ({ page }) => {
   await page.goto('/');
   await page.waitForFunction(() => Boolean((window as any).__campaignControl));
   await page.evaluate(() => (window as any).__campaignControl.newCampaign(1));
@@ -11,16 +11,17 @@ test('strategic map marker hover does not flicker', async ({ page }) => {
   const count = Math.min(await markers.count(), 10);
   for (let i = 0; i < count; i++) {
     const marker = markers.nth(i);
-    const box = await marker.boundingBox();
-    expect(box).toBeTruthy();
-    if (!box) continue;
+    const territoryId = await marker.locator('..').getAttribute('data-territory-id');
+    expect(territoryId).toBeTruthy();
 
     await marker.hover();
-    await page.waitForTimeout(40);
-
-    const hoveredMarkers = await page.evaluate(
-      () => document.querySelectorAll('.strategic-map-svg .territory-marker:hover').length
-    );
-    expect(hoveredMarkers).toBe(1);
+    const centerOwner = await marker.evaluate((element) => {
+      const bounds = element.getBoundingClientRect();
+      return document.elementFromPoint(
+        bounds.left + bounds.width / 2,
+        bounds.top + bounds.height / 2,
+      )?.closest('.territory-marker')?.getAttribute('data-territory-id') ?? null;
+    });
+    expect(centerOwner).toBe(territoryId);
   }
 });

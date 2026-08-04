@@ -69,6 +69,22 @@ test('loads strategic view', async ({ page }) => {
       return overlays.some((overlay) => bounds.right > overlay.left && bounds.left < overlay.right
         && bounds.bottom > overlay.top && bounds.top < overlay.bottom);
     };
+    const overlaps = (first: DOMRect, second: DOMRect) => (
+      first.right > second.left + 0.1
+      && first.left < second.right - 0.1
+      && first.bottom > second.top + 0.1
+      && first.top < second.bottom - 0.1
+    );
+    const territoryLabels = [...document.querySelectorAll('.territory-name')]
+      .map((element) => element.getBoundingClientRect());
+    const regionLabels = [...document.querySelectorAll('.region-label')]
+      .map((element) => element.getBoundingClientRect());
+    let territoryLabelOverlapCount = 0;
+    for (let first = 0; first < territoryLabels.length; first += 1) {
+      for (let second = first + 1; second < territoryLabels.length; second += 1) {
+        if (overlaps(territoryLabels[first], territoryLabels[second])) territoryLabelOverlapCount += 1;
+      }
+    }
     return {
       documentWidth: document.documentElement.scrollWidth,
       minimumWidth: Math.min(...measured.map(({ bounds }) => bounds.width)),
@@ -84,6 +100,10 @@ test('loads strategic view', async ({ page }) => {
         : targets.length,
       wrongCenterOwnerCount: measured.filter(({ expectedOwner, actualOwner }) => expectedOwner !== actualOwner).length,
       labelOverlayOverlapCount: [...document.querySelectorAll('.territory-name')].filter(overlapsOverlay).length,
+      territoryRegionOverlapCount: territoryLabels.reduce((count, territory) => (
+        count + regionLabels.filter((region) => overlaps(territory, region)).length
+      ), 0),
+      territoryLabelOverlapCount,
       targetOverlayOverlapCount: targets.filter(overlapsOverlay).length,
       overlayOverlapCount,
       hitRadius: Number(targets[0]?.getAttribute('r') ?? 0),
@@ -96,10 +116,12 @@ test('loads strategic view', async ({ page }) => {
       return {
         documentWidth: metrics.documentWidth,
         targetsMeetMinimum: metrics.minimumWidth >= 24 && metrics.minimumHeight >= 24,
-        targetsSeparated: metrics.minimumCenterDistance >= 24,
+        targetsSeparated: metrics.minimumCenterDistance >= Math.max(metrics.minimumWidth, metrics.minimumHeight),
         clippedTargetCount: metrics.clippedTargetCount,
         wrongCenterOwnerCount: metrics.wrongCenterOwnerCount,
         labelOverlayOverlapCount: checkOverlays ? metrics.labelOverlayOverlapCount : 0,
+        territoryRegionOverlapCount: checkOverlays ? metrics.territoryRegionOverlapCount : 0,
+        territoryLabelOverlapCount: checkOverlays ? metrics.territoryLabelOverlapCount : 0,
         targetOverlayOverlapCount: checkOverlays ? metrics.targetOverlayOverlapCount : 0,
         overlayOverlapCount: checkOverlays ? metrics.overlayOverlapCount : 0,
         desktopRadiusUnchanged: checkOverlays || Math.abs(metrics.hitRadius - 3.2) < 0.001,
@@ -111,9 +133,55 @@ test('loads strategic view', async ({ page }) => {
       clippedTargetCount: 0,
       wrongCenterOwnerCount: 0,
       labelOverlayOverlapCount: 0,
+      territoryRegionOverlapCount: 0,
+      territoryLabelOverlapCount: 0,
       targetOverlayOverlapCount: 0,
       overlayOverlapCount: 0,
       desktopRadiusUnchanged: true,
+    });
+  };
+
+  const expectHqLayout = async (documentWidth: number) => {
+    await expect.poll(() => page.evaluate(() => {
+      const containedText = (element: Element | null) => {
+        if (!element) return false;
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return [...range.getClientRects()].every((line) => (
+          line.left >= -0.5
+          && line.right <= window.innerWidth + 0.5
+        ));
+      };
+      const textLineCount = (element: Element | null) => {
+        if (!element) return 0;
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        return new Set([...range.getClientRects()].map((line) => Math.round(line.top * 2) / 2)).size;
+      };
+      const title = document.querySelector('.hq-title h1');
+      const menu = document.querySelector('.hq-title .back-btn');
+      const titleBounds = title?.getBoundingClientRect();
+      const menuBounds = menu?.getBoundingClientRect();
+      const metricCards = [...document.querySelectorAll<HTMLElement>('.territory-metrics span')];
+      return {
+        documentWidth: document.documentElement.scrollWidth,
+        titleContained: Boolean(titleBounds && titleBounds.left >= 0 && titleBounds.right <= window.innerWidth),
+        titleTextContained: containedText(title),
+        menuContained: Boolean(menuBounds && menuBounds.left >= 0 && menuBounds.right <= window.innerWidth),
+        menuTextContained: containedText(menu),
+        menuLineCount: textLineCount(menu),
+        metricCardCount: metricCards.length,
+        metricOverflowCount: metricCards.filter((card) => card.scrollWidth > card.clientWidth + 0.5).length,
+      };
+    })).toEqual({
+      documentWidth,
+      titleContained: true,
+      titleTextContained: true,
+      menuContained: true,
+      menuTextContained: true,
+      menuLineCount: 1,
+      metricCardCount: 3,
+      metricOverflowCount: 0,
     });
   };
 
@@ -133,6 +201,7 @@ test('loads strategic view', async ({ page }) => {
       }, layout.rootFontSize);
       await page.locator('.strategic-map-svg').scrollIntoViewIfNeeded();
       await expectMapTargets(layout.width, true);
+      await expectHqLayout(layout.width);
     }
     await page.evaluate(() => document.documentElement.style.removeProperty('font-size'));
     await page.setViewportSize({ width: 390, height: 844 });
@@ -185,6 +254,7 @@ test('loads strategic view', async ({ page }) => {
   await expect(page.getByRole('button', { name: /OPS\s+Territories/i })).toBeVisible();
   await expect(page.locator('.strategic-map-svg')).toBeVisible();
   await expectMapTargets(1280);
+  await expectHqLayout(1280);
 
   const paris = page.locator('.territory-marker').filter({ hasText: 'Paris' });
   const lyon = page.locator('.territory-marker').filter({ hasText: 'Lyon' });
@@ -217,10 +287,10 @@ test('loads strategic view', async ({ page }) => {
   await page.evaluate(() => (window as any).__campaignControl.setTerritoryAvailable('sector-cinder-gate'));
   await page.locator('.map-theater-switch button').nth(1).click();
   await expect(page.locator('.strategic-map-svg')).toHaveAttribute('data-theater', '2');
-  await expectMobileMapLayouts();
   const dawnAnchor = page.locator('[data-territory-id="sector-dawn-anchor"]');
   await dawnAnchor.locator('.territory-hit-area').click();
   await expect(dawnAnchor).toHaveAttribute('aria-pressed', 'true');
+  await expectMobileMapLayouts();
 
   await page.evaluate(() => window.localStorage.setItem('spellcross:lang', 'sk'));
   await page.reload();
@@ -228,19 +298,19 @@ test('loads strategic view', async ({ page }) => {
   await page.evaluate(() => (window as any).__campaignControl.setTerritoryAvailable('sector-cinder-gate'));
   await page.locator('.map-theater-switch button').nth(1).click();
   await expect(page.locator('.strategic-map-svg')).toHaveAttribute('data-theater', '2');
-  await expectMobileMapLayouts();
   const dawnAnchorSk = page.locator('[data-territory-id="sector-dawn-anchor"]');
   await dawnAnchorSk.locator('.territory-hit-area').click();
   await expect(dawnAnchorSk).toHaveAttribute('aria-pressed', 'true');
+  await expectMobileMapLayouts();
 
   await page.locator('.map-theater-switch button').nth(0).click();
   await expect(page.locator('.strategic-map-svg')).toHaveAttribute('data-theater', '1');
-  await expectMobileMapLayouts();
-  await expectMapTargets(390, true);
   const viennaSk = page.locator('.territory-marker').filter({ hasText: 'Viedeň' });
   const krakowSk = page.locator('.territory-marker').filter({ hasText: 'Krakov' });
   await viennaSk.locator('.territory-hit-area').click();
   await expect(viennaSk).toHaveAttribute('aria-pressed', 'true');
+  await expectMobileMapLayouts();
+  await expectMapTargets(390, true);
   await krakowSk.locator('.territory-hit-area').click();
   await expect(krakowSk).toHaveAttribute('aria-pressed', 'true');
 
