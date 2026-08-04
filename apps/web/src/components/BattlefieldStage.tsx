@@ -7,7 +7,7 @@ import { calculateAttackRange } from '@spellcross/core';
 import type { DisplayObject, FederatedPointerEvent, Graphics as PixiGraphics } from 'pixi.js';
 import { BaseTexture, Matrix, Texture, Rectangle, Polygon, MIPMAP_MODES, SCALE_MODES, WRAP_MODES, settings } from 'pixi.js';
 import { TextStyle } from 'pixi.js';
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -1937,6 +1937,7 @@ export function BattlefieldStage({
 
   // Minimap toggle
   const [minimapVisible, setMinimapVisible] = useState(false);
+  const minimapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Tab') {
@@ -8374,60 +8375,75 @@ export function BattlefieldStage({
     g.endFill();
   }, [map.height, map.width, snappedCorners, visibleTiles]);
 
-  const drawMinimap = useCallback((g: PixiGraphics) => {
-    const mmW = 160;
-    const mmH = 120;
-    const sx = mmW / stageDimensions.width;
-    const sy = mmH / stageDimensions.height;
-    g.clear();
-    // frame
-    g.beginFill(0x000000, 0.35);
-    g.drawRoundedRect(-4, -4, mmW + 8, mmH + 8, 6);
-    g.endFill();
-    g.beginFill(0x0b1a2b, 0.85);
-    g.drawRect(0, 0, mmW, mmH);
-    g.endFill();
-    // fog-of-war overlay (unexplored=dark, explored-not-visible=dim)
+  const minimapWidth = hostSize.h <= 500 ? 96 : 160;
+  const minimapHeight = hostSize.h <= 500 ? 72 : 120;
+  useEffect(() => {
+    if (!minimapVisible) return;
+    const canvas = minimapCanvasRef.current;
+    if (!canvas) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(minimapWidth * pixelRatio);
+    canvas.height = Math.round(minimapHeight * pixelRatio);
+    context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
+    context.clearRect(0, 0, minimapWidth, minimapHeight);
+    context.fillStyle = 'rgba(11, 26, 43, 0.9)';
+    context.fillRect(0, 0, minimapWidth, minimapHeight);
+
+    const scaleX = minimapWidth / stageDimensions.width;
+    const scaleY = minimapHeight / stageDimensions.height;
     for (let r = 0; r < map.height; r++) {
       for (let q = 0; q < map.width; q++) {
-        const idx = r * map.width + q;
-        const p = toScreen({ q, r });
-        const tx = (p.x + (ISO_MODE ? isoBaseX : 0)) * sx;
-        const ty = p.y * sy;
-        if (!exploredTiles.has(idx)) {
-          g.beginFill(0x000000, 0.7);
-          g.drawRect(tx - 1.5, ty - 1.5, 3, 3);
-          g.endFill();
-        } else if (!visibleTiles.has(idx)) {
-          g.beginFill(0x000000, 0.35);
-          g.drawRect(tx - 1.5, ty - 1.5, 3, 3);
-          g.endFill();
+        const tileIndex = r * map.width + q;
+        const point = toScreen({ q, r });
+        const tileX = (point.x + (ISO_MODE ? isoBaseX : 0)) * scaleX;
+        const tileY = point.y * scaleY;
+        if (!exploredTiles.has(tileIndex)) {
+          context.fillStyle = 'rgba(0, 0, 0, 0.7)';
+          context.fillRect(tileX - 1.5, tileY - 1.5, 3, 3);
+        } else if (!visibleTiles.has(tileIndex)) {
+          context.fillStyle = 'rgba(0, 0, 0, 0.35)';
+          context.fillRect(tileX - 1.5, tileY - 1.5, 3, 3);
         }
       }
     }
-    // units dots (respect fog-of-war: show enemies only if visible to viewer)
-    const allUnits = Object.values(battleState.sides).flatMap((side) => Array.from(side.units.values()));
-    for (const u of allUnits) {
-      if (u.stance === 'destroyed' || u.embarkedOn) continue;
-      const tileIdx = u.coordinate.r * map.width + u.coordinate.q;
-      const isFriendly = u.faction === viewerFaction;
-      const isVisible = visibleTiles.has(tileIdx);
-      if (!isFriendly && !isVisible) continue;
-      const p = toScreen(u.coordinate);
-      const ux = (p.x + (ISO_MODE ? isoBaseX : 0)) * sx;
-      const uy = p.y * sy;
-      g.beginFill(u.faction === 'alliance' ? 0x5dade2 : 0xe74c3c, 0.95);
-      g.drawRect(ux - 1, uy - 1, 2, 2);
-      g.endFill();
+
+    const units = Object.values(battleState.sides).flatMap((side) => Array.from(side.units.values()));
+    for (const unit of units) {
+      if (unit.stance === 'destroyed' || unit.embarkedOn) continue;
+      const tileIndex = unit.coordinate.r * map.width + unit.coordinate.q;
+      const friendly = unit.faction === viewerFaction;
+      if (!friendly && !visibleTiles.has(tileIndex)) continue;
+      const point = toScreen(unit.coordinate);
+      const unitX = (point.x + (ISO_MODE ? isoBaseX : 0)) * scaleX;
+      const unitY = point.y * scaleY;
+      context.fillStyle = unit.faction === 'alliance' ? 'rgba(93, 173, 226, 0.95)' : 'rgba(231, 76, 60, 0.95)';
+      context.fillRect(unitX - 1, unitY - 1, 2, 2);
     }
-    // viewport rectangle
-    const viewWorldX = (-offsetX) / scale;
-    const viewWorldY = (-offsetY) / scale;
-    const viewWorldW = hostSize.w / scale;
-    const viewWorldH = hostSize.h / scale;
-    g.lineStyle(1, 0xffffff, 0.9);
-    g.drawRect(viewWorldX * sx, viewWorldY * sy, viewWorldW * sx, viewWorldH * sy);
-  }, [battleState.sides, exploredTiles, hostSize.h, hostSize.w, isoBaseX, map.height, map.width, offsetX, offsetY, scale, stageDimensions.height, stageDimensions.width, viewerFaction, visibleTiles]);
+
+    const viewWorldX = -offsetX / scale;
+    const viewWorldY = -offsetY / scale;
+    context.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    context.lineWidth = 1;
+    context.strokeRect(
+      viewWorldX * scaleX,
+      viewWorldY * scaleY,
+      hostSize.w / scale * scaleX,
+      hostSize.h / scale * scaleY
+    );
+  }, [battleState.sides, battleState.timeline.length, exploredTiles, hostSize.h, hostSize.w, isoBaseX, map.height, map.width, minimapHeight, minimapVisible, minimapWidth, offsetX, offsetY, scale, stageDimensions.height, stageDimensions.width, viewerFaction, visibleTiles]);
+
+  const updateMinimapTarget = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const x = Math.max(0, Math.min(bounds.width, event.clientX - bounds.left));
+    const y = Math.max(0, Math.min(bounds.height, event.clientY - bounds.top));
+    setFollowTargetPx({
+      x: x / bounds.width * stageDimensions.width,
+      y: y / bounds.height * stageDimensions.height
+    });
+  }, [stageDimensions.height, stageDimensions.width]);
 
   return (
     <div
@@ -8468,7 +8484,33 @@ export function BattlefieldStage({
       onPointerLeave={() => { setDraggingCam(false); lastPointerRef.current = null; }}
     >
       {minimapVisible && (
-        <div data-testid="minimap" style={{ position: 'absolute', top: 8, left: 8, width: 160, height: 120, pointerEvents: 'none' }} />
+        <canvas
+          ref={minimapCanvasRef}
+          id="battlefield-minimap"
+          data-testid="minimap"
+          className="battlefield-minimap"
+          style={{ width: minimapWidth, height: minimapHeight }}
+          role="img"
+          aria-label={t('controls.map')}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            setMinimapDragging(true);
+            updateMinimapTarget(event);
+          }}
+          onPointerMove={(event) => {
+            event.stopPropagation();
+            if (minimapDragging) updateMinimapTarget(event);
+          }}
+          onPointerUp={(event) => {
+            event.stopPropagation();
+            setMinimapDragging(false);
+          }}
+          onPointerCancel={(event) => {
+            event.stopPropagation();
+            setMinimapDragging(false);
+          }}
+        />
       )}
       {/* Hidden camera metrics for E2E assertions */}
       <div data-testid="camera-metrics" style={{ display: 'none' }}
@@ -8498,19 +8540,42 @@ export function BattlefieldStage({
       />
 
 
-      {/* Minimap + help toggles (top-right; mirror the keyboard shortcuts for discoverability) */}
-      <button data-testid="minimap-toggle" onClick={() => setMinimapVisible((v) => !v)}
-        style={{ position: 'absolute', top: 8, right: 42, height: 28, padding: '0 9px', borderRadius: 4, border: '1px solid #2a3b55', background: minimapVisible ? '#1d3a57' : '#112238', color: '#e6eefc', cursor: 'pointer', fontSize: 12 }}
-        title={t('tooltip.toggleMinimap')}
-      >{t('controls.map')}</button>
-      <button data-testid="keyboard-help-toggle" onClick={() => setHelpVisible((v) => !v)}
-        style={{ position: 'absolute', top: 8, right: 8, width: 28, height: 28, borderRadius: 4, border: '1px solid #2a3b55', background: helpVisible ? '#1d3a57' : '#112238', color: '#e6eefc', cursor: 'pointer' }}
-        title={t('tooltip.toggleHelp')}
-      >?</button>
+      <div className="battlefield-utility-controls" onPointerDown={(event) => event.stopPropagation()}>
+        <button
+          data-testid="minimap-toggle"
+          className={minimapVisible ? 'active' : undefined}
+          onClick={() => setMinimapVisible((visible) => !visible)}
+          title={t('tooltip.toggleMinimap')}
+          aria-label={t('tooltip.toggleMinimap')}
+          aria-pressed={minimapVisible}
+          aria-controls="battlefield-minimap"
+        >
+          {t('controls.map')}
+        </button>
+        <button
+          id="battlefield-help-toggle"
+          data-testid="keyboard-help-toggle"
+          className={helpVisible ? 'active' : undefined}
+          onClick={() => setHelpVisible((visible) => !visible)}
+          title={t('tooltip.toggleHelp')}
+          aria-label={t('tooltip.toggleHelp')}
+          aria-expanded={helpVisible}
+          aria-controls="battlefield-keyboard-help"
+        >
+          ?
+        </button>
+      </div>
 
       {helpVisible && (
-        <div data-testid="keyboard-help" style={{ position: 'absolute', top: 40, right: 8, background: 'rgba(11,26,43,0.94)', color: '#fefefe', padding: '10px 12px', borderRadius: 6, fontSize: 12, lineHeight: 1.45, maxWidth: 282 }}>
-          <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>{t('help.title')}</div>
+        <div
+          id="battlefield-keyboard-help"
+          data-testid="keyboard-help"
+          className="battlefield-keyboard-help"
+          role="region"
+          aria-labelledby="battlefield-keyboard-help-title"
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <div id="battlefield-keyboard-help-title" className="battlefield-keyboard-help-title">{t('help.title')}</div>
           <ul style={{ margin: '0 0 8px', paddingLeft: 16 }}>
             <li>{t('help.clickSelect')}</li>
             <li>{t('help.clickMove')}</li>
@@ -8653,30 +8718,6 @@ export function BattlefieldStage({
             g.endFill();
           }}
         />
-        {/* Minimap (screen-space) */}
-        {minimapVisible && (
-          <Container x={10} y={10} eventMode="static"
-            pointerdown={(e: FederatedPointerEvent) => {
-              setMinimapDragging(true);
-              const mmW = 160; const mmH = 120;
-              const sx = mmW / stageDimensions.width; const sy = mmH / stageDimensions.height;
-              const local = e.data?.getLocalPosition?.(e.currentTarget as DisplayObject) ?? { x: e.offsetX, y: e.offsetY };
-              const worldX = local.x / sx; const worldY = local.y / sy;
-              setFollowTargetPx({ x: worldX, y: worldY });
-            }}
-            pointermove={(e: FederatedPointerEvent) => {
-              if (!minimapDragging) return;
-              const mmW = 160; const mmH = 120;
-              const sx = mmW / stageDimensions.width; const sy = mmH / stageDimensions.height;
-              const local = e.data?.getLocalPosition?.(e.currentTarget as DisplayObject) ?? { x: e.offsetX, y: e.offsetY };
-              const worldX = local.x / sx; const worldY = local.y / sy;
-              setFollowTargetPx({ x: worldX, y: worldY });
-            }}
-            pointerup={() => setMinimapDragging(false)}
-          >
-            <Graphics draw={drawMinimap} />
-          </Container>
-        )}
         <Graphics draw={drawPresentationSentinel} eventMode="none" />
 
       </Stage>

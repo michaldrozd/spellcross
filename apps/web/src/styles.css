@@ -3536,11 +3536,89 @@ header.app-header {
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 0;
+  z-index: auto;
 }
 
 .battlefield-stage-host canvas {
   filter: saturate(0.74) contrast(1.09) brightness(0.97) sepia(0.08);
+}
+
+.battlefield-utility-controls {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 30;
+  display: flex;
+  gap: 0.28rem;
+  pointer-events: auto;
+}
+
+.battlefield-utility-controls button {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0 0.55rem;
+  border: 1px solid #526354;
+  border-radius: 3px;
+  background: linear-gradient(#22352e, #101b18);
+  color: #d9e4d5;
+  font: 700 0.72rem "Courier New", monospace;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  box-shadow: inset 1px 1px 0 rgba(232, 226, 190, 0.14), 0 2px 7px rgba(0, 0, 0, 0.48);
+  cursor: pointer;
+}
+
+.battlefield-utility-controls button:hover,
+.battlefield-utility-controls button.active {
+  border-color: #9c9a60;
+  background: linear-gradient(#42513a, #1c2a20);
+  color: #f0d36c;
+}
+
+.battlefield-utility-controls button:focus-visible {
+  outline: 2px solid #f0d36c;
+  outline-offset: 2px;
+}
+
+.battlefield-minimap {
+  position: absolute;
+  right: 0.65rem;
+  bottom: calc(clamp(204px, 44vh, 300px) + 0.65rem);
+  z-index: 30;
+  border: 2px solid #667269;
+  border-radius: 4px;
+  background: #0b1a2b;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.68), inset 0 0 0 1px rgba(215, 220, 194, 0.12);
+  image-rendering: pixelated;
+  cursor: crosshair;
+  touch-action: none;
+  filter: none !important;
+}
+
+.battlefield-keyboard-help {
+  position: absolute;
+  top: 2.75rem;
+  right: 0.5rem;
+  z-index: 31;
+  max-width: min(282px, calc(100vw - 1rem));
+  max-height: calc(100vh - clamp(204px, 44vh, 300px) - 3.25rem);
+  overflow-y: auto;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #667269;
+  border-radius: 4px;
+  background: rgba(7, 17, 13, 0.97);
+  color: #eef1df;
+  font: 0.72rem/1.45 "Courier New", monospace;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.72);
+  pointer-events: auto;
+}
+
+.battlefield-keyboard-help-title {
+  margin-bottom: 0.4rem;
+  color: #f0d36c;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
 }
 
 .battlefield-palette-night canvas {
@@ -5006,6 +5084,14 @@ header.app-header {
 }
 
 @media (max-width: 600px) {
+  .battlefield-minimap {
+    bottom: calc(220px + 0.65rem);
+  }
+
+  .battlefield-keyboard-help {
+    max-height: calc(100vh - 220px - 3.25rem);
+  }
+
   .battle-top-bar {
     padding: 0.42rem 0.62rem 0.58rem;
   }
