@@ -54,6 +54,22 @@ test('operation dossier carries briefing, battle mood, and specific victory debr
     narrativeCue: 'debriefVictory',
     ambience: null
   });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await continueButton.click();
+  const reports = page.getByRole('region', { name: /Operation reports/i });
+  await expect(reports).toHaveAttribute('aria-live', 'polite');
+  const reportOverlap = await page.evaluate(() => {
+    const outcomeRect = document.querySelector('.hq-outcome')!.getBoundingClientRect();
+    const reportRect = document.querySelector('.hq-alerts')!.getBoundingClientRect();
+    const width = Math.max(0, Math.min(outcomeRect.right, reportRect.right) - Math.max(outcomeRect.left, reportRect.left));
+    const height = Math.max(0, Math.min(outcomeRect.bottom, reportRect.bottom) - Math.max(outcomeRect.top, reportRect.top));
+    return width * height;
+  });
+  expect(reportOverlap).toBe(0);
+  await reports.getByRole('button', { name: /Clear Reports/i }).click();
+  await expect(reports).toHaveCount(0);
+  await expect(page.locator('.hq-outcome')).toHaveCount(0);
 });
 
 test('defeat uses the authored sector report and its own debrief cue', async ({ page }) => {

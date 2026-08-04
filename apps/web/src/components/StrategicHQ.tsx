@@ -1267,7 +1267,7 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
         )}
 
         {visibleReports.length > 0 && (
-          <div className="hq-alerts" role="alertdialog" aria-label={t('outcome.operationReportsAriaLabel')}>
+          <div className="hq-alerts" role="region" aria-live="polite" aria-label={t('outcome.operationReportsAriaLabel')}>
             <div className="hq-alerts-header">
               <span>{t('outcome.operationReports')}</span>
               <b>{popups?.length ?? visibleReports.length}</b>

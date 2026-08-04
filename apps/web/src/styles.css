@@ -5316,6 +5316,12 @@ header.app-header {
     padding: 0.2rem 0.8rem 0.8rem;
   }
 
+  .hq-alerts {
+    position: static;
+    width: 100%;
+    margin-bottom: 0.85rem;
+  }
+
   .hq-topbar {
     display: grid;
     grid-template-columns: 1fr;
