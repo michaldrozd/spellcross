@@ -5518,7 +5518,8 @@ header.app-header {
   }
 
   .strategic-map-container {
-    width: 100%;
+    width: calc(100% + 0.9rem);
+    margin-inline: -0.45rem;
     height: clamp(330px, 96vw, 410px);
     min-height: 330px;
     border-width: 2px;
