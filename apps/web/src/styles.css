@@ -5121,6 +5121,15 @@ header.app-header {
 }
 
 @media (max-width: 600px) {
+  .persistence-warning-strategic {
+    top: 14.75rem;
+  }
+
+  .persistence-warning-battle {
+    top: auto;
+    bottom: calc(220px + 0.75rem);
+  }
+
   .battlefield-minimap {
     bottom: calc(220px + 0.65rem);
   }

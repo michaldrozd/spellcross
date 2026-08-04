@@ -277,6 +277,7 @@ function useCampaign() {
     }
     ref.current = loadSavedCampaign(next);
     setSummary(loadSummary(next));
+    setPersistenceFailed(false);
     rerender((n) => n + 1);
     return ref.current;
   }, []);
@@ -3502,14 +3503,14 @@ function deleteSavedCampaign(slot: number) {
 export function App() {
   const { t } = useTranslation(['common', 'campaign']);
   const { campaign, mutate, persist, reset, slot, changeSlot, persistenceFailed } = useCampaign();
+  const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
   const persistenceWarning = persistenceFailed ? (
-    <div className="persistence-warning" role="alert">
+    <div className={`persistence-warning persistence-warning-${mode}`} role="alert">
       <strong>{t('common:persistenceWarning.title')}</strong>
       <span>{t('common:persistenceWarning.detail')}</span>
     </div>
   ) : null;
   const dismissPopups = () => mutate((s) => { s.popups = []; });
-  const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
   const [savedSlots, setSavedSlots] = useState<(SaveSlot | null)[]>(() => loadAllSummaries());
   const [campaignOutcomeDismissed, setCampaignOutcomeDismissed] = useState(false);
   const campaignOutcomeDialogRef = useRef<HTMLDivElement>(null);
