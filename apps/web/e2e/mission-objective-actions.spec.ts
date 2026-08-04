@@ -193,6 +193,9 @@ test('Auto Turn ignores an absent optional specialist and advances on the requir
   test.setTimeout(60_000);
   await startBattle(page, 'sector-paris');
   await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  const mapMetrics = page.locator('[data-testid="map-metrics"]');
+  await expect(mapMetrics).toHaveAttribute('data-map-width', /^\d+$/);
+  await expect(mapMetrics).toHaveAttribute('data-map-height', /^\d+$/);
 
   const setup = await page.evaluate(() => {
     const control = (window as any).__battleControl;
