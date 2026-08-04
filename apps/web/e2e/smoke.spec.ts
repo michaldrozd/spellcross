@@ -77,7 +77,7 @@ test('loads strategic view', async ({ page }) => {
     );
     const territoryLabels = [...document.querySelectorAll('.territory-name')]
       .map((element) => element.getBoundingClientRect());
-    const regionLabels = [...document.querySelectorAll('.region-label')]
+    const regionLabels = [...document.querySelectorAll('.region-label, .shatterline-label, .invasion-label')]
       .map((element) => element.getBoundingClientRect());
     let territoryLabelOverlapCount = 0;
     for (let first = 0; first < territoryLabels.length; first += 1) {
@@ -119,9 +119,9 @@ test('loads strategic view', async ({ page }) => {
         targetsSeparated: metrics.minimumCenterDistance >= Math.max(metrics.minimumWidth, metrics.minimumHeight),
         clippedTargetCount: metrics.clippedTargetCount,
         wrongCenterOwnerCount: metrics.wrongCenterOwnerCount,
-        labelOverlayOverlapCount: checkOverlays ? metrics.labelOverlayOverlapCount : 0,
-        territoryRegionOverlapCount: checkOverlays ? metrics.territoryRegionOverlapCount : 0,
-        territoryLabelOverlapCount: checkOverlays ? metrics.territoryLabelOverlapCount : 0,
+        labelOverlayOverlapCount: metrics.labelOverlayOverlapCount,
+        territoryRegionOverlapCount: metrics.territoryRegionOverlapCount,
+        territoryLabelOverlapCount: metrics.territoryLabelOverlapCount,
         targetOverlayOverlapCount: checkOverlays ? metrics.targetOverlayOverlapCount : 0,
         overlayOverlapCount: checkOverlays ? metrics.overlayOverlapCount : 0,
         desktopRadiusUnchanged: checkOverlays || Math.abs(metrics.hitRadius - 3.2) < 0.001,
@@ -163,6 +163,7 @@ test('loads strategic view', async ({ page }) => {
       const titleBounds = title?.getBoundingClientRect();
       const menuBounds = menu?.getBoundingClientRect();
       const metricCards = [...document.querySelectorAll<HTMLElement>('.territory-metrics span')];
+      const tabs = [...document.querySelectorAll('.hq-tabs .tab')];
       return {
         documentWidth: document.documentElement.scrollWidth,
         titleContained: Boolean(titleBounds && titleBounds.left >= 0 && titleBounds.right <= window.innerWidth),
@@ -170,6 +171,15 @@ test('loads strategic view', async ({ page }) => {
         menuContained: Boolean(menuBounds && menuBounds.left >= 0 && menuBounds.right <= window.innerWidth),
         menuTextContained: containedText(menu),
         menuLineCount: textLineCount(menu),
+        tabTextContained: tabs.every((tab) => {
+          const bounds = tab.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(tab);
+          return [...range.getClientRects()].every((line) => (
+            line.left >= bounds.left - 0.5
+            && line.right <= bounds.right + 0.5
+          ));
+        }),
         metricCardCount: metricCards.length,
         metricOverflowCount: metricCards.filter((card) => card.scrollWidth > card.clientWidth + 0.5).length,
       };
@@ -180,6 +190,7 @@ test('loads strategic view', async ({ page }) => {
       menuContained: true,
       menuTextContained: true,
       menuLineCount: 1,
+      tabTextContained: true,
       metricCardCount: 3,
       metricOverflowCount: 0,
     });
@@ -188,6 +199,7 @@ test('loads strategic view', async ({ page }) => {
   const expectMobileMapLayouts = async () => {
     const layouts = [
       { width: 320, height: 568 },
+      { width: 320, height: 568, rootFontSize: 24 },
       { width: 360, height: 800 },
       { width: 375, height: 667 },
       { width: 390, height: 844 },
@@ -315,6 +327,7 @@ test('loads strategic view', async ({ page }) => {
   await expect(krakowSk).toHaveAttribute('aria-pressed', 'true');
 
   await page.setViewportSize({ width: 1280, height: 720 });
+  await expectHqLayout(1280);
   await expectMapTargets(1280);
   const brussels = page.locator('.territory-marker').filter({ hasText: 'Brusel' });
   await expect(brussels).toHaveAttribute('aria-label', /Bruselské velenie, Dostupné, 5 KÔL/i);

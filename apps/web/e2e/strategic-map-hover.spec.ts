@@ -24,4 +24,30 @@ test('strategic map marker remains the pointer target on hover', async ({ page }
     });
     expect(centerOwner).toBe(territoryId);
   }
+
+  const session = await page.context().newCDPSession(page);
+  await session.send('DOM.enable');
+  await session.send('CSS.enable');
+  const { root } = await session.send('DOM.getDocument');
+  const { nodeId } = await session.send('DOM.querySelector', {
+    nodeId: root.nodeId,
+    selector: '.strategic-map-svg .territory-marker',
+  });
+  expect(nodeId).toBeTruthy();
+  await session.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: ['hover'] });
+  const hoveredNode = page.locator('.territory-marker').first().locator('.territory-node');
+  await expect.poll(() => hoveredNode.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return {
+      opacity: Number.parseFloat(style.opacity),
+      stroke: style.stroke,
+      strokeWidth: Number.parseFloat(style.strokeWidth),
+    };
+  })).toEqual({
+    opacity: 0.95,
+    stroke: 'rgb(248, 250, 252)',
+    strokeWidth: 0.45,
+  });
+  await session.send('CSS.forcePseudoState', { nodeId, forcedPseudoClasses: [] });
+  await session.detach();
 });

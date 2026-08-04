@@ -1086,11 +1086,13 @@ body {
 .campaign-difficulty.veteran { color: #dc8868; border-color: rgba(196, 91, 61, 0.55); }
 
 .back-btn {
+  flex-shrink: 0;
   padding: 0.5rem 1rem;
   background: transparent;
   border: 1px solid var(--stroke);
   color: var(--text-dim);
   font-size: 0.85rem;
+  white-space: nowrap;
 }
 
 .back-btn:hover {
@@ -5419,7 +5421,7 @@ header.app-header {
 
   .hq-title {
     display: grid;
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       "menu title"
       "menu turn";
@@ -5438,9 +5440,11 @@ header.app-header {
 
   .hq-title h1 {
     grid-area: title;
+    min-width: 0;
     font-size: 1.26rem;
     line-height: 1;
     letter-spacing: 0.08em;
+    overflow-wrap: anywhere;
     white-space: normal;
   }
 
@@ -5492,12 +5496,21 @@ header.app-header {
     overflow: hidden;
   }
 
-  .hq-tabs .tab {
+  .strategic-hq .hq-tabs .tab {
     min-width: 0;
+    flex-wrap: wrap;
     gap: 0.32rem;
     padding: 0.7rem 0.32rem;
     font-size: 0.72rem;
+    line-height: 1.1;
     letter-spacing: 0.03em;
+  }
+
+  .hq-tabs .tab > span:last-child {
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: center;
   }
 
   .tab-code {
@@ -5507,7 +5520,7 @@ header.app-header {
   }
 
   .hq-content {
-    padding: 0.72rem;
+    padding: min(0.72rem, 3.6vw);
     overflow-x: hidden;
   }
 
@@ -5669,6 +5682,25 @@ header.app-header {
   .toast-stack {
     bottom: 1rem;
     width: calc(100vw - 1.2rem);
+  }
+}
+
+@media (max-width: 340px) {
+  .hq-title h1 {
+    font-size: min(1.26rem, 7vw);
+    overflow-wrap: normal;
+  }
+
+  .strategic-hq .hq-tabs .tab {
+    gap: 0.16rem;
+    padding-inline: 0.05rem;
+  }
+
+  .hq-tabs .tab > span:last-child {
+    font-size: min(0.72rem, 4.6vw);
+    letter-spacing: 0.02em;
+    overflow-wrap: normal;
+    white-space: nowrap;
   }
 }
 
