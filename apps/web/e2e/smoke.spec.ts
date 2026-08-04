@@ -40,6 +40,19 @@ test('loads strategic view', async ({ page }) => {
         ?.closest('.territory-marker')?.getAttribute('aria-label');
       return { bounds, center, expectedOwner, actualOwner };
     });
+    let minimumCenterDistance = Infinity;
+    for (let first = 0; first < measured.length; first += 1) {
+      for (let second = first + 1; second < measured.length; second += 1) {
+        minimumCenterDistance = Math.min(
+          minimumCenterDistance,
+          Math.hypot(
+            measured[first].center.x - measured[second].center.x,
+            measured[first].center.y - measured[second].center.y
+          )
+        );
+      }
+    }
+    const mapBounds = document.querySelector('.strategic-map-svg')?.getBoundingClientRect();
     const overlays = [...document.querySelectorAll('.map-theater-switch, .map-status-strip, .map-legend')]
       .map((element) => element.getBoundingClientRect());
     let overlayOverlapCount = 0;
@@ -60,6 +73,15 @@ test('loads strategic view', async ({ page }) => {
       documentWidth: document.documentElement.scrollWidth,
       minimumWidth: Math.min(...measured.map(({ bounds }) => bounds.width)),
       minimumHeight: Math.min(...measured.map(({ bounds }) => bounds.height)),
+      minimumCenterDistance,
+      clippedTargetCount: mapBounds
+        ? measured.filter(({ bounds }) => (
+            bounds.left < mapBounds.left - 0.1
+            || bounds.right > mapBounds.right + 0.1
+            || bounds.top < mapBounds.top - 0.1
+            || bounds.bottom > mapBounds.bottom + 0.1
+          )).length
+        : targets.length,
       wrongCenterOwnerCount: measured.filter(({ expectedOwner, actualOwner }) => expectedOwner !== actualOwner).length,
       labelOverlayOverlapCount: [...document.querySelectorAll('.territory-name')].filter(overlapsOverlay).length,
       targetOverlayOverlapCount: targets.filter(overlapsOverlay).length,
@@ -74,6 +96,8 @@ test('loads strategic view', async ({ page }) => {
       return {
         documentWidth: metrics.documentWidth,
         targetsMeetMinimum: metrics.minimumWidth >= 24 && metrics.minimumHeight >= 24,
+        targetsSeparated: metrics.minimumCenterDistance >= 24,
+        clippedTargetCount: metrics.clippedTargetCount,
         wrongCenterOwnerCount: metrics.wrongCenterOwnerCount,
         labelOverlayOverlapCount: checkOverlays ? metrics.labelOverlayOverlapCount : 0,
         targetOverlayOverlapCount: checkOverlays ? metrics.targetOverlayOverlapCount : 0,
@@ -83,6 +107,8 @@ test('loads strategic view', async ({ page }) => {
     }).toEqual({
       documentWidth,
       targetsMeetMinimum: true,
+      targetsSeparated: true,
+      clippedTargetCount: 0,
       wrongCenterOwnerCount: 0,
       labelOverlayOverlapCount: 0,
       targetOverlayOverlapCount: 0,
@@ -188,9 +214,27 @@ test('loads strategic view', async ({ page }) => {
   await krakow.locator('.territory-hit-area').click();
   await expect(krakow).toHaveAttribute('aria-pressed', 'true');
 
+  await page.evaluate(() => (window as any).__campaignControl.setTerritoryAvailable('sector-cinder-gate'));
+  await page.locator('.map-theater-switch button').nth(1).click();
+  await expect(page.locator('.strategic-map-svg')).toHaveAttribute('data-theater', '2');
+  await expectMobileMapLayouts();
+  const dawnAnchor = page.locator('[data-territory-id="sector-dawn-anchor"]');
+  await dawnAnchor.locator('.territory-hit-area').click();
+  await expect(dawnAnchor).toHaveAttribute('aria-pressed', 'true');
+
   await page.evaluate(() => window.localStorage.setItem('spellcross:lang', 'sk'));
   await page.reload();
   await page.getByRole('button', { name: /Pokračovať/i }).click();
+  await page.evaluate(() => (window as any).__campaignControl.setTerritoryAvailable('sector-cinder-gate'));
+  await page.locator('.map-theater-switch button').nth(1).click();
+  await expect(page.locator('.strategic-map-svg')).toHaveAttribute('data-theater', '2');
+  await expectMobileMapLayouts();
+  const dawnAnchorSk = page.locator('[data-territory-id="sector-dawn-anchor"]');
+  await dawnAnchorSk.locator('.territory-hit-area').click();
+  await expect(dawnAnchorSk).toHaveAttribute('aria-pressed', 'true');
+
+  await page.locator('.map-theater-switch button').nth(0).click();
+  await expect(page.locator('.strategic-map-svg')).toHaveAttribute('data-theater', '1');
   await expectMobileMapLayouts();
   await expectMapTargets(390, true);
   const viennaSk = page.locator('.territory-marker').filter({ hasText: 'Viedeň' });

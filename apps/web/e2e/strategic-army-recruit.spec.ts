@@ -59,5 +59,21 @@ test('army recruit queue shows incoming units with readiness turn', async ({ pag
       new Set(actionNames.map(({ label }) => label)).size,
       `${layout.language} ${layout.width}px unique action names`
     ).toBe(actionNames.length);
+
+    await page.evaluate(() => (window as any).__campaignControl.setMoney(0));
+    const disabledOfficerActions = page.locator('.officer-recruit:disabled');
+    await expect(disabledOfficerActions.first()).toBeVisible();
+    const unaffordableNames = await disabledOfficerActions.evaluateAll((buttons) => buttons.map((button) => ({
+      label: button.getAttribute('aria-label') ?? '',
+      officer: button.closest('.officer-card')?.querySelector('.officer-identity strong')?.textContent?.trim() ?? '',
+    })));
+    expect(
+      unaffordableNames.filter(({ label, officer }) => !label || !officer || !label.includes(officer)),
+      `${layout.language} ${layout.width}px unaffordable officer names`
+    ).toEqual([]);
+    expect(
+      new Set(unaffordableNames.map(({ label }) => label)).size,
+      `${layout.language} ${layout.width}px unique unaffordable officer names`
+    ).toBe(unaffordableNames.length);
   }
 });

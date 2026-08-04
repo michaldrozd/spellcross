@@ -612,12 +612,12 @@ const StrategicMapView: React.FC<{
               <path d="M 28,54 Q 39,58 52,63 Q 60,66 69,64" fill="none" stroke="#5d513d" strokeWidth="0.16" opacity="0.42" />
               <path d="M 72,22 Q 81,28 86,39 Q 87,48 82,57" fill="none" stroke="#5d513d" strokeWidth="0.16" opacity="0.45" />
               {[
-                ['Paris', 25, 43],
+                ['Paris', 25, 44],
                 ['Lyon', 30, 57],
-                ['Amsterdam', 31, 29],
-                ['Berlin', 49, 34],
-                ['Prague', 50, 43],
-                ['Vienna', 53, 51],
+                ['Amsterdam', 32, 28],
+                ['Berlin', 49, 33],
+                ['Prague', 50, 42],
+                ['Vienna', 53, 53],
                 ['Warsaw', 61, 38],
                 ['Kyiv', 75, 43]
               ].map(([name, x, y]) => (
@@ -1110,6 +1110,18 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
     });
     return sections.filter((section) => section.units.length > 0);
   }, [army]);
+  const unitOccurrences = useMemo(() => {
+    const totals = new Map<string, number>();
+    const indexes = new Map<string, number>();
+    const occurrences = new Map<string, { index: number; count: number }>();
+    army.forEach((unit) => totals.set(unit.definitionId, (totals.get(unit.definitionId) ?? 0) + 1));
+    army.forEach((unit) => {
+      const index = (indexes.get(unit.definitionId) ?? 0) + 1;
+      indexes.set(unit.definitionId, index);
+      occurrences.set(unit.id, { index, count: totals.get(unit.definitionId) ?? 1 });
+    });
+    return occurrences;
+  }, [army]);
   const planningTerritory = planningTerritoryId
     ? territories.find((territory) => territory.id === planningTerritoryId)
     : undefined;
@@ -1540,12 +1552,12 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
                     {units.map((u) => {
                       const healthPercent = Math.max(0, Math.min(100, Math.round((u.currentHealth / u.maxHealth) * 100)));
                       const readinessKey = healthPercent < 55 ? 'damaged' : u.experience >= 60 ? 'veteran' : 'ready';
-                      const matchingUnits = army.filter((candidate) => candidate.definitionId === u.definitionId);
-                      const accessibleUnitName = matchingUnits.length > 1
+                      const occurrence = unitOccurrences.get(u.id);
+                      const accessibleUnitName = occurrence && occurrence.count > 1
                         ? t('army.unitOccurrence', {
                             unit: u.name,
-                            index: matchingUnits.findIndex((candidate) => candidate.id === u.id) + 1,
-                            count: matchingUnits.length
+                            index: occurrence.index,
+                            count: occurrence.count
                           })
                         : u.name;
                       return (

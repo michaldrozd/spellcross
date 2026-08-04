@@ -2705,7 +2705,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'evacuation-run',
     timer: 5,
     reward: { money: 100, research: 35, strategic: 22 },
-    mapPosition: { x: 25, y: 43 },
+    mapPosition: { x: 25, y: 44 },
     region: 'France',
     difficulty: 1
   },
@@ -2727,7 +2727,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'bridgehead',
     timer: 6,
     reward: { money: 150, research: 48, strategic: 33 },
-    mapPosition: { x: 38, y: 46 },
+    mapPosition: { x: 37, y: 46 },
     requires: ['sector-paris'],
     region: 'France',
     difficulty: 2
@@ -2739,7 +2739,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'outpost-night',
     timer: 7,
     reward: { money: 165, research: 52, strategic: 36 },
-    mapPosition: { x: 45, y: 48 },
+    mapPosition: { x: 45, y: 49 },
     requires: ['sector-strasbourg'],
     region: 'Germany',
     difficulty: 2
@@ -2762,7 +2762,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'bridgehead',
     timer: 8,
     reward: { money: 220, research: 64, strategic: 48 },
-    mapPosition: { x: 53, y: 51 },
+    mapPosition: { x: 53, y: 53 },
     requires: ['sector-munich', 'sector-zurich'],
     region: 'Austria',
     difficulty: 3
@@ -2785,7 +2785,7 @@ const baseTerritories: TerritorySpec[] = [
     brief: 'Control of the port is essential for naval supply routes.',
     scenarioId: 'bridgehead',
     reward: { money: 158, research: 49, strategic: 33 },
-    mapPosition: { x: 31, y: 29 },
+    mapPosition: { x: 32, y: 28 },
     requires: ['sector-brussels'],
     region: 'Netherlands',
     difficulty: 2
@@ -2810,7 +2810,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'outpost-night',
     timer: 9,
     reward: { money: 215, research: 62, strategic: 46 },
-    mapPosition: { x: 50, y: 43 },
+    mapPosition: { x: 50, y: 42 },
     requires: ['sector-vienna'],
     region: 'Czech Republic',
     difficulty: 3
@@ -2822,7 +2822,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'black-spire-assault',
     timer: 8,
     reward: { money: 300, research: 84, strategic: 64 },
-    mapPosition: { x: 49, y: 34 },
+    mapPosition: { x: 49, y: 33 },
     requires: ['sector-prague', 'sector-copenhagen'],
     region: 'Germany',
     difficulty: 4
@@ -2846,7 +2846,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'black-spire-assault',
     timer: 11,
     reward: { money: 310, research: 86, strategic: 66 },
-    mapPosition: { x: 58, y: 47 },
+    mapPosition: { x: 58, y: 46 },
     requires: ['sector-warsaw', 'sector-vienna'],
     region: 'Poland',
     difficulty: 4
@@ -3051,7 +3051,7 @@ const baseTerritories: TerritorySpec[] = [
     scenarioId: 'crossroads-defense',
     timer: 15,
     reward: { money: 940, research: 240, strategic: 160 },
-    mapPosition: { x: 96, y: 48 },
+    mapPosition: { x: 95, y: 48 },
     requires: ['sector-ash-compass'],
     act: 2,
     region: 'Shatterline',

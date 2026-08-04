@@ -10,11 +10,12 @@ test('strategic map marker hover does not flicker', async ({ page }) => {
 
   const count = Math.min(await markers.count(), 10);
   for (let i = 0; i < count; i++) {
-    const box = await markers.nth(i).boundingBox();
+    const marker = markers.nth(i);
+    const box = await marker.boundingBox();
     expect(box).toBeTruthy();
     if (!box) continue;
 
-    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 6 });
+    await marker.hover();
     await page.waitForTimeout(40);
 
     const hoveredMarkers = await page.evaluate(

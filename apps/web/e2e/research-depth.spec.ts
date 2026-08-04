@@ -63,5 +63,25 @@ test('all research content remains readable across desktop and phone in both lan
       new Set(projectActions.map(({ label }) => label)).size,
       `${layout.language} ${layout.width}px unique research action names`
     ).toBe(projectActions.length);
+
+    const readyCardIndexes = await page.locator('.research-card').evaluateAll((cards) => cards.flatMap(
+      (card, index) => card.classList.contains('ready-node') ? [index] : []
+    ).slice(0, 2));
+    expect(readyCardIndexes, `${layout.language} ${layout.width}px ready research projects`).toHaveLength(2);
+    const firstReadyCard = page.locator('.research-card').nth(readyCardIndexes[0]);
+    const secondReadyCard = page.locator('.research-card').nth(readyCardIndexes[1]);
+    const firstProject = (await firstReadyCard.locator('h4').textContent())?.trim() ?? '';
+
+    await firstReadyCard.getByRole('button').click();
+    await page.locator('.pause-research-btn').click();
+    await expect(firstReadyCard).toHaveClass(/paused-node/);
+    const resumeLabel = await firstReadyCard.getByRole('button').getAttribute('aria-label');
+    expect(resumeLabel, `${layout.language} ${layout.width}px resume project name`).toContain(firstProject);
+
+    await secondReadyCard.getByRole('button').click();
+    const pauseThenResumeLabel = await firstReadyCard.getByRole('button').getAttribute('aria-label');
+    expect(pauseThenResumeLabel, `${layout.language} ${layout.width}px pause then resume project name`)
+      .toContain(firstProject);
+    expect(pauseThenResumeLabel).not.toBe(resumeLabel);
   }
 });
