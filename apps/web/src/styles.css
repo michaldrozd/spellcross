@@ -7228,3 +7228,9 @@ button:disabled {
     flex: none;
   }
 }
+
+@media (max-height: 450px) and (orientation: landscape) {
+  .battlefield-keyboard-help {
+    max-height: calc(100vh - 3.25rem);
+  }
+}

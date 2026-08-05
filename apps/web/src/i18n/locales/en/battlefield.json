@@ -7,6 +7,8 @@
     "overwatchHint": "Overwatch holds fire until an enemy moves",
     "startBattleHint": "Start Battle ends deployment",
     "endTurnHint": "End Turn, or Auto Turn to let the AI play",
+    "suppressionHint": "PIN -N is morale lost; low morale can suppress or route a unit.",
+    "radarHint": "Deploying or packing radar spends the rest of its turn; deployed radar sees farther but cannot move.",
     "hotkeysTitle": "Hotkeys",
     "hotkeys": {
       "pan": "Arrow keys — Pan camera",

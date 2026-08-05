@@ -72,7 +72,7 @@ describe('MainMenu', () => {
         language: 'sk',
         opener: 'Manuál',
         headings: ['Veď kampaň', 'Zvládni pokročilé boje', 'Vybuduj poľné sily'],
-        terms: ['PIN -N', 'Kritické akcie misie', 'Aura dôstojníka'],
+        terms: ['TLAK -N', 'Kritické akcie misie', 'Aura dôstojníka'],
       },
     ];
 

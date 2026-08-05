@@ -7,6 +7,8 @@
     "overwatchHint": "Pohotovostná paľba čaká, kým sa nepriateľ nepohne",
     "startBattleHint": "Začiatok bitky ukončí rozmiestňovanie",
     "endTurnHint": "Ukončiť ťah, alebo Automatický ťah necháte hrať AI",
+    "suppressionHint": "TLAK -N je strata morálky; nízka morálka jednotku potlačí alebo obráti na útek.",
+    "radarHint": "Rozvinutie aj zbalenie radaru minie zvyšok ťahu; rozvinutý radar vidí ďalej, ale nemôže sa hýbať.",
     "hotkeysTitle": "Klávesové skratky",
     "hotkeys": {
       "pan": "Šípky — Posun kamery",

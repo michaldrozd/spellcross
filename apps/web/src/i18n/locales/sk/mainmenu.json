@@ -111,7 +111,7 @@
         "code": "05 / TAC+",
         "title": "Zvládni pokročilé boje",
         "lines": {
-          "0": "Pripravená jednotka môže raz za ťah viesť potlačovaciu paľbu: PIN -N znamená stratu morálky; nízka morálka ju potlačí alebo obráti na útek.",
+          "0": "Pripravená jednotka môže raz za ťah viesť potlačovaciu paľbu: TLAK -N znamená stratu morálky; nízka morálka ju potlačí alebo obráti na útek.",
           "1": "Kritické akcie misie musí označený špecialista vykonať pri cieli do zobrazeného kola; bonusové ciele sú voliteľné.",
           "2": "Rozvinutie aj zbalenie radaru minie zvyšok ťahu; rozvinutý radar vidí ďalej, ale nemôže sa hýbať."
         }

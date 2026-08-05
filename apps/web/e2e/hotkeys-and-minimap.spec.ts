@@ -113,3 +113,133 @@ test('mobile tactical HUD preserves most of the screen for the battlefield', asy
   ));
   expect(clippedSlovakControls).toEqual([]);
 });
+
+test('battlefield help explains advanced rules and remains keyboard-scrollable', async ({ page }) => {
+  test.setTimeout(60_000);
+  const browserErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error' || message.type() === 'warning') {
+      browserErrors.push(`${message.type()}: ${message.text()}`);
+    }
+  });
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+
+  await startBattle(page, 'sector-sable-causeway');
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect(page.getByRole('button', { name: /^Start Battle$/i })).toBeHidden();
+
+  const expectedHelp = {
+    en: [
+      'Click a unit to select it',
+      'Click a highlighted tile to move',
+      'Click an enemy to attack it',
+      'Overwatch holds fire until an enemy moves',
+      'Start Battle ends deployment',
+      'End Turn, or Auto Turn to let the AI play',
+      'PIN -N is morale lost; low morale can suppress or route a unit.',
+      'Deploying or packing radar spends the rest of its turn; deployed radar sees farther but cannot move.',
+      'Arrow keys — Pan camera',
+      'Mouse wheel — Zoom',
+      'Tab — Toggle minimap',
+      'H / F1 / ? — Toggle help',
+    ],
+    sk: [
+      'Kliknutím na jednotku ju vyberiete',
+      'Kliknutím na zvýraznené políčko sa presuniete',
+      'Kliknutím na nepriateľa naň zaútočíte',
+      'Pohotovostná paľba čaká, kým sa nepriateľ nepohne',
+      'Začiatok bitky ukončí rozmiestňovanie',
+      'Ukončiť ťah, alebo Automatický ťah necháte hrať AI',
+      'TLAK -N je strata morálky; nízka morálka jednotku potlačí alebo obráti na útek.',
+      'Rozvinutie aj zbalenie radaru minie zvyšok ťahu; rozvinutý radar vidí ďalej, ale nemôže sa hýbať.',
+      'Šípky — Posun kamery',
+      'Koliesko myši — Priblíženie',
+      'Tab — Prepnúť minimapu',
+      'H / F1 / ? — Prepnúť pomocníka',
+    ],
+  } as const;
+  const cases = [
+    { language: 'en', viewport: { width: 390, height: 844 } },
+    { language: 'en', viewport: { width: 568, height: 320 } },
+    { language: 'en', viewport: { width: 844, height: 390 } },
+    { language: 'en', viewport: { width: 1280, height: 720 } },
+    { language: 'sk', viewport: { width: 390, height: 844 } },
+    { language: 'sk', viewport: { width: 568, height: 320 } },
+    { language: 'sk', viewport: { width: 844, height: 390 } },
+    { language: 'sk', viewport: { width: 1280, height: 720 } },
+  ] as const;
+
+  for (const helpCase of cases) {
+    await page.setViewportSize(helpCase.viewport);
+    await page.evaluate(async (language) => (window as any).__battleControl.setLanguage(language), helpCase.language);
+
+    const toggle = page.getByTestId('keyboard-help-toggle');
+    await toggle.click();
+    const help = page.getByTestId('keyboard-help');
+    await expect(help).toBeVisible();
+    expect((await help.locator('li').allTextContents()).map((line) => line.trim())).toEqual(expectedHelp[helpCase.language]);
+
+    const geometry = await page.evaluate(() => {
+      const panel = document.querySelector<HTMLElement>('[data-testid="keyboard-help"]')!;
+      const toggle = document.querySelector<HTMLElement>('[data-testid="keyboard-help-toggle"]')!;
+      const panelBounds = panel.getBoundingClientRect();
+      const toggleBounds = toggle.getBoundingClientRect();
+      return {
+        documentWidth: document.documentElement.scrollWidth,
+        panel: {
+          x: panelBounds.x,
+          y: panelBounds.y,
+          right: panelBounds.right,
+          bottom: panelBounds.bottom,
+          clientWidth: panel.clientWidth,
+          scrollWidth: panel.scrollWidth,
+          clientHeight: panel.clientHeight,
+          scrollHeight: panel.scrollHeight,
+          fontSize: Number.parseFloat(getComputedStyle(panel).fontSize),
+        },
+        toggleIntersects: !(
+          toggleBounds.right <= panelBounds.left
+          || toggleBounds.left >= panelBounds.right
+          || toggleBounds.bottom <= panelBounds.top
+          || toggleBounds.top >= panelBounds.bottom
+        ),
+      };
+    });
+    expect(geometry.documentWidth).toBe(helpCase.viewport.width);
+    expect(geometry.panel.scrollWidth).toBeLessThanOrEqual(geometry.panel.clientWidth);
+    expect(geometry.panel.x).toBeGreaterThan(0);
+    expect(geometry.panel.y).toBeGreaterThanOrEqual(0);
+    expect(geometry.panel.right).toBeLessThanOrEqual(helpCase.viewport.width);
+    expect(geometry.panel.bottom).toBeLessThanOrEqual(helpCase.viewport.height);
+    expect(geometry.toggleIntersects).toBe(false);
+
+    if (helpCase.viewport.width === 568) {
+      expect(geometry.panel.clientHeight).toBeGreaterThanOrEqual(240);
+      expect(geometry.panel.fontSize).toBeGreaterThanOrEqual(11.5);
+      await toggle.focus();
+      await page.keyboard.press('Tab');
+      await expect(help).toBeFocused();
+      const scrollBefore = await help.evaluate((panel) => panel.scrollTop);
+      await page.keyboard.press('PageDown');
+      await expect.poll(() => help.evaluate((panel) => panel.scrollTop)).toBeGreaterThan(scrollBefore);
+      await page.keyboard.press('End');
+      await expect.poll(() => help.evaluate((panel) => panel.scrollTop)).toBe(
+        geometry.panel.scrollHeight - geometry.panel.clientHeight
+      );
+      const finalLineVisible = await help.evaluate((panel) => {
+        const lines = panel.querySelectorAll('li');
+        const finalLine = lines.item(lines.length - 1).getBoundingClientRect();
+        const bounds = panel.getBoundingClientRect();
+        return finalLine.top >= bounds.top && finalLine.bottom <= bounds.bottom;
+      });
+      expect(finalLineVisible).toBe(true);
+      await page.keyboard.press('Shift+Tab');
+      await expect(toggle).toBeFocused();
+    }
+
+    await toggle.click();
+    await expect(help).toBeHidden();
+  }
+
+  expect(browserErrors).toEqual([]);
+});

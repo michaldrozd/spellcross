@@ -1,3 +1,4 @@
+/* eslint-disable jsx-a11y/no-noninteractive-tabindex -- Battlefield help is a scrollable named region without interactive children. */
 import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance, MapProp, MapTile, EdgeDir } from '@spellcross/core';
 import { movementMultiplierForStance } from '@spellcross/core';
@@ -1935,23 +1936,25 @@ export function BattlefieldStage({
   }, [now, deathMarkers]);
 
 
+  const [helpVisible, setHelpVisible] = useState(false);
+
   // Minimap toggle
   const [minimapVisible, setMinimapVisible] = useState(false);
   const minimapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Tab') {
+        if (helpVisible) return;
         e.preventDefault();
         setMinimapVisible((v) => !v);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, []);
+  }, [helpVisible]);
 
 
   // Keyboard help overlay toggle (H or ?)
-  const [helpVisible, setHelpVisible] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = e.key;
@@ -8573,6 +8576,7 @@ export function BattlefieldStage({
           className="battlefield-keyboard-help"
           role="region"
           aria-labelledby="battlefield-keyboard-help-title"
+          tabIndex={0}
           onPointerDown={(event) => event.stopPropagation()}
         >
           <div id="battlefield-keyboard-help-title" className="battlefield-keyboard-help-title">{t('help.title')}</div>
@@ -8583,6 +8587,8 @@ export function BattlefieldStage({
             <li>{t('help.overwatchHint')}</li>
             <li>{t('help.startBattleHint')}</li>
             <li>{t('help.endTurnHint')}</li>
+            <li>{t('help.suppressionHint')}</li>
+            <li>{t('help.radarHint')}</li>
           </ul>
           <div style={{ fontWeight: 700, marginBottom: 6, letterSpacing: 0.5 }}>{t('help.hotkeysTitle')}</div>
           <ul style={{ margin: 0, paddingLeft: 16 }}>
