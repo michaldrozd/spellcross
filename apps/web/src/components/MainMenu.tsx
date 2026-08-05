@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { setAppLanguage, SUPPORTED_LANGUAGES } from '../i18n/index.js';
 import { AudioManager } from '../services/AudioManager.js';
+import { readBrowserStorage, writeBrowserStorage } from '../services/browserStorage.js';
 
 export interface SaveSlot {
   slot: number;
@@ -55,7 +56,7 @@ const DEFAULT_AUDIO_PREFERENCES: AudioPreferences = {
 function loadAudioPreferences(): AudioPreferences {
   if (typeof window === 'undefined') return DEFAULT_AUDIO_PREFERENCES;
   try {
-    const stored = window.localStorage.getItem(AUDIO_PREFERENCES_KEY);
+    const stored = readBrowserStorage(AUDIO_PREFERENCES_KEY).storedText;
     if (!stored) return DEFAULT_AUDIO_PREFERENCES;
     const parsed = JSON.parse(stored) as Partial<AudioPreferences>;
     return {
@@ -163,7 +164,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
   const updateAudioPreferences = (next: AudioPreferences) => {
     setAudioPreferences(next);
-    window.localStorage.setItem(AUDIO_PREFERENCES_KEY, JSON.stringify(next));
+    writeBrowserStorage(AUDIO_PREFERENCES_KEY, JSON.stringify(next));
   };
 
   const handleDifficultyKeyDown = (

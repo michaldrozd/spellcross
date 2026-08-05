@@ -100,6 +100,7 @@ import { VEHICLE_TURN_DURATION_MS, battlefieldDirectionalSprite, unitPortrait } 
 import i18n from './i18n/index.js';
 import { localizeOperationDossier } from './operationDossiers.js';
 import { AudioManager, movementSoundProfileFor, narrativeSoundTypeForOutcome } from './services/AudioManager.js';
+import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from './services/browserStorage.js';
 
 const BattlefieldStage = React.lazy(async () => {
   const battlefieldModule = await import('./components/BattlefieldStage.js');
@@ -179,59 +180,86 @@ interface SlotSummary {
   updated: number;
   activeBattle: boolean;
 }
-function ensureCampaignStorageSchema() {
-  if (typeof window === 'undefined') return;
-  const stored = window.localStorage.getItem(CAMPAIGN_SCHEMA_KEY);
-  if (stored === CAMPAIGN_SCHEMA_VERSION) return;
+function ensureCampaignStorageSchema(): boolean {
+  if (typeof window === 'undefined') return true;
+  const schemaRead = readBrowserStorage(CAMPAIGN_SCHEMA_KEY);
+  if (!schemaRead.available) return false;
+  if (schemaRead.storedText === CAMPAIGN_SCHEMA_VERSION) return true;
   // Record the new schema version without discarding existing saves. Loading is
   // resilient per slot (hydrate falls back to a fresh campaign on a parse failure),
   // so a schema bump no longer wipes every slot — at worst one incompatible slot
   // resets itself while the others survive.
-  if (stored) {
-    console.info(`Campaign save schema changed (${stored} -> ${CAMPAIGN_SCHEMA_VERSION}); existing saves preserved.`);
+  if (schemaRead.storedText) {
+    console.info(`Campaign save schema changed (${schemaRead.storedText} -> ${CAMPAIGN_SCHEMA_VERSION}); existing saves preserved.`);
   }
-  window.localStorage.setItem(CAMPAIGN_SCHEMA_KEY, CAMPAIGN_SCHEMA_VERSION);
+  return writeBrowserStorage(CAMPAIGN_SCHEMA_KEY, CAMPAIGN_SCHEMA_VERSION);
 }
-function loadSavedCampaign(slot: number): { campaign: CampaignState; restored: boolean } {
+function loadSavedCampaign(slot: number): { campaign: CampaignState; restored: boolean; storageAvailable: boolean } {
   if (typeof window === 'undefined') {
-    return { campaign: createCampaign(bundle), restored: false };
+    return { campaign: createCampaign(bundle), restored: false, storageAvailable: true };
   }
-  ensureCampaignStorageSchema();
-  const saved = window.localStorage.getItem(`${CAMPAIGN_STORAGE_KEY}:${slot}`);
-  if (!saved) return { campaign: createCampaign(bundle), restored: false };
+  const schemaAvailable = ensureCampaignStorageSchema();
+  const saveRead = readBrowserStorage(`${CAMPAIGN_STORAGE_KEY}:${slot}`);
+  const storageAvailable = schemaAvailable && saveRead.available;
+  if (!saveRead.storedText) return { campaign: createCampaign(bundle), restored: false, storageAvailable };
   try {
-    const parsed = JSON.parse(saved);
-    return { campaign: hydrateCampaignState(bundle, parsed), restored: true };
+    const parsed = JSON.parse(saveRead.storedText);
+    return { campaign: hydrateCampaignState(bundle, parsed), restored: true, storageAvailable };
   } catch (err) {
     console.warn('Failed to restore campaign, starting fresh', err);
-    return { campaign: createCampaign(bundle), restored: false };
+    return { campaign: createCampaign(bundle), restored: false, storageAvailable };
   }
 }
-function loadSummary(slot: number): SlotSummary | null {
-  if (typeof window === 'undefined') return null;
-  ensureCampaignStorageSchema();
-  const saved = window.localStorage.getItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
-  if (!saved) return null;
+function loadSummary(slot: number): { summary: SlotSummary | null; storageAvailable: boolean } {
+  if (typeof window === 'undefined') return { summary: null, storageAvailable: true };
+  const schemaAvailable = ensureCampaignStorageSchema();
+  const summaryRead = readBrowserStorage(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
+  const storageAvailable = schemaAvailable && summaryRead.available;
+  if (!summaryRead.storedText) return { summary: null, storageAvailable };
   try {
-    const parsed = JSON.parse(saved) as Partial<SlotSummary>;
-    return { ...parsed, difficulty: parsed.difficulty ?? 'commander' } as SlotSummary;
+    const parsed = JSON.parse(summaryRead.storedText) as Partial<SlotSummary>;
+    return {
+      summary: { ...parsed, difficulty: parsed.difficulty ?? 'commander' } as SlotSummary,
+      storageAvailable,
+    };
   } catch {
-    return null;
+    return { summary: null, storageAvailable };
   }
+}
+function loadInitialCampaign() {
+  if (typeof window === 'undefined') {
+    return {
+      slot: 1,
+      campaign: createCampaign(bundle),
+      summary: null,
+      storageAvailable: true,
+    };
+  }
+  const slotRead = readBrowserStorage(CAMPAIGN_SLOT_KEY);
+  const savedSlot = Number(slotRead.storedText ?? 1);
+  const slot = Number.isNaN(savedSlot) ? 1 : savedSlot;
+  const loadedCampaign = loadSavedCampaign(slot);
+  const loadedSummary = loadSummary(slot);
+  return {
+    slot,
+    campaign: loadedCampaign.campaign,
+    summary: loadedSummary.summary,
+    storageAvailable: slotRead.available && loadedCampaign.storageAvailable && loadedSummary.storageAvailable,
+  };
 }
 function useCampaign() {
-  const initialSlot = typeof window === 'undefined' ? 1 : Number(window.localStorage.getItem(CAMPAIGN_SLOT_KEY) ?? 1);
-  const [slot, setSlot] = useState<number>(Number.isNaN(initialSlot) ? 1 : initialSlot);
+  const initialCampaignRef = useRef<ReturnType<typeof loadInitialCampaign> | null>(null);
+  if (!initialCampaignRef.current) initialCampaignRef.current = loadInitialCampaign();
+  const initialCampaign = initialCampaignRef.current;
+  const [slot, setSlot] = useState<number>(initialCampaign.slot);
   // Synchronous mirror of `slot`. persist()/updateSummary() must not read the async useState value:
   // changeSlot() followed by reset() (New Game) would otherwise write the fresh campaign into the
   // PREVIOUS slot's keys and destroy that save.
-  const slotRef = useRef<number>(Number.isNaN(initialSlot) ? 1 : initialSlot);
-  // Lazy init — a plain useRef(loadSavedCampaign(slot)) re-parses the whole save on every render.
-  const ref = useRef<CampaignState | null>(null);
-  if (!ref.current) ref.current = loadSavedCampaign(slot).campaign;
+  const slotRef = useRef<number>(initialCampaign.slot);
+  const ref = useRef<CampaignState | null>(initialCampaign.campaign);
   const [, rerender] = useState(0);
-  const [summary, setSummary] = useState<SlotSummary | null>(() => loadSummary(slot));
-  const [persistenceFailed, setPersistenceFailed] = useState(false);
+  const [summary, setSummary] = useState<SlotSummary | null>(initialCampaign.summary);
+  const [persistenceFailed, setPersistenceFailed] = useState(!initialCampaign.storageAvailable);
   const updateSummary = useCallback(() => {
     const state = ref.current!;
     const next: SlotSummary = {
@@ -249,13 +277,14 @@ function useCampaign() {
     const nextSummary = updateSummary();
     let stored = true;
     if (typeof window !== 'undefined') {
-      try {
-        window.localStorage.setItem(`${CAMPAIGN_STORAGE_KEY}:${slotRef.current}`, JSON.stringify(serializeCampaignState(ref.current!)));
-        window.localStorage.setItem(`${CAMPAIGN_SUMMARY_KEY}:${slotRef.current}`, JSON.stringify(nextSummary));
-      } catch (err) {
-        console.warn('Failed to persist campaign', err);
-        stored = false;
-      }
+      const campaignStorageKey = `${CAMPAIGN_STORAGE_KEY}:${slotRef.current}`;
+      const slotStored = writeBrowserStorage(CAMPAIGN_SLOT_KEY, String(slotRef.current));
+      const campaignStored = slotStored
+        && writeBrowserStorage(campaignStorageKey, JSON.stringify(serializeCampaignState(ref.current!)));
+      const summaryStored = campaignStored
+        && writeBrowserStorage(`${CAMPAIGN_SUMMARY_KEY}:${slotRef.current}`, JSON.stringify(nextSummary));
+      const campaignReadable = summaryStored && readBrowserStorage(campaignStorageKey).available;
+      stored = slotStored && campaignStored && summaryStored && campaignReadable;
     }
     setPersistenceFailed(!stored);
     rerender((n) => n + 1);
@@ -272,17 +301,21 @@ function useCampaign() {
   const changeSlot = useCallback((next: number) => {
     slotRef.current = next;
     setSlot(next);
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem(CAMPAIGN_SLOT_KEY, String(next));
-    }
+    const slotStored = typeof window === 'undefined' || writeBrowserStorage(CAMPAIGN_SLOT_KEY, String(next));
     const loaded = loadSavedCampaign(next);
+    const loadedSummary = loadSummary(next);
     ref.current = loaded.campaign;
-    setSummary(loadSummary(next));
-    if (loaded.restored) setPersistenceFailed(false);
+    setSummary(loadedSummary.summary);
+    if (!slotStored || !loaded.storageAvailable || !loadedSummary.storageAvailable) {
+      setPersistenceFailed(true);
+    } else if (loaded.restored) {
+      setPersistenceFailed(false);
+    }
     rerender((n) => n + 1);
     return ref.current;
   }, []);
-  return { campaign: ref.current!, mutate, persist, reset, slot, changeSlot, summary, persistenceFailed };
+  const markPersistenceFailed = useCallback(() => setPersistenceFailed(true), []);
+  return { campaign: ref.current!, mutate, persist, reset, slot, changeSlot, summary, persistenceFailed, markPersistenceFailed };
 }
 // Localization lookups for static content-bundle data (unit/research/territory/scenario/objective
 // names+text). Content stays English/id-stable in packages/data; the display layer prefers the active
@@ -3479,10 +3512,10 @@ const BattleView: React.FC<{
 function loadAllSummaries(): (SaveSlot | null)[] {
   if (typeof window === 'undefined') return [null, null, null];
   return [1, 2, 3].map((slot) => {
-    const saved = window.localStorage.getItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
-    if (!saved) return null;
+    const summaryRead = readBrowserStorage(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
+    if (!summaryRead.storedText) return null;
     try {
-      const data = JSON.parse(saved);
+      const data = JSON.parse(summaryRead.storedText);
       // Stored summaries nest resources; MainMenu's SaveSlot wants them flat.
       return {
         slot,
@@ -3501,13 +3534,14 @@ function loadAllSummaries(): (SaveSlot | null)[] {
   });
 }
 
-function deleteSavedCampaign(slot: number) {
-  window.localStorage.removeItem(`${CAMPAIGN_STORAGE_KEY}:${slot}`);
-  window.localStorage.removeItem(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
+function deleteSavedCampaign(slot: number): boolean {
+  const campaignRemoved = removeBrowserStorage(`${CAMPAIGN_STORAGE_KEY}:${slot}`);
+  const summaryRemoved = removeBrowserStorage(`${CAMPAIGN_SUMMARY_KEY}:${slot}`);
+  return campaignRemoved && summaryRemoved;
 }
 export function App() {
   const { t } = useTranslation(['common', 'campaign']);
-  const { campaign, mutate, persist, reset, slot, changeSlot, persistenceFailed } = useCampaign();
+  const { campaign, mutate, persist, reset, slot, changeSlot, persistenceFailed, markPersistenceFailed } = useCampaign();
   const [mode, setMode] = useState<'menu' | 'strategic' | 'battle'>('menu');
   const persistenceWarning = persistenceFailed ? (
     <div className={`persistence-warning persistence-warning-${mode}`} role="alert">
@@ -3604,7 +3638,7 @@ export function App() {
     setMode(loaded.activeBattle ? 'battle' : 'strategic');
   };
   const handleDeleteSave = (deletedSlot: number) => {
-    deleteSavedCampaign(deletedSlot);
+    if (!deleteSavedCampaign(deletedSlot)) markPersistenceFailed();
     if (deletedSlot === slot) changeSlot(deletedSlot);
     setSavedSlots(loadAllSummaries());
   };

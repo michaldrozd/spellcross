@@ -244,3 +244,122 @@ test('deleting the active save keeps its unresolved write warning visible', asyn
   expect(await page.evaluate(() => (window as any).__campaignControl.setMoney(270))).toBe(true);
   await expect(warning).not.toBeVisible();
 });
+
+test('storage-unavailable startup keeps an in-memory campaign playable until recovery', async ({ browser, baseURL }) => {
+  test.setTimeout(180_000);
+  const startupCases = [
+    {
+      id: 'read-en-desktop',
+      blockedMethod: 'getItem',
+      locale: 'en-US',
+      language: 'en',
+      nextLanguage: 'sk',
+      width: 1280,
+      height: 720,
+      slot: 1,
+      warningTitle: 'Save incomplete',
+    },
+    {
+      id: 'read-sk-phone',
+      blockedMethod: 'getItem',
+      locale: 'sk-SK',
+      language: 'sk',
+      nextLanguage: 'en',
+      width: 390,
+      height: 844,
+      slot: 2,
+      warningTitle: 'Uloženie nie je úplné',
+    },
+    {
+      id: 'write-en-desktop',
+      blockedMethod: 'setItem',
+      locale: 'en-US',
+      language: 'en',
+      nextLanguage: 'sk',
+      width: 1280,
+      height: 720,
+      slot: 1,
+      warningTitle: 'Save incomplete',
+    },
+    {
+      id: 'write-sk-phone',
+      blockedMethod: 'setItem',
+      locale: 'sk-SK',
+      language: 'sk',
+      nextLanguage: 'en',
+      width: 390,
+      height: 844,
+      slot: 2,
+      warningTitle: 'Uloženie nie je úplné',
+    },
+  ] as const;
+
+  for (const startupCase of startupCases) {
+    const context = await browser.newContext({
+      baseURL,
+      locale: startupCase.locale,
+      viewport: { width: startupCase.width, height: startupCase.height },
+    });
+    await context.addInitScript(({ blockedMethod }) => {
+      if (document.cookie.includes('spellcross-storage-restored=1')) return;
+      const storagePrototype = Object.getPrototypeOf(localStorage) as Storage;
+      const originalMethod = storagePrototype[blockedMethod];
+      (window as any).__restoreBlockedStorage = () => {
+        Object.defineProperty(storagePrototype, blockedMethod, {
+          configurable: true,
+          writable: true,
+          value: originalMethod,
+        });
+        document.cookie = 'spellcross-storage-restored=1; path=/';
+      };
+      Object.defineProperty(storagePrototype, blockedMethod, {
+        configurable: true,
+        writable: true,
+        value() {
+          throw new DOMException('Injected unavailable storage', 'SecurityError');
+        },
+      });
+    }, startupCase);
+
+    const page = await context.newPage();
+    const consoleErrors: string[] = [];
+    const pageErrors: string[] = [];
+    page.on('console', (message) => {
+      if (message.type() === 'error') consoleErrors.push(message.text());
+    });
+    page.on('pageerror', (error) => pageErrors.push(error.message));
+
+    await page.goto('/');
+    await expect(page.locator('.main-menu'), startupCase.id).toBeVisible();
+    await expect(page.locator('.persistence-warning')).toContainText(startupCase.warningTitle);
+    expect(await page.evaluate(() => document.documentElement.lang)).toBe(startupCase.language);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(startupCase.width);
+
+    await page.getByRole('button', { name: startupCase.nextLanguage.toUpperCase(), exact: true }).click();
+    await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe(startupCase.nextLanguage);
+    await page.waitForFunction(() => Boolean((window as any).__campaignControl));
+    expect(await page.evaluate(({ slot }) => (window as any).__campaignControl.newCampaign(slot), startupCase)).toBe(true);
+    await expect(page.locator('.strategic-hq')).toBeVisible();
+    expect(await page.evaluate(() => (window as any).__campaignControl.endTurn())).toBe(true);
+    await expect(page.locator('.strategic-hq')).toContainText(turnLabel(startupCase.nextLanguage, 2));
+    await expect(page.locator('.persistence-warning')).toBeVisible();
+
+    await page.evaluate(() => (window as any).__restoreBlockedStorage());
+    await page.evaluate(({ nextLanguage }) => localStorage.setItem('spellcross:lang', nextLanguage), startupCase);
+    expect(await page.evaluate(() => (window as any).__campaignControl.setMoney(275))).toBe(true);
+    await expect(page.locator('.persistence-warning')).not.toBeVisible();
+    expect(await page.evaluate(({ slot }) => ({
+      state: JSON.parse(localStorage.getItem(`spellcross:campaign-state:${slot}`) ?? '{}').turn,
+      summary: JSON.parse(localStorage.getItem(`spellcross:campaign-summary:${slot}`) ?? '{}').turn,
+    }), startupCase)).toEqual({ state: 2, summary: 2 });
+
+    await page.reload();
+    await expect(page.locator('.menu-intel-panel')).toContainText(turnLabel(startupCase.nextLanguage, 2));
+    expect(await page.evaluate(() => document.documentElement.lang)).toBe(startupCase.nextLanguage);
+    await page.locator('.menu-btn-primary').click();
+    await expect(page.locator('.strategic-hq')).toContainText(turnLabel(startupCase.nextLanguage, 2));
+    expect(consoleErrors).toEqual([]);
+    expect(pageErrors).toEqual([]);
+    await context.close();
+  }
+});

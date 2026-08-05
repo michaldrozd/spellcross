@@ -1,6 +1,7 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
+import { readBrowserStorage, writeBrowserStorage } from '../services/browserStorage.js';
 import enActions from './locales/en/actions.json' with { type: 'json' };
 import enBattle from './locales/en/battle.json' with { type: 'json' };
 import enBattlefield from './locales/en/battlefield.json' with { type: 'json' };
@@ -36,14 +37,14 @@ const LANGUAGE_STORAGE_KEY = 'spellcross:lang';
 
 function detectInitialLanguage(): SupportedLanguage {
   if (typeof window === 'undefined') return 'en';
-  const stored = window.localStorage.getItem(LANGUAGE_STORAGE_KEY);
+  const stored = readBrowserStorage(LANGUAGE_STORAGE_KEY).storedText;
   if (stored === 'en' || stored === 'sk') return stored;
   const nav = window.navigator?.language?.toLowerCase() ?? '';
   return nav.startsWith('sk') ? 'sk' : 'en';
 }
 
 export function setAppLanguage(lang: SupportedLanguage) {
-  window.localStorage.setItem(LANGUAGE_STORAGE_KEY, lang);
+  writeBrowserStorage(LANGUAGE_STORAGE_KEY, lang);
   void i18n.changeLanguage(lang);
 }
 
