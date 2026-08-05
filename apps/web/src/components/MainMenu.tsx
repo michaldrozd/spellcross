@@ -23,6 +23,7 @@ interface MainMenuProps {
   onDeleteSave: (slot: number) => void;
   savedSlots: (SaveSlot | null)[];
   currentSlot: number;
+  persistenceWarning?: React.ReactNode;
 }
 
 interface AudioPreferences {
@@ -74,6 +75,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
   onDeleteSave,
   savedSlots,
   currentSlot,
+  persistenceWarning,
 }) => {
   const { t, i18n } = useTranslation('mainmenu');
   const [selectedSlot, setSelectedSlot] = useState(currentSlot);
@@ -220,6 +222,8 @@ export const MainMenu: React.FC<MainMenuProps> = ({
           <h1>{t('title')}</h1>
           <p className="menu-subtitle">{t('subtitle')}</p>
         </div>
+
+        {persistenceWarning ? <div className="persistence-warning-slot menu-persistence-slot">{persistenceWarning}</div> : null}
 
         <div className="menu-intel-panel">
           <span>{t('intel.campaignLink')}</span>

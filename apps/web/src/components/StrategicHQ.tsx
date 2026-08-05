@@ -140,6 +140,7 @@ interface ResearchTopic {
 }
 
 interface StrategicHQProps {
+  persistenceWarning?: React.ReactNode;
   campaignDifficulty: CampaignDifficulty;
   turn: number;
   operationAvailable: boolean;
@@ -954,6 +955,7 @@ const StrategicMapView: React.FC<{
 };
 
 export const StrategicHQ: React.FC<StrategicHQProps> = ({
+  persistenceWarning,
   campaignDifficulty, turn, operationAvailable, warClock, money, research, strategic,
   army, reserves, formations, officers, territories, operationPlans, operationDossiers, researchTopics, currentResearch, pausedResearch, completedResearch,
   log, onStartBattle, onEndTurn, onRecruit, onRefill, onRearm, onSetEquipment, onSetFormation,
@@ -1279,6 +1281,8 @@ export const StrategicHQ: React.FC<StrategicHQProps> = ({
           <span>{t('topbar.research')}</span>
         </button>
       </div>
+
+      {persistenceWarning ? <div className="persistence-warning-slot hq-persistence-slot">{persistenceWarning}</div> : null}
 
       {/* Content area */}
       <div className="hq-content">

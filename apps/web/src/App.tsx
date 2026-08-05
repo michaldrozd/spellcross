@@ -192,19 +192,19 @@ function ensureCampaignStorageSchema() {
   }
   window.localStorage.setItem(CAMPAIGN_SCHEMA_KEY, CAMPAIGN_SCHEMA_VERSION);
 }
-function loadSavedCampaign(slot: number): CampaignState {
+function loadSavedCampaign(slot: number): { campaign: CampaignState; restored: boolean } {
   if (typeof window === 'undefined') {
-    return createCampaign(bundle);
+    return { campaign: createCampaign(bundle), restored: false };
   }
   ensureCampaignStorageSchema();
   const saved = window.localStorage.getItem(`${CAMPAIGN_STORAGE_KEY}:${slot}`);
-  if (!saved) return createCampaign(bundle);
+  if (!saved) return { campaign: createCampaign(bundle), restored: false };
   try {
     const parsed = JSON.parse(saved);
-    return hydrateCampaignState(bundle, parsed);
+    return { campaign: hydrateCampaignState(bundle, parsed), restored: true };
   } catch (err) {
     console.warn('Failed to restore campaign, starting fresh', err);
-    return createCampaign(bundle);
+    return { campaign: createCampaign(bundle), restored: false };
   }
 }
 function loadSummary(slot: number): SlotSummary | null {
@@ -228,7 +228,7 @@ function useCampaign() {
   const slotRef = useRef<number>(Number.isNaN(initialSlot) ? 1 : initialSlot);
   // Lazy init — a plain useRef(loadSavedCampaign(slot)) re-parses the whole save on every render.
   const ref = useRef<CampaignState | null>(null);
-  if (!ref.current) ref.current = loadSavedCampaign(slot);
+  if (!ref.current) ref.current = loadSavedCampaign(slot).campaign;
   const [, rerender] = useState(0);
   const [summary, setSummary] = useState<SlotSummary | null>(() => loadSummary(slot));
   const [persistenceFailed, setPersistenceFailed] = useState(false);
@@ -275,9 +275,10 @@ function useCampaign() {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(CAMPAIGN_SLOT_KEY, String(next));
     }
-    ref.current = loadSavedCampaign(next);
+    const loaded = loadSavedCampaign(next);
+    ref.current = loaded.campaign;
     setSummary(loadSummary(next));
-    setPersistenceFailed(false);
+    if (loaded.restored) setPersistenceFailed(false);
     rerender((n) => n + 1);
     return ref.current;
   }, []);
@@ -582,7 +583,8 @@ const BattleView: React.FC<{
   onDefeat: () => void;
   onRetreat: () => void;
   persist: () => void;
-}> = ({ campaign, onVictory, onDefeat, onRetreat, persist }) => {
+  persistenceWarning?: React.ReactNode;
+}> = ({ campaign, onVictory, onDefeat, onRetreat, persist, persistenceWarning }) => {
   const { t } = useTranslation(['battle', 'common', 'campaign']);
   const battle = campaign.activeBattle!;
   const { map } = battle.state;
@@ -2860,15 +2862,6 @@ const BattleView: React.FC<{
             <span>{phaseNotice.detail}</span>
           </div>
         ) : null}
-        {deployMode ? (
-          <div className="deploy-banner">
-            <strong>{t('battle:deploy.title')}</strong>
-            <span>{t('battle:deploy.hint')}</span>
-            <span className="deploy-count">
-              {t('battle:deploy.unitsReady', { count: Array.from(battle.state.sides.alliance.units.values()).filter((u) => u.stance !== 'destroyed').length })}
-            </span>
-          </div>
-        ) : null}
         {riskyMove ? (
           <div ref={battleDialogRef} className="risky-move-backdrop" role="alertdialog" aria-modal="true" aria-label={t('battle:risky.ariaLabel')}>
             <div className="risky-move-dialog">
@@ -2945,6 +2938,18 @@ const BattleView: React.FC<{
               />
             ) : null}
           </div>
+        </div>
+        <div className="battle-center-stack">
+          {persistenceWarning ? <div className="persistence-warning-slot battle-persistence-slot">{persistenceWarning}</div> : null}
+          {deployMode ? (
+            <div className="deploy-banner">
+              <strong>{t('battle:deploy.title')}</strong>
+              <span>{t('battle:deploy.hint')}</span>
+              <span className="deploy-count">
+                {t('battle:deploy.unitsReady', { count: Array.from(battle.state.sides.alliance.units.values()).filter((u) => u.stance !== 'destroyed').length })}
+              </span>
+            </div>
+          ) : null}
         </div>
         <div className="battle-bottom-bar">
           <div className={`unit-card selected-unit-card${selected ? '' : ' empty'}`}>
@@ -3764,13 +3769,13 @@ export function App() {
     return (
       <>
         <ToastContainer />
-        {persistenceWarning}
         <MainMenu
           onNewGame={handleNewGame}
           onContinue={handleContinue}
           onDeleteSave={handleDeleteSave}
           savedSlots={savedSlots}
           currentSlot={slot}
+          persistenceWarning={persistenceWarning}
         />
       </>
     );
@@ -3780,13 +3785,13 @@ export function App() {
     return (
       <>
         <ToastContainer />
-        {persistenceWarning}
         <BattleView
           campaign={campaign}
           onVictory={() => setMode('strategic')}
           onDefeat={() => setMode('strategic')}
           onRetreat={() => setMode('strategic')}
           persist={persist}
+          persistenceWarning={persistenceWarning}
         />
       </>
     );
@@ -3989,7 +3994,6 @@ export function App() {
   return (
     <>
       <ToastContainer />
-      {persistenceWarning}
       {showCampaignOutcome ? (
         <div
           ref={campaignOutcomeDialogRef}
@@ -4042,6 +4046,7 @@ export function App() {
         </div>
       ) : null}
       <StrategicHQ
+        persistenceWarning={persistenceWarning}
         campaignDifficulty={campaign.difficulty}
         turn={campaign.turn}
         operationAvailable={campaign.lastOperationTurn !== campaign.turn}
