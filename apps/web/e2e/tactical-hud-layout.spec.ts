@@ -2,6 +2,17 @@ import { expect, test, type Page } from '@playwright/test';
 
 import { startBattle } from './helpers';
 
+const COMMAND_LAYOUT_VIEWPORTS = [
+  { width: 1600, height: 900 },
+  { width: 1280, height: 720 },
+  { width: 1005, height: 411 },
+  { width: 901, height: 600 },
+  { width: 900, height: 600 },
+  { width: 844, height: 390 },
+  { width: 601, height: 844 },
+  { width: 390, height: 844 }
+];
+
 async function expectBottomDeckAligned(page: Page, maxPanelGap?: number) {
   const [unitPanel, logPanel, commandPanel, viewport] = await Promise.all([
     page.locator('.selected-unit-card').boundingBox(),
@@ -30,6 +41,77 @@ async function expectBottomDeckAligned(page: Page, maxPanelGap?: number) {
   }
   expect(commandPanel!.x + commandPanel!.width).toBeLessThanOrEqual(viewport.width);
   expect(bottom).toBeLessThanOrEqual(viewport.height);
+}
+
+async function expectCommandLabelsContained(page: Page) {
+  const metrics = await page.locator('.battle-controls').evaluate((rack) => {
+    const rackBox = rack.getBoundingClientRect();
+    const controls = Array.from(rack.querySelectorAll<HTMLButtonElement>('button')).filter((button) => {
+      const box = button.getBoundingClientRect();
+      return box.width > 0 && box.height > 0;
+    }).map((button) => {
+      const box = button.getBoundingClientRect();
+      return {
+        label: button.textContent?.trim().replace(/\s+/g, ' ') ?? '',
+        clientWidth: button.clientWidth,
+        clientHeight: button.clientHeight,
+        scrollWidth: button.scrollWidth,
+        scrollHeight: button.scrollHeight,
+        fontSize: Number.parseFloat(getComputedStyle(button).fontSize),
+        box: { left: box.left, top: box.top, right: box.right, bottom: box.bottom }
+      };
+    });
+    return {
+      rack: { left: rackBox.left, top: rackBox.top, right: rackBox.right, bottom: rackBox.bottom },
+      controls
+    };
+  });
+  const clipped = metrics.controls.filter((button) => (
+    button.scrollWidth > button.clientWidth || button.scrollHeight > button.clientHeight
+  ));
+  expect(clipped, JSON.stringify(metrics.controls)).toEqual([]);
+  for (const control of metrics.controls) {
+    expect(control.box.left).toBeGreaterThanOrEqual(metrics.rack.left);
+    expect(control.box.top).toBeGreaterThanOrEqual(metrics.rack.top);
+    expect(control.box.right).toBeLessThanOrEqual(metrics.rack.right);
+    expect(control.box.bottom).toBeLessThanOrEqual(metrics.rack.bottom);
+  }
+  expect(Math.min(...metrics.controls.map((button) => button.fontSize))).toBeGreaterThanOrEqual(9.25);
+}
+
+async function expectDeploymentCommandGrid(page: Page) {
+  const [start, automatic, retreat] = await Promise.all([
+    page.locator('.battle-controls > .primary-btn').boundingBox(),
+    page.locator('.battle-controls > .auto-turn-btn').boundingBox(),
+    page.locator('.battle-controls > .secondary-btn:last-child').boundingBox()
+  ]);
+  expect(start).not.toBeNull();
+  expect(automatic).not.toBeNull();
+  expect(retreat).not.toBeNull();
+  expect(automatic!.width).toBeGreaterThan(start!.width * 1.8);
+  expect(Math.abs(start!.width - retreat!.width)).toBeLessThanOrEqual(1);
+  expect(automatic!.y).toBeLessThan(start!.y);
+  expect(Math.abs(start!.y - retreat!.y)).toBeLessThanOrEqual(1);
+
+  const retreatLineTops = await page.locator('.battle-controls > .secondary-btn:last-child').evaluate((button) => {
+    const range = document.createRange();
+    range.selectNodeContents(button);
+    return Array.from(new Set(Array.from(range.getClientRects()).map((box) => Math.round(box.top))));
+  });
+  expect(retreatLineTops).toHaveLength(1);
+}
+
+async function expectActiveCommandGrid(page: Page) {
+  const [endTurn, automatic, retreat] = await Promise.all([
+    page.locator('.battle-controls > .end-turn-btn').boundingBox(),
+    page.locator('.battle-controls > .auto-turn-btn').boundingBox(),
+    page.locator('.battle-controls > .secondary-btn:last-child').boundingBox()
+  ]);
+  expect(endTurn).not.toBeNull();
+  expect(automatic).not.toBeNull();
+  expect(retreat).not.toBeNull();
+  expect(Math.abs(endTurn!.width - automatic!.width)).toBeLessThanOrEqual(1);
+  expect(retreat!.width).toBeGreaterThan(automatic!.width * 1.8);
 }
 
 async function bottomDeckBox(page: Page) {
@@ -358,4 +440,27 @@ test('battle HUD keeps unit, log, and command panels in one aligned deck', async
   const emptyDesktopDeck = await bottomDeckBox(page);
   expect(emptyDesktopDeck.y).toBeCloseTo(selectedDesktopDeck.y, 0);
   expect(emptyDesktopDeck.height).toBeCloseTo(selectedDesktopDeck.height, 0);
+});
+
+test('deployment command labels stay contained across locale and viewport boundaries', async ({ page }) => {
+  await startBattle(page);
+  for (const viewport of COMMAND_LAYOUT_VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('sk'))).toBe('sk');
+    await expectCommandLabelsContained(page);
+    await expectDeploymentCommandGrid(page);
+    expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('en'))).toBe('en');
+    await expectCommandLabelsContained(page);
+  }
+
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+  await expect(page.locator('.battle-controls')).not.toHaveClass(/deployment/);
+  for (const viewport of COMMAND_LAYOUT_VIEWPORTS) {
+    await page.setViewportSize(viewport);
+    expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('sk'))).toBe('sk');
+    await expectCommandLabelsContained(page);
+    await expectActiveCommandGrid(page);
+    expect(await page.evaluate(() => (window as any).__battleControl.setLanguage('en'))).toBe('en');
+    await expectCommandLabelsContained(page);
+  }
 });

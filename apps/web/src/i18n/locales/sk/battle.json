@@ -188,6 +188,7 @@
     "blocked": "Blokované",
     "range": "Dosah",
     "status": "Stav",
+    "ordersLocked": "Rozkazy uzamknuté",
     "attackUnavailable": "Útok nedostupný"
   },
   "outcome": {

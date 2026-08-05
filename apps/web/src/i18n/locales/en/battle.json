@@ -188,6 +188,7 @@
     "blocked": "Blocked",
     "range": "Range",
     "status": "Status",
+    "ordersLocked": "Orders locked",
     "attackUnavailable": "Attack unavailable"
   },
   "outcome": {

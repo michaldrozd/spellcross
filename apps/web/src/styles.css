@@ -4240,6 +4240,7 @@ header.app-header {
   white-space: normal;
   overflow-wrap: anywhere;
   box-shadow: inset 1px 1px 0 rgba(238, 226, 179, 0.17), inset -1px -1px 0 rgba(0, 0, 0, 0.52);
+  transition: background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s, opacity 0.2s;
 }
 
 .battle-controls button.active {
@@ -4252,6 +4253,21 @@ header.app-header {
 
 .battle-controls > .secondary-btn:last-child {
   grid-column: 1 / -1;
+}
+
+.battle-controls.deployment .auto-turn-btn {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
+.battle-controls.deployment > .primary-btn {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.battle-controls.deployment > .secondary-btn:last-child {
+  grid-column: 2;
+  grid-row: 3;
 }
 
 .battle-bottom-bar {
@@ -5369,6 +5385,12 @@ header.app-header {
     padding: 0.18rem 0.2rem;
     font-size: 0.58rem;
     overflow-wrap: anywhere;
+  }
+
+  .battle-controls.deployment > .primary-btn,
+  .battle-controls.deployment > .secondary-btn:last-child {
+    padding-inline: 0.1rem;
+    letter-spacing: 0;
   }
 
   .unit-card.target-card .fire-control {

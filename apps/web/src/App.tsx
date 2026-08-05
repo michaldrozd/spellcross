@@ -2209,7 +2209,7 @@ const BattleView: React.FC<{
     }
   };
   const actAttack = (attackerId: string, defender: UnitInstance) => {
-    if (autoTurnBusyRef.current || enemyTurnBusyRef.current || movingUnitRef.current) return; // CPU acting, or a unit is still gliding
+    if (autoTurnBusyRef.current || enemyTurnBusyRef.current || movingUnitRef.current) return false; // CPU acting, or a unit is still gliding
     // Exit deploy mode when attacking. Same synchronous exit as the click-to-move path: without
     // battle.deployed a reload would reopen DEPLOYMENT, and the ref must flip before actMove reads it.
     if (deployMode) {
@@ -2221,7 +2221,7 @@ const BattleView: React.FC<{
     const attacker = battle.state.sides.alliance.units.get(attackerId);
     if (!attacker) {
       AudioManager.play('error');
-      return;
+      return false;
     }
     const weapon = bestWeapon(attacker, defender, battle.state.map, battle.state.weather);
     if (!weapon) {
@@ -2242,6 +2242,7 @@ const BattleView: React.FC<{
           }
           persist();
           resolveOutcome();
+          return true;
         } else {
           AudioManager.play('error');
           const reason = result.errorKey ? t(`errors:${result.errorKey}`) : t('errors:attackFailed');
@@ -2249,7 +2250,7 @@ const BattleView: React.FC<{
           addCombatNotice(reason);
         }
       }
-      return;
+      return false;
     }
     const hpBefore = defender.currentHealth / (defender.stats.maxHealth || 100);
     const result = processor.attackUnit({ attackerId, defenderId: defender.id, weaponId: weapon.weapon });
@@ -2270,16 +2271,17 @@ const BattleView: React.FC<{
     }
     persist();
     resolveOutcome();
+    return result.success;
   };
   const actSuppress = (attackerId: string, defender: UnitInstance) => {
-    if (autoTurnBusyRef.current || enemyTurnBusyRef.current || movingUnitRef.current) return;
+    if (autoTurnBusyRef.current || enemyTurnBusyRef.current || movingUnitRef.current) return false;
     const attacker = battle.state.sides.alliance.units.get(attackerId);
-    if (!attacker) return;
+    if (!attacker) return false;
     const weapon = bestWeapon(attacker, defender, battle.state.map, battle.state.weather);
     if (!weapon) {
       AudioManager.play('error');
       addCombatNotice(t('battle:fireControl.attackUnavailable'));
-      return;
+      return false;
     }
 
     const hpBefore = defender.currentHealth / (defender.stats.maxHealth || 100);
@@ -2289,7 +2291,7 @@ const BattleView: React.FC<{
       const reason = result.errorKey ? t(`errors:${result.errorKey}`) : t('errors:suppressionFailed');
       showToast(reason, 'error');
       addCombatNotice(reason);
-      return;
+      return false;
     }
 
     const attackOutcome = visualOutcomeForAttack(result.events as BattleEvent[] | undefined, attackerId, defender.id);
@@ -2298,6 +2300,7 @@ const BattleView: React.FC<{
     if (attackOutcome.hit) playImpact(defender, attackOutcome.damage, hpBefore, timing.impactAtMs);
     persist();
     resolveOutcome();
+    return true;
   };
   const handleHexClick = (coord: HexCoordinate) => {
     if (autoTurnBusyRef.current || enemyTurnBusyRef.current) return; // ignore clicks while the CPU plays
@@ -3224,11 +3227,16 @@ const BattleView: React.FC<{
                 const attacker = battle.state.sides.alliance.units.get(selected);
                 const def = bundle.units.find(d => d.id === targetedEnemy.definitionId);
                 const weapon = attacker ? bestWeapon(attacker, targetedEnemy, battle.state.map, battle.state.weather) : null;
-                const canAttackNow = Boolean(attacker && weapon && canAffordAttack(attacker));
+                const ordersLocked = movingUnit !== null
+                  || autoTurnPhase !== null
+                  || battle.state.activeFaction !== 'alliance';
+                const canAttackNow = Boolean(attacker && weapon && canAffordAttack(attacker) && !ordersLocked);
                 const canSuppressNow = canAttackNow
                   && attacker?.stance === 'ready'
                   && !attacker.statusEffects.has('suppression-used');
-                const attackBlockReason = !weapon
+                const attackBlockReason = ordersLocked
+                  ? t('battle:fireControl.ordersLocked')
+                  : !weapon
                   ? targetLineOfFireBlocked
                     ? t('battle:fireControl.blockedByTerrain')
                     : t('battle:fireControl.blockedByRange')
@@ -3282,8 +3290,7 @@ const BattleView: React.FC<{
                             AudioManager.play('error');
                             return;
                           }
-                          actAttack(selected, targetedEnemy);
-                          clearTargeting(false);
+                          if (actAttack(selected, targetedEnemy)) clearTargeting(false);
                         }}
                       >
                         {t('common:action.attack')}
@@ -3294,8 +3301,7 @@ const BattleView: React.FC<{
                         title={canSuppressNow ? t('actions:suppress.tooltip') : t('actions:suppress.reasonUnavailable')}
                         onClick={() => {
                           if (!canSuppressNow) return;
-                          actSuppress(selected, targetedEnemy);
-                          clearTargeting(false);
+                          if (actSuppress(selected, targetedEnemy)) clearTargeting(false);
                         }}
                       >
                         {t('actions:suppress.label')}
@@ -3372,7 +3378,7 @@ const BattleView: React.FC<{
               )}
             </div>
           </div>
-          <div className="battle-controls">
+          <div className={`battle-controls${deployMode ? ' deployment' : ''}`}>
             <button
               className={showRanges ? 'active' : undefined}
               aria-pressed={showRanges}

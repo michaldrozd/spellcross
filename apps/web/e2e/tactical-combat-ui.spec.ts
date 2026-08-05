@@ -137,6 +137,10 @@ test('UI-driven tactical play: embark, move, disembark, attack, AI reacts', asyn
   const targetReady = await page.evaluate((enemyId) => (window as any).__battleControl?.targetEnemy?.(enemyId) ?? false, targetEnemy.id);
   expect(targetReady).toBeTruthy();
   const attackButton = page.getByRole('button', { name: /^Attack$/i });
+  const animationInProgress = await page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null);
+  expect(animationInProgress).not.toBeNull();
+  await expect(attackButton).toBeDisabled();
+  await expect.poll(async () => page.evaluate(() => (window as any).__battleControl?.animationState?.() ?? null)).toBeNull();
   await expect(attackButton).toBeEnabled();
   await attackButton.click();
   await expect(page.locator('.log-entries')).toContainText(/Hit:|Miss:/);
