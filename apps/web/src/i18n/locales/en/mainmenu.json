@@ -106,6 +106,24 @@
           "1": "Use medics for wounded troops and supply vehicles for finite-ammo units.",
           "2": "Retreat is safer from the starting zone; squads left outside it may be lost."
         }
+      },
+      "advancedBattle": {
+        "code": "05 / TAC+",
+        "title": "Master advanced battles",
+        "lines": {
+          "0": "A ready unit may suppress once per turn: PIN -N means morale lost, and low morale can suppress or route troops.",
+          "1": "Critical mission actions need the named specialist beside the objective by the shown round; bonus objectives are optional.",
+          "2": "Deploying or packing radar spends its remaining turn; deployed radar sees farther but cannot move."
+        }
+      },
+      "command": {
+        "code": "06 / CMD",
+        "title": "Build the field force",
+        "lines": {
+          "0": "A unit serves in only one task group; its formation bonus follows that assignment.",
+          "1": "An officer's aura reaches the task group only when the officer's carrier deploys with it.",
+          "2": "Eligible units can fit one researched package in each offense, protection, and mobility slot; every package has a trade-off."
+        }
       }
     }
   },

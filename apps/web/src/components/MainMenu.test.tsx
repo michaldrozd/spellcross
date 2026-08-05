@@ -60,16 +60,40 @@ describe('MainMenu', () => {
     expect(JSON.parse(window.localStorage.getItem('spellcross:audio') ?? '{}')).toMatchObject({ enabled: false });
   });
 
-  it('opens the commander manual from the main menu', () => {
-    clickButton('Manual');
-    expect(container.textContent).toContain('Run the campaign');
-    expect(container.textContent).toContain('Fight the battle');
-    expect(container.querySelectorAll('.manual-sections section')).toHaveLength(4);
+  it('opens a complete bilingual commander manual from the main menu', async () => {
+    const cases = [
+      {
+        language: 'en',
+        opener: 'Manual',
+        headings: ['Run the campaign', 'Master advanced battles', 'Build the field force'],
+        terms: ['PIN -N', 'Critical mission actions', "officer's aura"],
+      },
+      {
+        language: 'sk',
+        opener: 'Manuál',
+        headings: ['Veď kampaň', 'Zvládni pokročilé boje', 'Vybuduj poľné sily'],
+        terms: ['PIN -N', 'Kritické akcie misie', 'Aura dôstojníka'],
+      },
+    ];
 
-    const closeButton = container.querySelector<HTMLButtonElement>('.modal-close');
-    expect(closeButton).not.toBeNull();
-    act(() => closeButton!.click());
-    expect(container.querySelector('[role="dialog"]')).toBeNull();
+    for (const manualCase of cases) {
+      await act(async () => i18n.changeLanguage(manualCase.language));
+      clickButton(manualCase.opener);
+
+      const sections = Array.from(container.querySelectorAll('.manual-sections section'));
+      expect(sections).toHaveLength(6);
+      expect(sections.every(section => {
+        const bullets = Array.from(section.querySelectorAll('li'));
+        return bullets.length === 3 && bullets.every(bullet => Boolean(bullet.textContent?.trim()));
+      })).toBe(true);
+      for (const heading of manualCase.headings) expect(container.textContent).toContain(heading);
+      for (const term of manualCase.terms) expect(container.textContent).toContain(term);
+
+      const closeButton = container.querySelector<HTMLButtonElement>('.modal-close');
+      expect(closeButton).not.toBeNull();
+      act(() => closeButton!.click());
+      expect(container.querySelector('[role="dialog"]')).toBeNull();
+    }
   });
 
   it('contains modal focus and returns it to the opening control', () => {

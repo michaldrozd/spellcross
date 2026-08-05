@@ -456,7 +456,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
               <p>{t('manual.intro')}</p>
             </div>
             <div className="manual-sections">
-              {(['campaign', 'battle', 'controls', 'survival'] as const).map((section) => (
+              {(['campaign', 'battle', 'controls', 'survival', 'advancedBattle', 'command'] as const).map((section) => (
                 <section key={section}>
                   <span>{t(`manual.sections.${section}.code`)}</span>
                   <h3>{t(`manual.sections.${section}.title`)}</h3>
