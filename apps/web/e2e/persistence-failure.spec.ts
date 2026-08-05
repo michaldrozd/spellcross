@@ -345,13 +345,13 @@ test('storage-unavailable startup keeps an in-memory campaign playable until rec
     await expect(page.locator('.persistence-warning')).toBeVisible();
 
     await page.evaluate(() => (window as any).__restoreBlockedStorage());
-    await page.evaluate(({ nextLanguage }) => localStorage.setItem('spellcross:lang', nextLanguage), startupCase);
     expect(await page.evaluate(() => (window as any).__campaignControl.setMoney(275))).toBe(true);
     await expect(page.locator('.persistence-warning')).not.toBeVisible();
     expect(await page.evaluate(({ slot }) => ({
       state: JSON.parse(localStorage.getItem(`spellcross:campaign-state:${slot}`) ?? '{}').turn,
       summary: JSON.parse(localStorage.getItem(`spellcross:campaign-summary:${slot}`) ?? '{}').turn,
-    }), startupCase)).toEqual({ state: 2, summary: 2 });
+      language: localStorage.getItem('spellcross:lang'),
+    }), startupCase)).toEqual({ state: 2, summary: 2, language: startupCase.nextLanguage });
 
     await page.reload();
     await expect(page.locator('.menu-intel-panel')).toContainText(turnLabel(startupCase.nextLanguage, 2));

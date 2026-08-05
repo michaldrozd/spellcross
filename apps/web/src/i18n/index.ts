@@ -34,6 +34,7 @@ import skUnits from './locales/sk/units.json' with { type: 'json' };
 export const SUPPORTED_LANGUAGES = ['en', 'sk'] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 const LANGUAGE_STORAGE_KEY = 'spellcross:lang';
+let pendingLanguagePreference: SupportedLanguage | null = null;
 
 function detectInitialLanguage(): SupportedLanguage {
   if (typeof window === 'undefined') return 'en';
@@ -44,8 +45,15 @@ function detectInitialLanguage(): SupportedLanguage {
 }
 
 export function setAppLanguage(lang: SupportedLanguage) {
-  writeBrowserStorage(LANGUAGE_STORAGE_KEY, lang);
+  pendingLanguagePreference = writeBrowserStorage(LANGUAGE_STORAGE_KEY, lang) ? null : lang;
   void i18n.changeLanguage(lang);
+}
+
+export function retryAppLanguagePreference(): boolean {
+  if (!pendingLanguagePreference) return true;
+  if (!writeBrowserStorage(LANGUAGE_STORAGE_KEY, pendingLanguagePreference)) return false;
+  pendingLanguagePreference = null;
+  return true;
 }
 
 i18n.on('languageChanged', (language) => {

@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 
 import App from './App.js';
 import i18n from './i18n/index.js';
+import { removeBrowserStorageByPrefix } from './services/browserStorage.js';
 
 type RuntimeFallbackState = {
   error?: Error;
@@ -49,9 +50,7 @@ class RuntimeFallback extends React.Component<React.PropsWithChildren, RuntimeFa
         </pre>
         <button
           onClick={() => {
-            for (const key of Object.keys(window.localStorage)) {
-              if (key.startsWith('spellcross:')) window.localStorage.removeItem(key);
-            }
+            removeBrowserStorageByPrefix('spellcross:');
             window.location.reload();
           }}
           style={{

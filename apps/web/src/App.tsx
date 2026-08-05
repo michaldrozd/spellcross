@@ -97,7 +97,7 @@ import { StrategicHQ } from './components/StrategicHQ.js';
 import { SupplyButton } from './components/SupplyButton.js';
 import { ToastContainer, showToast } from './components/Toast.js';
 import { VEHICLE_TURN_DURATION_MS, battlefieldDirectionalSprite, unitPortrait } from './components/unitVisuals.js';
-import i18n from './i18n/index.js';
+import i18n, { retryAppLanguagePreference } from './i18n/index.js';
 import { localizeOperationDossier } from './operationDossiers.js';
 import { AudioManager, movementSoundProfileFor, narrativeSoundTypeForOutcome } from './services/AudioManager.js';
 import { readBrowserStorage, removeBrowserStorage, writeBrowserStorage } from './services/browserStorage.js';
@@ -278,13 +278,14 @@ function useCampaign() {
     let stored = true;
     if (typeof window !== 'undefined') {
       const campaignStorageKey = `${CAMPAIGN_STORAGE_KEY}:${slotRef.current}`;
+      const languageStored = retryAppLanguagePreference();
       const slotStored = writeBrowserStorage(CAMPAIGN_SLOT_KEY, String(slotRef.current));
       const campaignStored = slotStored
         && writeBrowserStorage(campaignStorageKey, JSON.stringify(serializeCampaignState(ref.current!)));
       const summaryStored = campaignStored
         && writeBrowserStorage(`${CAMPAIGN_SUMMARY_KEY}:${slotRef.current}`, JSON.stringify(nextSummary));
       const campaignReadable = summaryStored && readBrowserStorage(campaignStorageKey).available;
-      stored = slotStored && campaignStored && summaryStored && campaignReadable;
+      stored = languageStored && slotStored && campaignStored && summaryStored && campaignReadable;
     }
     setPersistenceFailed(!stored);
     rerender((n) => n + 1);
