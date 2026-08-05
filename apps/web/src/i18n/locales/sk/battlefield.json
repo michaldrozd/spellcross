@@ -13,7 +13,7 @@
     "hotkeys": {
       "pan": "Šípky — Posun kamery",
       "zoom": "Koliesko myši — Priblíženie",
-      "minimap": "Tab — Prepnúť minimapu",
+      "minimap": "Tab — Prepnúť minimapu, keď je pomocník zatvorený",
       "help": "H / F1 / ? — Prepnúť pomocníka"
     }
   },

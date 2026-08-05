@@ -13,7 +13,7 @@
     "hotkeys": {
       "pan": "Arrow keys — Pan camera",
       "zoom": "Mouse wheel — Zoom",
-      "minimap": "Tab — Toggle minimap",
+      "minimap": "Tab — Toggle minimap when help is closed",
       "help": "H / F1 / ? — Toggle help"
     }
   },

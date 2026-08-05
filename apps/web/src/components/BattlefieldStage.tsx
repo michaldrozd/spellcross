@@ -1,4 +1,3 @@
-/* eslint-disable jsx-a11y/no-noninteractive-tabindex -- Battlefield help is a scrollable named region without interactive children. */
 import { Container, Graphics, Sprite, Stage, Text } from '@pixi/react';
 import type { FactionId, HexCoordinate, TacticalBattleState, UnitInstance, MapProp, MapTile, EdgeDir } from '@spellcross/core';
 import { movementMultiplierForStance } from '@spellcross/core';
@@ -8576,6 +8575,7 @@ export function BattlefieldStage({
           className="battlefield-keyboard-help"
           role="region"
           aria-labelledby="battlefield-keyboard-help-title"
+          /* eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- This scrollable named region has no interactive children. */
           tabIndex={0}
           onPointerDown={(event) => event.stopPropagation()}
         >
