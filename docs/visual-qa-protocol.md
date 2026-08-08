@@ -32,7 +32,7 @@ Before committing a visual fix:
 
 Normal Playwright commands remain headless and portable. For sustained local visual or 3D validation on Linux, use the opt-in hardware runner instead. It serializes the suite, acquires the shared GPU lease, rejects an occupied GPU or another heavy renderer, verifies an NVIDIA WebGL renderer, and records CPU/GPU temperatures plus thermal-throttle counters.
 
-Provide a new empty evidence directory for every run:
+Provide a new empty evidence directory and a new empty browser-state directory for every run. The browser-state path must stay under 61 characters so Chrome can create its IPC sockets:
 
 ```sh
 DISPLAY=:1 \
@@ -44,7 +44,7 @@ PLAYWRIGHT_HARDWARE_EVIDENCE_DIR=<persistent-evidence-directory> \
 pnpm e2e:hardware
 ```
 
-The runner stops without launching Chrome if the lease, display provider, selected GPU, host load, or process preflight is not clean. It also fails the run if the renderer is not NVIDIA, SwiftShader appears, a foreign heavy renderer starts, a load or thermal limit is exceeded, or any CPU thermal-throttle counter grows. It never changes CPU governors, power limits, or system-wide performance settings.
+The runner stops without launching Chrome if the lease, display provider, selected GPU, host load, or process preflight is not clean. It renews the lease during longer runs and handles terminal hangups as failures. It also fails the run if the renderer is not NVIDIA, SwiftShader appears, a foreign heavy renderer starts, a load or thermal limit is exceeded, or any CPU thermal-throttle counter grows or changes availability. The renderer string comes from a sibling Chrome launch with the same options; continuous process monitoring binds every suite browser to the requested GPU. The runner environment flag is an accidental-use guard rather than a security boundary. The runner never changes CPU governors, power limits, or system-wide performance settings.
 
 ## Vehicle Contact
 
