@@ -23,6 +23,8 @@ export type MovementSoundProfile = 'foot' | 'track' | 'wheel' | 'rotor';
 export type AmbienceTheme = 'hq' | OperationAudioTheme;
 
 const AMBIENCE_THEMES: readonly AmbienceTheme[] = ['hq', 'frontline', 'siege', 'night', 'rift'];
+const GUNSHOT_ROUNDS = 5;
+const GUNSHOT_GAP_SECONDS = 0.07;
 
 export function normalizeAmbienceTheme(theme: string | null | undefined): AmbienceTheme {
   return AMBIENCE_THEMES.includes(theme as AmbienceTheme) ? theme as AmbienceTheme : 'frontline';
@@ -176,24 +178,32 @@ export class AudioManagerClass {
   }
 
   // Play noise with envelope
-  private playNoise(duration: number, volume: number, filterFreq: number = 2000, decay: number = 0.5, dest?: AudioNode): void {
+  private playNoise(
+    duration: number,
+    volume: number,
+    filterFreq: number = 2000,
+    decay: number = 0.5,
+    dest?: AudioNode,
+    startsAt?: number
+  ): void {
     const ctx = this.getContext();
+    const start = startsAt ?? ctx.currentTime;
     const noise = ctx.createBufferSource();
     noise.buffer = this.createNoiseBuffer(duration);
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(filterFreq, ctx.currentTime);
-    filter.frequency.exponentialRampToValueAtTime(100, ctx.currentTime + duration * decay);
+    filter.frequency.setValueAtTime(filterFreq, start);
+    filter.frequency.exponentialRampToValueAtTime(100, start + duration * decay);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(volume, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+    gain.gain.setValueAtTime(volume, start);
+    gain.gain.exponentialRampToValueAtTime(0.001, start + duration);
 
     noise.connect(filter);
     filter.connect(gain);
     gain.connect(dest ?? this.getMaster());
-    noise.start();
+    noise.start(start);
   }
 
   // Generate rich procedural sounds using Web Audio API
@@ -205,35 +215,34 @@ export class AudioManagerClass {
 
     switch (type) {
       case 'gunshot': {
-        // Layered gunshot: attack transient + body + tail
-        // 1. Sharp attack (click)
-        const click = ctx.createOscillator();
-        const clickGain = ctx.createGain();
-        click.type = 'square';
-        click.frequency.setValueAtTime(1500, t);
-        click.frequency.exponentialRampToValueAtTime(200, t + 0.02);
-        clickGain.gain.setValueAtTime(volume * 0.4, t);
-        clickGain.gain.exponentialRampToValueAtTime(0.001, t + 0.03);
-        click.connect(clickGain);
-        clickGain.connect(out);
-        click.start(t);
-        click.stop(t + 0.03);
+        for (let round = 0; round < GUNSHOT_ROUNDS; round++) {
+          const startsAt = t + round * GUNSHOT_GAP_SECONDS;
+          const click = ctx.createOscillator();
+          const clickGain = ctx.createGain();
+          click.type = 'square';
+          click.frequency.setValueAtTime(1500, startsAt);
+          click.frequency.exponentialRampToValueAtTime(200, startsAt + 0.02);
+          clickGain.gain.setValueAtTime(volume * 0.4, startsAt);
+          clickGain.gain.exponentialRampToValueAtTime(0.001, startsAt + 0.03);
+          click.connect(clickGain);
+          clickGain.connect(out);
+          click.start(startsAt);
+          click.stop(startsAt + 0.03);
 
-        // 2. Body (low thump)
-        const body = ctx.createOscillator();
-        const bodyGain = ctx.createGain();
-        body.type = 'sawtooth';
-        body.frequency.setValueAtTime(120, t);
-        body.frequency.exponentialRampToValueAtTime(40, t + 0.1);
-        bodyGain.gain.setValueAtTime(volume * 0.5, t);
-        bodyGain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
-        body.connect(bodyGain);
-        bodyGain.connect(out);
-        body.start(t);
-        body.stop(t + 0.12);
+          const body = ctx.createOscillator();
+          const bodyGain = ctx.createGain();
+          body.type = 'sawtooth';
+          body.frequency.setValueAtTime(120, startsAt);
+          body.frequency.exponentialRampToValueAtTime(40, startsAt + 0.1);
+          bodyGain.gain.setValueAtTime(volume * 0.5, startsAt);
+          bodyGain.gain.exponentialRampToValueAtTime(0.001, startsAt + 0.12);
+          body.connect(bodyGain);
+          bodyGain.connect(out);
+          body.start(startsAt);
+          body.stop(startsAt + 0.12);
 
-        // 3. Noise burst
-        this.playNoise(0.08, volume * 0.35, 4000, 0.3, out);
+          this.playNoise(0.08, volume * 0.35, 4000, 0.3, out, startsAt);
+        }
         break;
       }
 
@@ -1162,8 +1171,7 @@ export class AudioManagerClass {
     const ctx = this.getContext();
     const out = this.outNode(opts?.pan);
     // Infantry small-arms play as a rapid automatic burst (matches the visual tracer burst).
-    const rounds = type === 'gunshot' ? 5 : 1;
-    const gap = 0.07;
+    const rounds = type === 'gunshot' ? GUNSHOT_ROUNDS : 1;
     for (let k = 0; k < rounds; k++) {
       const src = ctx.createBufferSource();
       src.buffer = buffer;
@@ -1172,7 +1180,7 @@ export class AudioManagerClass {
       gain.gain.value = this.masterVolume * this.sfxVolume * (AudioManagerClass.TYPE_GAIN[type] ?? 1) * (rounds > 1 ? 0.85 : 1);
       src.connect(gain);
       gain.connect(out);
-      src.start(ctx.currentTime + k * gap);
+      src.start(ctx.currentTime + k * GUNSHOT_GAP_SECONDS);
     }
     return true;
   }

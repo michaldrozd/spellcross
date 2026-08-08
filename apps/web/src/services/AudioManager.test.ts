@@ -28,11 +28,12 @@ class FakeAudioNode {
 class FakeSourceNode extends FakeAudioNode {
   started = 0;
   stopped = 0;
+  startTimes: number[] = [];
   buffer: unknown = null;
   loop = false;
   playbackRate = new FakeAudioParam();
 
-  start() { this.started += 1; }
+  start(at = 0) { this.started += 1; this.startTimes.push(at); }
   stop() { this.stopped += 1; }
 }
 
@@ -200,5 +201,28 @@ describe('operation audio dramaturgy', () => {
     disabledManager.setEnabled(false);
     expect(() => disabledManager.play('briefing')).not.toThrow();
     expect(disabledContext.nodes).toHaveLength(0);
+  });
+
+  it('keeps gunfire and explosions procedural when every external sound probe fails', async () => {
+    const context = new FakeAudioContext();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: false });
+    vi.stubGlobal('fetch', fetchMock);
+    const manager = new AudioManagerClass(context as unknown as AudioContext);
+
+    manager.play('gunshot');
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(80));
+    context.sources.length = 0;
+
+    manager.play('gunshot');
+    manager.play('explosion');
+
+    const gunshotSources = context.sources.slice(0, 15);
+    expect(gunshotSources).toHaveLength(15);
+    expect(gunshotSources.every((source) => source.started === 1)).toBe(true);
+    expect(Array.from(new Set(gunshotSources.map((source) => source.startTimes[0].toFixed(2))))).toEqual([
+      '0.00', '0.07', '0.14', '0.21', '0.28'
+    ]);
+    expect(context.sources.slice(15)).toHaveLength(4);
+    expect(context.sources.slice(15).every((source) => source.started === 1)).toBe(true);
   });
 });

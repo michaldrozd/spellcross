@@ -1,8 +1,8 @@
-# Sound effects
+# Optional sound effects
 
-Drop a sound file here named `<type>.<ext>` and the game uses it instead of the
-built-in procedural synthesis. Missing files fall back to synthesis automatically,
-so you can add them one at a time. Supported extensions (first match wins):
+The default game uses built-in procedural synthesis and ships no third-party sound
+effect binaries. A distributor can supply licensed replacements named `<type>.<ext>`;
+missing files continue to use synthesis automatically. Supported extensions (first match wins):
 `webm`, `mp3`, `ogg`, `wav`.
 
 Recognised types (see `apps/web/src/services/AudioManager.ts`):
@@ -22,6 +22,3 @@ Recognised types (see `apps/web/src/services/AudioManager.ts`):
 | `error`     | invalid action |
 | `victory`   | battle won |
 | `defeat`    | battle lost |
-
-Currently shipped: `gunshot.mp3`, `explosion.mp3` (Mixkit Free License — free for
-commercial use, no attribution required). Swap them for anything you prefer.
