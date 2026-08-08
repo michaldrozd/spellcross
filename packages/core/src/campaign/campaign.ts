@@ -301,11 +301,19 @@ export function unitTierForExperience(experience: number): UnitTier {
   return 'rookie';
 }
 
+// Definition ids that were renamed after saves already referenced them. A stale id survives
+// hydration untouched and only throws later, in whatever HQ screen first resolves the unit,
+// so the remap has to happen before the army reaches any lookup.
+const RENAMED_UNIT_DEFINITIONS: Record<string, string> = {
+  'john-alexander': 'adam-halden'
+};
+
 const normalizeArmyUnitProgression = (unit: ArmyUnit): ArmyUnit => {
   const storedExperience = Number.isFinite(unit.experience) ? Math.max(0, unit.experience) : 0;
   const experience = Math.max(storedExperience, minimumExperienceForTier(unit.tier));
   return {
     ...unit,
+    definitionId: RENAMED_UNIT_DEFINITIONS[unit.definitionId] ?? unit.definitionId,
     experience,
     tier: unitTierForExperience(experience),
     equipment: { ...(unit.equipment ?? {}) }

@@ -4,7 +4,7 @@
     "brief": "Prerazte cez nájazdníkov a dostaňte sa k evakuačnému signálu skôr, než sa línia zrúti.",
     "objectives": {
       "reach-evac": "Presuňte ľubovoľnú spojeneckú jednotku k evakuačnej svetlici.",
-      "keep-commander": "Nepríďte o kapitána Alexandra."
+      "keep-commander": "Nepríďte o kapitána Haldena."
     }
   },
   "crossroads-defense": {
@@ -20,7 +20,7 @@
     "brief": "Nepriateľské sily tlačia späť ku križovatke. Udržte námestie, kým sa nezlomia.",
     "objectives": {
       "hold-square": "Udržte mestské námestie 3 kolá.",
-      "protect-captain": "Udržte kapitána Alexandra nažive."
+      "protect-captain": "Udržte kapitána Haldena nažive."
     }
   },
   "bridgehead": {
@@ -52,8 +52,8 @@
     "name": "Parížske okolie",
     "brief": "Kryte evakuáciu civilistov a dostaňte sa k evakuačnej svetlici skôr, než sa perimeter zrúti.",
     "objectives": {
-      "sector-paris-reach": "Dopravte kapitána Alexandra k evakuačnej svetlici.",
-      "sector-paris-protect": "Nepríďte o kapitána Alexandra."
+      "sector-paris-reach": "Dopravte kapitána Haldena k evakuačnej svetlici.",
+      "sector-paris-protect": "Nepríďte o kapitána Haldena."
     }
   },
   "city-sector-lyon": {
@@ -61,7 +61,7 @@
     "brief": "Udržte pevný bod v továrni proti démonickému nájazdu na zbrojovky.",
     "objectives": {
       "sector-lyon-hold": "Udržte centrálny pevný bod 3 kolá.",
-      "sector-lyon-protect": "Udržte kapitána Alexandra nažive."
+      "sector-lyon-protect": "Udržte kapitána Haldena nažive."
     }
   },
   "city-sector-strasbourg": {
@@ -85,7 +85,7 @@
     "brief": "Udržte pevný bod horského priesmyku, kým sa čistia bunkre.",
     "objectives": {
       "sector-zurich-hold": "Udržte centrálny pevný bod 3 kolá.",
-      "sector-zurich-protect": "Udržte kapitána Alexandra nažive."
+      "sector-zurich-protect": "Udržte kapitána Haldena nažive."
     }
   },
   "city-sector-vienna": {
@@ -117,7 +117,7 @@
     "brief": "Udržte pobrežný pevný bod a zamedzte baltskému obchvatu.",
     "objectives": {
       "sector-copenhagen-hold": "Udržte centrálny pevný bod 3 kolá.",
-      "sector-copenhagen-protect": "Udržte kapitána Alexandra nažive."
+      "sector-copenhagen-protect": "Udržte kapitána Haldena nažive."
     }
   },
   "city-sector-prague": {
@@ -165,7 +165,7 @@
     "brief": "Udržte pevný bod vo vysokom priesmyku a vyčistite hrebene plné hliadok.",
     "objectives": {
       "sector-carpathian-hold": "Udržte centrálny pevný bod 3 kolá.",
-      "sector-carpathian-protect": "Udržte kapitána Alexandra nažive."
+      "sector-carpathian-protect": "Udržte kapitána Haldena nažive."
     }
   },
   "city-sector-blacksea": {
@@ -244,7 +244,7 @@
     "brief": "Udržte riadiaci kruh regulátora, kým technici obrátia sťahovanie oboch frontov.",
     "objectives": {
       "sector-thorn-engine-hold": "Udržte riadiaci kruh regulátora na 3 kolá.",
-      "sector-thorn-engine-protect": "Udržte kapitána Alexandra nažive.",
+      "sector-thorn-engine-protect": "Udržte kapitána Haldena nažive.",
       "sector-thorn-engine-stabilize-regulator": "Voliteľné: zaistite odkrytý regulátor pred ďalším stiahnutím."
     }
   },
@@ -285,7 +285,7 @@
     "brief": "Udržte poslednú kotvu počas uzatvárania návratového priechodu a záverečného útoku stráže.",
     "objectives": {
       "sector-dawn-anchor-hold": "Udržte Kotvu úsvitu 3 kolá.",
-      "sector-dawn-anchor-protect": "Udržte kapitána Alexandra nažive."
+      "sector-dawn-anchor-protect": "Udržte kapitána Haldena nažive."
     }
   }
 }

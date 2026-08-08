@@ -74,7 +74,7 @@ test('visible operation planner deploys only the confirmed roster and pins the c
   await startFreshCampaign(page, 1);
   await openParisPlanner(page);
 
-  const commander = page.locator('.deployment-unit.required').filter({ hasText: /Captain John Alexander/i });
+  const commander = page.locator('.deployment-unit.required').filter({ hasText: /Captain Adam Halden/i });
   await expect(commander).toHaveAttribute('aria-pressed', 'true');
   await commander.click();
   await expect(commander).toHaveAttribute('aria-pressed', 'true');

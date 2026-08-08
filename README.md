@@ -32,7 +32,7 @@ A modern remake of the classic tactical strategy game Spellcross, built with Rea
 | Infantry | Light Infantry, Rangers | Versatile ground troops |
 | Vehicle | M113 IFV, Leopard 2 MBT | Heavy firepower, transport |
 | Support | Field Medic | Healing and buffs |
-| Hero | Captain John Alexander | Elite unit with special abilities |
+| Hero | Captain Adam Halden | Elite unit with special abilities |
 
 ## Tech Stack
 

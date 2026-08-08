@@ -1,6 +1,6 @@
 {
-  "title": "SPELLCROSS",
-  "subtitle": "THE LAST BATTLE",
+  "title": "NOT A SPELLCROSS",
+  "subtitle": "A TACTICAL WARGAME",
   "intel": {
     "campaignLink": "Campaign Link",
     "slotReady": "Slot {{slot}} ready",
@@ -19,7 +19,6 @@
     "turnDetail": "Turn {{turn}}"
   },
   "footer": {
-    "copyright": "Spellcross Remake © 2026",
     "version": "v1.0.0"
   },
   "slotModal": {

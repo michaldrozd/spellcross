@@ -44,7 +44,7 @@ function listEnemyUnits(state: TacticalBattleState, faction: FactionId): UnitIns
 
 function priorityScore(unit: UnitInstance): number {
   let score = 1;
-  if (unit.unitType === 'hero' || unit.definitionId === 'john-alexander') score += 3;
+  if (unit.unitType === 'hero' || unit.definitionId === 'adam-halden') score += 3;
   if (unit.stats.transportCapacity && unit.stats.transportCapacity > 0) score += 2.5;
   if (unit.unitType === 'artillery') score += 2;
   if (unit.unitType === 'support') score += 1;

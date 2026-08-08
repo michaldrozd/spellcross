@@ -884,7 +884,7 @@ describe('directional infantry walk cycles', () => {
   });
 
   it('routes commanders and all core infantry classes through directional cycles', () => {
-    expect(DIRECTIONAL_UNIT_SPRITES['john-alexander']).toBe('light_infantry');
+    expect(DIRECTIONAL_UNIT_SPRITES['adam-halden']).toBe('light_infantry');
     expect(DIRECTIONAL_UNIT_SPRITES['field-medic']).toBe('light_infantry');
     expect(DIRECTIONAL_UNIT_SPRITES['heavy-infantry']).toBe('heavy_infantry');
     expect(DIRECTIONAL_UNIT_SPRITES.rangers).toBe('rangers');
