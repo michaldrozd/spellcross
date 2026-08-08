@@ -1,6 +1,6 @@
-# Spellcross Remake
+# NOT A SPELLCROSS
 
-A modern remake of the classic tactical strategy game Spellcross, built with React, PixiJS, and TypeScript.
+A turn-based tactical wargame: a strategic European campaign wrapped around isometric squad battles, built with React, PixiJS, and TypeScript.
 
 ![Battle View](pics/current_state.png)
 
@@ -148,8 +148,8 @@ Territories are defined in the campaign data. Each territory includes:
 
 ## Credits
 
-- Inspired by the original **Spellcross** (1997) by Cauldron
 - Built with modern web technologies
+- Not affiliated with, endorsed by, or connected to Cauldron or any rights holder of the 1997 game whose name this title plays on. All fiction, characters, data and assets here are this project's own.
 
 ## Distribution
 
