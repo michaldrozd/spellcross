@@ -1,5 +1,5 @@
 export const DIRECTIONAL_UNIT_SPRITES: Record<string, string> = {
-  'john-alexander': 'light_infantry',
+  'adam-halden': 'light_infantry',
   'field-medic': 'light_infantry',
   'heavy-infantry': 'heavy_infantry',
   'light-infantry': 'light_infantry',
@@ -909,7 +909,7 @@ const RIFLE_FOOT_IDS = new Set([
   'field-medic',
   'flamethrower-squad',
   'heavy-infantry',
-  'john-alexander',
+  'adam-halden',
   'light-infantry',
   'mortar-team',
   'orc-warband',

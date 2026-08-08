@@ -1210,8 +1210,8 @@ const makeMap = (
 
 export const starterUnits: UnitData[] = [
   {
-    id: 'john-alexander',
-    name: 'Captain John Alexander',
+    id: 'adam-halden',
+    name: 'Captain Adam Halden',
     faction: 'alliance',
     type: 'hero',
     role: 'commander',
@@ -2471,7 +2471,7 @@ export const starterScenarios: TacticalScenario[] = [
       {
         id: 'keep-commander',
         kind: 'protect',
-        description: 'Do not lose Captain Alexander.',
+        description: 'Do not lose Captain Halden.',
         unitIds: ['captain']
       }
     ]
@@ -2552,7 +2552,7 @@ export const starterScenarios: TacticalScenario[] = [
       {
         id: 'protect-captain',
         kind: 'protect',
-        description: 'Keep Captain Alexander alive.',
+        description: 'Keep Captain Halden alive.',
         unitIds: ['captain']
       }
     ]
@@ -3082,7 +3082,7 @@ export const starterCampaign: CampaignSpec = {
     'vanguard-scout-chassis'
   ],
   startingUnits: [
-    { id: 'captain', definitionId: 'john-alexander', tier: 'elite', experience: 60 },
+    { id: 'captain', definitionId: 'adam-halden', tier: 'elite', experience: 60 },
     { id: 'lance-1', definitionId: 'light-infantry', tier: 'veteran', experience: 20 },
     { id: 'lance-2', definitionId: 'light-infantry', tier: 'rookie', experience: 0 },
     { id: 'recon-1', definitionId: 'rangers', tier: 'veteran', experience: 30 },

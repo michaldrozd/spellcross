@@ -11,7 +11,7 @@ const plain = { terrain: 'plain', elevation: 0, cover: 0, movementCostModifier: 
 
 const EXPECTED_ARMOR_CLASS_IDS: Record<ArmorClass, string[]> = {
   infantry: [
-    'john-alexander', 'light-infantry', 'rangers', 'orc-warband', 'ghoul-pack',
+    'adam-halden', 'light-infantry', 'rangers', 'orc-warband', 'ghoul-pack',
     'necromancer', 'heavy-infantry', 'sniper-team', 'field-medic', 'warlock',
     'specter', 'lich-lord', 'hell-rider', 'skeleton-horde', 'commando-team',
     'flamethrower-squad', 'psi-corps', 'exo-troopers', 'ka-orc', 'war-orc',

@@ -101,7 +101,7 @@ research unlock. The lists below name the core roles rather than the full roster
 
 Alliance roles represented:
 
-- Commander: Captain John Alexander.
+- Commander: Captain Adam Halden.
 - Infantry: Light Infantry, Storm Squad, Ranger Recon, Pathfinder Snipers.
 - Support infantry: Field Medic.
 - Vehicles: M113 IFV, Leopard 2 MBT, Gepard AA, Sky Lance SAM.

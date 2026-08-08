@@ -6,7 +6,7 @@ test('army recruit queue shows incoming units with readiness turn', async ({ pag
 
   await page.getByRole('button', { name: /ARMY/i }).click();
   const recruitment = page.locator('.recruit-options');
-  await expect(recruitment.getByRole('button', { name: /Captain John Alexander/i })).toBeDisabled();
+  await expect(recruitment.getByRole('button', { name: /Captain Adam Halden/i })).toBeDisabled();
   await recruitment.getByRole('button', { name: /Light Infantry/i }).click();
 
   await expect(page.getByRole('heading', { name: 'IN TRANSIT' })).toBeVisible();

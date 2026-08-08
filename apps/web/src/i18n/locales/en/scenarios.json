@@ -4,7 +4,7 @@
     "brief": "Punch through raiders and reach the evac signal before the line collapses.",
     "objectives": {
       "reach-evac": "Move any allied unit onto the evac flare.",
-      "keep-commander": "Do not lose Captain Alexander."
+      "keep-commander": "Do not lose Captain Halden."
     }
   },
   "crossroads-defense": {
@@ -20,7 +20,7 @@
     "brief": "Enemy forces push back toward the crossroads. Hold the square until they break.",
     "objectives": {
       "hold-square": "Hold the town square for 3 rounds.",
-      "protect-captain": "Keep Captain Alexander alive."
+      "protect-captain": "Keep Captain Halden alive."
     }
   },
   "bridgehead": {
@@ -52,8 +52,8 @@
     "name": "Paris Outskirts",
     "brief": "Cover the civilian evacuation and reach the extraction flare before the perimeter collapses.",
     "objectives": {
-      "sector-paris-reach": "Escort Captain Alexander to the extraction flare.",
-      "sector-paris-protect": "Do not lose Captain Alexander."
+      "sector-paris-reach": "Escort Captain Halden to the extraction flare.",
+      "sector-paris-protect": "Do not lose Captain Halden."
     }
   },
   "city-sector-lyon": {
@@ -61,7 +61,7 @@
     "brief": "Hold the factory strongpoint against the demonic raid on the arms works.",
     "objectives": {
       "sector-lyon-hold": "Hold the central strongpoint for 3 rounds.",
-      "sector-lyon-protect": "Keep Captain Alexander alive."
+      "sector-lyon-protect": "Keep Captain Halden alive."
     }
   },
   "city-sector-strasbourg": {
@@ -85,7 +85,7 @@
     "brief": "Hold the mountain pass strongpoint while the bunkers are cleared.",
     "objectives": {
       "sector-zurich-hold": "Hold the central strongpoint for 3 rounds.",
-      "sector-zurich-protect": "Keep Captain Alexander alive."
+      "sector-zurich-protect": "Keep Captain Halden alive."
     }
   },
   "city-sector-vienna": {
@@ -117,7 +117,7 @@
     "brief": "Hold the coastal strongpoint and deny the Baltic flanking approach.",
     "objectives": {
       "sector-copenhagen-hold": "Hold the central strongpoint for 3 rounds.",
-      "sector-copenhagen-protect": "Keep Captain Alexander alive."
+      "sector-copenhagen-protect": "Keep Captain Halden alive."
     }
   },
   "city-sector-prague": {
@@ -165,7 +165,7 @@
     "brief": "Hold the high pass strongpoint and clear the patrol-ridden ridges.",
     "objectives": {
       "sector-carpathian-hold": "Hold the central strongpoint for 3 rounds.",
-      "sector-carpathian-protect": "Keep Captain Alexander alive."
+      "sector-carpathian-protect": "Keep Captain Halden alive."
     }
   },
   "city-sector-blacksea": {
@@ -244,7 +244,7 @@
     "brief": "Hold the regulator control ring while the field teams reverse the contraction pulling both fronts together.",
     "objectives": {
       "sector-thorn-engine-hold": "Hold the regulator control ring for 3 rounds.",
-      "sector-thorn-engine-protect": "Keep Captain Alexander alive.",
+      "sector-thorn-engine-protect": "Keep Captain Halden alive.",
       "sector-thorn-engine-stabilize-regulator": "Optional: secure the exposed regulator before the next contraction."
     }
   },
@@ -285,7 +285,7 @@
     "brief": "Hold the final anchor while the return passage seals and the surviving guard makes its last assault.",
     "objectives": {
       "sector-dawn-anchor-hold": "Hold the Dawn Anchor for 3 rounds.",
-      "sector-dawn-anchor-protect": "Keep Captain Alexander alive."
+      "sector-dawn-anchor-protect": "Keep Captain Halden alive."
     }
   }
 }

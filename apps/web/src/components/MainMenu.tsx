@@ -274,7 +274,6 @@ export const MainMenu: React.FC<MainMenuProps> = ({
         </div>
 
         <div className="menu-footer">
-          <p>{t('footer.copyright')}</p>
           <p className="version">{t('footer.version')}</p>
         </div>
       </div>

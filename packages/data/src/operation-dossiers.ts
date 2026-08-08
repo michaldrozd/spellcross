@@ -298,7 +298,7 @@ export const starterOperationDossiers: OperationDossier[] = [
     codename: 'Thorn Engine',
     situation: 'The two secured fronts are being dragged together by a regulator whose moving towers tighten the landscape around them.',
     threat: 'Each contraction crushes another route and releases a fresh guard from the engine housing.',
-    command: 'Take the control ring, hold it through the reversal sequence, and keep Captain Alexander alive while the field teams work.',
+    command: 'Take the control ring, hold it through the reversal sequence, and keep Captain Halden alive while the field teams work.',
     victory: 'The regulator has reversed. The fronts are stable, and a direct corridor now points toward the source beneath the Shatterline.',
     defeat: 'The control ring was lost during the reversal. The two fronts are collapsing toward the same hostile center.',
     audioTheme: 'siege'

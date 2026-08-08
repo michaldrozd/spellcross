@@ -40,7 +40,7 @@ test('the full Alliance roster and fire-support research are available from HQ',
   await page.evaluate(() => (window as any).__campaignControl.dismissPopups());
 
   await page.getByRole('button', { name: /^Hero$/i }).click();
-  await expect(page.locator('.recruit-btn').filter({ hasText: 'Captain John Alexander' })).toBeVisible();
+  await expect(page.locator('.recruit-btn').filter({ hasText: 'Captain Adam Halden' })).toBeVisible();
 
   await page.getByRole('button', { name: /Research/i }).click();
   for (const topicName of [

@@ -1302,4 +1302,19 @@ describe('campaign core', () => {
     expect(state.resources.research).toBe(9); // 1:3
     expect(state.resources.strategic).toBe(12);
   });
+
+  it('restores a save that still carries a renamed unit definition id', () => {
+    const state = createCampaign(starterBundle);
+    const snapshot = JSON.parse(JSON.stringify(serializeCampaignState(state)));
+    const commander = snapshot.army.find((unit: { definitionId: string }) => unit.definitionId === 'adam-halden');
+    expect(commander).toBeDefined();
+    commander.definitionId = 'john-alexander';
+
+    const restored = hydrateCampaignState(starterBundle, snapshot);
+
+    expect(restored.army.map((unit) => unit.definitionId)).toContain('adam-halden');
+    for (const unit of [...restored.army, ...restored.reserves]) {
+      expect(starterBundle.units.some((definition) => definition.id === unit.definitionId)).toBe(true);
+    }
+  });
 });

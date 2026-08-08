@@ -323,7 +323,7 @@ test('scaled Paris evacuation presents its protected captain route', async ({ pa
 
   expect(mission.enemyCount).toBe(14);
   expect(mission.captain).toMatchObject({
-    definitionId: 'john-alexander',
+    definitionId: 'adam-halden',
     stance: 'ready'
   });
   expect(mission.captain.health).toBeGreaterThan(0);

@@ -725,11 +725,11 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
       objs.push({
         id: `${id}-reach`,
         kind: 'reach',
-        description: 'Escort Captain Alexander to the extraction flare.',
+        description: 'Escort Captain Halden to the extraction flare.',
         target: anchor,
         unitIds: ['captain']
       });
-      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Do not lose Captain Alexander.', unitIds: ['captain'] });
+      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Do not lose Captain Halden.', unitIds: ['captain'] });
       break;
     case 'rescue': {
       const rescueId = `${id}-pilot`;
@@ -762,7 +762,7 @@ function buildMission(cfg: CityConfig, g: Generated, rng: () => number): Mission
     }
     case 'hold':
       objs.push({ id: `${id}-hold`, kind: 'hold', description: 'Hold the central strongpoint for 3 rounds.', target: hold, turnLimit: 3 });
-      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Keep Captain Alexander alive.', unitIds: ['captain'] });
+      objs.push({ id: `${id}-protect`, kind: 'protect', description: 'Keep Captain Halden alive.', unitIds: ['captain'] });
       break;
     case 'bridgehead':
       objs.push({ id: `${id}-eliminate`, kind: 'eliminate', description: 'Destroy or rout the defenders.' });

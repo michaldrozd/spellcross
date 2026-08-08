@@ -1,6 +1,6 @@
 {
-  "title": "SPELLCROSS",
-  "subtitle": "POSLEDNÁ BITKA",
+  "title": "NOT A SPELLCROSS",
+  "subtitle": "TAKTICKÁ VOJNOVÁ HRA",
   "intel": {
     "campaignLink": "Spojenie s kampaňou",
     "slotReady": "Slot {{slot}} pripravený",
@@ -19,7 +19,6 @@
     "turnDetail": "Kolo {{turn}}"
   },
   "footer": {
-    "copyright": "Spellcross Remake © 2026",
     "version": "v1.0.0"
   },
   "slotModal": {
