@@ -55,7 +55,7 @@ test('an archive event updates the objective panel, battlefield, and combat log 
   ), authoredEvent.target);
   await page.waitForTimeout(120);
   await page.screenshot({
-    path: '/tmp/spellcross-tactical-event-effects-before.png'
+    path: test.info().outputPath('tactical-event-effects-before.png')
   });
 
   const before = await page.evaluate(() => (window as any).__battleControl.objectives());
@@ -81,7 +81,7 @@ test('an archive event updates the objective panel, battlefield, and combat log 
   expect(revealed).toMatchObject({ kind: 'reach', optional: true });
   expect(revealed.target).toEqual(authoredEvent.target);
   await page.screenshot({
-    path: '/tmp/spellcross-tactical-event-effects-desktop.png'
+    path: test.info().outputPath('tactical-event-effects-desktop.png')
   });
 
   const objectiveHud = page.locator('.objective-hud');
@@ -100,7 +100,7 @@ test('an archive event updates the objective panel, battlefield, and combat log 
   ), revealed.target);
   await page.waitForTimeout(150);
   await page.screenshot({
-    path: '/tmp/spellcross-tactical-event-effects-mobile.png'
+    path: test.info().outputPath('tactical-event-effects-mobile.png')
   });
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
@@ -119,13 +119,13 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
       round: 4,
       kind: 'transformTerrain',
       log: 'Causeway Ward Fractures',
-      screenshot: '/tmp/spellcross-tactical-event-effects-terrain.png'
+      screenshot: 'tactical-event-effects-terrain.png'
     },
     {
       territoryId: 'sector-mnemonic-orchard',
       kind: 'pressurePulse',
       log: 'The Orchard Remembers',
-      screenshot: '/tmp/spellcross-tactical-event-effects-pressure.png'
+      screenshot: 'tactical-event-effects-pressure.png'
     }
   ] as const;
 
@@ -230,7 +230,7 @@ test('terrain fractures and pressure pulses use distinct battlefield feedback', 
       expect(pressureAfter.health).toBe(Math.max(1, pressureBefore.unit.health - 12));
       expect(pressureAfter.morale).toBe(Math.max(0, pressureBefore.unit.morale - 18));
     }
-    await page.screenshot({ path: scenario.screenshot });
+    await page.screenshot({ path: test.info().outputPath(scenario.screenshot) });
     await expect(page.locator('.log-entries')).toContainText(scenario.log);
   }
 });

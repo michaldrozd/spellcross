@@ -301,11 +301,20 @@ export function unitTierForExperience(experience: number): UnitTier {
   return 'rookie';
 }
 
-// Definition ids that were renamed after saves already referenced them. A stale id survives
-// hydration untouched and only throws later, in whatever HQ screen first resolves the unit,
-// so the remap has to happen before the army reaches any lookup.
+// Saves retain definition ids in both the strategic roster and the complete active-battle payload.
+// Normalize them at hydration so a renamed definition cannot surface later in rendering or an event.
 const RENAMED_UNIT_DEFINITIONS: Record<string, string> = {
   'john-alexander': 'adam-halden'
+};
+
+export const migrateDefinitionId = (definitionId: string) => (
+  RENAMED_UNIT_DEFINITIONS[definitionId] ?? definitionId
+);
+
+const migrateScenarioUnitDefinitions = (units: TacticalScenario['otherSideForces'] | undefined) => {
+  for (const unit of units ?? []) {
+    unit.definitionId = migrateDefinitionId(unit.definitionId);
+  }
 };
 
 const normalizeArmyUnitProgression = (unit: ArmyUnit): ArmyUnit => {
@@ -313,7 +322,7 @@ const normalizeArmyUnitProgression = (unit: ArmyUnit): ArmyUnit => {
   const experience = Math.max(storedExperience, minimumExperienceForTier(unit.tier));
   return {
     ...unit,
-    definitionId: RENAMED_UNIT_DEFINITIONS[unit.definitionId] ?? unit.definitionId,
+    definitionId: migrateDefinitionId(unit.definitionId),
     experience,
     tier: unitTierForExperience(experience),
     equipment: { ...(unit.equipment ?? {}) }
@@ -2918,6 +2927,11 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
   if (inProgress) delete pausedResearch[inProgress.topicId];
   const activeBattle = snapshot.activeBattle ? decodeActiveBattle(snapshot.activeBattle) : undefined;
   if (activeBattle) {
+    migrateScenarioUnitDefinitions(activeBattle.scenario.allianceForces);
+    migrateScenarioUnitDefinitions(activeBattle.scenario.otherSideForces);
+    for (const event of activeBattle.scenario.events ?? []) {
+      migrateScenarioUnitDefinitions(event.reinforcements);
+    }
     activeBattle.difficulty ??= difficulty;
     activeBattle.reachClaimedRound ??= {};
     activeBattle.holdProgress ??= {};
@@ -2929,6 +2943,7 @@ export function hydrateCampaignState(bundle: ContentBundle, snapshot: Serialized
     const unitDefinitions = new Map(bundle.units.map((definition) => [definition.id, definition]));
     for (const side of Object.values(activeBattle.state.sides)) {
       for (const unit of side.units.values()) {
+        unit.definitionId = migrateDefinitionId(unit.definitionId);
         unit.experience = Math.max(0, Number.isFinite(unit.experience) ? unit.experience : 0);
         unit.level = experienceLevelFor(unit.experience);
         unit.careerProgression = true;

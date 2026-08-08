@@ -1,6 +1,16 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Locator } from '@playwright/test';
 
 import { startBattle, startFreshCampaign } from './helpers';
+
+async function waitForPresentation(locator: Locator) {
+  await locator.evaluate(async (element) => {
+    const finiteAnimations = element.getAnimations({ subtree: true }).filter((animation) => {
+      const iterations = animation.effect?.getComputedTiming().iterations;
+      return iterations !== Infinity;
+    });
+    await Promise.all(finiteAnimations.map((animation) => animation.finished));
+  });
+}
 
 test('operation planning discloses attached mission specialists without granting a free deployment', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -19,7 +29,7 @@ test('operation planning discloses attached mission specialists without granting
   await expect(planner).toContainText('MISSION SPECIALIST');
   await expect(planner).toContainText('Attached outside the roster limit');
   await expect(planner).toContainText(/plant the charges by round ten/i);
-  await page.screenshot({ path: '/tmp/spellcross-specialist-planner-desktop.png' });
+  await page.screenshot({ path: test.info().outputPath('specialist-planner-desktop.png') });
 
   await planner.getByRole('button', { name: /Clear Optional/i }).click();
   await expect(planner.getByRole('button', { name: /Confirm Deployment/i })).toBeDisabled();
@@ -27,7 +37,7 @@ test('operation planning discloses attached mission specialists without granting
   await expect(planner.getByRole('button', { name: /Confirm Deployment/i })).toBeEnabled();
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({ path: '/tmp/spellcross-specialist-planner-mobile.png' });
+  await page.screenshot({ path: test.info().outputPath('specialist-planner-mobile.png') });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
@@ -119,7 +129,7 @@ test('Auto Turn moves the assigned specialist and refuses an in-range regular sq
   ), setup.specialistId);
   await expect(action).toBeDisabled();
   await expect(page.locator('.objective-action-reason')).toContainText('Move onto or beside the objective');
-  await page.screenshot({ path: '/tmp/spellcross-specialist-auto-before.png' });
+  await page.screenshot({ path: test.info().outputPath('specialist-auto-before.png') });
 
   await page.evaluate(({ regularId, specialistId }) => {
     const control = (window as any).__battleControl;
@@ -149,8 +159,10 @@ test('Auto Turn moves the assigned specialist and refuses an in-range regular sq
   expect(completed.actorId).toBe(setup.specialistId);
   expect(completed.specialistMoved).toBe(true);
   expect(completed.regular.coord).toEqual(setup.regularTile);
-  await expect(page.locator('.battle-outcome-overlay')).toContainText(/Sector Secured/i);
-  await page.screenshot({ path: '/tmp/spellcross-specialist-auto-complete.png' });
+  const completedOutcome = page.locator('.battle-outcome-overlay');
+  await expect(completedOutcome).toContainText(/Sector Secured/i);
+  await waitForPresentation(completedOutcome);
+  await page.screenshot({ path: test.info().outputPath('specialist-auto-complete.png') });
 });
 
 test('a missed deadline and a lost specialist each fail the operation immediately', async ({ page }) => {
@@ -194,8 +206,10 @@ test('a missed deadline and a lost specialist each fail the operation immediatel
   await page.evaluate((round) => (
     (window as any).__battleControl.setBattleRound(round + 1)
   ), deadline.objective.deadlineRound);
-  await expect(page.locator('.battle-outcome-overlay')).toContainText(/Mission Failed/i);
-  await page.screenshot({ path: '/tmp/spellcross-specialist-deadline-failed.png' });
+  const deadlineOutcome = page.locator('.battle-outcome-overlay');
+  await expect(deadlineOutcome).toContainText(/Mission Failed/i);
+  await waitForPresentation(deadlineOutcome);
+  await page.screenshot({ path: test.info().outputPath('specialist-deadline-failed.png') });
 
   await startBattle(page, 'sector-lantern-vault');
   await page.getByRole('button', { name: /^Start Battle$/i }).click();

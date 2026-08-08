@@ -128,8 +128,8 @@ importers:
         specifier: workspace:*
         version: link:../data
       nanoid:
-        specifier: ^5.0.7
-        version: 5.1.6
+        specifier: ^5.1.16
+        version: 5.1.16
     devDependencies:
       tsup:
         specifier: ^8.5.0
@@ -4017,8 +4017,8 @@ packages:
     hasBin: true
     dev: true
 
-  /nanoid@5.1.6:
-    resolution: {integrity: sha512-c7+7RQ+dMB5dPwwCp4ee1/iV/q2P6aK1mTZcfr1BTuVlyW9hJYiMPybJCcnBlQtuSmTIWNeazm/zqNoZSSElBg==}
+  /nanoid@5.1.16:
+    resolution: {integrity: sha512-kVrnsrJqMR8+oLJnGEmSWw9BivK5mt7H3FZatVRjrc5wGqFYuBxX1yG7+A7Gi5AefkX6t/oCkizcQgpu0cY1dQ==}
     engines: {node: ^18 || >=20}
     hasBin: true
     dev: false

@@ -16,6 +16,7 @@ import {
   getEnemyDecisionBudget,
   getEnemyDifficultyTier,
   minimumExperienceForTier,
+  migrateDefinitionId,
   pauseResearch,
   progressResearch,
   projectUnitService,
@@ -1303,18 +1304,111 @@ describe('campaign core', () => {
     expect(state.resources.strategic).toBe(12);
   });
 
-  it('restores a save that still carries a renamed unit definition id', () => {
-    const state = createCampaign(starterBundle);
+  it('restores renamed definition ids across the strategic roster and active battle payload', () => {
+    const state = createCampaign(starterBundle, undefined, 'veteran');
+    const reserveCommander = structuredClone(state.army.find((unit) => unit.id === 'captain')!);
+    reserveCommander.id = 'reserve-captain';
+    state.reserves.push(reserveCommander);
+    state.territories.find((territory) => territory.id === 'sector-berlin')!.status = 'available';
+    const battle = startBattleForTerritory(state, starterBundle, 'sector-berlin');
     const snapshot = JSON.parse(JSON.stringify(serializeCampaignState(state)));
     const commander = snapshot.army.find((unit: { definitionId: string }) => unit.definitionId === 'adam-halden');
     expect(commander).toBeDefined();
     commander.definitionId = 'john-alexander';
+    snapshot.reserves.find((unit: { id: string }) => unit.id === reserveCommander.id).definitionId = 'john-alexander';
+
+    const tacticalId = battle.deployment.captain;
+    const serializedCommander = snapshot.activeBattle.state.sides.alliance.units.v.find(
+      ([id]: [string, unknown]) => id === tacticalId
+    )[1];
+    serializedCommander.definitionId = 'john-alexander';
+
+    snapshot.activeBattle.scenario.allianceForces = [{
+      id: 'legacy-alliance-support',
+      definitionId: 'john-alexander',
+      coordinate: { q: 1, r: 1 }
+    }];
+    snapshot.activeBattle.scenario.otherSideForces[0].definitionId = 'john-alexander';
+    const reinforcement = snapshot.activeBattle.scenario.events[0].reinforcements[0];
+    reinforcement.definitionId = 'john-alexander';
 
     const restored = hydrateCampaignState(starterBundle, snapshot);
+    const restoredBattle = restored.activeBattle!;
 
     expect(restored.army.map((unit) => unit.definitionId)).toContain('adam-halden');
     for (const unit of [...restored.army, ...restored.reserves]) {
       expect(starterBundle.units.some((definition) => definition.id === unit.definitionId)).toBe(true);
     }
+    expect(restoredBattle.state.sides.alliance.units.get(tacticalId)?.definitionId).toBe('adam-halden');
+    expect(restoredBattle.scenario.allianceForces?.[0].definitionId).toBe('adam-halden');
+    expect(restoredBattle.scenario.otherSideForces[0].definitionId).toBe('adam-halden');
+    expect(restoredBattle.scenario.events?.[0].reinforcements[0].definitionId).toBe('adam-halden');
+
+    restoredBattle.state.round = 5;
+    restoredBattle.state.activeFaction = 'alliance';
+    const [triggered] = processTacticalEvents(restored, starterBundle);
+    expect(triggered?.id).toBe(restoredBattle.scenario.events?.[0].id);
+    const spawnedId = `${restoredBattle.scenario.events?.[0].id}:${reinforcement.id}`;
+    expect(restoredBattle.state.sides.otherSide.units.get(spawnedId)?.definitionId).toBe('adam-halden');
+
+    for (const side of Object.values(restoredBattle.state.sides)) {
+      for (const unit of side.units.values()) {
+        expect(starterBundle.units.some((definition) => definition.id === unit.definitionId)).toBe(true);
+      }
+    }
+  });
+
+  it('keeps the renamed-definition mapping consistent with canonical unit data', () => {
+    expect(migrateDefinitionId('john-alexander')).toBe('adam-halden');
+    expect(migrateDefinitionId('m113')).toBe('m113');
+    expect(starterBundle.units.some((definition) => definition.id === 'john-alexander')).toBe(false);
+    expect(starterBundle.units.some((definition) => definition.id === migrateDefinitionId('john-alexander'))).toBe(true);
+  });
+
+  it('covers every persisted definition-id carrier in the serialized campaign shape', () => {
+    const state = createCampaign(starterBundle);
+    state.reserves.push({ id: 'reserve-unit', definitionId: 'light-infantry', tier: 'rookie', experience: 0 });
+    state.territories.find((territory) => territory.id === 'sector-berlin')!.status = 'available';
+    startBattleForTerritory(state, starterBundle, 'sector-berlin');
+    const snapshot = JSON.parse(JSON.stringify(serializeCampaignState(state)));
+    snapshot.activeBattle.scenario.allianceForces = [{
+      id: 'alliance-support',
+      definitionId: 'rangers',
+      coordinate: { q: 1, r: 1 }
+    }];
+
+    const paths = new Set<string>();
+    const visit = (node: unknown, path = '') => {
+      if (Array.isArray(node)) {
+        for (const child of node) visit(child, `${path}[*]`);
+        return;
+      }
+      if (!node || typeof node !== 'object') return;
+      const record = node as Record<string, unknown>;
+      if (record.__t === 'Map' && Array.isArray(record.v)) {
+        for (const entry of record.v) {
+          if (Array.isArray(entry)) visit(entry[1], `${path}[*]`);
+        }
+        return;
+      }
+      for (const [key, child] of Object.entries(record)) {
+        const childPath = path ? `${path}.${key}` : key;
+        if (key === 'definitionId') {
+          paths.add(childPath.replace(/\.sides\.(alliance|otherSide)\./, '.sides[*].'));
+        } else {
+          visit(child, childPath);
+        }
+      }
+    };
+    visit(snapshot);
+
+    expect(Array.from(paths).sort()).toEqual([
+      'activeBattle.scenario.allianceForces[*].definitionId',
+      'activeBattle.scenario.events[*].reinforcements[*].definitionId',
+      'activeBattle.scenario.otherSideForces[*].definitionId',
+      'activeBattle.state.sides[*].units[*].definitionId',
+      'army[*].definitionId',
+      'reserves[*].definitionId'
+    ]);
   });
 });

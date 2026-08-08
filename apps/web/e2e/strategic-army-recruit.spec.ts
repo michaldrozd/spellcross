@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+
 import { startFreshCampaign } from './helpers';
 
 test('army recruit queue shows incoming units with readiness turn', async ({ page }) => {
@@ -65,6 +66,28 @@ test('army recruit queue shows incoming units with readiness turn', async ({ pag
       new Set(actionNames.map(({ label }) => label)).size,
       `${layout.language} ${layout.width}px unique action names`
     ).toBe(actionNames.length);
+
+    const protrudingPortraits = await page.locator('.recruit-btn').evaluateAll((buttons) => (
+      buttons.flatMap((button) => {
+        const portrait = button.querySelector<HTMLElement>('.recruit-portrait');
+        if (!portrait) return [];
+        const buttonBox = button.getBoundingClientRect();
+        const portraitBox = portrait.getBoundingClientRect();
+        const protrudes = portraitBox.left < buttonBox.left - 0.5
+          || portraitBox.top < buttonBox.top - 0.5
+          || portraitBox.right > buttonBox.right + 0.5
+          || portraitBox.bottom > buttonBox.bottom + 0.5;
+        return protrudes ? [{
+          unit: button.textContent?.trim().replace(/\s+/g, ' ') ?? '',
+          button: { top: buttonBox.top, bottom: buttonBox.bottom },
+          portrait: { top: portraitBox.top, bottom: portraitBox.bottom }
+        }] : [];
+      })
+    ));
+    await page.screenshot({
+      path: test.info().outputPath(`recruit-${layout.language}-${layout.width}x${layout.height}.png`)
+    });
+    expect(protrudingPortraits, `${layout.language} ${layout.width}px portrait containment`).toEqual([]);
 
     await page.evaluate(() => (window as any).__campaignControl.setMoney(0));
     const disabledOfficerActions = page.locator('.officer-recruit:disabled');

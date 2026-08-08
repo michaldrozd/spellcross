@@ -800,7 +800,7 @@ const StrategicMapView: React.FC<{
                 <text
                   x={t.mapPosition.x > 92 ? 99 : t.mapPosition.x}
                   dx={t.id === 'sector-blacksea' ? 2 : undefined}
-                  y={t.mapPosition.y + 3.5}
+                  y={t.mapPosition.y + (isSeaAnchor ? -3.5 : 3.5)}
                   className={`territory-name ${t.status} ${t.mapPosition.x > 92 ? 'map-edge-label' : ''}`}
                 >
                   {mapLabelForTerritory(t.id)}
