@@ -9,10 +9,11 @@ import {
 
 test('distinguishes conflicting renderers from unrelated background clients', () => {
   assert.equal(
-    isHeavyProcess(
-      'chrome-headless-shell',
-      '/opt/chrome-headless-shell --use-angle=swiftshader-webgl',
-    ),
+    isHeavyProcess('chrome-headless', '/opt/chrome-headless-shell --remote-debugging-port=9222'),
+    true,
+  );
+  assert.equal(
+    isHeavyProcess('chrome', '/opt/chrome-headless-shell --remote-debugging-port=9222'),
     true,
   );
   assert.equal(isHeavyProcess('godot', '/usr/bin/godot --editor'), true);
@@ -25,6 +26,10 @@ test('distinguishes conflicting renderers from unrelated background clients', ()
 test('reports only counters that increased', () => {
   assert.deepEqual(throttleGrowth({ core: 7, package: 11 }, { core: 7, package: 13 }), [
     { counterPath: 'package', before: 11, after: 13, delta: 2 },
+  ]);
+  assert.deepEqual(throttleGrowth({ core: 7 }, { package: 11 }), [
+    { counterPath: 'core', before: 7, after: null, delta: null },
+    { counterPath: 'package', before: null, after: 11, delta: null },
   ]);
 });
 

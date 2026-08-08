@@ -15,7 +15,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const HEAVY_PROCESS_NAMES = /^(chrome-headless-shell|headless_shell)$/i;
+const HEAVY_PROCESS_NAMES = /^(chrome-headless(?:-shell)?|headless_shell)$/i;
+const HEADLESS_BROWSER_EXECUTABLE =
+  /(?:^|\s)(?:\S*\/)?(?:chrome-headless-shell|headless_shell)(?:\s|$)/i;
 const PLAYWRIGHT_PROCESS = /(?:^|\s)(?:node|pnpm|npm|yarn).*playwright(?:\s|\/).*test(?:\s|$)/i;
 const PLAYWRIGHT_BROWSER =
   /(?:chrome|chromium).*(?:--remote-debugging-pipe|playwright_chromiumdev_profile)/i;
@@ -23,6 +25,7 @@ const PLAYWRIGHT_BROWSER =
 export function isHeavyProcess(processName, commandLine) {
   return (
     HEAVY_PROCESS_NAMES.test(processName) ||
+    HEADLESS_BROWSER_EXECUTABLE.test(commandLine) ||
     (/^godot/i.test(processName) && !/(?:^|\s)--headless(?:\s|$)/.test(commandLine)) ||
     PLAYWRIGHT_PROCESS.test(commandLine) ||
     PLAYWRIGHT_BROWSER.test(commandLine)
@@ -30,9 +33,13 @@ export function isHeavyProcess(processName, commandLine) {
 }
 
 export function throttleGrowth(before, after) {
-  return Object.entries(after).flatMap(([counterPath, count]) => {
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])].flatMap((counterPath) => {
     const previousCount = before[counterPath];
-    if (previousCount === undefined || count <= previousCount) return [];
+    const count = after[counterPath];
+    if (previousCount === undefined || count === undefined) {
+      return [{ counterPath, before: previousCount ?? null, after: count ?? null, delta: null }];
+    }
+    if (count <= previousCount) return [];
     return [{ counterPath, before: previousCount, after: count, delta: count - previousCount }];
   });
 }
@@ -235,14 +242,14 @@ function delay(milliseconds) {
 }
 
 function stopProcessGroup(child) {
-  if (!child || child.exitCode !== null) return;
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
   try {
     process.kill(-child.pid, 'SIGTERM');
   } catch {
     child.kill('SIGTERM');
   }
   const forceStop = setTimeout(() => {
-    if (child.exitCode !== null) return;
+    if (child.exitCode !== null || child.signalCode !== null) return;
     try {
       process.kill(-child.pid, 'SIGKILL');
     } catch {
@@ -348,6 +355,7 @@ async function run() {
     gpuUuid,
     browserStateDirectory: durableBrowserStateDirectory,
     leaseResource,
+    leaseSeconds,
     workers: 1,
     maximumCpuTemperature,
     maximumGpuTemperature,
@@ -357,6 +365,9 @@ async function run() {
   writeJson(path.join(durableEvidenceDirectory, 'run-metadata.json'), metadata);
 
   let leaseHeld = false;
+  let leaseExpiresAt = null;
+  let leaseRenewalCount = 0;
+  let nextLeaseRenewalAt = null;
   let child;
   let childFinished;
   let playwrightLog;
@@ -376,7 +387,7 @@ async function run() {
     stopProcessGroup(child);
   };
   const signalHandlers = new Map(
-    ['SIGINT', 'SIGTERM'].map((signal) => [signal, () => stopForSignal(signal)]),
+    ['SIGHUP', 'SIGINT', 'SIGTERM'].map((signal) => [signal, () => stopForSignal(signal)]),
   );
   for (const [signal, handler] of signalHandlers) process.once(signal, handler);
 
@@ -392,6 +403,12 @@ async function run() {
     );
     if (lease.status !== 0) throw new Error(`Could not acquire ${leaseResource} lease`);
     leaseHeld = true;
+    const leaseResponse = JSON.parse(lease.stdout);
+    leaseExpiresAt = Number(leaseResponse.expiresAt);
+    if (leaseResponse.acquired !== true || !Number.isFinite(leaseExpiresAt)) {
+      throw new Error(`${leaseResource} lease response was incomplete`);
+    }
+    nextLeaseRenewalAt = Date.now() + Math.max(1_000, Math.floor((leaseSeconds * 1_000) / 2));
 
     const preflightProcesses = inspectProcesses();
     writeJson(path.join(durableEvidenceDirectory, 'preflight-processes.json'), preflightProcesses);
@@ -501,6 +518,47 @@ async function run() {
       }
 
       const processInspection = inspectProcesses(child.pid);
+      let leaseRenewalViolation = null;
+      if (Date.now() >= nextLeaseRenewalAt) {
+        const renewal = commandResult(
+          resourceController,
+          ['lease', '--resource', leaseResource, '--seconds', String(leaseSeconds)],
+          runEnvironment,
+        );
+        let renewalResponse = null;
+        try {
+          renewalResponse = JSON.parse(renewal.stdout);
+        } catch {
+          // The structured failure below preserves the raw response for diagnosis.
+        }
+        appendFileSync(
+          path.join(durableEvidenceDirectory, 'lease-renewals.jsonl'),
+          `${JSON.stringify({
+            capturedAt: new Date().toISOString(),
+            status: renewal.status,
+            response: renewalResponse,
+            stderr: renewal.stderr.trim(),
+          })}\n`,
+        );
+        const renewedUntil = Number(renewalResponse?.expiresAt);
+        if (
+          renewal.status !== 0 ||
+          renewalResponse?.acquired !== true ||
+          !Number.isFinite(renewedUntil) ||
+          renewedUntil <= Date.now()
+        ) {
+          leaseRenewalViolation = {
+            type: 'lease-renewal',
+            exitCode: renewal.status,
+            response: renewalResponse,
+            stderr: renewal.stderr.trim(),
+          };
+        } else {
+          leaseExpiresAt = renewedUntil;
+          leaseRenewalCount += 1;
+          nextLeaseRenewalAt = Date.now() + Math.max(1_000, Math.floor((leaseSeconds * 1_000) / 2));
+        }
+      }
       const throttleCurrent = thermalThrottleSnapshot();
       const cpuTemperatureC = cpuPackageTemperature();
       const gpu = gpuStatus(gpuUuid);
@@ -518,6 +576,7 @@ async function run() {
       sampleCount += 1;
 
       const sampleViolations = [];
+      if (leaseRenewalViolation) sampleViolations.push(leaseRenewalViolation);
       const loadAverage = os.loadavg();
       const counterGrowth = throttleGrowth(throttleBefore, throttleCurrent);
       if (counterGrowth.length > 0)
@@ -684,6 +743,8 @@ async function run() {
     finishedAt: new Date().toISOString(),
     testExitCode,
     selectedGpuBrowserObserved,
+    leaseExpiresAt,
+    leaseRenewalCount,
     sampleCount,
     maximumObservedCpuTemperature,
     maximumObservedGpuTemperature,
