@@ -40,8 +40,13 @@ test('all research content remains readable across desktop and phone in both lan
     await expect(page.locator('.research-column-tier-9')).toBeAttached();
     await page.locator('.research-column-tier-9').scrollIntoViewIfNeeded();
     await expect(page.locator('.research-column-tier-9 .research-card')).toBeVisible();
-    expect(await page.evaluate(() => document.documentElement.scrollWidth), `${layout.language} ${layout.width}px page width`)
-      .toBe(layout.width);
+    const pageWidths = await page.evaluate(() => ({
+      client: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+      viewport: window.innerWidth
+    }));
+    expect(pageWidths.viewport, `${layout.language} ${layout.width}px viewport width`).toBe(layout.width);
+    expect(pageWidths.scroll, `${layout.language} ${layout.width}px page width`).toBe(pageWidths.client);
 
     const clippedCopy = await page.locator('.research-card p, .research-requirements b, .research-focus strong')
       .evaluateAll((elements) => elements.flatMap((element) => {

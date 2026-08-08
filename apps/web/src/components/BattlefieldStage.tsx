@@ -8709,7 +8709,13 @@ export function BattlefieldStage({
           />
         ) : null}
         {hostSize.w > 0 && hostSize.h > 0 ? (
-          <Sprite texture={vignetteTexture} width={hostSize.w} height={hostSize.h} eventMode="none" />
+          <Sprite
+            key={vignetteTexture.baseTexture.uid}
+            texture={vignetteTexture}
+            width={hostSize.w}
+            height={hostSize.h}
+            eventMode="none"
+          />
         ) : null}
         <Graphics
           eventMode="static"

@@ -243,3 +243,41 @@ test('battlefield help explains advanced rules and remains keyboard-scrollable',
 
   expect(browserErrors).toEqual([]);
 });
+
+test('rapid battlefield viewport changes keep rendered sprites live', async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error' || message.type() === 'warning') {
+      browserErrors.push(`${message.type()}: ${message.text()}`);
+    }
+  });
+  page.on('pageerror', (error) => browserErrors.push(error.message));
+
+  await startBattle(page, 'sector-sable-causeway');
+  await page.getByRole('button', { name: /^Start Battle$/i }).click();
+
+  const viewports = [
+    { width: 390, height: 844 },
+    { width: 568, height: 320 },
+    { width: 844, height: 390 },
+    { width: 1280, height: 720 },
+  ] as const;
+
+  for (let iteration = 0; iteration < 3; iteration += 1) {
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await page.evaluate(async (language) => {
+        await (window as any).__battleControl.setLanguage(language);
+      }, iteration % 2 === 0 ? 'en' : 'sk');
+      await page.getByTestId('keyboard-help-toggle').click();
+      await expect(page.getByTestId('keyboard-help')).toBeVisible();
+      await page.getByTestId('keyboard-help-toggle').click();
+    }
+  }
+
+  await expect.poll(async () => page.locator('.battlefield-stage-host canvas').evaluate((canvas) => ({
+    width: canvas.clientWidth,
+    height: canvas.clientHeight,
+  }))).toEqual(viewports.at(-1));
+  expect(browserErrors).toEqual([]);
+});

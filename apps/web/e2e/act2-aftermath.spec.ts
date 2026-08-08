@@ -80,5 +80,11 @@ test('twelve-operation Shatterline remains contained at 390px', async ({ page })
   await openDawnAnchor(page, 1);
   await expect(page.locator('.territory-marker')).toHaveCount(12);
   await expect(page.locator('.territory-marker').filter({ hasText: 'Dawn Anchor' })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  const pageWidths = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+    viewport: window.innerWidth
+  }));
+  expect(pageWidths.viewport).toBe(390);
+  expect(pageWidths.scroll).toBe(pageWidths.client);
 });
