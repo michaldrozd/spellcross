@@ -361,8 +361,10 @@ test('mobile research controls stay contained and pause without overlap', async 
 
   await expect(armor).toContainText(/PAUSED/i);
   const widths = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
     document: document.documentElement.scrollWidth,
     viewport: window.innerWidth
   }));
-  expect(widths.document).toBe(widths.viewport);
+  expect(widths.viewport).toBe(390);
+  expect(widths.document).toBe(widths.client);
 });

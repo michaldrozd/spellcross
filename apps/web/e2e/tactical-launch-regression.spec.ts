@@ -1,4 +1,5 @@
 import { chromium, expect, test } from '@playwright/test';
+import hardwareGpu from '../../../playwright.hardware.mjs';
 
 type CampaignControl = {
   newCampaign: (slot?: number) => boolean;
@@ -94,7 +95,14 @@ test('launches every campaign territory without renderer errors', async ({ page 
 });
 
 test('shows a WebGL requirement instead of crashing when WebGL is unavailable', async ({}, testInfo) => {
-  const browser = await chromium.launch({ args: ['--disable-webgl', '--disable-3d-apis'] });
+  const browser = await chromium.launch({
+    ...hardwareGpu.launchOptions,
+    args: [
+      ...(hardwareGpu.launchOptions?.args ?? []),
+      '--disable-webgl',
+      '--disable-3d-apis'
+    ]
+  });
   const page = await browser.newPage();
   const runtimeErrors: string[] = [];
   page.on('pageerror', (err) => runtimeErrors.push(err.message));

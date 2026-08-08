@@ -136,6 +136,7 @@ test('Slovak mobile dossier stays contained and fully localized', async ({ page 
     const modal = document.querySelector('.deployment-planner')!.getBoundingClientRect();
     const dossierRect = document.querySelector('.operation-dossier')!.getBoundingClientRect();
     return {
+      clientWidth: document.documentElement.clientWidth,
       documentWidth: document.documentElement.scrollWidth,
       viewportWidth: window.innerWidth,
       modalLeft: modal.left,
@@ -144,7 +145,8 @@ test('Slovak mobile dossier stays contained and fully localized', async ({ page 
       dossierRight: dossierRect.right
     };
   });
-  expect(geometry.documentWidth).toBe(geometry.viewportWidth);
+  expect(geometry.viewportWidth).toBe(390);
+  expect(geometry.documentWidth).toBe(geometry.clientWidth);
   expect(geometry.modalLeft).toBeGreaterThanOrEqual(0);
   expect(geometry.modalRight).toBeLessThanOrEqual(geometry.viewportWidth);
   expect(geometry.dossierLeft).toBeGreaterThanOrEqual(0);

@@ -23,7 +23,8 @@ test('loads strategic view', async ({ page }) => {
     const footerBottom = footer.getBoundingClientRect();
 
     return {
-      documentWidth: document.documentElement.scrollWidth,
+      documentContained: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+      viewportWidth: window.innerWidth,
       logoReachable: logoTop.top >= menuTop.top,
       titleContained: titleBounds.left >= menuTop.left && titleBounds.right <= menuTop.right,
       footerReachable: footerBottom.bottom <= menuBottom.bottom + 0.5,
@@ -86,7 +87,9 @@ test('loads strategic view', async ({ page }) => {
       }
     }
     return {
+      clientWidth: document.documentElement.clientWidth,
       documentWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
       minimumWidth: Math.min(...measured.map(({ bounds }) => bounds.width)),
       minimumHeight: Math.min(...measured.map(({ bounds }) => bounds.height)),
       minimumCenterDistance,
@@ -114,7 +117,8 @@ test('loads strategic view', async ({ page }) => {
     await expect.poll(async () => {
       const metrics = await strategicMapTargetMetrics();
       return {
-        documentWidth: metrics.documentWidth,
+        documentContained: metrics.documentWidth <= metrics.clientWidth,
+        viewportWidth: metrics.viewportWidth,
         targetsMeetMinimum: metrics.minimumWidth >= 24 && metrics.minimumHeight >= 24,
         targetsSeparated: metrics.minimumCenterDistance >= Math.max(metrics.minimumWidth, metrics.minimumHeight),
         clippedTargetCount: metrics.clippedTargetCount,
@@ -127,7 +131,8 @@ test('loads strategic view', async ({ page }) => {
         desktopRadiusUnchanged: checkOverlays || Math.abs(metrics.hitRadius - 3.2) < 0.001,
       };
     }).toEqual({
-      documentWidth,
+      documentContained: true,
+      viewportWidth: documentWidth,
       targetsMeetMinimum: true,
       targetsSeparated: true,
       clippedTargetCount: 0,
@@ -165,7 +170,8 @@ test('loads strategic view', async ({ page }) => {
       const metricCards = [...document.querySelectorAll<HTMLElement>('.territory-metrics span')];
       const tabs = [...document.querySelectorAll('.hq-tabs .tab')];
       return {
-        documentWidth: document.documentElement.scrollWidth,
+        documentContained: document.documentElement.scrollWidth <= document.documentElement.clientWidth,
+        viewportWidth: window.innerWidth,
         titleContained: Boolean(titleBounds && titleBounds.left >= 0 && titleBounds.right <= window.innerWidth),
         titleTextContained: containedText(title),
         menuContained: Boolean(menuBounds && menuBounds.left >= 0 && menuBounds.right <= window.innerWidth),
@@ -184,7 +190,8 @@ test('loads strategic view', async ({ page }) => {
         metricOverflowCount: metricCards.filter((card) => card.scrollWidth > card.clientWidth + 0.5).length,
       };
     })).toEqual({
-      documentWidth,
+      documentContained: true,
+      viewportWidth: documentWidth,
       titleContained: true,
       titleTextContained: true,
       menuContained: true,
@@ -222,7 +229,8 @@ test('loads strategic view', async ({ page }) => {
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(compactMenuGeometry).toEqual({
-    documentWidth: 390,
+    documentContained: true,
+    viewportWidth: 390,
     logoReachable: true,
     titleContained: true,
     footerReachable: true,
@@ -232,7 +240,8 @@ test('loads strategic view', async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('lang', 'sk');
   await expect.poll(() => page.evaluate(() => window.localStorage.getItem('spellcross:lang'))).toBe('sk');
   await expect.poll(compactMenuGeometry).toEqual({
-    documentWidth: 390,
+    documentContained: true,
+    viewportWidth: 390,
     logoReachable: true,
     titleContained: true,
     footerReachable: true,
@@ -243,7 +252,8 @@ test('loads strategic view', async ({ page }) => {
 
   await page.setViewportSize({ width: 728, height: 375 });
   await expect.poll(compactMenuGeometry).toEqual({
-    documentWidth: 728,
+    documentContained: true,
+    viewportWidth: 728,
     logoReachable: true,
     titleContained: true,
     footerReachable: true,
@@ -252,7 +262,8 @@ test('loads strategic view', async ({ page }) => {
   await page.locator('.menu-lang-btn').nth(0).click();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect.poll(compactMenuGeometry).toEqual({
-    documentWidth: 728,
+    documentContained: true,
+    viewportWidth: 728,
     logoReachable: true,
     titleContained: true,
     footerReachable: true,

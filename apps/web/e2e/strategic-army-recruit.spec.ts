@@ -22,7 +22,13 @@ test('army recruit queue shows incoming units with readiness turn', async ({ pag
   expect(await recruitCards.evaluateAll((cards) => cards.filter((card) => (
     (card as HTMLElement).scrollHeight > (card as HTMLElement).clientHeight + 1
   )).length)).toBe(0);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+  const pageWidths = await page.evaluate(() => ({
+    client: document.documentElement.clientWidth,
+    scroll: document.documentElement.scrollWidth,
+    viewport: window.innerWidth
+  }));
+  expect(pageWidths.viewport).toBe(390);
+  expect(pageWidths.scroll).toBe(pageWidths.client);
 
   const layouts = [
     { language: 'en', width: 1440, height: 900 },

@@ -141,7 +141,13 @@ test('storage failures keep the campaign responsive and visibly unsaved until re
     expect(warningBounds!.y).toBeGreaterThanOrEqual(0);
     expect(warningBounds!.x + warningBounds!.width).toBeLessThanOrEqual(layout.width);
     expect(warningBounds!.y + warningBounds!.height).toBeLessThanOrEqual(layout.height);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(layout.width);
+    const pageWidths = await page.evaluate(() => ({
+      client: document.documentElement.clientWidth,
+      scroll: document.documentElement.scrollWidth,
+      viewport: window.innerWidth
+    }));
+    expect(pageWidths.viewport).toBe(layout.width);
+    expect(pageWidths.scroll).toBe(pageWidths.client);
     if (layout.width <= 700) {
       for (const selector of ['.hq-topbar', '.hq-tabs', '.map-theater-switch', '.map-status-strip']) {
         const protectedBounds = await page.locator(selector).boundingBox();

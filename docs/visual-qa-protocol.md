@@ -28,6 +28,24 @@ Before committing a visual fix:
 - Run focused Playwright regressions for movement, click selection, and camera behavior when relevant.
 - Re-check the new worst-case evidence after the fix.
 
+## Local hardware GPU runs
+
+Normal Playwright commands remain headless and portable. For sustained local visual or 3D validation on Linux, use the opt-in hardware runner instead. It serializes the suite, acquires the shared GPU lease, rejects an occupied GPU or another heavy renderer, verifies an NVIDIA WebGL renderer, and records CPU/GPU temperatures plus thermal-throttle counters.
+
+Provide a new empty evidence directory for every run:
+
+```sh
+DISPLAY=:1 \
+PLAYWRIGHT_GPU_UUID=<gpu-uuid> \
+PLAYWRIGHT_NVIDIA_PROVIDER=<xrandr-provider> \
+PLAYWRIGHT_RESOURCE_CTL=<agentctl-path> \
+PLAYWRIGHT_HARDWARE_STATE_DIR=<short-persistent-browser-state-directory> \
+PLAYWRIGHT_HARDWARE_EVIDENCE_DIR=<persistent-evidence-directory> \
+pnpm e2e:hardware
+```
+
+The runner stops without launching Chrome if the lease, display provider, selected GPU, host load, or process preflight is not clean. It also fails the run if the renderer is not NVIDIA, SwiftShader appears, a foreign heavy renderer starts, a load or thermal limit is exceeded, or any CPU thermal-throttle counter grows. It never changes CPU governors, power limits, or system-wide performance settings.
+
 ## Vehicle Contact
 
 For vehicle ground-contact issues, always include:

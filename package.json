@@ -18,8 +18,9 @@
     "build": "turbo run build",
     "dev": "turbo run dev --parallel",
     "lint": "turbo run lint",
-    "test": "turbo run test",
-    "e2e": "playwright test"
+    "test": "node --test tools/run-playwright-hardware-gpu.test.mjs && turbo run test",
+    "e2e": "playwright test",
+    "e2e:hardware": "node tools/run-playwright-hardware-gpu.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
